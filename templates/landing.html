@@ -21,8 +21,8 @@
 {% endblock %}
 
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-  <h1 class="page-title" style="margin:0">BTC Miners — Sector Scorecard</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem" data-spec-id="1.0">
+  <h1 class="page-title" style="margin:0"><span class="spec-id">1.0</span>BTC Miners - Sector Scorecard</h1>
   <a href="/ops" class="btn btn-secondary btn-sm">Operations →</a>
 </div>
 
@@ -45,7 +45,13 @@
   </div>
 </div>
 
-<div id="scorecard-grid" class="scorecard-grid">
+<div data-spec-id="1.1" style="margin-bottom:0.5rem">
+  <div style="font-size:0.9rem;font-weight:600">
+    <span class="spec-id">1.1</span>Scorecard Table <span class="source-badge source-badge-data">DATA</span>
+  </div>
+</div>
+
+<div id="scorecard-grid" class="scorecard-grid" data-spec-id="1.1">
   {% for c in companies %}
   <div class="scorecard-card" data-ticker="{{ c.ticker | e }}">
     <div class="scorecard-ticker">{{ c.ticker }}</div>

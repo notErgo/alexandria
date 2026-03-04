@@ -124,7 +124,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-title">Dashboard</div>
+<div class="page-title" data-spec-id="6.0"><span class="spec-id">6.0</span>Dashboard</div>
 
 <!-- View toggle -->
 <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
@@ -161,7 +161,10 @@
       </select>
     </div>
   </div>
-  <div class="card" style="padding:1rem;">
+  <div class="card" style="padding:1rem;" data-spec-id="6.1">
+    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.5rem">
+      <span class="spec-id">6.1</span>Metric Panels <span class="source-badge source-badge-data">DATA</span>
+    </div>
     <div id="stacked-chart" style="width:100%;height:420px;"></div>
   </div>
 </div>
@@ -197,7 +200,7 @@
     </div>
   </div>
   <!-- Dashboard panels injected here -->
-  <div id="dashboard-content">
+  <div id="dashboard-content" data-spec-id="6.1">
     <div class="empty-state">Loading…</div>
   </div>
 </div>
@@ -218,6 +221,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/review_panel.js"></script>
 <script>
 // ── Ticker color palette (colorblind-safe, assigned by index) ─────────────
 const TICKER_COLORS = [
@@ -406,12 +410,13 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
 
   const panel = document.createElement('div');
   panel.className = 'card metric-panel';
+  panel.setAttribute('data-spec-id', '6.1');
 
   // Panel header
   const header = document.createElement('div');
   header.className = 'panel-header';
   const h2 = document.createElement('h2');
-  h2.textContent = label + ' (' + unit + ')';
+  h2.innerHTML = '<span class="spec-id">6.1</span>' + escapeHtml(label + ' (' + unit + ')') + ' <span class="source-badge source-badge-data">DATA</span>';
   header.appendChild(h2);
 
   // Completeness badges
@@ -678,41 +683,61 @@ function renderSuggestBody(data) {
   }
 
   // ── Review queue items ──
-  if (items.length > 0) {
-    html += '<div class="suggest-section"><h3>Review Queue Items</h3>';
-    items.forEach(function(it) {
-      const statusClass = it.status === 'APPROVED' ? 'badge-success' :
-                          it.status === 'REJECTED'  ? 'badge-danger'  : 'badge-warning';
+  const pendingItems = items.filter(function(it) { return it.status === 'PENDING'; });
+  const nonPendingItems = items.filter(function(it) { return it.status !== 'PENDING'; });
+
+  if (nonPendingItems.length > 0) {
+    html += '<div class="suggest-section"><h3>Review Queue History</h3>';
+    nonPendingItems.forEach(function(it) {
+      const statusClass = it.status === 'APPROVED' ? 'badge-success' : 'badge-danger';
       const snippet = it.source_snippet ? escapeHtml(it.source_snippet.slice(0, 80)) : '';
-      const pendingNote = it.status === 'PENDING' ? ' <span style="color:var(--theme-text-muted);font-size:0.75rem;">(approve at <a href="/review">/review</a>)</span>' : '';
       html += '<div class="suggest-review-row">' +
         '<span>' + escapeHtml(String(it.raw_value)) + ' ' + escapeHtml(unit) + '</span> ' +
         '<span style="color:var(--theme-text-muted)">conf ' + Number(it.confidence).toFixed(2) + '</span> ' +
         '<span class="badge ' + statusClass + '">' + escapeHtml(it.status) + '</span>' +
-        pendingNote +
         (snippet ? '<div style="margin-top:2px;font-size:0.75rem;color:var(--theme-text-muted);">' + snippet + '</div>' : '') +
         '</div>';
     });
     html += '</div>';
   }
 
-  // ── Submit form ──
-  html += '<div class="suggest-section fill-form">' +
-    '<h3>Submit to Review Queue</h3>' +
-    '<label>Value (' + escapeHtml(unit) + ')<br>' +
-    '<input type="number" id="fill-value" step="any" min="0" style="width:160px;" ' +
-    'value="' + escapeHtml(prefillVal) + '"></label>' +
-    '<label>Note (optional)<br>' +
-    '<textarea id="fill-note">' + escapeHtml(prefillNote) + '</textarea></label>' +
-    '<button class="btn btn-primary btn-sm" id="fill-submit" ' +
-    'data-ticker="' + escapeHtml(ticker) + '" ' +
-    'data-metric="' + escapeHtml(metric) + '" ' +
-    'data-period="' + escapeHtml(period) + '" ' +
-    'data-unit="' + escapeHtml(unit) + '">' +
-    'Submit to Review Queue</button>' +
-    '</div>';
+  // ── If PENDING item exists: embed ReviewPanel; else show fill form ──
+  if (pendingItems.length > 0) {
+    html += '<div class="suggest-section"><h3>Pending Review Item</h3>' +
+      '<div id="dash-review-panel" style="min-height:200px"></div></div>';
+  } else {
+    html += '<div class="suggest-section fill-form">' +
+      '<h3>Submit to Review Queue</h3>' +
+      '<label>Value (' + escapeHtml(unit) + ')<br>' +
+      '<input type="number" id="fill-value" step="any" min="0" style="width:160px;" ' +
+      'value="' + escapeHtml(prefillVal) + '"></label>' +
+      '<label>Note (optional)<br>' +
+      '<textarea id="fill-note">' + escapeHtml(prefillNote) + '</textarea></label>' +
+      '<button class="btn btn-primary btn-sm" id="fill-submit" ' +
+      'data-ticker="' + escapeHtml(ticker) + '" ' +
+      'data-metric="' + escapeHtml(metric) + '" ' +
+      'data-period="' + escapeHtml(period) + '" ' +
+      'data-unit="' + escapeHtml(unit) + '">' +
+      'Submit to Review Queue</button>' +
+      '</div>';
+  }
 
   document.getElementById('suggest-body').innerHTML = html;
+
+  // ── Wire ReviewPanel if PENDING item was injected ──
+  if (pendingItems.length > 0) {
+    const itemId = pendingItems[0].id;
+    ReviewPanel.init('dash-review-panel');
+    ReviewPanel.openItem(itemId);
+    ReviewPanel.setOnApproved(function() {
+      closeSuggestModal();
+      // Refresh dashboard to reflect newly approved data
+      loadDashboard();
+    });
+    ReviewPanel.setOnRejected(function() {
+      closeSuggestModal();
+    });
+  }
 }
 
 function submitFill(ticker, metric, period, unit) {
@@ -759,6 +784,7 @@ function submitFill(ticker, metric, period, unit) {
 
 function closeSuggestModal() {
   document.getElementById('suggest-overlay').style.display = 'none';
+  ReviewPanel.close();
 }
 
 // ── Data lineage click-through ────────────────────────────────────────────

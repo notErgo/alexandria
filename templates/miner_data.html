@@ -549,6 +549,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 
 {% block content %}
 <div class="md-page">
+  <h1 class="page-title" style="margin:0" data-spec-id="5.0"><span class="spec-id">5.0</span>Miner Data</h1>
 
   <!-- ── Company tabs ─────────────────────────────────────────────────── -->
   <div id="company-tabs" class="md-tabs">
@@ -566,7 +567,10 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
     </div>
 
     <!-- Right: filters + table -->
-    <div class="md-table-panel">
+    <div class="md-table-panel" data-spec-id="5.1">
+      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+        <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
+      </div>
       <div class="md-table-filters">
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
@@ -615,36 +619,14 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   </div><!-- /.md-upper -->
 
   <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
-  <div id="doc-panel">
+  <div id="doc-panel" data-spec-id="5.2">
     <div class="doc-panel-header">
-      <div id="doc-panel-title">—</div>
+      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Doc Panel</span> <span class="source-badge source-badge-data">DATA</span></div>
       <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open rendered HTML in new tab" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Rendered</button>
       <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
     </div>
-    <div class="doc-panel-body">
-      <!-- Inline source viewer + placeholder -->
-      <div style="position:relative;overflow:hidden;display:flex;flex-direction:column;height:100%">
-        <div id="doc-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--theme-text-muted);font-size:0.85rem;background:var(--theme-bg-secondary);">
-          No source document.
-        </div>
-        <pre id="doc-source-view" style="display:none"></pre>
-      </div>
-      <!-- Rules panel -->
-      <div class="rules-panel">
-        <div class="rules-panel-header">LLM Extractions</div>
-        <div id="rules-list">
-          <div class="rules-empty">Select a row with a source document.</div>
-        </div>
-        <!-- Manual entry for periods where no pattern extracts a value -->
-        <div id="manual-fill-panel" style="display:none">
-          <div class="fill-header">Manual Entry</div>
-          <select id="fill-metric"></select>
-          <input type="number" id="fill-value" step="any" min="0" placeholder="value">
-          <input type="text" id="fill-note" placeholder="note (optional)">
-          <button id="fill-submit">Save</button>
-          <div id="fill-status"></div>
-        </div>
-      </div>
+    <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
+      <div id="miner-review-panel"></div>
     </div>
     <!-- Pattern generator — shown after text selection in source view -->
     <div id="pattern-panel">
@@ -687,15 +669,13 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/review_panel.js"></script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 let _ticker = null;               // currently selected company ticker
 let _rows = [];                   // full unfiltered row list from API
 let _selectedPeriod = null;       // period of the currently open doc panel
-let _currentDocText = '';         // sanitized HTML text for pattern generation
-let _currentAnalysisMatches = []; // matches from /analysis — used for highlight
-let _sourceReady = false;        // true once loadSource() finishes fetching for current period
-let _analysisReady = false;       // true once loadAnalysis resolves for current period
+let _currentDocText = '';         // raw text for pattern generator (set when doc is loaded)
 
 // Metric highlight colours — matches rule card left border colours
 const METRIC_COLORS = {
@@ -728,11 +708,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (source) triggerIngest(source);
   });
 
-  // ── Text selection on source view ───────────────────────────────────────
-  // Pattern panel is hidden (LLM-only mode — no regex patterns to generate).
-  // Listener retained but no-ops so text selection still works for copy.
-  document.getElementById('doc-source-view').addEventListener('mouseup', function() {
-    /* pattern generator disabled in LLM-only mode */
+  // ── ReviewPanel init ────────────────────────────────────────────────────
+  ReviewPanel.init('miner-review-panel');
+  ReviewPanel.setOnFilled(function(e) {
+    showToast('Submitted to review queue');
+    selectCompany(_ticker);
+  });
+  ReviewPanel.setOnApproved(function(e) {
+    showToast('Approved');
+    selectCompany(_ticker);
+  });
+  ReviewPanel.setOnRejected(function(e) {
+    showToast('Rejected');
   });
 
   // ── Right-click context menu ────────────────────────────────────────────
@@ -760,41 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // Manual fill submit — wired once on the static #fill-submit element.
-  document.getElementById('fill-submit').addEventListener('click', async function() {
-    if (!_ticker || !_selectedPeriod) return;
-    const metric = document.getElementById('fill-metric').value;
-    const rawValue = document.getElementById('fill-value').value.trim();
-    const note = document.getElementById('fill-note').value.trim();
-    const statusEl = document.getElementById('fill-status');
-
-    if (!rawValue) { statusEl.textContent = 'Value is required.'; return; }
-    const value = parseFloat(rawValue);
-    if (!isFinite(value) || value <= 0) { statusEl.textContent = 'Enter a positive number.'; return; }
-
-    statusEl.textContent = 'Saving…';
-    try {
-      const periodParam = _selectedPeriod.slice(0, 7);
-      const resp = await fetch(
-        `/api/miner/${encodeURIComponent(_ticker)}/${encodeURIComponent(periodParam)}/${encodeURIComponent(metric)}/fill`,
-        {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({value, note}),
-        }
-      );
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error?.message || 'Failed');
-      statusEl.textContent = '✓ Saved';
-      document.getElementById('fill-value').value = '';
-      document.getElementById('fill-note').value = '';
-      showToast(`Saved ${metric} = ${value}`);
-      selectCompany(_ticker);
-    } catch (err) {
-      statusEl.textContent = `Error: ${escapeHtml(err.message)}`;
-      showToast(`Fill error: ${err.message}`, true);
-    }
-  });
+  // Manual fill is now handled by ReviewPanel.setOnFilled (wired above).
 });
 
 async function boot() {
@@ -1128,7 +1081,7 @@ function applyColVisibility() {
 });
 
 // ── Select period → open doc panel ────────────────────────────────────────
-async function selectPeriod(period) {
+function selectPeriod(period) {
   if (!_ticker) return;
   _selectedPeriod = period;
 
@@ -1139,156 +1092,39 @@ async function selectPeriod(period) {
 
   const periodLabel = period.slice(0, 7);
 
-  // Find the row to get source info
+  // Find the row to get source info and compute null metrics
   const row = _rows.find(r => r.period === period);
+  const nullMetrics = row
+    ? METRICS_ORDER.filter(function(m) { return !row.metrics[m] || row.metrics[m].value == null; })
+    : METRICS_ORDER.slice();
 
   // Show doc panel
   const panel = document.getElementById('doc-panel');
   panel.classList.add('visible');
-  document.getElementById('doc-panel-title').textContent =
+  document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
 
-  // Reset highlight + pattern state for new period
-  _sourceReady = false;
-  _analysisReady = false;
-  _currentAnalysisMatches = [];
+  // Reset pattern panel state (pattern generator is separate from ReviewPanel)
   document.getElementById('pattern-panel').style.display = 'none';
   document.getElementById('pattern-save-status').textContent = '';
   document.getElementById('apply-result').style.display = 'none';
-  _currentDocText = '';
 
-  // Populate manual fill dropdown with null metrics for this period
-  const fillPanel = document.getElementById('manual-fill-panel');
-  const fillMetricEl = document.getElementById('fill-metric');
-  if (row) {
-    const nullMetrics = METRICS_ORDER.filter(function(m) {
-      return !row.metrics[m] || row.metrics[m].value == null;
-    });
-    fillMetricEl.innerHTML = nullMetrics.map(function(m) {
-      return `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`;
-    }).join('');
-    // Show fill panel whenever there's at least one null metric (including gap rows)
-    fillPanel.style.display = nullMetrics.length > 0 ? 'flex' : 'none';
-  } else {
-    fillPanel.style.display = 'none';
-  }
-  document.getElementById('fill-status').textContent = '';
-  document.getElementById('fill-value').value = '';
-  document.getElementById('fill-note').value = '';
-
-  // Load source and analysis in parallel
-  loadSource(_ticker, period, row);
-  loadAnalysis(_ticker, period);
+  // Open ReviewPanel for this cell (no specific metric — shows all analysis)
+  ReviewPanel.openCell(_ticker, period, null, {nullMetrics: nullMetrics});
 
   // Scroll panel into view
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// ── Load source document ──────────────────────────────────────────────────
-async function loadSource(ticker, period, row) {
-  var sourceView = document.getElementById('doc-source-view');
-  var placeholder = document.getElementById('doc-placeholder');
-  _sourceReady = false;
 
-  if (!row || !row.has_report) {
-    sourceView.style.display = 'none';
-    placeholder.style.display = 'flex';
-    placeholder.textContent = 'No source document available for this period.';
-    return;
-  }
-
-  placeholder.style.display = 'none';
-  sourceView.style.display = '';
-  sourceView.textContent = 'Loading source\u2026';
-
-  var periodParam = period.slice(0, 7);
-  try {
-    var resp = await fetch(
-      '/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(periodParam) + '/raw-source'
-    );
-    _currentDocText = resp.ok ? await resp.text() : '';
-  } catch (e) {
-    _currentDocText = '';
-  }
-
-  _sourceReady = true;
-  tryRender();
-}
-
-// ── Load analysis (rule matches) ──────────────────────────────────────────
-async function loadAnalysis(ticker, period) {
-  const listEl = document.getElementById('rules-list');
-  listEl.innerHTML = `<div class="rules-empty"><span class="spin"></span></div>`;
-
-  try {
-    const periodParam = period.slice(0, 7);  // YYYY-MM
-    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/${encodeURIComponent(periodParam)}/analysis`);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `HTTP ${resp.status}`);
-    }
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    renderRuleCards(body.data.matches);
-    _currentAnalysisMatches = body.data.matches || [];
-    _analysisReady = true;
-    tryRender();
-  } catch (err) {
-    listEl.innerHTML = `<div class="rules-empty" style="color:var(--theme-danger)">${escapeHtml(err.message)}</div>`;
-  }
-}
-
-function renderRuleCards(matches) {
-  const listEl = document.getElementById('rules-list');
-  if (!matches || matches.length === 0) {
-    listEl.innerHTML = '<div class="rules-empty">No LLM extractions for this period.</div>';
-    return;
-  }
-
-  const parts = matches.map(function(m) {
-    const confPct = Math.round((m.confidence || 0) * 100);
-    const valStr = m.value != null ? m.value.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1}) : '—';
-    const unit = m.unit || '';
-    // Strip llm_ prefix for display; show model name cleanly (e.g. "qwen3.5:35b")
-    const methodRaw = m.pattern_id || '—';
-    const methodLabel = methodRaw.startsWith('llm_') ? methodRaw.slice(4) : methodRaw;
-    const isPending = m.status === 'pending_review';
-    const statusLabel = isPending ? 'review' : 'accepted';
-    const statusClass = isPending ? 'pending' : 'accepted';
-    return `
-      <div class="rule-card" style="--rule-color:${METRIC_COLORS[m.metric] || '#6b7280'}">
-        <div class="rule-card-id">
-          <span>${escapeHtml(methodLabel)}</span>
-          <span class="rule-card-status ${escapeHtml(statusClass)}">${escapeHtml(statusLabel)}</span>
-        </div>
-        <div class="rule-card-metric">${escapeHtml(m.metric_label || m.metric)}</div>
-        <div class="rule-card-value">${escapeHtml(valStr)} ${escapeHtml(unit)}</div>
-        <div class="rule-card-conf">conf ${confPct}%</div>
-        ${m.source_snippet ? `<div class="rule-card-snippet" title="${escapeAttr(m.source_snippet)}">${escapeHtml(m.source_snippet.slice(0, 80))}</div>` : ''}
-      </div>`;
-  });
-  listEl.innerHTML = parts.join('');
-}
 
 // ── Close doc panel ────────────────────────────────────────────────────────
 function closeDocPanel() {
   _selectedPeriod = null;
-  _currentDocText = '';
-  _currentAnalysisMatches = [];
-  _sourceReady = false;
-  _analysisReady = false;
   const panel = document.getElementById('doc-panel');
   panel.classList.remove('visible');
-  var sv = document.getElementById('doc-source-view');
-  sv.textContent = '';
-  sv.style.display = 'none';
-  document.getElementById('doc-placeholder').style.display = 'flex';
-  document.getElementById('doc-placeholder').textContent = 'No source document.';
-  document.getElementById('rules-list').innerHTML =
-    '<div class="rules-empty">Select a row with a source document.</div>';
   document.getElementById('pattern-panel').style.display = 'none';
-  document.getElementById('manual-fill-panel').style.display = 'none';
-  document.getElementById('fill-status').textContent = '';
+  ReviewPanel.close();
   // Clear row selection
   document.querySelectorAll('#timeline-tbody tr.selected').forEach(function(r) {
     r.classList.remove('selected');
@@ -1394,57 +1230,6 @@ function openInNewTab() {
   );
 }
 
-// ── Render coordination ────────────────────────────────────────────────────
-// Called after loadSource() or loadAnalysis() resolves.
-// Only proceeds when both flags are true — handles any completion order.
-function tryRender() {
-  if (!_sourceReady || !_analysisReady) return;
-  var sourceView = document.getElementById('doc-source-view');
-  if (!_currentDocText) {
-    sourceView.textContent = '(Source text unavailable)';
-    return;
-  }
-  sourceView.innerHTML = buildHighlightedSource(_currentDocText, _currentAnalysisMatches);
-  var firstHl = sourceView.querySelector('.doc-hl');
-  if (firstHl) firstHl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// Builds an HTML string from rawText with colored <span> wrappers around
-// source_snippet matches.  escapeHtml() (from base.html) makes tags render
-// as visible text while the highlight spans are real markup.
-function buildHighlightedSource(rawText, matches) {
-  var regions = [];
-  for (var j = 0; j < matches.length; j++) {
-    var m = matches[j];
-    if (!m.source_snippet) continue;
-    var needle = m.source_snippet.replace(/\s+/g, ' ').trim().slice(0, 60);
-    if (needle.length < 6) continue;
-    var idx = rawText.toLowerCase().indexOf(needle.toLowerCase());
-    if (idx < 0) continue;
-    regions.push({
-      start: idx, end: idx + needle.length,
-      color: METRIC_COLORS[m.metric] || '#9ca3af',
-      label: m.metric_label || m.metric,
-      patternId: m.pattern_id || '?',
-    });
-  }
-  regions.sort(function(a, b) { return a.start - b.start; });
-
-  var html = '';
-  var pos = 0;
-  for (var i = 0; i < regions.length; i++) {
-    var r = regions[i];
-    if (r.start < pos) continue; // skip overlapping
-    html += escapeHtml(rawText.slice(pos, r.start));
-    var title = escapeHtml(r.label + ' \u2014 ' + r.patternId);
-    html += '<span class="doc-hl" style="background:' + r.color
-      + '28;border-bottom:2px solid ' + r.color + '" title="' + title + '">'
-      + escapeHtml(rawText.slice(r.start, r.end)) + '</span>';
-    pos = r.end;
-  }
-  html += escapeHtml(rawText.slice(pos));
-  return html;
-}
 
 // ── Ingest triggers ───────────────────────────────────────────────────────
 async function triggerIngest(source) {

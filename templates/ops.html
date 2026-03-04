@@ -65,27 +65,27 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title">Operations</h1>
+<h1 class="page-title" data-ui-id="2.0" data-spec-id="2.0"><span class="spec-id">2.0</span>Operations</h1>
 
 <div class="ops-tabs">
-  <button class="ops-tab" data-pane="companies">Companies</button>
-  <button class="ops-tab" data-pane="registry">Registry</button>
-  <button class="ops-tab" data-pane="explorer">Explorer</button>
-  <button class="ops-tab" data-pane="rules">Metric Rules</button>
-  <a class="ops-tab" href="/review" style="text-decoration:none">Review Queue <span id="ops-review-count" style="display:none"></span></a>
+  <button class="ops-tab" data-pane="companies" data-ui-id="2.1">Companies</button>
+  <button class="ops-tab" data-pane="registry" data-ui-id="2.2">Registry</button>
+  <button class="ops-tab" data-pane="explorer" data-ui-id="2.3">Explorer</button>
+  <button class="ops-tab" data-pane="rules" data-ui-id="2.4">Metric Rules</button>
+  <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
 </div>
 
 <!-- ── Companies tab ──────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-companies">
+<div class="ops-pane" id="pane-companies" data-ui-id="2.1" data-spec-id="2.1">
   <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem">Companies</h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
     <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
-  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem">
-    <h3 style="font-size:0.9rem;margin:0 0 0.5rem">Add Company</h3>
+  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="2.1.5">
+    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">2.1.5</span>Add Company</h3>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
       <div>
         <label style="font-size:0.75rem;display:block">Ticker *</label>
@@ -114,7 +114,10 @@
     <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
   </div>
 
-  <table id="companies-table">
+  <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">2.1.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
+    </caption>
     <thead>
       <tr>
         <th data-sort="ticker">Ticker</th>
@@ -132,9 +135,9 @@
   </table>
 
   <!-- Inline regime editor (shown below selected company row) -->
-  <div id="regime-editor" style="display:none" class="card" style="margin-top:0.5rem">
+  <div id="regime-editor" style="display:none" class="card" style="margin-top:0.5rem" data-ui-id="2.1.2" data-spec-id="2.1.2">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem">Regime windows</h3>
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">2.1.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
     </div>
     <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
@@ -164,9 +167,9 @@
   </div>
 
   <!-- Scrape queue -->
-  <div style="margin-top:1.5rem">
-    <h2 style="font-size:1rem;margin-bottom:0.5rem">Scrape Queue</h2>
-    <table id="scrape-table">
+  <div style="margin-top:1.5rem" data-spec-id="2.1.3">
+    <h2 style="font-size:1rem;margin-bottom:0.5rem"><span class="spec-id">2.1.3</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+    <table id="scrape-table" data-ui-id="2.1.3">
       <thead>
         <tr>
           <th>ID</th>
@@ -186,8 +189,8 @@
   </div>
 
   <!-- Danger Zone ──────────────────────────────────────────────────────── -->
-  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px">
-    <h3 style="font-size:0.85rem;margin:0 0 0.6rem;color:var(--theme-danger)">Danger Zone</h3>
+  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="2.1.4" data-spec-id="2.1.4">
+    <h3 style="font-size:0.85rem;margin:0 0 0.6rem;color:var(--theme-danger)"><span class="spec-id">2.1.4</span>Danger Zone</h3>
     <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
       Purge deletes all operational data: reports, data_points, review_queue,
       scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans,
@@ -210,8 +213,9 @@
 </div>
 
 <!-- ── Registry tab ───────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-registry">
-  <div class="registry-filters">
+<div class="ops-pane" id="pane-registry" data-ui-id="2.2" data-spec-id="2.2">
+  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.2</span>Registry</h2>
+  <div class="registry-filters" data-ui-id="2.2.1">
     <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <input id="reg-period" type="month" placeholder="Period">
     <select id="reg-doc-type">
@@ -231,7 +235,10 @@
     <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
     <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
-  <table id="registry-table">
+  <table id="registry-table" data-ui-id="2.2.2" data-spec-id="2.2.2">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">2.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
+    </caption>
     <thead>
       <tr>
         <th data-sort="ticker">Ticker</th>
@@ -251,8 +258,9 @@
 </div>
 
 <!-- ── Explorer tab ───────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-explorer">
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+<div class="ops-pane" id="pane-explorer" data-ui-id="2.3" data-spec-id="2.3">
+  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.3</span>Explorer</h2>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.3.1">
     <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <select id="ex-state">
       <option value="">All states</option>
@@ -290,19 +298,22 @@
 
   <div class="explorer-wrap">
     <div class="explorer-grid-scroll">
-      <div id="explorer-grid">
+      <div id="explorer-grid" data-ui-id="2.3.2" data-spec-id="2.3.2">
+        <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+          <span class="spec-id">2.3.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
+        </div>
         <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
       </div>
     </div>
 
     <!-- Cell detail side panel -->
-    <div class="cell-detail" id="cell-detail-panel" style="display:none">
-      <div class="cell-detail-header" id="cell-detail-header">—</div>
+    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.3.3" data-spec-id="2.3.3">
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.3.3</span><span id="cell-detail-header-text">Cell Detail</span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
       <div class="cell-actions" id="cell-actions"></div>
 
       <!-- Save value form -->
-      <div id="cell-save-form" style="display:none;margin-top:0.75rem">
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.3.4">
         <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
@@ -314,7 +325,7 @@
       </div>
 
       <!-- Re-extract panel -->
-      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem">
+      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem" data-ui-id="2.3.6">
         <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
         <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
         <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
@@ -338,15 +349,18 @@
 </div>
 
 <!-- ── Metric Rules pane ───────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-rules">
+<div class="ops-pane" id="pane-rules" data-spec-id="2.4">
   <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem">Metric Rules</h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.4</span>Metric Rules</h2>
     <span style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:0.5rem">
       Per-metric LLM/regex agreement and outlier detection thresholds
     </span>
     <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
   </div>
-  <table id="rules-table" style="width:100%;font-size:0.82rem">
+  <table id="rules-table" style="width:100%;font-size:0.82rem" data-spec-id="2.4.1">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">2.4.1</span>Rules Table <span class="source-badge source-badge-config">CONFIG</span>
+    </caption>
     <thead>
       <tr>
         <th data-sort="metric" style="text-align:left">Metric</th>
@@ -650,7 +664,7 @@ async function loadScrapeQueue() {
 // ── Regime editor ────────────────────────────────────────────────────────────
 async function editRegime(ticker) {
   _regimeTicker = ticker;
-  document.getElementById('regime-editor-title').textContent = 'Regime windows — ' + ticker;
+  document.getElementById('regime-editor-title-text').textContent = 'Regime windows - ' + ticker;
   document.getElementById('rw-error').textContent = '';
   document.getElementById('regime-editor').style.display = '';
   await refreshRegimeTags();
@@ -850,7 +864,7 @@ async function loadCellDetail(ticker, period, metric) {
   _selectedCell = { ticker, period, metric };
   const panel = document.getElementById('cell-detail-panel');
   panel.style.display = '';
-  document.getElementById('cell-detail-header').textContent = ticker + ' · ' + period + ' · ' + metric;
+  document.getElementById('cell-detail-header-text').textContent = ticker + ' · ' + period + ' · ' + metric;
   document.getElementById('cell-detail-rows').innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.8rem">Loading…</p>';
   document.getElementById('cell-actions').innerHTML = '';
   document.getElementById('cell-save-form').style.display = 'none';
@@ -879,6 +893,7 @@ async function loadCellDetail(ticker, period, metric) {
   const editBtn = document.createElement('button');
   editBtn.className = 'btn btn-sm btn-secondary';
   editBtn.textContent = 'Edit Value';
+  editBtn.setAttribute('data-ui-id', '2.3.4');
   editBtn.onclick = function() {
     document.getElementById('cell-save-value').value = d.value != null ? d.value : '';
     document.getElementById('cell-save-form').style.display = '';
@@ -888,12 +903,14 @@ async function loadCellDetail(ticker, period, metric) {
   const gapBtn = document.createElement('button');
   gapBtn.className = 'btn btn-sm btn-secondary';
   gapBtn.textContent = 'Mark Gap';
+  gapBtn.setAttribute('data-ui-id', '2.3.5');
   gapBtn.onclick = function() { submitMarkGap(); };
   actEl.appendChild(gapBtn);
 
   const reexBtn = document.createElement('button');
   reexBtn.className = 'btn btn-sm btn-secondary';
   reexBtn.textContent = 'Re-extract';
+  reexBtn.setAttribute('data-ui-id', '2.3.6');
   reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
   actEl.appendChild(reexBtn);
 
@@ -1157,5 +1174,3 @@ async function saveMetricRule(metric) {
 }
 </script>
 {% endblock %}
-
-
