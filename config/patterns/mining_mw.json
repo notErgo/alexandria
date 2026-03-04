@@ -1,0 +1,7 @@
+{
+  "metric": "mining_mw",
+  "valid_range": [0, 10000],
+  "unit": "MW",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

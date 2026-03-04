@@ -1,0 +1,7 @@
+{
+  "metric": "sold_btc",
+  "valid_range": [0, 5000],
+  "unit": "BTC",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

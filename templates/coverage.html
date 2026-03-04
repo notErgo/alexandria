@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Coverage Dashboard{% endblock %}
+
+{% block content %}
+<div style="margin-top:1.25rem">
+  <h2 style="margin-bottom:0.75rem">Coverage Dashboard</h2>
+
+  <!-- Summary strip — labels carry info bubbles; title= attrs removed in favour of .info-bubble -->
+  <div id="summary-strip" class="summary-strip">
+    <div class="summary-box">
+      <div class="summary-label">Downloaded Reports<span class="info-bubble" data-tip="Total reports that have been fetched and stored in the database — PDFs, HTMLs, and press releases.">?</span></div>
+      <div id="stat-reports" class="summary-value">—</div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-label">Analyzed by Model<span class="info-bubble" data-tip="Reports that have been processed by the LLM + regex extraction pipeline. Use the Operations page to run analysis on any that are still pending.">?</span></div>
+      <div id="stat-extracted" class="summary-value">—</div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-label">Clean Data Points<span class="info-bubble" data-tip="Individual metric values (e.g. BTC produced, hashrate) that have been accepted into the clean dataset — either auto-accepted when LLM and regex agreed, or manually approved in the Review Queue.">?</span></div>
+      <div id="stat-dp" class="summary-value">—</div>
+    </div>
+    <div class="summary-box" style="cursor:pointer" onclick="window.location.href='/review?status=PENDING'" title="Open Review Queue filtered to pending items">
+      <div class="summary-label">Awaiting Review<span class="info-bubble" data-tip="Extracted values where the LLM and regex pipeline disagreed. Click to open the Review Queue filtered to pending items.">?</span></div>
+      <div id="stat-review" class="summary-value" style="color:var(--theme-highlight)">—</div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-label">Files on Disk<span class="info-bubble" data-tip="Total files discovered in the local archive folder (Miner Monthly/). Run 'Scan Archive Folder' on the Operations page to refresh this count.">?</span></div>
+      <div id="stat-manifest" class="summary-value">—</div>
+    </div>
+    <div class="summary-box">
+      <div class="summary-label">Companies — No Data<span class="info-bubble" data-tip="Companies that have zero accepted data points. These appear as all-grey rows in the grid below, making coverage gaps visible at a glance.">?</span></div>
+      <div id="stat-zero" class="summary-value">—</div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div id="coverage-legend" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:0.8rem;align-items:center">
+    <span style="color:var(--theme-text-muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.4px">Legend:</span>
+    <span><span class="legend-dot cell-accepted"></span> Clean data<span class="info-bubble tip-below" data-tip="Data accepted into the clean dataset. The model ran and results were confirmed (auto or manually).">?</span></span>
+    <span><span class="legend-dot cell-in-review"></span> Awaiting review<span class="info-bubble tip-below" data-tip="The model ran but LLM and regex disagreed. An analyst must approve the result in the Review Queue.">?</span></span>
+    <span><span class="legend-dot cell-pending-extract"></span> Not yet analyzed<span class="info-bubble tip-below" data-tip="Report is downloaded and stored, but has not yet been sent through the extraction model. Go to Operations → Run Analysis.">?</span></span>
+    <span><span class="legend-dot cell-pending-ingest"></span> Found, not downloaded<span class="info-bubble tip-below" data-tip="A file was discovered in the archive folder but its text has not been stored yet. Run 'Scan Archive Folder' then trigger ingest.">?</span></span>
+    <span><span class="legend-dot cell-legacy"></span> Undated file<span class="info-bubble tip-below" data-tip="File has no date in its filename. Go to Operations → Undated Archive Files and assign a reporting month before it can be processed.">?</span></span>
+    <span><span class="legend-dot cell-no-source"></span> No file found<span class="info-bubble tip-below" data-tip="No archive file or press release has been found for this company and month.">?</span></span>
+  </div>
+
+  <!-- Grid -->
+  <div id="coverage-grid-wrap">
+    <div id="coverage-grid-loading" style="color:var(--theme-text-secondary)">Loading coverage grid...</div>
+    <div id="coverage-grid" class="coverage-grid"></div>
+  </div>
+
+  <!-- Cell detail panel -->
+  <div id="cell-detail-panel" class="cell-detail-panel hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <strong id="cell-detail-title">Cell Detail</strong>
+      <button class="btn btn-secondary btn-sm" id="btn-close-detail">Close</button>
+    </div>
+    <div id="cell-detail-content"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/coverage.js"></script>
+{% endblock %}

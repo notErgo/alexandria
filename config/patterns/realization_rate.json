@@ -1,0 +1,7 @@
+{
+  "metric": "realization_rate",
+  "valid_range": [0, 1],
+  "unit": "ratio",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

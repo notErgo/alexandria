@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Miner Data{% endblock %} — Hermeneutic</title>
+  {% block head %}{% endblock %}
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .nav-badge {
+      display: inline-block;
+      background: var(--theme-danger, #ef4444);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 8px;
+      vertical-align: middle;
+      margin-left: 3px;
+      position: relative;
+      top: -1px;
+    }
+  </style>
+  {% block styles %}{% endblock %}
+  <script>
+    // Restore saved theme
+    (function(){
+      const t = localStorage.getItem('hermeneutic-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+<nav>
+  <span class="brand">⛏ Miner Data</span>
+  <a href="/operations">Operations</a>
+  <a href="/coverage">Coverage</a>
+  <a href="/review">Review Queue <span id="nav-review-badge" class="nav-badge" style="display:none"></span></a>
+  <a href="/miner-data">Miner Data</a>
+  <a href="/">Data Explorer</a>
+  <a href="/diagnostics">Diagnostics</a>
+  <a href="/patterns">Patterns</a>
+  <a href="/dashboard">Dashboard</a>
+  <button class="btn btn-secondary btn-sm" onclick="toggleTheme()" style="margin-left:auto">Toggle Theme</button>
+</nav>
+
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+
+<div id="toast" class="toast hide"></div>
+
+<script>
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('hermeneutic-theme', next);
+}
+
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = isError ? 'var(--theme-danger)' : 'var(--theme-success)';
+  el.classList.remove('hide');
+  setTimeout(() => el.classList.add('hide'), 3000);
+}
+
+// Returns an HTML string for a standardised info bubble icon.
+// Usage (JS): el.innerHTML = 'Label' + infoBubble('Explanation text here.');
+function infoBubble(tip, extra) {
+  return '<span class="info-bubble' + (extra ? ' ' + extra : '') + '" tabindex="0" data-tip="' + escapeAttr(tip) + '">?</span>';
+}
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+// Safe for HTML attribute values — also escapes " and ' so the value
+// cannot break out of a quoted attribute (Anti-pattern #26).
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Standard Hermeneutic sortable table utility.
+// Mark <th data-sort="key"> to make a column sortable.
+// Add data-sort-type="num" for numeric columns (defaults desc on first click).
+// Call once after the table is in the DOM; wires header clicks only —
+// safe to call before tbody rows exist.
+function makeSortable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const state = { key: null, dir: 1 };
+  table.querySelectorAll('thead th[data-sort]').forEach(function(th) {
+    th.classList.add('sortable-th');
+    th.addEventListener('click', function() {
+      const key = th.getAttribute('data-sort');
+      const isNum = th.getAttribute('data-sort-type') === 'num';
+      if (state.key === key) {
+        state.dir *= -1;
+      } else {
+        state.key = key;
+        state.dir = isNum ? -1 : 1;  // numerics default desc, strings default asc
+      }
+      table.querySelectorAll('thead th[data-sort]').forEach(function(h) {
+        h.classList.remove('sort-active', 'sort-asc', 'sort-desc');
+      });
+      th.classList.add('sort-active', state.dir === 1 ? 'sort-asc' : 'sort-desc');
+      const colIdx = Array.from(th.parentElement.children).indexOf(th);
+      Array.from(tbody.querySelectorAll('tr'))
+        .sort(function(a, b) {
+          const av = a.cells[colIdx] ? a.cells[colIdx].textContent.trim() : '';
+          const bv = b.cells[colIdx] ? b.cells[colIdx].textContent.trim() : '';
+          if (isNum) {
+            return ((parseFloat(av.replace(/,/g, '')) || 0) -
+                    (parseFloat(bv.replace(/,/g, '')) || 0)) * state.dir;
+          }
+          return av.localeCompare(bv) * state.dir;
+        })
+        .forEach(function(r) { tbody.appendChild(r); });
+    });
+  });
+}
+</script>
+
+{% block scripts %}{% endblock %}
+
+<script>
+// ── Pending review badge — fetches count every 60s (non-critical, silent on error) ──
+(function() {
+  function refreshReviewBadge() {
+    fetch('/api/coverage/summary')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.success) return;
+        var n = data.data.pending_review || 0;
+        var el = document.getElementById('nav-review-badge');
+        if (!el) return;
+        if (n > 0) {
+          el.textContent = n;
+          el.style.display = '';
+        } else {
+          el.style.display = 'none';
+        }
+      })
+      .catch(function() {});
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    refreshReviewBadge();
+    setInterval(refreshReviewBadge, 60000);
+  });
+})();
+</script>
+</body>
+</html>

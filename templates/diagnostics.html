@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics{% endblock %}
+
+{% block styles %}
+<style>
+.diag-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+.chart-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+.chart-panel h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+}
+.chart-panel .subtitle {
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  margin: -0.5rem 0 0.75rem 0;
+}
+.echarts-box { width: 100%; }
+#loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--theme-text-muted);
+  font-size: 0.9rem;
+}
+/* Company status table */
+.company-status-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.company-status-table th {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--theme-text-muted); font-weight: 600; padding: 4px 8px;
+  border-bottom: 1px solid var(--theme-border); text-align: left;
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.company-status-table th:hover { color: var(--theme-accent); }
+.company-status-table th.sort-active { color: var(--theme-accent); }
+.company-status-table th.sort-active.sort-asc::after  { content: ' ↑'; opacity: 0.8; font-size: 0.7em; }
+.company-status-table th.sort-active.sort-desc::after { content: ' ↓'; opacity: 0.8; font-size: 0.7em; }
+.company-status-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-primary); vertical-align: middle;
+}
+.company-status-table tr:last-child td { border-bottom: none; }
+.company-status-table tr:hover td { background: rgba(255,255,255,0.03); }
+.state-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 10px;
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+}
+.state-ok              { background: rgba(34,197,94,0.15);  color: #22c55e; }
+.state-skip            { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.state-index-no-data   { background: rgba(249,115,22,0.15); color: #f97316; }
+.state-ingested-no-extraction { background: rgba(239,68,68,0.15); color: #ef4444; }
+.state-no-data         { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.tier-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 0.70rem; background: rgba(59,130,246,0.12); color: #60a5fa;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Extraction Diagnostics</h1>
+
+<div id="loading">Loading diagnostics…</div>
+
+<div id="diag-content" hidden>
+
+  <!-- Row 0: Company status table — full width -->
+  <div class="chart-panel" style="margin-top:1.25rem">
+    <h2>Company Status</h2>
+    <p class="subtitle">Coverage state for all 13 companies. Shows why companies have no data.</p>
+    <table class="company-status-table" id="company-status-table">
+      <thead>
+        <tr>
+          <th data-sort="ticker">Ticker</th>
+          <th data-sort="name">Company</th>
+          <th data-sort="tier" data-sort-type="num">Tier</th>
+          <th data-sort="data_state">Status</th>
+          <th data-sort="prod_months" data-sort-type="num">Prod Months</th>
+          <th data-sort="report_count" data-sort-type="num">Reports</th>
+          <th data-sort="first_period">First Period</th>
+          <th data-sort="last_period">Last Period</th>
+          <th data-sort="avg_confidence" data-sort-type="num">Avg Conf</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody id="company-status-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Row 1: Coverage heatmap — full width -->
+  <div class="chart-panel" style="margin-top:1.25rem">
+    <h2>Metric Coverage</h2>
+    <p class="subtitle">Number of periods with extracted data per ticker × metric. Dark = more periods.</p>
+    <div id="chart-coverage" class="echarts-box" style="height:320px"></div>
+  </div>
+
+  <!-- Row 2: Pattern usage + Confidence distribution -->
+  <div class="diag-grid-2">
+    <div class="chart-panel">
+      <h2>Pattern Usage</h2>
+      <p class="subtitle">How many extractions each regex pattern produced. Hover for avg confidence.</p>
+      <div id="chart-patterns" class="echarts-box" style="height:320px"></div>
+    </div>
+    <div class="chart-panel">
+      <h2>Confidence Distribution</h2>
+      <p class="subtitle">Accepted extractions (≥ 0.75) vs. pending review (&lt; 0.75).</p>
+      <div id="chart-confidence" class="echarts-box" style="height:320px"></div>
+    </div>
+  </div>
+
+  <!-- Row 3: Keyword frequency — full width -->
+  <div class="chart-panel" style="margin-top:1.25rem">
+    <h2>Keyword Frequency in Source Snippets</h2>
+    <p class="subtitle">Most common words adjacent to extracted values across all source documents. Stopwords removed.</p>
+    <div style="margin-bottom:0.75rem">
+      <input id="keyword-filter" type="text" placeholder="Filter keywords…"
+        style="background:var(--theme-bg-input);border:1px solid var(--theme-border);
+               border-radius:4px;padding:4px 10px;color:var(--theme-text-primary);
+               font-size:0.82rem;width:220px;outline:none;">
+      <span id="keyword-count" style="margin-left:0.6rem;font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="chart-keywords" class="echarts-box" style="height:340px"></div>
+  </div>
+
+</div>
+
+<div id="error-banner" class="error-banner" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+<script>
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str == null ? '' : String(str);
+  return d.innerHTML;
+}
+
+const STATE_LABEL = {
+  ok:                     'Has Data',
+  skip:                   'Skipped',
+  index_no_data:          'JS SPA — No Scraper',
+  ingested_no_extraction: 'Ingested, No Extractions',
+  no_data:                'No Data',
+};
+const STATE_CLASS = {
+  ok:                     'state-ok',
+  skip:                   'state-skip',
+  index_no_data:          'state-index-no-data',
+  ingested_no_extraction: 'state-ingested-no-extraction',
+  no_data:                'state-no-data',
+};
+
+function renderCompanyStatus(data) {
+  const tbody = document.getElementById('company-status-tbody');
+  const rows = data.company_status || [];
+  tbody.innerHTML = rows.map(c => {
+    const stateLabel = STATE_LABEL[c.data_state] || c.data_state;
+    const stateClass = STATE_CLASS[c.data_state] || 'state-no-data';
+    const conf = c.avg_confidence != null ? c.avg_confidence.toFixed(3) : '—';
+    const first = c.first_period ? c.first_period.slice(0, 7) : '—';
+    const last  = c.last_period  ? c.last_period.slice(0, 7)  : '—';
+    const note  = c.skip_reason
+      ? escapeHtml(c.skip_reason)
+      : (c.scrape_mode === 'index' ? 'IR page requires JS — no HTML scraper yet' : '');
+    return `<tr>
+      <td><strong>${escapeHtml(c.ticker)}</strong></td>
+      <td>${escapeHtml(c.name)}</td>
+      <td><span class="tier-badge">T${escapeHtml(String(c.tier))}</span></td>
+      <td><span class="state-badge ${stateClass}">${escapeHtml(stateLabel)}</span></td>
+      <td>${c.prod_months > 0 ? c.prod_months : '—'}</td>
+      <td>${c.report_count > 0 ? c.report_count : '—'}</td>
+      <td>${escapeHtml(first)}</td>
+      <td>${escapeHtml(last)}</td>
+      <td>${escapeHtml(conf)}</td>
+      <td style="color:var(--theme-text-muted);font-size:0.78rem">${note}</td>
+    </tr>`;
+  }).join('');
+  // Wire sortable headers
+  _makeTableSortable('company-status-table');
+}
+
+function _makeTableSortable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const state = { key: null, dir: 1 };
+  table.querySelectorAll('thead th[data-sort]').forEach(function(th) {
+    th.addEventListener('click', function() {
+      const key = th.getAttribute('data-sort');
+      const isNum = th.getAttribute('data-sort-type') === 'num';
+      state.dir = (state.key === key) ? state.dir * -1 : (isNum ? -1 : 1);
+      state.key = key;
+      table.querySelectorAll('thead th[data-sort]').forEach(h =>
+        h.classList.remove('sort-active', 'sort-asc', 'sort-desc'));
+      th.classList.add('sort-active', state.dir === 1 ? 'sort-asc' : 'sort-desc');
+      const colIdx = Array.from(th.parentElement.children).indexOf(th);
+      Array.from(tbody.querySelectorAll('tr'))
+        .sort(function(a, b) {
+          const av = a.cells[colIdx] ? a.cells[colIdx].textContent.trim() : '';
+          const bv = b.cells[colIdx] ? b.cells[colIdx].textContent.trim() : '';
+          if (isNum) return ((parseFloat(av.replace(/,/g,''))||0) - (parseFloat(bv.replace(/,/g,''))||0)) * state.dir;
+          return av.localeCompare(bv) * state.dir;
+        })
+        .forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+
+// Metric label → color band for pattern chart
+const METRIC_COLORS = {
+  'production_btc': '#3b82f6',
+  'hodl_btc':       '#22c55e',
+  'sold_btc':'#f97316',
+  'hashrate_eh':    '#a855f7',
+  'realization_rate':'#ec4899',
+};
+
+// Confidence bucket → color: accepted buckets in accent blue, review in orange
+function bucketColor(b) {
+  return b.source === 'review' ? '#f97316' : '#3b82f6';
+}
+
+function renderCoverage(data) {
+  const tickers  = data.all_tickers;
+  const metrics  = data.all_metrics;
+  const maxVal   = Math.max(...data.coverage.map(d => d.count), 1);
+
+  const seriesData = data.coverage.map(d => [
+    metrics.indexOf(d.metric),
+    tickers.indexOf(d.ticker),
+    d.count,
+  ]);
+
+  const chart = echarts.init(document.getElementById('chart-coverage'), null, {renderer:'svg'});
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      formatter: p => `${tickers[p.value[1]]} · ${metrics[p.value[0]]}<br/><b>${p.value[2]} periods</b>`,
+    },
+    grid: { top: 10, bottom: 60, left: 55, right: 20 },
+    xAxis: {
+      type: 'category', data: metrics, splitArea: { show: true },
+      axisLabel: { color: '#a0a0a0', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+    },
+    yAxis: {
+      type: 'category', data: tickers, splitArea: { show: true },
+      axisLabel: { color: '#a0a0a0', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+    },
+    visualMap: {
+      min: 0, max: maxVal, show: false,
+      inRange: { color: ['#1e293b', '#1d4ed8'] },
+    },
+    series: [{
+      type: 'heatmap', data: seriesData,
+      label: { show: true, formatter: p => p.value[2] || '', color: '#e8e8e8', fontSize: 11 },
+      emphasis: { itemStyle: { shadowBlur: 6, shadowColor: 'rgba(59,130,246,0.5)' } },
+    }],
+  });
+  return chart;
+}
+
+function renderPatterns(data) {
+  // Sort: group by metric, within metric sort by count desc
+  const rows = [...data.pattern_usage].sort((a, b) =>
+    a.metric.localeCompare(b.metric) || b.count - a.count
+  );
+  const labels  = rows.map(r => r.extraction_method);
+  const counts  = rows.map(r => r.count);
+  const colors  = rows.map(r => METRIC_COLORS[r.metric] || '#6b7280');
+  const confs   = rows.map(r => r.avg_conf);
+
+  const chart = echarts.init(document.getElementById('chart-patterns'), null, {renderer:'svg'});
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      formatter: params => {
+        const i = params[0].dataIndex;
+        return `<b>${labels[i]}</b><br/>` +
+               `Metric: ${rows[i].metric}<br/>` +
+               `Extractions: <b>${counts[i]}</b><br/>` +
+               `Avg confidence: <b>${confs[i].toFixed(3)}</b>`;
+      },
+    },
+    grid: { top: 10, bottom: 10, left: 110, right: 30, containLabel: false },
+    xAxis: {
+      type: 'value',
+      axisLabel: { color: '#a0a0a0', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+    },
+    yAxis: {
+      type: 'category', data: labels,
+      axisLabel: { color: '#a0a0a0', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+    },
+    series: [{
+      type: 'bar', data: counts.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
+      barMaxWidth: 28,
+      label: { show: true, position: 'right', color: '#a0a0a0', fontSize: 10,
+               formatter: p => counts[p.dataIndex] },
+    }],
+  });
+  return chart;
+}
+
+function renderConfidence(data) {
+  const buckets = data.confidence_buckets;
+  const labels  = buckets.map(b => b.bucket);
+  const counts  = buckets.map(b => b.count);
+  const colors  = buckets.map(b => bucketColor(b));
+
+  const chart = echarts.init(document.getElementById('chart-confidence'), null, {renderer:'svg'});
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      formatter: params => {
+        const i = params[0].dataIndex;
+        const src = buckets[i].source === 'review' ? 'pending review' : 'accepted';
+        return `<b>${labels[i]}</b><br/>${counts[i]} extractions (${src})`;
+      },
+    },
+    grid: { top: 10, bottom: 60, left: 40, right: 20 },
+    xAxis: {
+      type: 'category', data: labels,
+      axisLabel: { color: '#a0a0a0', fontSize: 10, rotate: 30 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#a0a0a0', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+    },
+    series: [{
+      type: 'bar', data: counts.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
+      barMaxWidth: 40,
+      label: { show: true, position: 'top', color: '#a0a0a0', fontSize: 10 },
+    }],
+  });
+  return chart;
+}
+
+let _keywordChart = null;
+let _allKeywords = [];
+
+function renderKeywords(keywords) {
+  // Horizontal bar, sorted ascending so highest is at top
+  const sorted = [...keywords].sort((a, b) => a.count - b.count);
+  const words  = sorted.map(k => k.word);
+  const counts = sorted.map(k => k.count);
+
+  const el = document.getElementById('chart-keywords');
+  if (!_keywordChart) {
+    _keywordChart = echarts.init(el, null, {renderer:'svg'});
+    _charts.push(_keywordChart);
+  }
+  // Adjust height: 24px per bar, min 200px, max 600px
+  const h = Math.min(600, Math.max(200, sorted.length * 24));
+  el.style.height = h + 'px';
+  _keywordChart.resize();
+
+  _keywordChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' },
+      formatter: params => `<b>${words[params[0].dataIndex]}</b>: ${counts[params[0].dataIndex]} occurrences`,
+    },
+    grid: { top: 10, bottom: 10, left: 110, right: 40, containLabel: false },
+    xAxis: {
+      type: 'value',
+      axisLabel: { color: '#a0a0a0', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } },
+    },
+    yAxis: {
+      type: 'category', data: words,
+      axisLabel: { color: '#a0a0a0', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+    },
+    series: [{
+      type: 'bar', data: counts,
+      itemStyle: { color: '#3b82f6' },
+      barMaxWidth: 20,
+      label: { show: true, position: 'right', color: '#a0a0a0', fontSize: 10 },
+    }],
+  }, true);  // true = merge replace
+}
+
+function _applyKeywordFilter() {
+  const q = document.getElementById('keyword-filter').value.trim().toLowerCase();
+  const filtered = q ? _allKeywords.filter(k => k.word.includes(q)) : _allKeywords;
+  document.getElementById('keyword-count').textContent =
+    filtered.length + ' / ' + _allKeywords.length + ' words';
+  renderKeywords(filtered);
+}
+
+// Resize all charts on window resize
+const _charts = [];
+window.addEventListener('resize', () => _charts.forEach(c => c.resize()));
+
+async function loadDiagnostics() {
+  const banner = document.getElementById('error-banner');
+  try {
+    const resp = await fetch('/api/diagnostics');
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const { data } = await resp.json();
+
+    document.getElementById('loading').hidden = true;
+    document.getElementById('diag-content').hidden = false;
+
+    renderCompanyStatus(data);
+    _charts.push(renderCoverage(data));
+    _charts.push(renderPatterns(data));
+    _charts.push(renderConfidence(data));
+
+    _allKeywords = data.keywords || [];
+    document.getElementById('keyword-count').textContent =
+      _allKeywords.length + ' / ' + _allKeywords.length + ' words';
+    renderKeywords(_allKeywords);
+
+    // Wire filter input once, after data is available (Anti-pattern #27: listener outside re-render)
+    document.getElementById('keyword-filter').addEventListener('input', _applyKeywordFilter);
+  } catch (e) {
+    document.getElementById('loading').hidden = true;
+    banner.textContent = 'Failed to load diagnostics: ' + e.message;
+    banner.hidden = false;
+  }
+}
+
+loadDiagnostics();
+</script>
+{% endblock %}

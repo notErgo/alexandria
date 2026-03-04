@@ -1,0 +1,7 @@
+{
+  "metric": "hpc_revenue_usd",
+  "valid_range": [0, 10000000000],
+  "unit": "USD",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

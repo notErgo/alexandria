@@ -1,0 +1,754 @@
+{% extends "base.html" %}
+{% block title %}Review Queue{% endblock %}
+
+{% block styles %}
+<style>
+.review-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+  align-items: start;
+}
+.review-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+.panel-header {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.badge-pending   { background: rgba(249,115,22,0.15); color: #f97316; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-approved  { background: rgba(34,197,94,0.15);  color: #22c55e; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-rejected  { background: rgba(239,68,68,0.15);  color: #ef4444; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-agree     { background: rgba(59,130,246,0.15); color: #3b82f6; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-disagree  { background: rgba(249,115,22,0.15); color: #f97316; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-regex-only { background: rgba(168,85,247,0.15); color: #a855f7; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+.badge-llm-only   { background: rgba(59,130,246,0.15); color: #60a5fa; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+
+.review-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.review-table th {
+  background: var(--theme-bg-tertiary);
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+}
+.review-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+  vertical-align: top;
+  cursor: pointer;
+}
+.review-table tr.selected td { background: rgba(59,130,246,0.08); }
+.review-table tr:hover td { background: rgba(255,255,255,0.03); }
+/* Don't trigger row hover style on checkbox column */
+.review-table td:first-child { cursor: default; }
+
+.filter-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; flex-wrap: wrap; }
+.filter-row label { font-size: 0.8rem; color: var(--theme-text-muted); }
+.filter-row select, .filter-row input {
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+/* Bulk actions row */
+.bulk-actions-row {
+  display: none;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 0.5rem;
+  background: rgba(59,130,246,0.07);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 5px;
+  font-size: 0.82rem;
+}
+
+/* Document panel */
+.doc-pre {
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  max-height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--theme-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: text;
+}
+
+.value-row {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+  flex-wrap: wrap;
+}
+.value-card {
+  flex: 1;
+  min-width: 120px;
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+.value-card .vc-label { font-size: 0.72rem; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.value-card .vc-value { font-size: 1.1rem; font-weight: 600; color: var(--theme-text-primary); margin-top: 2px; }
+.value-card.llm-card  { border-color: rgba(59,130,246,0.4); }
+.value-card.regex-card { border-color: rgba(249,115,22,0.4); }
+
+.action-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; align-items: center; }
+.action-row input[type=number] {
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  width: 100px;
+  font-size: 0.82rem;
+}
+.action-row input[type=text] {
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  width: 200px;
+  font-size: 0.82rem;
+}
+
+.reextract-section {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+}
+.reextract-section .hint { font-size: 0.78rem; color: var(--theme-text-muted); margin-bottom: 0.5rem; }
+.reextract-result { margin-top: 0.5rem; font-size: 0.82rem; color: var(--theme-text-primary); }
+
+.empty-state { text-align: center; padding: 2rem; color: var(--theme-text-muted); font-size: 0.88rem; }
+#doc-placeholder { text-align: center; padding: 2rem; color: var(--theme-text-muted); font-size: 0.85rem; }
+
+.kbd-hint {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  margin-left: auto;
+  letter-spacing: 0;
+}
+.kbd-hint kbd {
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 style="font-size:1.3rem;font-weight:600;margin:1rem 0 0.25rem">Review Queue</h1>
+<p style="color:var(--theme-text-muted);font-size:0.85rem;margin:0">
+  Extraction items requiring analyst review. Click a row to view the full document.
+  <span class="kbd-hint"><kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> approve · <kbd>R</kbd> focus reject</span>
+</p>
+
+<div class="review-layout">
+  <!-- Left: item list -->
+  <div class="review-panel">
+    <div class="panel-header">
+      Pending Items
+      <span id="total-badge" style="font-size:0.75rem;background:var(--theme-bg-tertiary);padding:2px 8px;border-radius:10px;color:var(--theme-text-secondary)">—</span>
+    </div>
+
+    <div class="filter-row">
+      <label>Status:</label>
+      <select id="status-filter">
+        <option value="PENDING">Pending</option>
+        <option value="">All</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+      </select>
+      <label>Ticker:</label>
+      <select id="ticker-filter">
+        <option value="">All</option>
+      </select>
+      <label>Period:</label>
+      <input type="month" id="period-filter" style="width:130px">
+    </div>
+    <div class="filter-row">
+      <label>Metric:</label>
+      <select id="metric-filter">
+        <option value="">All</option>
+      </select>
+    </div>
+
+    <!-- Bulk actions (shown when ≥1 checkbox checked) -->
+    <div class="bulk-actions-row" id="bulk-actions-row">
+      <span id="selected-count" style="font-weight:600"></span>
+      <button class="btn btn-primary btn-sm" id="btn-bulk-approve">Approve Selected (regex value)</button>
+      <button class="btn btn-secondary btn-sm" id="btn-deselect-all">Deselect All</button>
+      <span id="bulk-progress" style="color:var(--theme-text-muted)"></span>
+    </div>
+
+    <table class="review-table" id="review-table">
+      <thead>
+        <tr>
+          <th style="width:28px"><input type="checkbox" id="select-all" title="Select all visible items"></th>
+          <th>Ticker</th>
+          <th>Period</th>
+          <th>Metric</th>
+          <th>Regex Val</th>
+          <th>LLM Val</th>
+          <th>Agreement</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="review-tbody">
+        <tr><td colspan="8" class="empty-state">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Right: document viewer -->
+  <div class="review-panel" id="doc-panel">
+    <div class="panel-header" id="doc-panel-header">Document Viewer</div>
+    <div id="doc-placeholder">Select a row to view the full document.</div>
+    <div id="doc-content" style="display:none">
+      <div class="value-row" id="value-row"></div>
+      <div id="doc-text-wrapper">
+        <div class="doc-pre" id="doc-text"></div>
+      </div>
+
+      <div class="reextract-section">
+        <div class="hint">Select text in the document above, then click "Re-extract from selection."</div>
+        <button class="btn btn-secondary btn-sm" id="btn-reextract" disabled>Re-extract from selection</button>
+        <div id="reextract-result" class="reextract-result" style="display:none"></div>
+      </div>
+
+      <div class="action-row">
+        <input type="number" id="corrected-value" placeholder="Override value" step="any">
+        <input type="text" id="reject-note" placeholder="Rejection note (required to reject)">
+        <button class="btn btn-primary btn-sm" id="btn-approve">Approve</button>
+        <button class="btn btn-danger btn-sm" id="btn-reject">Reject</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  'use strict';
+
+  let _currentItemId = null;
+  let _currentItems = [];
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function statusBadge(s) {
+    const map = {
+      'PENDING':    'badge-pending',
+      'APPROVED':   'badge-approved',
+      'REJECTED':   'badge-rejected',
+      'EDITED':     'badge-approved',
+    };
+    return `<span class="${map[s] || 'badge-pending'}">${escapeHtml(s)}</span>`;
+  }
+
+  function agreementBadge(s) {
+    const map = {
+      'REVIEW_QUEUE': ['badge-disagree', 'Disagree'],
+      'LLM_ONLY':     ['badge-llm-only', 'LLM only'],
+      'REGEX_ONLY':   ['badge-regex-only', 'Regex only'],
+      'AUTO_ACCEPT':  ['badge-agree', 'Agree'],
+    };
+    const [cls, label] = map[s] || ['badge-pending', s || '—'];
+    return `<span class="${cls}">${label}</span>`;
+  }
+
+  function fmtNum(v) {
+    if (v == null) return '—';
+    return Number(v).toLocaleString(undefined, {maximumFractionDigits: 4});
+  }
+
+  // ── Load filters from /api/metrics and /api/companies ─────────────────────
+
+  function loadMetricOptions() {
+    return fetch('/api/metrics')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.success) return;
+        const sel = document.getElementById('metric-filter');
+        sel.innerHTML = '<option value="">All</option>';
+        data.data.metrics.forEach(function(m) {
+          const opt = document.createElement('option');
+          opt.value = m.key;
+          opt.textContent = m.label + (m.unit ? ' (' + m.unit + ')' : '');
+          sel.appendChild(opt);
+        });
+        // Reapply URL param if present
+        const urlMetric = new URLSearchParams(window.location.search).get('metric');
+        if (urlMetric) sel.value = urlMetric;
+      })
+      .catch(function() {});
+  }
+
+  function loadCompanyOptions() {
+    return fetch('/api/companies')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.success) return;
+        const sel = document.getElementById('ticker-filter');
+        sel.innerHTML = '<option value="">All</option>';
+        data.data.forEach(function(c) {
+          const opt = document.createElement('option');
+          opt.value = c.ticker;
+          opt.textContent = c.ticker;
+          sel.appendChild(opt);
+        });
+        // Reapply URL param if present
+        const urlTicker = new URLSearchParams(window.location.search).get('ticker');
+        if (urlTicker) sel.value = urlTicker;
+      })
+      .catch(function() {});
+  }
+
+  // ── Load list ──────────────────────────────────────────────────────────────
+
+  async function loadItems() {
+    const status = document.getElementById('status-filter').value;
+    const metric = document.getElementById('metric-filter').value;
+    const ticker = document.getElementById('ticker-filter').value;
+    const period = document.getElementById('period-filter').value; // YYYY-MM format
+
+    let url = '/api/review?limit=200';
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Unknown error');
+
+      let items = data.data.items;
+
+      // Client-side filters
+      if (metric) items = items.filter(i => i.metric === metric);
+      if (ticker) items = items.filter(i => i.ticker === ticker);
+      if (period) items = items.filter(i => i.period && i.period.slice(0, 7) === period);
+
+      _currentItems = items;
+      document.getElementById('total-badge').textContent = items.length;
+      renderTable(items);
+      updateBulkActions();
+    } catch (e) {
+      document.getElementById('review-tbody').innerHTML =
+        `<tr><td colspan="8" class="empty-state" style="color:var(--theme-danger)">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  function renderTable(items) {
+    const tbody = document.getElementById('review-tbody');
+    // Reset select-all
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No items match the current filter.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(item => `
+      <tr data-id="${item.id}" class="${_currentItemId === item.id ? 'selected' : ''}">
+        <td onclick="event.stopPropagation()"><input type="checkbox" data-item-id="${item.id}" title="Select for bulk approve"></td>
+        <td>${escapeHtml(item.ticker)}</td>
+        <td>${escapeHtml(item.period ? item.period.slice(0,7) : '')}</td>
+        <td>${escapeHtml(item.metric)}</td>
+        <td>${fmtNum(item.regex_value)}</td>
+        <td>${fmtNum(item.llm_value)}</td>
+        <td>${agreementBadge(item.agreement_status)}</td>
+        <td>${statusBadge(item.status)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Keyboard navigation ────────────────────────────────────────────────────
+
+  function getCurrentIndex() {
+    return _currentItems.findIndex(i => i.id === _currentItemId);
+  }
+
+  function navigateItem(delta) {
+    const idx = getCurrentIndex();
+    const newIdx = idx + delta;
+    if (newIdx >= 0 && newIdx < _currentItems.length) {
+      const item = _currentItems[newIdx];
+      loadDocument(item.id);
+      const tr = document.querySelector(`#review-tbody tr[data-id="${item.id}"]`);
+      if (tr) tr.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // ── Load document ──────────────────────────────────────────────────────────
+
+  async function loadDocument(itemId) {
+    _currentItemId = itemId;
+
+    // Highlight selected row
+    document.querySelectorAll('#review-tbody tr').forEach(r => {
+      r.classList.toggle('selected', parseInt(r.dataset.id) === itemId);
+    });
+
+    document.getElementById('doc-placeholder').style.display = 'none';
+    document.getElementById('doc-content').style.display = 'block';
+    document.getElementById('doc-text').textContent = 'Loading…';
+    document.getElementById('reextract-result').style.display = 'none';
+    document.getElementById('corrected-value').value = '';
+    document.getElementById('reject-note').value = '';
+
+    const item = _currentItems.find(i => i.id === itemId);
+
+    // Update panel header with ticker/period/metric context + company link
+    const header = document.getElementById('doc-panel-header');
+    if (item) {
+      const companyHref = `/company/${encodeURIComponent(item.ticker)}?back=/review`;
+      header.innerHTML = 'Document Viewer'
+        + ` — <a href="${companyHref}" style="color:var(--theme-accent);font-weight:600" title="Open company chart (back-link returns here)">${escapeHtml(item.ticker)}</a>`
+        + ` · ${escapeHtml(item.period ? item.period.slice(0, 7) : '')}`
+        + ` · ${escapeHtml(item.metric)}`;
+    } else {
+      header.textContent = 'Document Viewer';
+    }
+
+    // Show value comparison
+    const vr = document.getElementById('value-row');
+    vr.innerHTML = `
+      <div class="value-card regex-card">
+        <div class="vc-label">Regex Value</div>
+        <div class="vc-value">${fmtNum(item?.regex_value)}</div>
+      </div>
+      <div class="value-card llm-card">
+        <div class="vc-label">LLM Value</div>
+        <div class="vc-value">${fmtNum(item?.llm_value)}</div>
+      </div>
+      <div class="value-card">
+        <div class="vc-label">Agreement</div>
+        <div class="vc-value" style="font-size:0.85rem">${agreementBadge(item?.agreement_status)}</div>
+      </div>
+    `;
+
+    // Pre-fill corrected value: prefer regex_value; fall back to raw_value for analyst-submitted fills
+    if (item?.regex_value != null) {
+      document.getElementById('corrected-value').value = item.regex_value;
+    } else if (item?.raw_value != null) {
+      document.getElementById('corrected-value').value = item.raw_value;
+    }
+
+    try {
+      const resp = await fetch(`/api/review/${itemId}/document`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Unknown error');
+      document.getElementById('doc-text').textContent = data.data.raw_text || '(no document text)';
+    } catch (e) {
+      document.getElementById('doc-text').textContent = `Error loading document: ${e.message}`;
+    }
+  }
+
+  // ── Re-extract from selection ──────────────────────────────────────────────
+
+  function updateReextractButton() {
+    const sel = window.getSelection();
+    const hasSelection = sel && sel.toString().trim().length > 0;
+    document.getElementById('btn-reextract').disabled = !hasSelection || _currentItemId == null;
+  }
+
+  async function doReextract() {
+    const sel = window.getSelection()?.toString().trim();
+    if (!sel || _currentItemId == null) return;
+
+    const btn = document.getElementById('btn-reextract');
+    btn.disabled = true;
+    btn.textContent = 'Extracting…';
+
+    try {
+      const resp = await fetch(`/api/review/${_currentItemId}/reextract`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({selection: sel}),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Unknown error');
+
+      const candidates = data.data.candidates;
+      const rDiv = document.getElementById('reextract-result');
+      if (candidates.length === 0) {
+        rDiv.textContent = 'No value found in selected text.';
+      } else {
+        rDiv.innerHTML = candidates.map(c =>
+          `<strong>${escapeHtml(c.source)}:</strong> ${fmtNum(c.value)} ${escapeHtml(c.unit || '')} (confidence: ${(c.confidence * 100).toFixed(0)}%)`
+        ).join(' &nbsp;|&nbsp; ');
+        document.getElementById('corrected-value').value = candidates[0].value;
+      }
+      rDiv.style.display = 'block';
+    } catch (e) {
+      const rDiv = document.getElementById('reextract-result');
+      rDiv.textContent = `Re-extract failed: ${e.message}`;
+      rDiv.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Re-extract from selection';
+    }
+  }
+
+  // ── Approve / Reject ───────────────────────────────────────────────────────
+
+  async function doApprove() {
+    if (_currentItemId == null) return;
+    const valRaw = document.getElementById('corrected-value').value.trim();
+    const body = valRaw !== '' ? {value: parseFloat(valRaw)} : {};
+
+    try {
+      const resp = await fetch(`/api/review/${_currentItemId}/approve`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Unknown error');
+      showToast('Approved', false);
+      _currentItemId = null;
+      document.getElementById('doc-panel-header').textContent = 'Document Viewer';
+      document.getElementById('doc-placeholder').style.display = 'block';
+      document.getElementById('doc-content').style.display = 'none';
+      await loadItems();
+    } catch (e) {
+      showToast(`Error: ${e.message}`, true);
+    }
+  }
+
+  async function doReject() {
+    if (_currentItemId == null) return;
+    const note = document.getElementById('reject-note').value.trim();
+    if (!note) {
+      showToast('A rejection note is required', true);
+      document.getElementById('reject-note').focus();
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/review/${_currentItemId}/reject`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({note}),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Unknown error');
+      showToast('Rejected', false);
+      _currentItemId = null;
+      document.getElementById('doc-panel-header').textContent = 'Document Viewer';
+      document.getElementById('doc-placeholder').style.display = 'block';
+      document.getElementById('doc-content').style.display = 'none';
+      await loadItems();
+    } catch (e) {
+      showToast(`Error: ${e.message}`, true);
+    }
+  }
+
+  // ── Bulk approve ───────────────────────────────────────────────────────────
+
+  function getCheckedItems() {
+    return Array.from(document.querySelectorAll('#review-tbody input[type=checkbox]:checked'))
+      .map(cb => {
+        const tr = cb.closest('tr[data-id]');
+        return tr ? _currentItems.find(i => i.id === parseInt(tr.dataset.id)) : null;
+      })
+      .filter(Boolean);
+  }
+
+  function updateBulkActions() {
+    const checked = document.querySelectorAll('#review-tbody input[type=checkbox]:checked');
+    const row = document.getElementById('bulk-actions-row');
+    const countEl = document.getElementById('selected-count');
+    if (checked.length > 0) {
+      row.style.display = 'flex';
+      countEl.textContent = `${checked.length} selected`;
+    } else {
+      row.style.display = 'none';
+    }
+  }
+
+  async function doBulkApprove() {
+    const items = getCheckedItems();
+    if (items.length === 0) return;
+
+    const btn = document.getElementById('btn-bulk-approve');
+    const progress = document.getElementById('bulk-progress');
+    btn.disabled = true;
+    document.getElementById('btn-deselect-all').disabled = true;
+
+    let done = 0;
+    let failed = 0;
+
+    for (const item of items) {
+      progress.textContent = `Approving ${done + failed + 1} / ${items.length}…`;
+      try {
+        const body = item.regex_value != null ? {value: item.regex_value} : {};
+        const resp = await fetch(`/api/review/${item.id}/approve`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error?.message || 'Unknown');
+        done++;
+      } catch (_e) {
+        failed++;
+      }
+    }
+
+    btn.disabled = false;
+    document.getElementById('btn-deselect-all').disabled = false;
+    const msg = failed > 0 ? `${done} approved, ${failed} failed` : `${done} approved`;
+    progress.textContent = msg;
+    showToast(msg, failed > 0);
+
+    // Clear current item if it was bulk-approved
+    if (items.some(i => i.id === _currentItemId)) {
+      _currentItemId = null;
+      document.getElementById('doc-panel-header').textContent = 'Document Viewer';
+      document.getElementById('doc-placeholder').style.display = 'block';
+      document.getElementById('doc-content').style.display = 'none';
+    }
+
+    await loadItems();
+  }
+
+  // ── Wire event listeners ONCE (Anti-pattern #27) ──────────────────────────
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Read URL params and pre-set filters
+    const params = new URLSearchParams(window.location.search);
+    const urlStatus = params.get('status');
+    const urlPeriod = params.get('period'); // YYYY-MM
+    if (urlStatus) document.getElementById('status-filter').value = urlStatus;
+    if (urlPeriod) document.getElementById('period-filter').value = urlPeriod;
+    // ticker and metric applied after dynamic options load
+
+    // Load dynamic dropdown options, then load items
+    Promise.all([loadMetricOptions(), loadCompanyOptions()]).then(function() {
+      loadItems();
+    });
+
+    // Filter changes → reload list
+    document.getElementById('status-filter').addEventListener('change', loadItems);
+    document.getElementById('metric-filter').addEventListener('change', loadItems);
+    document.getElementById('ticker-filter').addEventListener('change', loadItems);
+    document.getElementById('period-filter').addEventListener('change', loadItems);
+
+    // Row click → load document (event delegation on tbody, skip checkbox clicks)
+    document.getElementById('review-tbody').addEventListener('click', function(e) {
+      if (e.target.type === 'checkbox') {
+        // Checkbox clicked — update bulk UI and sync select-all state
+        updateBulkActions();
+        const all = document.querySelectorAll('#review-tbody input[type=checkbox]');
+        const checked = document.querySelectorAll('#review-tbody input[type=checkbox]:checked');
+        const selAll = document.getElementById('select-all');
+        selAll.indeterminate = checked.length > 0 && checked.length < all.length;
+        selAll.checked = all.length > 0 && checked.length === all.length;
+        return;
+      }
+      const tr = e.target.closest('tr[data-id]');
+      if (!tr) return;
+      loadDocument(parseInt(tr.dataset.id));
+    });
+
+    // Select-all checkbox
+    document.getElementById('select-all').addEventListener('change', function() {
+      const cbs = document.querySelectorAll('#review-tbody input[type=checkbox]');
+      cbs.forEach(cb => { cb.checked = this.checked; });
+      updateBulkActions();
+    });
+
+    // Bulk action buttons
+    document.getElementById('btn-bulk-approve').addEventListener('click', doBulkApprove);
+    document.getElementById('btn-deselect-all').addEventListener('click', function() {
+      document.querySelectorAll('#review-tbody input[type=checkbox]').forEach(cb => { cb.checked = false; });
+      document.getElementById('select-all').checked = false;
+      document.getElementById('select-all').indeterminate = false;
+      updateBulkActions();
+    });
+
+    // Text selection → enable re-extract button
+    document.getElementById('doc-text').addEventListener('mouseup', updateReextractButton);
+    document.getElementById('doc-text').addEventListener('keyup', updateReextractButton);
+
+    // Action buttons
+    document.getElementById('btn-reextract').addEventListener('click', doReextract);
+    document.getElementById('btn-approve').addEventListener('click', doApprove);
+    document.getElementById('btn-reject').addEventListener('click', doReject);
+
+    // Keyboard shortcuts — J/K navigate, A approve, R focus reject
+    // Only active when not typing in an input/textarea/select
+    document.addEventListener('keydown', function(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      switch (e.key) {
+        case 'j':
+        case 'J':
+          e.preventDefault();
+          navigateItem(1);
+          break;
+        case 'k':
+        case 'K':
+          e.preventDefault();
+          navigateItem(-1);
+          break;
+        case 'a':
+        case 'A':
+          if (_currentItemId != null) { e.preventDefault(); doApprove(); }
+          break;
+        case 'r':
+        case 'R':
+          if (_currentItemId != null) {
+            e.preventDefault();
+            document.getElementById('reject-note').focus();
+          }
+          break;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

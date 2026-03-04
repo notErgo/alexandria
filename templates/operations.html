@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Operations Panel{% endblock %}
+
+{% block content %}
+<div style="margin-top:1.25rem">
+  <h2 style="margin-bottom:0.75rem">Operations Panel</h2>
+
+  <!-- LLM model selector -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.95rem;margin:0">LLM Model</h3>
+      <span class="info-bubble" data-tip="Select which locally-installed Ollama model the extraction pipeline uses. The list is populated from models installed on this machine. Changes take effect on the next extraction run — no restart required.">?</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <select id="llm-model-select" class="form-select" style="min-width:220px;max-width:360px">
+        <option value="">Loading models…</option>
+      </select>
+      <button class="btn btn-primary" id="btn-save-llm-model">Save</button>
+      <span id="llm-model-status" style="font-size:0.85rem;color:var(--theme-text-secondary)"></span>
+    </div>
+    <div id="llm-model-source" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:4px"></div>
+  </div>
+
+  <!-- Archive scan -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.95rem;margin:0">Scan Archive Folder</h3>
+      <span class="info-bubble" data-tip="Walks the local Miner Monthly/ directory on disk, registers any new PDFs or HTMLs it finds, and flags files with no date in their filename as 'undated'. Run this whenever you add files to the archive.">?</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-sync-archive">Scan Archive Folder</button>
+      <span id="sync-status" style="font-size:0.85rem;color:var(--theme-text-secondary)"></span>
+    </div>
+  </div>
+
+  <!-- Reports awaiting analysis -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.95rem;margin:0">Reports Awaiting Analysis</h3>
+      <span class="info-bubble" data-tip="These reports have been downloaded and stored in the database, but have not yet been processed by the extraction model. Click 'Run Analysis' to send all of a company's pending reports through the LLM + regex pipeline. Results appear in the data tables and Coverage grid once complete.">?</span>
+    </div>
+    <div id="pending-extraction-loading" style="color:var(--theme-text-secondary)">Loading...</div>
+    <table id="pending-extraction-table" class="data-table" style="display:none">
+      <thead>
+        <tr>
+          <th data-sort="ticker">Company</th>
+          <th data-sort="count" data-sort-type="num">
+            Unanalyzed Reports
+            <span class="info-bubble tip-below" data-tip="Number of stored reports that have not yet been sent through the extraction model.">?</span>
+          </th>
+          <th data-sort="earliest">Earliest Period</th>
+          <th data-sort="latest">Latest Period</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="pending-extraction-tbody"></tbody>
+    </table>
+    <div id="pending-extraction-empty" class="hidden" style="color:var(--theme-text-secondary)">All downloaded reports have been analyzed.</div>
+  </div>
+
+  <!-- Undated archive files -->
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="font-size:0.95rem;margin:0">Undated Archive Files</h3>
+      <span class="info-bubble" data-tip="These archive files have no date in their filename — common in older Riot Blockchain-era reports. They cannot be ingested until you tell the system which month they cover. Enter the reporting month in YYYY-MM-01 format (e.g. 2021-05-01 for May 2021) and click 'Set Period'.">?</span>
+    </div>
+    <div id="legacy-files-loading" style="color:var(--theme-text-secondary)">Loading...</div>
+    <div id="legacy-files-list"></div>
+    <div id="legacy-files-empty" class="hidden" style="color:var(--theme-text-secondary)">No undated archive files require attention.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/operations.js"></script>
+{% endblock %}

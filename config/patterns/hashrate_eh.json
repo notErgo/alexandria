@@ -1,0 +1,7 @@
+{
+  "metric": "hashrate_eh",
+  "valid_range": [0, 100],
+  "unit": "EH/s",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

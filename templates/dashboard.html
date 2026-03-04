@@ -1,0 +1,962 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+{% endblock %}
+
+{% block styles %}
+<style>
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1.25rem;
+}
+.filter-section { display: flex; flex-direction: column; gap: 4px; }
+.filter-section label {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ticker-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.ticker-check {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, monospace;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-tertiary);
+  user-select: none;
+  transition: border-color 0.15s;
+}
+.ticker-check input[type=checkbox] { cursor: pointer; accent-color: var(--theme-accent); }
+.ticker-check:has(input:checked) { border-color: var(--theme-accent); }
+.date-range { display: flex; align-items: center; gap: 0.5rem; }
+.date-range input[type=month] { width: 130px; }
+.filter-actions { display: flex; gap: 0.5rem; align-items: flex-end; }
+
+/* Metric panels */
+.metric-panel { margin-bottom: 1.5rem; }
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.panel-header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+.completeness-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.completeness-badge {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  font-family: ui-monospace, monospace;
+  background: rgba(59,130,246,0.12);
+  color: var(--theme-accent);
+}
+.completeness-badge.low {
+  background: rgba(249,115,22,0.12);
+  color: var(--theme-warning);
+}
+.chart-container { width: 100%; height: 260px; }
+
+/* Presence bars (gap visualization) */
+.presence-bars { margin-top: 0.75rem; }
+.presence-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.presence-label {
+  width: 45px;
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  font-family: ui-monospace, monospace;
+  flex-shrink: 0;
+}
+.presence-grid { display: flex; gap: 1px; flex-wrap: nowrap; overflow: hidden; }
+.presence-cell {
+  width: 8px;
+  height: 12px;
+  border-radius: 1px;
+  cursor: default;
+  flex-shrink: 0;
+  position: relative;
+}
+.presence-cell.has-data  { background: var(--theme-accent); opacity: 0.85; }
+.presence-cell.no-data   { background: rgba(255,255,255,0.08); }
+[data-theme="light"] .presence-cell.no-data { background: rgba(0,0,0,0.1); }
+.presence-cell:hover { opacity: 1 !important; outline: 1px solid var(--theme-text-muted); }
+
+/* Year axis labels under presence bars */
+.presence-axis {
+  display: flex;
+  margin-left: 45px; /* align with grid, not label */
+  gap: 0;
+  font-size: 0.65rem;
+  color: var(--theme-text-muted);
+  font-family: ui-monospace, monospace;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+/* Loading / error states */
+#dashboard-content { min-height: 200px; }
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--theme-text-muted);
+  font-size: 0.9rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Dashboard</div>
+
+<!-- View toggle -->
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+  <button id="btn-stacked" class="btn btn-primary btn-sm" onclick="setView('stacked')">Stacked Bar</button>
+  <button id="btn-timeseries" class="btn btn-secondary btn-sm" onclick="setView('timeseries')">Timeseries</button>
+</div>
+
+<!-- ── Stacked bar panel ─────────────────────────────────── -->
+<div id="stacked-panel">
+  <div class="card filter-bar" style="margin-bottom:1rem;">
+    <div class="filter-section">
+      <label>Metric</label>
+      <select id="sb-metric" onchange="loadStackedBar()" style="min-width:180px;">
+        <option value="production_btc">Production (BTC)</option>
+        <option value="hodl_btc">Holdings (BTC)</option>
+        <option value="sold_btc">Sold (BTC)</option>
+        <option value="hashrate_eh">Hashrate (EH/s)</option>
+        <option value="realization_rate">Realization (%)</option>
+        <option value="net_btc_balance_change">Net BTC Change (BTC)</option>
+        <option value="encumbered_btc">Encumbered BTC (BTC)</option>
+        <option value="mining_mw">Mining MW (MW)</option>
+        <option value="ai_hpc_mw">AI/HPC MW (MW)</option>
+        <option value="hpc_revenue_usd">HPC Revenue (USD)</option>
+        <option value="gpu_count">GPU Count</option>
+      </select>
+    </div>
+    <div class="filter-section">
+      <label>Months</label>
+      <select id="sb-months" onchange="loadStackedBar()">
+        <option value="12">12 months</option>
+        <option value="24" selected>24 months</option>
+        <option value="36">36 months</option>
+        <option value="48">48 months</option>
+      </select>
+    </div>
+  </div>
+  <div class="card" style="padding:1rem;">
+    <div id="stacked-chart" style="width:100%;height:420px;"></div>
+  </div>
+</div>
+
+<!-- ── Timeseries panel (existing) ─────────────────────── -->
+<div id="timeseries-panel" style="display:none;">
+  <!-- Filter bar -->
+  <div class="card filter-bar" id="filter-bar">
+    <div class="filter-section">
+      <label>Companies</label>
+      <div class="ticker-checks" id="ticker-checks">
+        <!-- Populated by JS on load -->
+      </div>
+    </div>
+    <div class="filter-section">
+      <label>Date range</label>
+      <div class="date-range">
+        <input type="month" id="f-from" title="From month">
+        <span style="color:var(--theme-text-muted)">to</span>
+        <input type="month" id="f-to" title="To month">
+      </div>
+    </div>
+    <div class="filter-section">
+      <label>Chart Theme</label>
+      <select id="f-theme" onchange="onThemeChange(this.value)" style="min-width:160px;">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-primary" onclick="loadDashboard()">Apply</button>
+      <button class="btn btn-secondary btn-sm" onclick="selectAll(true)">All</button>
+      <button class="btn btn-secondary btn-sm" onclick="selectAll(false)">None</button>
+    </div>
+  </div>
+  <!-- Dashboard panels injected here -->
+  <div id="dashboard-content">
+    <div class="empty-state">Loading…</div>
+  </div>
+</div>
+
+<!-- Suggest modal (hidden; shown by openSuggestModal) -->
+<div id="suggest-overlay" style="position:fixed; inset:0; z-index:200;
+     background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center;">
+  <div id="suggest-card" class="card" style="width:520px; max-width:90vw;
+       max-height:80vh; overflow-y:auto; overflow-x:hidden;
+       position:relative; padding:1.25rem; box-sizing:border-box;">
+    <button id="suggest-close" onclick="closeSuggestModal()"
+            style="position:absolute;top:0.6rem;right:0.8rem;
+                   background:none;border:none;color:var(--theme-text-muted);
+                   font-size:1.1rem;cursor:pointer;">✕</button>
+    <div id="suggest-body"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Ticker color palette (colorblind-safe, assigned by index) ─────────────
+const TICKER_COLORS = [
+  '#3b82f6', '#f97316', '#22c55e', '#a855f7', '#ec4899',
+  '#06b6d4', '#84cc16', '#f59e0b', '#8b5cf6', '#10b981',
+  '#ef4444', '#64748b', '#e11d48',
+];
+// Cache ticker→color so each ticker gets the same color across all panels
+const _colorCache = {};
+function tickerColor(ticker, allTickers) {
+  if (!(ticker in _colorCache)) {
+    const idx = allTickers.indexOf(ticker);
+    _colorCache[ticker] = TICKER_COLORS[idx >= 0 ? idx % TICKER_COLORS.length : 0];
+  }
+  return _colorCache[ticker];
+}
+
+// All 13 tickers — pre-populate checkboxes
+const ALL_TICKERS = [
+  'ARBK','BITF','BTBT','CIFR','CLSK','CORZ',
+  'HIVE','HUT8','IREN','MARA','RIOT','SDIG','WULF',
+];
+const DEFAULT_CHECKED = new Set(['MARA', 'RIOT']);
+
+// Track ECharts instances for cleanup
+let _charts = [];
+
+// Chart theme state
+let _activeTheme   = '';           // name passed to echarts.init()
+const _loadedThemes = new Map();   // id → true, skip re-fetch if already registered
+
+// ── Chart theme picker ────────────────────────────────────────────────────
+async function loadTheme(id) {
+  if (!id)                   { _activeTheme = ''; return; }
+  if (_loadedThemes.has(id)) { _activeTheme = id; return; }
+  try {
+    const resp = await fetch('/static/themes/' + encodeURIComponent(id) + '.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const themeJson = await resp.json();
+    echarts.registerTheme(id, themeJson);
+    _loadedThemes.set(id, true);
+    _activeTheme = id;
+  } catch (e) {
+    showToast('Theme load failed: ' + e.message, true);
+    _activeTheme = '';
+  }
+}
+
+async function initThemePicker() {
+  const sel = document.getElementById('f-theme');
+  let themes = [];
+  try {
+    const resp = await fetch('/api/themes');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    themes = (await resp.json()).data || [];
+  } catch (e) {
+    sel.innerHTML = '<option value="">Default</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Default (ECharts)</option>' +
+    themes.map(function(t) {
+      return '<option value="' + escapeHtml(t.id) + '">' + escapeHtml(t.label) + '</option>';
+    }).join('');
+  const saved = localStorage.getItem('hermeneutic-chart-theme') || 'hermeneutic-dark';
+  if (themes.some(function(t) { return t.id === saved; })) sel.value = saved;
+  await loadTheme(sel.value);
+}
+
+async function onThemeChange(id) {
+  localStorage.setItem('hermeneutic-chart-theme', id);
+  await loadTheme(id);
+  loadDashboard();
+}
+
+// ── Init: build checkboxes ────────────────────────────────────────────────
+function initFilterBar() {
+  const container = document.getElementById('ticker-checks');
+  ALL_TICKERS.forEach(function(t) {
+    const lbl = document.createElement('label');
+    lbl.className = 'ticker-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = t;
+    cb.checked = DEFAULT_CHECKED.has(t);
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(t));
+    container.appendChild(lbl);
+  });
+}
+
+function selectAll(checked) {
+  document.querySelectorAll('#ticker-checks input[type=checkbox]')
+    .forEach(function(cb) { cb.checked = checked; });
+}
+
+function getSelectedTickers() {
+  return Array.from(
+    document.querySelectorAll('#ticker-checks input[type=checkbox]:checked')
+  ).map(function(cb) { return cb.value; });
+}
+
+// ── Format helpers ────────────────────────────────────────────────────────
+function fmtValue(val, unit) {
+  if (val == null) return 'missing';
+  if (unit === '%') return val.toFixed(2) + '%';
+  if (unit === 'EH/s') return val.toFixed(3) + ' EH/s';
+  return val.toLocaleString(undefined, {maximumFractionDigits: 3}) + ' ' + unit;
+}
+
+// ── Presence bar rendering ────────────────────────────────────────────────
+function renderPresenceBars(containerId, timeSpine, series, unit, metric) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+
+  const n = timeSpine.length;
+
+  series.forEach(function(s) {
+    const row = document.createElement('div');
+    row.className = 'presence-row';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'presence-label';
+    lbl.textContent = s.ticker;
+    row.appendChild(lbl);
+
+    const grid = document.createElement('div');
+    grid.className = 'presence-grid';
+
+    s.present.forEach(function(has, i) {
+      const cell = document.createElement('span');
+      cell.className = 'presence-cell ' + (has ? 'has-data' : 'no-data');
+      const val = s.values[i];
+      cell.title = timeSpine[i] + ': ' + fmtValue(val, unit);
+      if (!has) {
+        cell.dataset.ticker = s.ticker;
+        cell.dataset.metric = metric;
+        cell.dataset.period = timeSpine[i];
+        cell.dataset.unit   = unit;
+        cell.style.cursor   = 'pointer';
+        cell.addEventListener('click', openSuggestModal);
+      }
+      grid.appendChild(cell);
+    });
+
+    row.appendChild(grid);
+    container.appendChild(row);
+  });
+
+  // Year axis labels
+  if (n > 0) {
+    const axisRow = document.createElement('div');
+    axisRow.className = 'presence-axis';
+    // Place year labels at approximate positions
+    const years = {};
+    timeSpine.forEach(function(ym, i) {
+      const y = ym.slice(0, 4);
+      if (!(y in years)) years[y] = i;
+    });
+    // Build label row: cell-width=8px + gap=1px = 9px per cell
+    const cellW = 9; // px per cell
+    let lastEnd = 0;
+    Object.keys(years).sort().forEach(function(yr) {
+      const startIdx = years[yr];
+      const spacer = document.createElement('span');
+      spacer.style.width = ((startIdx - lastEnd) * cellW) + 'px';
+      spacer.style.display = 'inline-block';
+      spacer.style.flexShrink = '0';
+      axisRow.appendChild(spacer);
+      const lbl = document.createElement('span');
+      lbl.textContent = yr;
+      lbl.style.flexShrink = '0';
+      axisRow.appendChild(lbl);
+      lastEnd = startIdx + yr.length; // approximate char widths
+    });
+    container.appendChild(axisRow);
+  }
+}
+
+// ── Render one metric panel ───────────────────────────────────────────────
+function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
+  const metric = metricObj.metric;
+  const label  = metricObj.label;
+  const unit   = metricObj.unit;
+  const series = metricObj.series;
+
+  const panel = document.createElement('div');
+  panel.className = 'card metric-panel';
+
+  // Panel header
+  const header = document.createElement('div');
+  header.className = 'panel-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = label + ' (' + unit + ')';
+  header.appendChild(h2);
+
+  // Completeness badges
+  const badgesEl = document.createElement('div');
+  badgesEl.className = 'completeness-badges';
+  series.forEach(function(s) {
+    const pct = Math.round(s.completeness * 100);
+    const badge = document.createElement('span');
+    badge.className = 'completeness-badge' + (pct < 50 ? ' low' : '');
+    badge.textContent = s.ticker + ' ' + pct + '%';
+    badgesEl.appendChild(badge);
+  });
+  header.appendChild(badgesEl);
+  panel.appendChild(header);
+
+  // ECharts container
+  const chartId = 'chart-' + metric;
+  const chartEl = document.createElement('div');
+  chartEl.id = chartId;
+  chartEl.className = 'chart-container';
+  panel.appendChild(chartEl);
+
+  // Presence bars container
+  const presenceId = 'presence-' + metric;
+  const presenceEl = document.createElement('div');
+  presenceEl.className = 'presence-bars';
+  presenceEl.id = presenceId;
+  panel.appendChild(presenceEl);
+
+  parentEl.appendChild(panel);
+
+  // Init ECharts — pass active theme (null = ECharts default)
+  const chart = echarts.init(chartEl, _activeTheme || null, { renderer: 'svg' });
+  _charts.push(chart);
+
+  const echartsX = timeSpine.map(function(ym) {
+    // ECharts wants the data as category strings
+    return ym;
+  });
+
+  const echartsSeries = series.map(function(s) {
+    const color = tickerColor(s.ticker, allTickers);
+    return {
+      name: s.ticker,
+      type: 'bar',
+      stack: 'total',
+      data: s.values.map(function(v) { return v === null ? 0 : v; }),
+      barMaxWidth: 24,
+      itemStyle: { color: color },
+    };
+  });
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    grid: { left: 60, right: 16, top: 28, bottom: 36 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let html = '<div style="font-size:0.8rem"><b>' + escapeHtml(params[0].axisValue) + '</b><br>';
+        params.forEach(function(p) {
+          if (p.value != null) {
+            html += escapeHtml(p.seriesName) + ': ' + fmtValue(p.value, unit) + '<br>';
+          }
+        });
+        html += '</div>';
+        return html;
+      },
+    },
+    legend: {
+      top: 4,
+      right: 16,
+      textStyle: { fontSize: 11 },
+    },
+    xAxis: {
+      type: 'category',
+      data: echartsX,
+      // Show every 6-month label to avoid crowding
+      axisLabel: {
+        fontSize: 10,
+        rotate: 30,
+        interval: function(idx, val) {
+          return val.endsWith('-01') || val.endsWith('-06') || idx === 0;
+        },
+      },
+    },
+    yAxis: {
+      type: 'value',
+    },
+    series: echartsSeries,
+  });
+
+  // ECharts click → data lineage modal
+  chart.on('click', function(params) {
+    if (params.componentType !== 'series' || params.value == null || params.value === 0) return;
+    const period = timeSpine[params.dataIndex];   // YYYY-MM from time spine
+    const ticker = params.seriesName;             // ticker is the series name
+    openLineageModal(ticker, metric, period, params.value, unit);
+  });
+
+  // Presence bars
+  renderPresenceBars(presenceId, timeSpine, series, unit, metric);
+}
+
+// ── Main load function ────────────────────────────────────────────────────
+async function loadDashboard() {
+  const tickers = getSelectedTickers();
+  const fromVal = document.getElementById('f-from').value;
+  const toVal   = document.getElementById('f-to').value;
+
+  // Dispose existing charts
+  _charts.forEach(function(c) { try { c.dispose(); } catch(e) {} });
+  _charts = [];
+  Object.keys(_colorCache).forEach(function(k) { delete _colorCache[k]; });
+
+  const content = document.getElementById('dashboard-content');
+  content.innerHTML = '<div class="empty-state">Loading…</div>';
+
+  // Build URL
+  const params = new URLSearchParams();
+  if (tickers.length > 0) params.set('tickers', tickers.join(','));
+  if (fromVal) params.set('from', fromVal);
+  if (toVal)   params.set('to', toVal);
+
+  let data;
+  try {
+    const resp = await fetch('/api/timeseries?' + params.toString());
+    if (!resp.ok) {
+      const err = await resp.json().catch(function() { return {}; });
+      throw new Error(err.error && err.error.message ? err.error.message : 'HTTP ' + resp.status);
+    }
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error && body.error.message ? body.error.message : 'API error');
+    data = body.data;
+  } catch (err) {
+    content.innerHTML = '<div class="error-banner">Failed to load data: ' + escapeHtml(err.message) + '</div>';
+    showToast('Load failed: ' + err.message, true);
+    return;
+  }
+
+  const timeSpine = data.time_spine || [];
+  const metrics   = data.metrics   || [];
+
+  if (metrics.length === 0 || timeSpine.length === 0) {
+    content.innerHTML = '<div class="empty-state">No data found for the selected filters.</div>';
+    return;
+  }
+
+  content.innerHTML = '';
+
+  // Collect all ticker names across all metrics for stable color assignment
+  const allTickerSet = new Set();
+  metrics.forEach(function(m) {
+    m.series.forEach(function(s) { allTickerSet.add(s.ticker); });
+  });
+  const allTickers = Array.from(allTickerSet).sort();
+
+  metrics.forEach(function(metricObj) {
+    renderMetricPanel(content, metricObj, timeSpine, allTickers);
+  });
+}
+
+// ── Window resize: resize all charts ─────────────────────────────────────
+window.addEventListener('resize', function() {
+  _charts.forEach(function(c) { try { c.resize(); } catch(e) {} });
+});
+
+// ── Suggest modal ─────────────────────────────────────────────────────────
+function openSuggestModal(event) {
+  const cell   = event.currentTarget;
+  const ticker = cell.dataset.ticker;
+  const metric = cell.dataset.metric;
+  const period = cell.dataset.period;
+  const unit   = cell.dataset.unit;
+
+  const body    = document.getElementById('suggest-body');
+  const overlay = document.getElementById('suggest-overlay');
+  body.innerHTML = '<span style="color:var(--theme-text-muted)">Loading…</span>';
+  overlay.style.display = 'flex';
+
+  fetch('/api/timeseries/suggest?ticker=' + encodeURIComponent(ticker) +
+        '&metric=' + encodeURIComponent(metric) +
+        '&period=' + encodeURIComponent(period))
+    .then(function(resp) {
+      if (!resp.ok) return resp.json().catch(function() { return {}; }).then(function(e) {
+        throw new Error(e.error && e.error.message ? e.error.message : 'HTTP ' + resp.status);
+      });
+      return resp.json();
+    })
+    .then(function(body_json) {
+      if (!body_json.success) throw new Error(
+        body_json.error && body_json.error.message ? body_json.error.message : 'API error');
+      renderSuggestBody(body_json.data);
+    })
+    .catch(function(err) {
+      body.innerHTML = '<span style="color:var(--theme-danger)">Error: ' +
+        escapeHtml(err.message) + '</span>';
+    });
+}
+
+function renderSuggestBody(data) {
+  const ticker = data.ticker;
+  const metric = data.metric;
+  const period = data.period;
+  const unit   = data.unit;
+  const interp = data.interpolation;
+  const reports = data.nearby_reports || [];
+  const items   = data.review_items   || [];
+
+  let html = '<h3 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;">' +
+    'Missing — <span style="color:var(--theme-accent)">' + escapeHtml(ticker) + '</span> ' +
+    escapeHtml(metric) + ' <span style="color:var(--theme-text-muted)">' +
+    escapeHtml(period) + '</span></h3>';
+
+  // ── Interpolation section ──
+  html += '<div class="suggest-section"><h3>Estimated Value</h3>';
+  let prefillVal = '';
+  let prefillNote = '';
+  if (interp) {
+    const fmt = function(v) { return v != null ? Number(v).toFixed(4) + ' ' + escapeHtml(unit) : '—'; };
+    html += '<p style="font-size:0.9rem;margin-bottom:0.3rem;">' +
+      '<strong>' + fmt(interp.value) + '</strong></p>';
+    if (interp.method === 'linear') {
+      html += '<p style="font-size:0.78rem;color:var(--theme-text-muted);">' +
+        'Linear interpolation between ' +
+        escapeHtml(interp.from.period) + ' (' + fmt(interp.from.value) + ') → ' +
+        escapeHtml(interp.to.period)   + ' (' + fmt(interp.to.value)   + ')</p>';
+      prefillNote = 'Interpolated between ' + interp.from.period + ' and ' + interp.to.period;
+    } else {
+      const neighbor = interp.from || interp.to;
+      html += '<p style="font-size:0.78rem;color:var(--theme-text-muted);">' +
+        'Extrapolated from ' + escapeHtml(neighbor.period) +
+        ' (' + fmt(neighbor.value) + ') — only one neighbor found</p>';
+      prefillNote = 'Extrapolated from ' + neighbor.period;
+    }
+    prefillVal = Number(interp.value).toFixed(4);
+  } else {
+    html += '<p style="font-size:0.82rem;color:var(--theme-text-muted);">No neighboring data — enter a value manually.</p>';
+  }
+  html += '</div>';
+
+  // ── Nearby reports ──
+  if (reports.length > 0) {
+    html += '<div class="suggest-section"><h3>Nearby Reports (±90 days)</h3>';
+    reports.forEach(function(r) {
+      let urlPart;
+      if (r.source_url && r.source_url.startsWith('http')) {
+        urlPart = '<a href="' + escapeHtml(r.source_url) + '" target="_blank" rel="noopener" ' +
+          'style="color:var(--theme-accent);text-decoration:none;">' +
+          escapeHtml(r.source_url.slice(0, 60)) + (r.source_url.length > 60 ? '…' : '') + '</a>';
+      } else if (r.source_url) {
+        const fname = r.source_url.split('/').pop() || r.source_url;
+        const display = fname.length > 60 ? fname.slice(0, 57) + '…' : fname;
+        urlPart = '<span title="' + escapeHtml(r.source_url) + '" ' +
+          'style="color:var(--theme-text-muted);font-size:0.78rem;cursor:help;">' +
+          escapeHtml(display) + '</span>';
+      } else {
+        urlPart = '—';
+      }
+      html += '<div class="suggest-report-row"><span>' + escapeHtml(r.report_date) + '</span>' +
+        '<span>' + escapeHtml(r.source_type) + '</span>' +
+        '<span>' + urlPart + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  // ── Review queue items ──
+  if (items.length > 0) {
+    html += '<div class="suggest-section"><h3>Review Queue Items</h3>';
+    items.forEach(function(it) {
+      const statusClass = it.status === 'APPROVED' ? 'badge-success' :
+                          it.status === 'REJECTED'  ? 'badge-danger'  : 'badge-warning';
+      const snippet = it.source_snippet ? escapeHtml(it.source_snippet.slice(0, 80)) : '';
+      const pendingNote = it.status === 'PENDING' ? ' <span style="color:var(--theme-text-muted);font-size:0.75rem;">(approve at <a href="/review">/review</a>)</span>' : '';
+      html += '<div class="suggest-review-row">' +
+        '<span>' + escapeHtml(String(it.raw_value)) + ' ' + escapeHtml(unit) + '</span> ' +
+        '<span style="color:var(--theme-text-muted)">conf ' + Number(it.confidence).toFixed(2) + '</span> ' +
+        '<span class="badge ' + statusClass + '">' + escapeHtml(it.status) + '</span>' +
+        pendingNote +
+        (snippet ? '<div style="margin-top:2px;font-size:0.75rem;color:var(--theme-text-muted);">' + snippet + '</div>' : '') +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  // ── Submit form ──
+  html += '<div class="suggest-section fill-form">' +
+    '<h3>Submit to Review Queue</h3>' +
+    '<label>Value (' + escapeHtml(unit) + ')<br>' +
+    '<input type="number" id="fill-value" step="any" min="0" style="width:160px;" ' +
+    'value="' + escapeHtml(prefillVal) + '"></label>' +
+    '<label>Note (optional)<br>' +
+    '<textarea id="fill-note">' + escapeHtml(prefillNote) + '</textarea></label>' +
+    '<button class="btn btn-primary btn-sm" id="fill-submit" ' +
+    'data-ticker="' + escapeHtml(ticker) + '" ' +
+    'data-metric="' + escapeHtml(metric) + '" ' +
+    'data-period="' + escapeHtml(period) + '" ' +
+    'data-unit="' + escapeHtml(unit) + '">' +
+    'Submit to Review Queue</button>' +
+    '</div>';
+
+  document.getElementById('suggest-body').innerHTML = html;
+}
+
+function submitFill(ticker, metric, period, unit) {
+  const valEl  = document.getElementById('fill-value');
+  const noteEl = document.getElementById('fill-note');
+  const value  = parseFloat(valEl ? valEl.value : '');
+  if (!isFinite(value) || value <= 0) {
+    showToast('Enter a positive number before submitting.', true);
+    return;
+  }
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  fetch('/api/timeseries/fill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker: ticker, metric: metric, period: period, value: value, note: note }),
+  })
+    .then(function(resp) {
+      if (resp.status === 409) {
+        document.getElementById('suggest-body').innerHTML =
+          '<p style="color:var(--theme-warning);">Data already exists for this period — ' +
+          'reload the dashboard to see it.</p>';
+        return null;
+      }
+      return resp.json().then(function(body_json) {
+        if (!resp.ok || !body_json.success) {
+          throw new Error(body_json.error && body_json.error.message
+            ? body_json.error.message : 'HTTP ' + resp.status);
+        }
+        return body_json;
+      });
+    })
+    .then(function(body_json) {
+      if (!body_json) return; // 409 handled above
+      const id = body_json.data.review_id;
+      document.getElementById('suggest-body').innerHTML =
+        '<p style="color:var(--theme-success);">Added to review queue (#' + id + '). ' +
+        '<a href="/review" style="color:var(--theme-accent);">Go to Review →</a> to approve.</p>';
+    })
+    .catch(function(err) {
+      showToast('Submit failed: ' + err.message, true);
+    });
+}
+
+function closeSuggestModal() {
+  document.getElementById('suggest-overlay').style.display = 'none';
+}
+
+// ── Data lineage click-through ────────────────────────────────────────────
+function openLineageModal(ticker, metric, period, value, unit) {
+  const body    = document.getElementById('suggest-body');
+  const overlay = document.getElementById('suggest-overlay');
+  body.innerHTML = '<span style="color:var(--theme-text-muted)">Loading lineage…</span>';
+  overlay.style.display = 'flex';
+
+  fetch('/api/data/lineage?ticker=' + encodeURIComponent(ticker) +
+        '&metric=' + encodeURIComponent(metric) +
+        '&period=' + encodeURIComponent(period))
+    .then(function(resp) {
+      if (!resp.ok) return resp.json().catch(function() { return {}; }).then(function(e) {
+        throw new Error(e.error && e.error.message ? e.error.message : 'HTTP ' + resp.status);
+      });
+      return resp.json();
+    })
+    .then(function(json) {
+      if (!json.success) throw new Error(
+        json.error && json.error.message ? json.error.message : 'API error');
+      renderLineageBody(json.data);
+    })
+    .catch(function(err) {
+      body.innerHTML = '<span style="color:var(--theme-danger)">Error: ' +
+        escapeHtml(err.message) + '</span>';
+    });
+}
+
+function renderLineageBody(d) {
+  const conf = d.confidence || 0;
+  const confPct = (conf * 100).toFixed(0) + '%';
+  const confClass = conf >= 0.90 ? 'badge-success' : conf >= 0.75 ? 'badge-warning' : 'badge-danger';
+  const urlHtml = d.source_url
+    ? '<a href="' + escapeHtml(d.source_url) + '" target="_blank" rel="noopener" ' +
+      'style="color:var(--theme-accent);word-break:break-all">' +
+      escapeHtml(d.source_url) + '</a>'
+    : '<span style="color:var(--theme-text-muted)">—</span>';
+
+  document.getElementById('suggest-body').innerHTML =
+    '<h3 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;">' +
+    'Data Lineage — <span style="color:var(--theme-accent)">' + escapeHtml(d.ticker) + '</span> ' +
+    escapeHtml(d.metric) + ' <span style="color:var(--theme-text-muted)">' +
+    escapeHtml(d.period) + '</span></h3>' +
+    '<div class="suggest-section">' +
+      '<h3>Data Point</h3>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">Value</td>' +
+            '<td><strong>' + escapeHtml(String(d.value)) + '</strong> ' + escapeHtml(d.unit || '') + '</td></tr>' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">Confidence</td>' +
+            '<td><span class="badge ' + confClass + '">' + confPct + '</span></td></tr>' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">Extraction</td>' +
+            '<td><code>' + escapeHtml(d.extraction_method || '—') + '</code></td></tr>' +
+      '</table>' +
+    '</div>' +
+    '<div class="suggest-section">' +
+      '<h3>Source Report</h3>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">Type</td>' +
+            '<td>' + escapeHtml(d.source_type || '—') + '</td></tr>' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">Report date</td>' +
+            '<td>' + escapeHtml(d.report_date ? d.report_date.slice(0, 10) : '—') + '</td></tr>' +
+        '<tr><td style="color:var(--theme-text-secondary);padding:3px 8px;white-space:nowrap">URL</td>' +
+            '<td>' + urlHtml + '</td></tr>' +
+      '</table>' +
+    '</div>' +
+    '<div class="suggest-section">' +
+      '<h3>Source Snippet</h3>' +
+      '<pre style="white-space:pre-wrap;word-break:break-word;font-size:0.78rem;' +
+           'background:var(--theme-bg-tertiary);padding:8px;border-radius:4px;' +
+           'max-height:200px;overflow-y:auto">' +
+        escapeHtml(d.source_snippet || '—') +
+      '</pre>' +
+    '</div>';
+}
+
+// Close on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeSuggestModal();
+});
+
+// Close on backdrop click (not on the card itself)
+document.getElementById('suggest-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeSuggestModal();
+});
+
+// Submit-to-review-queue — delegated listener on the persistent suggest-body element
+// (wired once to avoid listener accumulation; data-* attrs carry the values — see Anti-pattern #26/#27)
+document.getElementById('suggest-body').addEventListener('click', function(e) {
+  const btn = e.target.closest('#fill-submit');
+  if (!btn) return;
+  submitFill(btn.dataset.ticker, btn.dataset.metric, btn.dataset.period, btn.dataset.unit);
+});
+
+// ── View toggle (Stacked Bar / Timeseries) ────────────────────────────────
+let _stackedChart = null;
+
+function setView(view) {
+  const isStacked = view === 'stacked';
+  document.getElementById('stacked-panel').style.display = isStacked ? '' : 'none';
+  document.getElementById('timeseries-panel').style.display = isStacked ? 'none' : '';
+  document.getElementById('btn-stacked').className = isStacked
+    ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  document.getElementById('btn-timeseries').className = isStacked
+    ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm';
+  localStorage.setItem('miners-dashboard-view', view);
+  if (isStacked) {
+    loadStackedBar();
+  } else {
+    loadDashboard();
+  }
+}
+
+async function loadStackedBar() {
+  const metric = document.getElementById('sb-metric').value;
+  const months = document.getElementById('sb-months').value;
+  const container = document.getElementById('stacked-chart');
+
+  if (_stackedChart) { try { _stackedChart.dispose(); } catch(e) {} _stackedChart = null; }
+  container.innerHTML = '<div class="empty-state">Loading…</div>';
+
+  let data;
+  try {
+    const resp = await fetch('/api/dashboard/stacked?metric=' + encodeURIComponent(metric) + '&months=' + months);
+    if (!resp.ok) {
+      const err = await resp.json().catch(function() { return {}; });
+      throw new Error(err.error && err.error.message ? err.error.message : 'HTTP ' + resp.status);
+    }
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error && body.error.message ? body.error.message : 'API error');
+    data = body.data;
+  } catch (err) {
+    container.innerHTML = '<div class="error-banner">Failed to load: ' + escapeHtml(err.message) + '</div>';
+    return;
+  }
+
+  if (!data.time_spine || data.time_spine.length === 0) {
+    container.innerHTML = '<div class="empty-state">No data for this metric.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  _stackedChart = echarts.init(container, _activeTheme || undefined);
+
+  const allTickers = data.series.map(function(s) { return s.ticker; });
+  const echartsSeries = data.series.map(function(s) {
+    return {
+      name: s.ticker,
+      type: 'bar',
+      stack: 'total',
+      emphasis: { focus: 'series' },
+      data: s.values,
+      itemStyle: { color: tickerColor(s.ticker, allTickers) },
+    };
+  });
+
+  _stackedChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: function(params) {
+        let html = '<strong>' + escapeHtml(params[0].name) + '</strong><br>';
+        let total = 0;
+        params.forEach(function(p) {
+          if (p.value != null && p.value !== 0) {
+            html += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' +
+              p.color + ';margin-right:4px;"></span>' +
+              escapeHtml(p.seriesName) + ': ' + (p.value != null ? p.value.toLocaleString() : '–') +
+              ' ' + escapeHtml(data.unit) + '<br>';
+            total += p.value || 0;
+          }
+        });
+        html += '<strong>Total: ' + total.toLocaleString() + ' ' + escapeHtml(data.unit) + '</strong>';
+        return html;
+      }
+    },
+    legend: { top: 0, type: 'scroll' },
+    grid: { left: 60, right: 20, top: 40, bottom: 52 },
+    xAxis: {
+      type: 'category',
+      data: data.time_spine,
+      axisLabel: { rotate: 45, fontSize: 11 }
+    },
+    yAxis: {
+      type: 'value',
+      name: data.unit,
+      nameTextStyle: { color: 'var(--theme-text-muted)', fontSize: 11 }
+    },
+    series: echartsSeries,
+  });
+}
+
+// ── On page load ─────────────────────────────────────────────────────────
+initFilterBar();
+initThemePicker().then(function() {
+  const savedView = localStorage.getItem('miners-dashboard-view') || 'stacked';
+  setView(savedView);
+});
+</script>
+{% endblock %}

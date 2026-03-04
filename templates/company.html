@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}{{ company.ticker }}{% endblock %}
+
+{% block content %}
+<h1 class="page-title">{{ company.ticker }} — {{ company.name }}</h1>
+<p style="color:var(--theme-text-muted);margin-bottom:1rem">
+  CIK: {{ company.cik or 'N/A' }} &nbsp;·&nbsp;
+  Tier {{ company.tier }} &nbsp;·&nbsp;
+  <a href="{{ company.ir_url }}" target="_blank" rel="noopener">IR Page</a>
+</p>
+
+<div class="card">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem" id="metric-toggles"></div>
+  <div id="chart"></div>
+</div>
+
+<div id="error-banner" class="error-banner" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+<script>
+// ── Back-link: if navigated from another page, show a breadcrumb ────────────
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var back = params.get('back');
+  if (back) {
+    var labels = { '/review': '← Back to Review Queue', '/coverage': '← Back to Coverage' };
+    var label = labels[back] || '← Back';
+    var el = document.createElement('a');
+    el.href = back;
+    el.textContent = label;
+    el.style.cssText = 'display:inline-block;margin-bottom:0.75rem;font-size:0.85rem;color:var(--theme-accent)';
+    var h1 = document.querySelector('h1.page-title');
+    if (h1) h1.insertAdjacentElement('beforebegin', el);
+  }
+})();
+
+const TICKER = {{ company.ticker | tojson }};
+const METRICS = [
+  {key:'production_btc', label:'Production (BTC)', yAxis:0},
+  {key:'hodl_btc', label:'Holdings (BTC)', yAxis:0},
+  {key:'sold_btc', label:'Sold (BTC)', yAxis:0},
+  {key:'hashrate_eh', label:'Hashrate (EH/s)', yAxis:1},
+  {key:'realization_rate', label:'Realization Rate', yAxis:1},
+];
+
+const chart = echarts.init(document.getElementById('chart'), 'dark');
+let _allData = {};
+
+// Build metric toggle buttons
+const toggleContainer = document.getElementById('metric-toggles');
+METRICS.forEach(m => {
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-secondary btn-sm';
+  btn.textContent = m.label;
+  btn.dataset.metric = m.key;
+  btn.onclick = () => chart.dispatchAction({type:'legendToggleSelect', name: m.label});
+  toggleContainer.appendChild(btn);
+});
+
+async function loadCompanyData() {
+  const banner = document.getElementById('error-banner');
+  try {
+    const resp = await fetch(`/api/data?ticker=${encodeURIComponent(TICKER)}&limit=2000`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const byMetric = {};
+    METRICS.forEach(m => byMetric[m.key] = []);
+    (json.data || []).forEach(row => {
+      if (byMetric[row.metric]) {
+        byMetric[row.metric].push([row.period ? row.period.slice(0,7) : '', row.value]);
+      }
+    });
+    // Sort each series by period
+    Object.values(byMetric).forEach(arr => arr.sort((a,b) => a[0] < b[0] ? -1 : 1));
+    _allData = byMetric;
+    renderChart();
+  } catch(e) {
+    banner.hidden = false;
+    banner.textContent = 'Failed to load data: ' + e.message;
+    chart.setOption({title:{text:'Error loading data',left:'center',top:'center',textStyle:{color:'#ef4444'}}});
+  }
+}
+
+function renderChart() {
+  const series = METRICS.map(m => ({
+    name: m.label,
+    type: 'line',
+    data: (_allData[m.key] || []).map(d => [d[0], d[1]]),
+    yAxisIndex: m.yAxis,
+    smooth: true,
+  }));
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    legend: { data: METRICS.map(m => m.label), top: 0 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category' },
+    yAxis: [
+      { name: 'BTC / ratio', type: 'value', nameTextStyle:{color:'#a0a0a0'} },
+      { name: 'EH/s', type: 'value', nameTextStyle:{color:'#a0a0a0'} },
+    ],
+    series,
+    grid: { left: 60, right: 60, top: 50, bottom: 30 },
+  });
+}
+
+window.addEventListener('resize', () => chart.resize());
+loadCompanyData();
+</script>
+{% endblock %}

@@ -1,0 +1,524 @@
+"""
+Extraction pipeline: LLM+regex+agreement on a single stored report.
+
+Public API:
+  extract_report(report, db, registry) -> ExtractionSummary
+
+This module owns all LLM+regex+agreement logic. Every ingestion path
+(archive, IR, EDGAR) stores raw text in the reports table, then calls
+extract_report to do the actual extraction. This decouples fetch+store
+from extraction, enabling re-extraction without re-scraping.
+
+Analyst protection: rows with extraction_method IN
+  ('analyst', 'analyst_approved', 'review_approved', 'review_edited')
+are never overwritten by the pipeline.
+"""
+import logging
+import re
+import threading
+from typing import Optional
+
+log = logging.getLogger('miners.extractors.extraction_pipeline')
+
+# Protected extraction methods — data points with these methods are never overwritten
+_PROTECTED_METHODS = frozenset({
+    'analyst', 'analyst_approved', 'review_approved', 'review_edited'
+})
+
+# Module-level LLM extractor singleton (lazy init — avoids import at module load)
+_llm_extractor_instance = None
+_llm_extractor_lock = threading.Lock()
+
+# Cached connectivity result — checked once at batch start, reused for 5 min.
+# Avoids 2 HTTP round-trips to Ollama on every report in a batch run.
+# The cache is keyed by extractor identity (id()) so that test mocks always
+# bypass the cached result for the real singleton (and vice versa).
+import time as _time
+_llm_available_cache: bool = False
+_llm_available_cache_time: float = 0.0
+_llm_available_cache_extractor_id: int = -1   # id() of the cached extractor
+_llm_cache_lock = threading.Lock()            # separate lock from the singleton lock
+_LLM_AVAILABLE_CACHE_TTL: float = 300.0      # seconds
+
+# Maximum characters of document text sent to the LLM per metric call.
+# Monthly production press releases have all key figures in the first ~5 paragraphs.
+# Truncating to 8 000 chars (~2 000 tokens) keeps prefill time on Apple Silicon
+# to ~20–30 s — well within the 180 s timeout. Regex extraction still runs on the
+# full raw_text, so no data is lost; the LLM just sees a shorter window.
+_LLM_TEXT_MAX_CHARS = 8000
+
+# Sentinel phrases that mark the start of boilerplate sections.
+# Only stripped when the match falls at or after the 40% mark of the document,
+# preventing false positives from titles like "Forward-Looking Statements Disclosure".
+_BOILERPLATE_SENTINELS = [
+    re.compile(r'\bFORWARD.LOOKING\s+STATEMENTS?\b', re.IGNORECASE),
+    re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
+    re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
+    re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
+    re.compile(
+        r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
+        r'BIT\s+DIGITAL|HIVE|HUT\s+8|ARGO|STRONGHOLD|TERAWULF|IRIS)\b',
+        re.IGNORECASE,
+    ),
+]
+
+
+def _clean_for_llm(text: str) -> str:
+    """Strip boilerplate sections from the back 60%+ of the document.
+
+    Finds the earliest sentinel that appears at or after the 40% mark and
+    truncates there. Prevents false positives from titles/headings in the
+    document preamble that mention boilerplate topics.
+    """
+    cutoff = len(text)
+    threshold = int(len(text) * 0.4)  # only strip if match is past 40% mark
+    for pattern in _BOILERPLATE_SENTINELS:
+        m = pattern.search(text)
+        if m and m.start() >= threshold:
+            cutoff = min(cutoff, m.start())
+    return text[:cutoff].rstrip()
+
+
+def _prior_period(period_str: str) -> Optional[str]:
+    """Return YYYY-MM-01 for the month before period_str; None if parse fails."""
+    try:
+        parts = period_str.split('-')
+        year, month = int(parts[0]), int(parts[1])
+        if month == 1:
+            return f"{year - 1}-12-01"
+        return f"{year}-{month - 1:02d}-01"
+    except Exception:
+        return None
+
+
+def _get_missing_metrics(db, ticker: str, period: str, all_metrics: list) -> list:
+    """Return metrics with no entry in data_points for the given (ticker, period)."""
+    return [m for m in all_metrics if not db.data_point_exists(ticker, period, m)]
+
+
+def _try_gap_fill(
+    report: dict,
+    db,
+    llm_extractor,
+    llm_text: str,
+    all_metrics: list,
+    confidence_threshold: float,
+    summary,
+) -> None:
+    """Try to fill prior-period gaps via a targeted second-pass LLM call.
+
+    Only fires when:
+    (a) prior period exists (report_date is parseable)
+    (b) prior period has at least one missing metric in data_points
+    (c) LLM returns a result with confidence >= threshold
+
+    Never overwrites existing data.
+    """
+    period_str = report.get('report_date')
+    prior = _prior_period(period_str)
+    if prior is None:
+        return
+
+    ticker = report.get('ticker')
+    missing = _get_missing_metrics(db, ticker, prior, all_metrics)
+    if not missing:
+        log.debug("Gap fill: all metrics filled for %s %s, skipping", ticker, prior)
+        return
+
+    log.info(
+        "Gap fill: checking prior period %s for %s (missing: %s)", prior, ticker, missing
+    )
+    try:
+        results = llm_extractor.extract_for_period(llm_text, missing, period_str, prior)
+    except Exception as e:
+        log.error("Gap fill failed for %s %s: %s", ticker, prior, e, exc_info=True)
+        return
+
+    try:
+        _gf_meta = dict(llm_extractor._last_call_meta)
+        from extractors.llm_extractor import _active_model
+        gf_hits = lambda t: sum(1 for r in results.values() if r is not None and r.confidence >= t)
+        db.insert_benchmark_run({
+            'model': _active_model(db),
+            'call_type': 'gap_fill',
+            'ticker': ticker,
+            'period': prior,
+            'report_id': report.get('id'),
+            'prompt_chars': len(llm_text),
+            'response_chars': _gf_meta.get('response_chars', 0),
+            'prompt_tokens': _gf_meta.get('prompt_tokens', 0),
+            'response_tokens': _gf_meta.get('response_tokens', 0),
+            'total_duration_ms': _gf_meta.get('total_duration_ms', 0),
+            'eval_duration_ms': _gf_meta.get('eval_duration_ms', 0),
+            'metrics_requested': len(missing),
+            'metrics_extracted': len(results),
+            'hits_90': gf_hits(0.90),
+            'hits_80': gf_hits(0.80),
+            'hits_75': gf_hits(0.75),
+        })
+    except Exception as _bench_err:
+        log.debug("Gap fill benchmark write failed (non-fatal): %s", _bench_err)
+
+    for metric, result in results.items():
+        if result is None or result.confidence < confidence_threshold:
+            continue
+        # Only store if slot is still empty — another extraction may have filled it
+        if db.data_point_exists(ticker, prior, metric):
+            continue
+        db.insert_data_point({
+            'report_id': report.get('id'),
+            'ticker': ticker,
+            'period': prior,
+            'metric': metric,
+            'value': result.value,
+            'unit': result.unit,
+            'confidence': result.confidence,
+            'extraction_method': result.extraction_method,
+            'source_snippet': result.source_snippet,
+        })
+        summary.data_points_extracted += 1
+        log.info(
+            "Gap fill: stored %s %s %s = %.4f", ticker, prior, metric, result.value
+        )
+
+
+def _get_llm_extractor(db):
+    """Return a module-level LLMExtractor singleton, or None if unavailable."""
+    global _llm_extractor_instance
+    with _llm_extractor_lock:
+        if _llm_extractor_instance is None:
+            try:
+                import requests
+                from extractors.llm_extractor import LLMExtractor
+                session = requests.Session()
+                _llm_extractor_instance = LLMExtractor(session=session, db=db)
+                log.debug("LLM extractor initialized")
+            except Exception as e:
+                log.warning("Could not initialize LLM extractor: %s", e)
+                return None
+        return _llm_extractor_instance
+
+
+def _check_llm_available(llm_extractor) -> bool:
+    """Return cached LLM availability, refreshing every 5 min.
+
+    Calling check_connectivity() on every report wastes 2 HTTP round-trips each
+    time. This function caches the result for _LLM_AVAILABLE_CACHE_TTL seconds
+    so a batch of 50 reports pays the connectivity cost once, not 50 times.
+
+    The cache is keyed by extractor identity (id()) so that test mocks always
+    see a fresh check — they are different Python objects from the real singleton.
+    """
+    global _llm_available_cache, _llm_available_cache_time, _llm_available_cache_extractor_id
+    if llm_extractor is None:
+        return False
+    now = _time.monotonic()
+    extractor_id = id(llm_extractor)
+    with _llm_cache_lock:
+        if (extractor_id == _llm_available_cache_extractor_id
+                and now - _llm_available_cache_time < _LLM_AVAILABLE_CACHE_TTL):
+            return _llm_available_cache
+        result = llm_extractor.check_connectivity()
+        _llm_available_cache = result
+        _llm_available_cache_time = now
+        _llm_available_cache_extractor_id = extractor_id
+    return result
+
+
+def _build_regex_by_metric(text: str, registry, report_date: str = None) -> dict:
+    """Run regex extraction for all metrics. Returns best result per metric.
+
+    Passes report_date to extract_all so temporally-scoped patterns are
+    filtered to those valid for this report's period.
+    """
+    from extractors.extractor import extract_all
+    regex_by_metric = {}
+    for metric, patterns in registry.metrics.items():
+        results = extract_all(text, patterns, metric, report_date=report_date)
+        if results:
+            regex_by_metric[metric] = results[0]  # sorted confidence-desc; first = best
+    return regex_by_metric
+
+
+def _run_llm_batch(llm_extractor, text: str, metrics: list, ticker: str = None) -> tuple:
+    """
+    Try batch extraction first (1 Ollama call for all metrics).
+    Falls back to per-metric extract() if batch returns empty.
+
+    Returns (results: dict, meta: dict) where meta contains timing info from
+    llm_extractor._last_call_meta (populated by _call_ollama).
+    """
+    result = llm_extractor.extract_batch(text, metrics, ticker=ticker)
+    meta = dict(llm_extractor._last_call_meta)
+    if result:
+        log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
+        return result, meta
+    log.warning("  LLM batch empty — falling back to per-metric (%d calls)", len(metrics))
+    fallback = {}
+    for metric in metrics:
+        r = llm_extractor.extract(text, metric)
+        if r is not None:
+            fallback[metric] = r
+        # Update meta with the last per-metric call (best-effort; final call wins)
+        meta = dict(llm_extractor._last_call_meta)
+    return fallback, meta
+
+
+def _apply_agreement(
+    metric: str,
+    regex_best,
+    llm_result,
+    db,
+    report: dict,
+    llm_available: bool,
+    confidence_threshold: float,
+    summary,
+) -> None:
+    """Apply the agreement engine for one metric in one report. Writes to DB."""
+    from extractors.agreement import evaluate_agreement
+
+    ticker = report['ticker']
+    period_str = report['report_date']
+    report_id = report['id']
+
+    # Check analyst protection before any write
+    existing = db.data_point_exists(ticker, period_str, metric)
+    if existing:
+        with db._get_connection() as conn:
+            row = conn.execute(
+                "SELECT extraction_method FROM data_points WHERE ticker=? AND period=? AND metric=?",
+                (ticker, period_str, metric),
+            ).fetchone()
+            if row and row[0] in _PROTECTED_METHODS:
+                log.debug("Skipping analyst-protected %s %s %s", ticker, period_str, metric)
+                return
+
+    if llm_available:
+        decision = evaluate_agreement(regex_best, llm_result)
+
+        if decision.decision == 'AUTO_ACCEPT':
+            db.insert_data_point({
+                "report_id": report_id,
+                "ticker": ticker,
+                "period": period_str,
+                "metric": metric,
+                "value": regex_best.value,
+                "unit": regex_best.unit,
+                "confidence": regex_best.confidence,
+                "extraction_method": regex_best.extraction_method,
+                "source_snippet": regex_best.source_snippet,
+            })
+            summary.data_points_extracted += 1
+
+        elif decision.decision == 'LLM_ONLY' and llm_result is not None:
+            # LLM found a value but regex found nothing.
+            # High confidence → auto-accept directly to data_points.
+            # Low confidence → review queue for human check.
+            if llm_result.confidence >= confidence_threshold:
+                db.insert_data_point({
+                    "report_id": report_id,
+                    "ticker": ticker,
+                    "period": period_str,
+                    "metric": metric,
+                    "value": llm_result.value,
+                    "unit": llm_result.unit,
+                    "confidence": llm_result.confidence,
+                    "extraction_method": llm_result.extraction_method,
+                    "source_snippet": llm_result.source_snippet,
+                })
+                summary.data_points_extracted += 1
+            else:
+                db.insert_review_item({
+                    "data_point_id": None,
+                    "ticker": ticker,
+                    "period": period_str,
+                    "metric": metric,
+                    "raw_value": str(llm_result.value),
+                    "confidence": llm_result.confidence,
+                    "source_snippet": llm_result.source_snippet,
+                    "status": "PENDING",
+                    "llm_value": llm_result.value,
+                    "regex_value": None,
+                    "agreement_status": "LLM_ONLY",
+                })
+                summary.review_flagged += 1
+
+        elif decision.decision in ('REVIEW_QUEUE', 'REGEX_ONLY'):
+            raw_val = str(decision.regex_value or decision.llm_value or "")
+            conf = (
+                regex_best.confidence if regex_best else
+                (llm_result.confidence if llm_result else 0.5)
+            )
+            snippet = (
+                regex_best.source_snippet if regex_best else
+                (llm_result.source_snippet if llm_result else "")
+            )
+            db.insert_review_item({
+                "data_point_id": None,
+                "ticker": ticker,
+                "period": period_str,
+                "metric": metric,
+                "raw_value": raw_val,
+                "confidence": conf,
+                "source_snippet": snippet,
+                "status": "PENDING",
+                "llm_value": decision.llm_value,
+                "regex_value": decision.regex_value,
+                "agreement_status": decision.decision,
+            })
+            summary.review_flagged += 1
+        # NO_EXTRACTION → period gap, skip
+
+    else:
+        # LLM not available — legacy confidence-threshold routing
+        if regex_best is None:
+            return
+        dp = {
+            "report_id": report_id,
+            "ticker": ticker,
+            "period": period_str,
+            "metric": metric,
+            "value": regex_best.value,
+            "unit": regex_best.unit,
+            "confidence": regex_best.confidence,
+            "extraction_method": regex_best.extraction_method,
+            "source_snippet": regex_best.source_snippet,
+        }
+        if regex_best.confidence >= confidence_threshold:
+            db.insert_data_point(dp)
+            summary.data_points_extracted += 1
+        else:
+            db.insert_review_item({
+                "data_point_id": None,
+                "ticker": ticker,
+                "period": period_str,
+                "metric": metric,
+                "raw_value": str(regex_best.value),
+                "confidence": regex_best.confidence,
+                "source_snippet": regex_best.source_snippet,
+                "status": "PENDING",
+                "llm_value": None,
+                "regex_value": regex_best.value,
+                "agreement_status": "REGEX_ONLY",
+            })
+            summary.review_flagged += 1
+
+
+def extract_report(report: dict, db, registry) -> 'ExtractionSummary':
+    """
+    Run LLM+regex+agreement on one stored report.
+
+    Skips analyst-protected (ticker, period, metric) triples. Calls
+    db.mark_report_extracted(report['id']) after processing (even on error)
+    to prevent infinite re-processing loops.
+
+    Returns ExtractionSummary with counts.
+    """
+    from miner_types import ExtractionSummary
+    from config import CONFIDENCE_REVIEW_THRESHOLD
+
+    summary = ExtractionSummary()
+    text = report.get('raw_text') or ''
+
+    if not text.strip():
+        log.warning(
+            "Empty raw_text for report id=%s ticker=%s period=%s",
+            report.get('id'), report.get('ticker'), report.get('report_date'),
+        )
+        summary.errors += 1
+        db.mark_report_extracted(report['id'])
+        return summary
+
+    try:
+        log.info(
+            "Extracting report id=%s ticker=%s period=%s",
+            report.get('id'), report.get('ticker'), report.get('report_date'),
+        )
+        report_date = report.get('report_date')
+        regex_by_metric = _build_regex_by_metric(text, registry, report_date=report_date)
+
+        llm_extractor = _get_llm_extractor(db)
+        llm_available = _check_llm_available(llm_extractor)
+
+        if not llm_available:
+            log.debug(
+                "Ollama not reachable — using legacy confidence routing for %s %s",
+                report.get('ticker'), report_date,
+            )
+
+        # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],
+        # etc.) from the back of the document before sending to LLM. Regex extraction
+        # still runs on the full raw_text. Truncate after stripping.
+        llm_text = _clean_for_llm(text)[:_LLM_TEXT_MAX_CHARS]
+
+        all_metrics = list(registry.metrics.keys())
+        ticker = report.get('ticker')
+
+        # Single batch LLM call (pays prefill once for all metrics).
+        # Falls back to per-metric if batch returns empty.
+        llm_by_metric = {}
+        if llm_available:
+            llm_by_metric, _batch_meta = _run_llm_batch(
+                llm_extractor, llm_text, all_metrics, ticker=ticker
+            )
+            try:
+                from extractors.llm_extractor import _active_model
+                hits = lambda t: sum(1 for r in llm_by_metric.values() if r.confidence >= t)
+                db.insert_benchmark_run({
+                    'model': _active_model(db),
+                    'call_type': 'batch',
+                    'ticker': ticker,
+                    'period': report.get('report_date'),
+                    'report_id': report.get('id'),
+                    'prompt_chars': len(llm_text),
+                    'response_chars': _batch_meta.get('response_chars', 0),
+                    'prompt_tokens': _batch_meta.get('prompt_tokens', 0),
+                    'response_tokens': _batch_meta.get('response_tokens', 0),
+                    'total_duration_ms': _batch_meta.get('total_duration_ms', 0),
+                    'eval_duration_ms': _batch_meta.get('eval_duration_ms', 0),
+                    'metrics_requested': len(all_metrics),
+                    'metrics_extracted': len(llm_by_metric),
+                    'hits_90': hits(0.90),
+                    'hits_80': hits(0.80),
+                    'hits_75': hits(0.75),
+                })
+            except Exception as _bench_err:
+                log.debug("Benchmark write failed (non-fatal): %s", _bench_err)
+
+        for metric in all_metrics:
+            regex_best = regex_by_metric.get(metric)
+            # Skip metrics with no data from either source when LLM not available
+            if not llm_available and regex_best is None:
+                continue
+
+            _apply_agreement(
+                metric=metric,
+                regex_best=regex_best,
+                llm_result=llm_by_metric.get(metric),
+                db=db,
+                report=report,
+                llm_available=llm_available,
+                confidence_threshold=CONFIDENCE_REVIEW_THRESHOLD,
+                summary=summary,
+            )
+
+        # Second-pass: try to fill prior-period gaps if LLM found figures for last month
+        if llm_available:
+            _try_gap_fill(
+                report, db, llm_extractor, llm_text, all_metrics,
+                CONFIDENCE_REVIEW_THRESHOLD, summary,
+            )
+
+        summary.reports_processed += 1
+
+    except Exception as e:
+        log.error(
+            "Extraction failed for report id=%s ticker=%s: %s",
+            report.get('id'), report.get('ticker'), e, exc_info=True,
+        )
+        summary.errors += 1
+
+    finally:
+        db.mark_report_extracted(report['id'])
+
+    return summary

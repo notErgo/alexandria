@@ -1,0 +1,796 @@
+{% extends "base.html" %}
+{% block title %}Pattern Rules{% endblock %}
+
+{% block styles %}
+<style>
+.metric-section { margin-bottom: 2rem; }
+.metric-header {
+  display: flex; align-items: center; gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+.metric-header h2 {
+  font-size: 0.85rem; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--theme-text-secondary);
+  font-weight: 700; margin: 0;
+}
+.metric-header .unit-badge {
+  font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  background: rgba(59,130,246,0.15); color: var(--theme-accent);
+  border-radius: 4px; font-family: ui-monospace, monospace;
+}
+.btn-add-pattern {
+  margin-left: auto; font-size: 0.75rem; padding: 0.25rem 0.65rem;
+}
+
+/* Pattern table */
+.pattern-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.pattern-table th {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--theme-text-muted); font-weight: 600;
+  padding: 0.4rem 0.6rem; text-align: left;
+  border-bottom: 1px solid var(--theme-border);
+}
+.pattern-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--theme-border);
+  vertical-align: middle;
+}
+.pattern-table tr:hover td { background: rgba(255,255,255,0.03); }
+.col-id     { width: 120px; color: var(--theme-text-muted);
+              font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.col-regex  { font-family: ui-monospace, monospace; word-break: break-all; }
+.col-weight { width: 70px; text-align: right; }
+.col-fires  { width: 60px; text-align: right; }
+.col-conf   { width: 80px; text-align: right; }
+.col-actions{ width: 90px; text-align: right; white-space: nowrap; }
+.fires-zero { color: var(--theme-warning); }
+.edit-input {
+  background: var(--theme-bg-input); color: var(--theme-text-primary);
+  border: 1px solid var(--theme-accent); border-radius: 4px;
+  padding: 0.2rem 0.4rem; font-family: ui-monospace, monospace;
+  font-size: 0.82rem; width: 100%;
+}
+.edit-weight { width: 60px; }
+.regex-error { color: var(--theme-danger); font-size: 0.75rem; margin-top: 0.2rem; }
+
+/* Add pattern form */
+.add-pattern-form {
+  display: none; background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border); border-top: none;
+  padding: 0.75rem 1rem; border-radius: 0 0 6px 6px;
+}
+.add-pattern-form.visible { display: flex; gap: 0.5rem; align-items: flex-start; }
+.add-pattern-form input[type=text] {
+  flex: 1; background: var(--theme-bg-input); color: var(--theme-text-primary);
+  border: 1px solid var(--theme-border); border-radius: 4px;
+  padding: 0.3rem 0.5rem; font-family: ui-monospace, monospace; font-size: 0.82rem;
+}
+.add-pattern-form input[type=number] {
+  width: 70px; background: var(--theme-bg-input); color: var(--theme-text-primary);
+  border: 1px solid var(--theme-border); border-radius: 4px;
+  padding: 0.3rem 0.5rem; font-size: 0.82rem;
+}
+.add-pattern-form label { font-size: 0.72rem; color: var(--theme-text-muted); margin-bottom: 0.2rem; display:block; }
+
+/* Keyword gap section */
+.gap-grid {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem;
+}
+.gap-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.2rem 0.55rem; border-radius: 12px; font-size: 0.78rem;
+  font-family: ui-monospace, monospace;
+}
+.gap-chip.covered {
+  background: rgba(34,197,94,0.12); color: #22c55e;
+  border: 1px solid rgba(34,197,94,0.25);
+}
+.gap-chip.uncovered {
+  background: rgba(249,115,22,0.12); color: #f97316;
+  border: 1px solid rgba(249,115,22,0.3);
+  cursor: pointer;
+}
+.gap-chip.uncovered:hover { background: rgba(249,115,22,0.2); }
+.gap-chip .chip-count { opacity: 0.7; font-size: 0.7em; }
+
+/* Live test panel */
+.test-panel { margin-bottom: 2rem; }
+.test-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+.test-row textarea {
+  flex: 1; background: var(--theme-bg-input); color: var(--theme-text-primary);
+  border: 1px solid var(--theme-border); border-radius: 6px;
+  padding: 0.5rem 0.75rem; font-family: ui-monospace, monospace;
+  font-size: 0.82rem; resize: vertical; min-height: 80px;
+}
+.test-row input[type=text] {
+  width: 300px; background: var(--theme-bg-input); color: var(--theme-text-primary);
+  border: 1px solid var(--theme-border); border-radius: 6px;
+  padding: 0.5rem 0.75rem; font-family: ui-monospace, monospace; font-size: 0.82rem;
+}
+.test-controls { display: flex; flex-direction: column; gap: 0.5rem; min-width: 160px; }
+.test-results { margin-top: 0.75rem; }
+.match-card {
+  background: var(--theme-bg-tertiary); border: 1px solid var(--theme-border);
+  border-left: 3px solid var(--theme-accent);
+  border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem;
+  font-size: 0.82rem; font-family: ui-monospace, monospace;
+}
+.match-card .match-label { color: var(--theme-text-muted); font-size: 0.72rem; text-transform: uppercase; }
+.match-highlight { color: var(--theme-accent); font-weight: 600; }
+.no-match { color: var(--theme-text-muted); font-size: 0.85rem; padding: 0.5rem 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Pattern Rules</h1>
+
+<!-- Live test panel -->
+<div class="card test-panel">
+  <h2 style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.5px;color:var(--theme-text-muted);margin:0 0 .75rem 0">Live Pattern Test</h2>
+  <div class="test-row">
+    <div style="flex:1">
+      <label style="font-size:0.72rem;color:var(--theme-text-muted);display:block;margin-bottom:.25rem">Regex pattern</label>
+      <input type="text" id="test-regex" placeholder="(?i)mined\s+([\d,]+(?:\.\d+)?)\s*(?:bitcoin|btc)" style="width:100%;margin-bottom:.5rem">
+      <label style="font-size:0.72rem;color:var(--theme-text-muted);display:block;margin-bottom:.25rem">Source text to test against</label>
+      <textarea id="test-text" placeholder="Paste a snippet from a press release here…"></textarea>
+    </div>
+    <div class="test-controls">
+      <div>
+        <label style="font-size:0.72rem;color:var(--theme-text-muted);display:block;margin-bottom:.25rem">Metric (for normalization)</label>
+        <select id="test-metric" style="width:100%;background:var(--theme-bg-input);color:var(--theme-text-primary);border:1px solid var(--theme-border);border-radius:4px;padding:.35rem .5rem;font-size:.82rem">
+          <option value="production_btc">production_btc</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="runTest()" style="margin-top:.25rem">Test Pattern</button>
+    </div>
+  </div>
+  <div class="test-results" id="test-results"></div>
+</div>
+
+<div id="loading" style="color:var(--theme-text-muted);padding:2rem;text-align:center">Loading patterns…</div>
+<div id="patterns-content" hidden>
+
+  <!-- Keyword gap section -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2 style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.5px;color:var(--theme-text-muted);margin:0 0 .4rem 0">Keyword Coverage</h2>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 .75rem 0">
+      Top words found adjacent to extracted values in source documents.
+      <span style="color:#22c55e">Green</span> = covered by a pattern.
+      <span style="color:#f97316">Orange</span> = not in any pattern — potential extraction gap. Click to prefill test.
+    </p>
+    <div class="gap-grid" id="gap-grid"></div>
+  </div>
+
+  <!-- Per-metric pattern tables -->
+  <div id="metric-sections"></div>
+
+</div>
+
+<!-- LLM Prompt Config ────────────────────────────────────────────────── -->
+<div class="card" style="margin-top:2rem;" id="llm-prompt-section">
+  <h2 style="font-size:0.8rem;text-transform:uppercase;letter-spacing:.5px;color:var(--theme-text-muted);margin:0 0 .75rem 0">
+    LLM Extraction Prompts
+  </h2>
+  <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 1.25rem 0">
+    Configure the Qwen3.5-35B-A3B extractor. Changes take effect on the next extraction run.
+  </p>
+
+  <!-- 3b: Global Batch Preamble ─────────────────────────────────────── -->
+  <div style="border-bottom:1px solid var(--theme-border);padding-bottom:1.25rem;margin-bottom:1.25rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+      <h3 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-secondary);font-weight:700;margin:0;">Global Batch Preamble</h3>
+      <span id="preamble-indicator" style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:10px;background:rgba(160,160,160,0.15);color:var(--theme-text-muted);">Using default</span>
+    </div>
+    <p style="font-size:0.75rem;color:var(--theme-text-muted);margin:0 0 0.5rem 0;">
+      This preamble appears at the top of every batch extraction call. Override to tune tone/style.
+    </p>
+    <textarea id="preamble-text" rows="3" style="width:100%;box-sizing:border-box;
+      background:var(--theme-bg-input);color:var(--theme-text-primary);
+      border:1px solid var(--theme-border);border-radius:6px;
+      padding:0.6rem;font-family:ui-monospace,monospace;font-size:0.82rem;
+      resize:vertical;"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+      <button class="btn btn-primary btn-sm" onclick="savePreamble()">Save Global Prompt</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetPreamble()">Reset to Default</button>
+      <span id="preamble-status" style="font-size:0.78rem;color:var(--theme-text-muted);align-self:center;"></span>
+    </div>
+  </div>
+
+  <!-- All Metric Overrides overview ────────────────────────────────── -->
+  <div style="border-bottom:1px solid var(--theme-border);padding-bottom:1.25rem;margin-bottom:1.25rem;">
+    <h3 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-secondary);font-weight:700;margin:0 0 0.5rem 0;">All Metric Prompts</h3>
+    <p style="font-size:0.75rem;color:var(--theme-text-muted);margin:0 0 0.5rem 0;">
+      Click a metric to jump to its prompt editor below.
+    </p>
+    <div id="prompts-overview-loading" style="font-size:0.78rem;color:var(--theme-text-muted);">Loading…</div>
+    <table id="prompts-overview-table" style="display:none;width:100%;border-collapse:collapse;font-size:0.82rem;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:0.3rem 0.5rem;font-size:0.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);border-bottom:1px solid var(--theme-border);">Metric</th>
+          <th style="text-align:left;padding:0.3rem 0.5rem;font-size:0.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);border-bottom:1px solid var(--theme-border);">Label</th>
+          <th style="text-align:left;padding:0.3rem 0.5rem;font-size:0.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);border-bottom:1px solid var(--theme-border);">Override</th>
+          <th style="padding:0.3rem 0.5rem;border-bottom:1px solid var(--theme-border);"></th>
+        </tr>
+      </thead>
+      <tbody id="prompts-overview-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- 3a: Per-Metric Prompt Editor ─────────────────────────────────── -->
+  <div style="border-bottom:1px solid var(--theme-border);padding-bottom:1.25rem;margin-bottom:1.25rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+      <h3 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-secondary);font-weight:700;margin:0;">Per-Metric Override</h3>
+      <span id="llm-override-indicator" style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:10px;background:rgba(160,160,160,0.15);color:var(--theme-text-muted);">Using default</span>
+    </div>
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem;">
+      <div class="filter-section">
+        <label>Metric</label>
+        <select id="llm-metric-sel" onchange="loadLlmPrompt()" style="min-width:200px;">
+          <option value="production_btc">production_btc</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:0.75rem;color:var(--theme-text-muted);display:block;margin-bottom:0.3rem;">Prompt text (grey = built-in default shown for reference; save to override)</label>
+      <textarea id="llm-prompt-text" rows="8" style="width:100%;box-sizing:border-box;
+        background:var(--theme-bg-input);color:var(--theme-text-primary);
+        border:1px solid var(--theme-border);border-radius:6px;
+        padding:0.6rem;font-family:ui-monospace,monospace;font-size:0.82rem;
+        resize:vertical;"></textarea>
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+      <button class="btn btn-primary btn-sm" onclick="saveLlmPrompt()">Save Prompt</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetLlmPromptToDefault()">Reset to Default</button>
+      <span id="llm-prompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);align-self:center;"></span>
+    </div>
+  </div>
+
+  <!-- 3c: Company Context Hints ────────────────────────────────────── -->
+  <div>
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">
+      <h3 style="font-size:0.75rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-secondary);font-weight:700;margin:0;">Company Context Hints</h3>
+    </div>
+    <p style="font-size:0.75rem;color:var(--theme-text-muted);margin:0 0 0.5rem 0;">
+      A short freeform note per company injected after the preamble when extracting that company's reports.
+    </p>
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem;">
+      <div class="filter-section">
+        <label>Company</label>
+        <select id="hint-ticker-sel" onchange="loadTickerHint()" style="min-width:120px;">
+          <option value="MARA">MARA</option>
+          <option value="RIOT">RIOT</option>
+          <option value="CLSK">CLSK</option>
+          <option value="CORZ">CORZ</option>
+          <option value="BITF">BITF</option>
+          <option value="BTBT">BTBT</option>
+          <option value="CIFR">CIFR</option>
+          <option value="HIVE">HIVE</option>
+          <option value="HUT8">HUT8</option>
+          <option value="ARBK">ARBK</option>
+          <option value="SDIG">SDIG</option>
+          <option value="WULF">WULF</option>
+          <option value="IREN">IREN</option>
+        </select>
+      </div>
+    </div>
+    <textarea id="hint-text" rows="3" style="width:100%;box-sizing:border-box;
+      background:var(--theme-bg-input);color:var(--theme-text-primary);
+      border:1px solid var(--theme-border);border-radius:6px;
+      padding:0.6rem;font-family:ui-monospace,monospace;font-size:0.82rem;
+      resize:vertical;" placeholder="e.g. MARA uses a dual-period table format: current | year-ago | % | prior-month | %."></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+      <button class="btn btn-primary btn-sm" onclick="saveTickerHint()">Save Hint</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearTickerHint()">Clear Hint</button>
+      <span id="hint-status" style="font-size:0.78rem;color:var(--theme-text-muted);align-self:center;"></span>
+    </div>
+  </div>
+</div>
+
+<div id="error-banner" class="error-banner" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _data = null;
+
+// ── Gap chips ────────────────────────────────────────────────────────────────
+function renderGaps(gaps) {
+  const grid = document.getElementById('gap-grid');
+  grid.innerHTML = gaps.map(g => {
+    const cls = g.covered ? 'covered' : 'uncovered';
+    const onclick = g.covered ? '' : `onclick="prefillTest('${escapeHtml(g.word)}')"`;
+    return `<span class="gap-chip ${cls}" title="${g.count} occurrences" ${onclick}>
+      ${escapeHtml(g.word)}<span class="chip-count">${g.count}</span>
+    </span>`;
+  }).join('');
+}
+
+function prefillTest(word) {
+  document.getElementById('test-regex').value = `(?i)${word}[^\\d]{0,40}([\\d,]+(?:\\.\\d+)?)`;
+  document.getElementById('test-text').focus();
+}
+
+// ── Pattern tables ────────────────────────────────────────────────────────────
+function renderMetrics(metrics) {
+  const container = document.getElementById('metric-sections');
+  container.innerHTML = metrics.map(m => `
+    <div class="metric-section card" id="section-${m.metric}">
+      <div class="metric-header">
+        <h2>${escapeHtml(m.label)}</h2>
+        <span class="unit-badge">${escapeHtml(m.unit)}</span>
+        <button class="btn btn-secondary btn-sm btn-add-pattern"
+                onclick="toggleAddForm('${m.metric}')">+ Add Pattern</button>
+      </div>
+      <table class="pattern-table sortable-table" id="table-${m.metric}">
+        <thead><tr>
+          <th class="col-id">ID</th>
+          <th class="col-regex">Regex</th>
+          <th class="col-weight">Weight</th>
+          <th class="col-fires">Fires</th>
+          <th class="col-conf">Avg Conf</th>
+          <th class="col-actions">Actions</th>
+        </tr></thead>
+        <tbody>${m.patterns.map(p => patternRow(m.metric, p)).join('')}</tbody>
+      </table>
+      <div class="add-pattern-form" id="add-form-${m.metric}">
+        <div style="flex:1">
+          <label>Regex</label>
+          <input type="text" id="add-regex-${m.metric}" placeholder="(?i)energized[^\d]{0,40}([\d.]+)\s*(?:eh/s|ph/s)" style="width:100%">
+        </div>
+        <div>
+          <label>Weight (0–1)</label>
+          <input type="number" id="add-weight-${m.metric}" value="0.80" min="0.01" max="1" step="0.01">
+        </div>
+        <div style="align-self:flex-end">
+          <button class="btn btn-primary btn-sm" onclick="saveNewPattern('${m.metric}')">Save</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleAddForm('${m.metric}')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function patternRow(metric, p) {
+  const firesClass = p.fires === 0 ? 'fires-zero' : '';
+  const conf = p.avg_conf != null ? p.avg_conf.toFixed(3) : '—';
+  return `<tr id="row-${p.id}" data-metric="${metric}" data-id="${escapeHtml(p.id)}">
+    <td class="col-id">${escapeHtml(p.id)}</td>
+    <td class="col-regex" id="regex-cell-${p.id}">${escapeHtml(p.regex)}</td>
+    <td class="col-weight" id="weight-cell-${p.id}">${p.confidence_weight}</td>
+    <td class="col-fires ${firesClass}">${p.fires}</td>
+    <td class="col-conf">${conf}</td>
+    <td class="col-actions">
+      <button class="btn btn-secondary btn-sm" onclick="startEdit('${metric}','${escapeHtml(p.id)}','${escapeHtml(p.regex).replace(/'/g,"\\'")}',${p.confidence_weight})">Edit</button>
+      <button class="btn btn-secondary btn-sm" style="color:var(--theme-danger)" onclick="deletePattern('${metric}','${escapeHtml(p.id)}')">✕</button>
+    </td>
+  </tr>`;
+}
+
+// ── Inline edit ───────────────────────────────────────────────────────────────
+function startEdit(metric, id, regex, weight) {
+  document.getElementById(`regex-cell-${id}`).innerHTML =
+    `<div><input class="edit-input" id="edit-regex-${id}" value="${escapeHtml(regex)}">
+     <div class="regex-error" id="regex-err-${id}"></div></div>`;
+  document.getElementById(`weight-cell-${id}`).innerHTML =
+    `<input class="edit-input edit-weight" id="edit-weight-${id}" type="number" min="0.01" max="1" step="0.01" value="${weight}">`;
+  const actionsCell = document.querySelector(`#row-${CSS.escape(id)} .col-actions`);
+  actionsCell.innerHTML =
+    `<button class="btn btn-primary btn-sm" onclick="saveEdit('${metric}','${escapeHtml(id)}')">Save</button>
+     <button class="btn btn-secondary btn-sm" onclick="reload()">Cancel</button>`;
+}
+
+async function saveEdit(metric, id) {
+  const regex  = document.getElementById(`edit-regex-${id}`).value.trim();
+  const weight = parseFloat(document.getElementById(`edit-weight-${id}`).value);
+  if (!regex) return;
+  try {
+    const resp = await fetch(`/api/patterns/${metric}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex, confidence_weight: weight}),
+    });
+    const json = await resp.json();
+    if (!json.success) {
+      document.getElementById(`regex-err-${id}`).textContent = json.error?.message || 'Save failed';
+      return;
+    }
+    showToast('Pattern saved');
+    reload();
+  } catch(e) {
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+// ── Add new pattern ───────────────────────────────────────────────────────────
+function toggleAddForm(metric) {
+  const form = document.getElementById(`add-form-${metric}`);
+  form.classList.toggle('visible');
+  if (form.classList.contains('visible'))
+    document.getElementById(`add-regex-${metric}`).focus();
+}
+
+async function saveNewPattern(metric) {
+  const regex  = document.getElementById(`add-regex-${metric}`).value.trim();
+  const weight = parseFloat(document.getElementById(`add-weight-${metric}`).value);
+  if (!regex) return;
+  try {
+    const resp = await fetch(`/api/patterns/${metric}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex, confidence_weight: weight}),
+    });
+    const json = await resp.json();
+    if (!json.success) { showToast(json.error?.message || 'Add failed', true); return; }
+    showToast(`Pattern ${json.data.id} added`);
+    reload();
+  } catch(e) {
+    showToast('Add failed: ' + e.message, true);
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deletePattern(metric, id) {
+  if (!confirm(`Delete pattern ${id}?`)) return;
+  try {
+    const resp = await fetch(`/api/patterns/${metric}/${encodeURIComponent(id)}`, {method: 'DELETE'});
+    const json = await resp.json();
+    if (!json.success) { showToast(json.error?.message || 'Delete failed', true); return; }
+    showToast(`Pattern ${id} deleted`);
+    reload();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, true);
+  }
+}
+
+// ── Live test ─────────────────────────────────────────────────────────────────
+async function runTest() {
+  const regex  = document.getElementById('test-regex').value.trim();
+  const text   = document.getElementById('test-text').value.trim();
+  const metric = document.getElementById('test-metric').value;
+  const out    = document.getElementById('test-results');
+  if (!regex || !text) { out.innerHTML = '<div class="no-match">Enter a regex and text to test.</div>'; return; }
+  try {
+    const resp = await fetch('/api/patterns/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex, text, metric}),
+    });
+    const json = await resp.json();
+    if (!json.success) {
+      out.innerHTML = `<div class="no-match" style="color:var(--theme-danger)">${escapeHtml(json.error?.message)}</div>`;
+      return;
+    }
+    const matches = json.data.matches;
+    if (!matches.length) {
+      out.innerHTML = '<div class="no-match">No matches found.</div>';
+      return;
+    }
+    out.innerHTML = matches.map(m => `
+      <div class="match-card">
+        <div><span class="match-label">Full match</span> <span class="match-highlight">${escapeHtml(m.full_match)}</span></div>
+        ${m.group1 != null ? `<div><span class="match-label">Group 1</span> ${escapeHtml(m.group1)}</div>` : ''}
+        ${m.value  != null ? `<div><span class="match-label">Normalized</span> <span class="match-highlight">${m.value}</span> ${escapeHtml(m.unit||'')}</div>` : '<div style="color:var(--theme-warning);font-size:.78rem">⚠ Normalizer returned null — check unit in regex</div>'}
+        <div style="margin-top:.3rem;color:var(--theme-text-muted);font-size:.78rem">…${escapeHtml(m.context)}…</div>
+      </div>
+    `).join('');
+  } catch(e) {
+    out.innerHTML = `<div class="no-match" style="color:var(--theme-danger)">Error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// ── Load / reload ─────────────────────────────────────────────────────────────
+async function reload() {
+  const banner = document.getElementById('error-banner');
+  banner.hidden = true;
+  try {
+    const resp = await fetch('/api/patterns');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (!json.success) throw new Error(json.error?.message || 'Failed');
+    _data = json.data;
+    document.getElementById('loading').hidden = true;
+    document.getElementById('patterns-content').hidden = false;
+    renderGaps(_data.keyword_gaps);
+    renderMetrics(_data.metrics);
+  } catch(e) {
+    document.getElementById('loading').hidden = true;
+    banner.textContent = 'Failed to load patterns: ' + e.message;
+    banner.hidden = false;
+  }
+}
+
+reload();
+
+// ── Per-metric prompt editor ───────────────────────────────────────────────
+let _defaultPromptCache = {};  // metric → default prompt text
+
+async function loadLlmPrompt() {
+  const metric = document.getElementById('llm-metric-sel').value;
+  const ta = document.getElementById('llm-prompt-text');
+  const status = document.getElementById('llm-prompt-status');
+  const indicator = document.getElementById('llm-override-indicator');
+  ta.value = '';
+  status.textContent = 'Loading…';
+  try {
+    const resp = await fetch('/api/llm_prompts/' + encodeURIComponent(metric));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Error');
+    const override = body.data.prompt;
+    const defaultText = body.data.default_prompt || '';
+    _defaultPromptCache[metric] = defaultText;
+    if (override && override.prompt_text) {
+      ta.value = override.prompt_text;
+      ta.style.opacity = '1';
+      indicator.textContent = 'Override active';
+      indicator.style.background = 'rgba(59,130,246,0.15)';
+      indicator.style.color = 'var(--theme-accent)';
+      status.textContent = 'Override loaded.';
+    } else {
+      ta.value = defaultText;
+      ta.style.opacity = '0.55';
+      indicator.textContent = 'Using default';
+      indicator.style.background = 'rgba(160,160,160,0.15)';
+      indicator.style.color = 'var(--theme-text-muted)';
+      status.textContent = 'Showing built-in default (not saved).';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function saveLlmPrompt() {
+  const metric = document.getElementById('llm-metric-sel').value;
+  const text = document.getElementById('llm-prompt-text').value.trim();
+  const status = document.getElementById('llm-prompt-status');
+  if (!text) {
+    status.textContent = 'Cannot save empty prompt.';
+    return;
+  }
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/llm_prompts/' + encodeURIComponent(metric), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt_text: text}),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(function() { return {}; });
+      throw new Error(body.error?.message || 'HTTP ' + resp.status);
+    }
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Error');
+    status.textContent = 'Saved.';
+    showToast('Prompt saved for ' + metric);
+    await loadLlmPrompt();
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+async function resetLlmPromptToDefault() {
+  const metric = document.getElementById('llm-metric-sel').value;
+  const ta = document.getElementById('llm-prompt-text');
+  const indicator = document.getElementById('llm-override-indicator');
+  const status = document.getElementById('llm-prompt-status');
+  const defaultText = _defaultPromptCache[metric] || '';
+  ta.value = defaultText;
+  ta.style.opacity = '0.55';
+  indicator.textContent = 'Using default';
+  indicator.style.background = 'rgba(160,160,160,0.15)';
+  indicator.style.color = 'var(--theme-text-muted)';
+  status.textContent = 'Reset to default (not saved — click Save to persist override, or leave as-is to use default).';
+}
+
+// ── Global batch preamble ──────────────────────────────────────────────────
+let _defaultPreamble = '';
+
+async function loadPreamble() {
+  const ta = document.getElementById('preamble-text');
+  const indicator = document.getElementById('preamble-indicator');
+  const status = document.getElementById('preamble-status');
+  try {
+    // Fetch current override (if any)
+    const [cfgResp, defResp] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/config/llm_batch_preamble/default'),
+    ]);
+    const cfgBody = cfgResp.ok ? await cfgResp.json() : {success: false};
+    const defBody = defResp.ok ? await defResp.json() : {success: false};
+    if (defBody.success) _defaultPreamble = defBody.data.default;
+
+    const entries = cfgBody.success ? cfgBody.data.config : [];
+    const entry = entries.find(e => e.key === 'llm_batch_preamble');
+    if (entry) {
+      ta.value = entry.value;
+      ta.style.opacity = '1';
+      indicator.textContent = 'Override active';
+      indicator.style.background = 'rgba(59,130,246,0.15)';
+      indicator.style.color = 'var(--theme-accent)';
+    } else {
+      ta.value = _defaultPreamble;
+      ta.style.opacity = '0.55';
+      indicator.textContent = 'Using default';
+      indicator.style.background = 'rgba(160,160,160,0.15)';
+      indicator.style.color = 'var(--theme-text-muted)';
+    }
+  } catch (e) {
+    status.textContent = 'Error loading preamble: ' + e.message;
+  }
+}
+
+async function savePreamble() {
+  const text = document.getElementById('preamble-text').value.trim();
+  const status = document.getElementById('preamble-status');
+  if (!text) { status.textContent = 'Cannot save empty preamble.'; return; }
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/config/llm_batch_preamble', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: text}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Error');
+    status.textContent = 'Saved.';
+    showToast('Global preamble saved');
+    await loadPreamble();
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+async function resetPreamble() {
+  const ta = document.getElementById('preamble-text');
+  const indicator = document.getElementById('preamble-indicator');
+  const status = document.getElementById('preamble-status');
+  ta.value = _defaultPreamble;
+  ta.style.opacity = '0.55';
+  indicator.textContent = 'Using default';
+  indicator.style.background = 'rgba(160,160,160,0.15)';
+  indicator.style.color = 'var(--theme-text-muted)';
+  status.textContent = 'Reset to default (not saved).';
+}
+
+// ── Ticker context hints ───────────────────────────────────────────────────
+async function loadTickerHint() {
+  const ticker = document.getElementById('hint-ticker-sel').value;
+  const ta = document.getElementById('hint-text');
+  const status = document.getElementById('hint-status');
+  try {
+    const resp = await fetch('/api/config/hints/' + encodeURIComponent(ticker));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    ta.value = body.data.hint || '';
+    status.textContent = body.data.hint ? 'Hint loaded.' : 'No hint set.';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function saveTickerHint() {
+  const ticker = document.getElementById('hint-ticker-sel').value;
+  const hint = document.getElementById('hint-text').value.trim();
+  const status = document.getElementById('hint-status');
+  if (!hint) { clearTickerHint(); return; }
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/config/hints/' + encodeURIComponent(ticker), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({hint}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Error');
+    status.textContent = 'Saved.';
+    showToast('Hint saved for ' + ticker);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+async function clearTickerHint() {
+  const ticker = document.getElementById('hint-ticker-sel').value;
+  const ta = document.getElementById('hint-text');
+  const status = document.getElementById('hint-status');
+  status.textContent = 'Clearing…';
+  try {
+    const resp = await fetch('/api/config/hints/' + encodeURIComponent(ticker), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({hint: ''}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    ta.value = '';
+    status.textContent = 'Cleared.';
+    showToast('Hint cleared for ' + ticker);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Populate metric dropdowns + prompts overview from /api/metrics ─────────
+async function initMetricSelectors() {
+  try {
+    const [metricsResp, promptsResp] = await Promise.all([
+      fetch('/api/metrics'),
+      fetch('/api/llm_prompts'),
+    ]);
+    const metricsBody = await metricsResp.json();
+    const promptsBody = await promptsResp.json();
+
+    const metrics = (metricsBody.success && metricsBody.data.metrics) || [];
+    const activeOverrides = new Set(
+      (promptsBody.success && promptsBody.data.prompts || []).map(function(p) { return p.metric; })
+    );
+
+    // Populate test-metric dropdown
+    const testSel = document.getElementById('test-metric');
+    testSel.innerHTML = metrics.map(function(m) {
+      return `<option value="${escapeHtml(m.key)}">${escapeHtml(m.key)}</option>`;
+    }).join('');
+
+    // Populate llm-metric-sel dropdown
+    const llmSel = document.getElementById('llm-metric-sel');
+    llmSel.innerHTML = metrics.map(function(m) {
+      return `<option value="${escapeHtml(m.key)}">${escapeHtml(m.key)}</option>`;
+    }).join('');
+
+    // Handle ?metric=X URL param — auto-select and scroll to editor
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramMetric = urlParams.get('metric');
+    if (paramMetric) {
+      const exists = metrics.some(function(m) { return m.key === paramMetric; });
+      if (exists) {
+        llmSel.value = paramMetric;
+        document.getElementById('llm-prompt-section').scrollIntoView({behavior: 'smooth', block: 'start'});
+      }
+    }
+
+    // Load the currently selected metric's prompt
+    loadLlmPrompt();
+
+    // Render All Metric Prompts overview table
+    const tbody = document.getElementById('prompts-overview-tbody');
+    tbody.innerHTML = metrics.map(function(m) {
+      const hasOverride = activeOverrides.has(m.key);
+      const badge = hasOverride
+        ? `<span style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:10px;background:rgba(59,130,246,0.15);color:var(--theme-accent);">Override active</span>`
+        : `<span style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:10px;background:rgba(160,160,160,0.1);color:var(--theme-text-muted);">Default</span>`;
+      return `<tr style="border-bottom:1px solid var(--theme-border);">
+        <td style="padding:0.3rem 0.5rem;font-family:ui-monospace,monospace;font-size:0.8rem;color:var(--theme-text-muted);">${escapeHtml(m.key)}</td>
+        <td style="padding:0.3rem 0.5rem;">${escapeHtml(m.label)}</td>
+        <td style="padding:0.3rem 0.5rem;">${badge}</td>
+        <td style="padding:0.3rem 0.5rem;text-align:right;">
+          <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;"
+            onclick="jumpToMetricEditor('${escapeHtml(m.key)}')">Edit</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('prompts-overview-loading').style.display = 'none';
+    document.getElementById('prompts-overview-table').style.display = '';
+
+  } catch (e) {
+    document.getElementById('prompts-overview-loading').textContent = 'Failed to load metrics: ' + e.message;
+  }
+}
+
+function jumpToMetricEditor(metric) {
+  const sel = document.getElementById('llm-metric-sel');
+  sel.value = metric;
+  loadLlmPrompt();
+  document.getElementById('llm-prompt-section').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+// Load initial state for all LLM config sections
+initMetricSelectors();   // populates dropdowns + loads prompt for selected metric
+loadPreamble();
+loadTickerHint();
+</script>
+{% endblock %}

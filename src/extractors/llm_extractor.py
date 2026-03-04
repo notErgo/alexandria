@@ -1,0 +1,706 @@
+"""
+LLM-based metric extractor using Ollama (local inference).
+
+Calls Ollama /api/generate with a metric-specific prompt + document text.
+Returns an ExtractionResult or None on any failure.
+
+Failure modes handled silently (return None):
+  - Network error / timeout
+  - HTTP 4xx / 5xx from Ollama
+  - Malformed JSON in LLM response
+  - Null or out-of-range value in LLM response
+  - Missing metric in response JSON
+"""
+import json
+import logging
+from typing import Optional
+
+import requests
+
+from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
+
+
+def _active_model(db=None) -> str:
+    """Return the currently configured Ollama model name.
+
+    Checks the config_settings DB row 'ollama_model' first (set via the UI).
+    Falls back to the compile-time constant LLM_MODEL_ID (env var or default).
+    """
+    if db is not None:
+        try:
+            val = db.get_config('ollama_model')
+            if val:
+                return val
+        except Exception:
+            pass
+    return LLM_MODEL_ID
+from extractors.confidence import METRIC_VALID_RANGES
+from miner_types import ExtractionResult
+
+log = logging.getLogger('miners.extractors.llm_extractor')
+
+# Hardcoded default prompts per metric.
+# Stored as DB overrides (llm_prompts table) take priority when available.
+_DEFAULT_PROMPTS: dict = {
+    "production_btc": (
+        "You are a financial data extractor. Your task: find the TOTAL number of bitcoin this "
+        "company MINED, PRODUCED, EARNED, or SELF-MINED during THIS reporting month.\n\n"
+        "Common phrasings to look for:\n"
+        "- 'mined X bitcoin', 'produced X BTC', 'earned X BTC', 'X BTC produced', 'X BTC earned'\n"
+        "- 'X self-mined bitcoin', 'produced X self-mined bitcoin during [month]'\n"
+        "- Table rows like: 'BTC Produced | 713', 'Total BTC earned | 269', 'Bitcoin mined: 450'\n"
+        "- 'X bitcoin were mined during the month', 'approximately X BTC produced'\n\n"
+        "CRITICAL RULES:\n"
+        "1. A single sentence may contain BOTH a monthly figure AND a year-to-date figure. "
+        "   Example: 'Produced 1,242 BTC in September 2023 and 8,610 BTC Year-To-Date'\n"
+        "   → Extract 1,242 (the monthly figure). IGNORE 8,610 (it is year-to-date).\n"
+        "   The monthly value always appears BEFORE 'Year-To-Date' or 'YTD' in such sentences.\n"
+        "2. Some tables (Marathon/MARA) show two side-by-side comparison periods like:\n"
+        "   'Metric  [current]  [year-ago]  [%]  [current]  [prior-month]  [%]'\n"
+        "   The FIRST number after the metric label is always the current period — use that.\n"
+        "3. If you see 'Bitcoin Produced - U.S. Only', that is a PARTIAL figure. "
+        "   Look instead for total BTC produced including all operations (e.g. in prose: "
+        "   'produced 1,202 bitcoin in October. This total includes X bitcoin from our JV').\n"
+        "4. REJECT: quarterly (Q1-Q4), annual, year-to-date, cumulative, or network-wide stats.\n"
+        "5. Numbers may contain commas (1,242 = 1242).\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"production_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "hodl_btc": (
+        "You are a financial data extractor. Your task: find the company's TOTAL bitcoin BALANCE "
+        "or HOLDINGS at the END of this reporting period (an absolute count, not a change).\n\n"
+        "Common phrasings to look for:\n"
+        "- 'held X bitcoin', 'holds X BTC', 'X BTC in treasury', 'treasury of X BTC'\n"
+        "- 'BTC held in treasury increased to X', 'bringing Treasury to X BTC'\n"
+        "- 'X bitcoin on our balance sheet', 'X BTC in self-custody', 'hodl X bitcoin'\n"
+        "- 'total bitcoin holdings of X', 'bitcoin balance of X', 'approximately X bitcoin'\n"
+        "- Table rows like: 'BTC Holdings | 13,286', 'Total BTC Holdings (in whole numbers) | 13,396'\n\n"
+        "CRITICAL RULES:\n"
+        "1. Some tables (Marathon/MARA) break holdings into multiple rows:\n"
+        "   'Total BTC Holdings (in whole numbers)  13,396  ...'\n"
+        "   'Unrestricted BTC Holdings              13,396  ...'\n"
+        "   'Restricted BTC Holdings                     0  ...'\n"
+        "   Extract the 'Total BTC Holdings' row value (13,396 in this example), NOT unrestricted.\n"
+        "2. These tables use a dual-period format: "
+        "[current] [year-ago] [%] [current] [prior-month] [%]. "
+        "The FIRST number after the label is always the current period.\n"
+        "3. Do NOT extract a delta or change ('added 86 BTC' → ignore 86, find the new total).\n"
+        "4. Numbers may contain commas (13,286 = 13286).\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"hodl_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "sold_btc": (
+        "You are a financial data extractor. Your task: find the number of bitcoin SOLD or "
+        "LIQUIDATED by this company during THIS reporting month.\n\n"
+        "Common phrasings to look for:\n"
+        "- 'sold X BTC', 'sold X bitcoin', 'liquidated X BTC'\n"
+        "- 'sold X of the Y BTC earned', 'divested X bitcoin'\n"
+        "- Table rows like: 'BTC Sold | 245', 'Bitcoin sold: 136'\n\n"
+        "REJECT: purchases/buys, network sales, or values from prior months. "
+        "If the company did not sell any bitcoin this month, set value to null.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"sold_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "hodl_btc_unrestricted": (
+        "You are a financial data extractor. Your task: find the company's UNRESTRICTED bitcoin "
+        "holdings at the END of this reporting period — bitcoin the company can freely sell or use, "
+        "not pledged or encumbered.\n\n"
+        "Common phrasings to look for:\n"
+        "- 'Unrestricted BTC Holdings  13,726' (Marathon/MARA table row)\n"
+        "- 'holds a total of X unrestricted BTC', 'X unrestricted bitcoin'\n"
+        "- 'unrestricted bitcoin holdings of X', 'X BTC unrestricted'\n\n"
+        "CRITICAL RULES:\n"
+        "1. Extract ONLY the unrestricted count — do NOT use 'Total BTC Holdings' or 'Restricted'.\n"
+        "2. Marathon tables use dual-period format: [current] [year-ago] [%] [current] [prior] [%]. "
+        "The FIRST number after the label is the current period.\n"
+        "3. If the document does not distinguish restricted vs unrestricted, set value to null.\n"
+        "4. Numbers may contain commas (13,726 = 13726).\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"hodl_btc_unrestricted","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "hodl_btc_restricted": (
+        "You are a financial data extractor. Your task: find the company's RESTRICTED or PLEDGED "
+        "bitcoin holdings at the END of this reporting period — bitcoin that is encumbered, "
+        "pledged as collateral, or otherwise restricted from free use.\n\n"
+        "Common phrasings to look for:\n"
+        "- 'Restricted BTC Holdings  0' or 'Restricted BTC Holdings  3,829' (Marathon/MARA table)\n"
+        "- 'Pledged BTC Holdings  571' (Marathon/MARA table)\n"
+        "- 'X BTC pledged as collateral', 'X BTC were pledged'\n"
+        "- 'X bitcoin pledged', 'restricted bitcoin of X'\n\n"
+        "CRITICAL RULES:\n"
+        "1. A value of 0 is valid — it means no BTC is restricted this period.\n"
+        "2. If the table shows BOTH 'Restricted BTC Holdings' and 'Pledged BTC Holdings', "
+        "sum them together as the total encumbered/restricted figure.\n"
+        "3. Marathon tables use dual-period format: [current] [year-ago] [%] [current] [prior] [%]. "
+        "The FIRST number after the label is the current period.\n"
+        "4. If the document does not mention restricted or pledged BTC at all, set value to null.\n"
+        "5. Numbers may contain commas (3,829 = 3829).\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"hodl_btc_restricted","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "hashrate_eh": (
+        "You are a financial data extractor. Your task: find the company's OPERATIONAL hash rate "
+        "at the end of this reporting period, in EH/s.\n\n"
+        "Common phrasings to look for:\n"
+        "- 'operational hashrate of X EH/s', 'energized hashrate X EH/s', 'X EH/s deployed'\n"
+        "- 'hash rate of X EH/s', 'X exahash', 'X PH/s operational' (divide PH/s by 1000)\n"
+        "- Table rows like: 'Energized Hashrate (EH/s) | 57.4'\n\n"
+        "REJECT: contracted, planned, or total installed capacity that is not yet operational. "
+        "Convert PH/s → EH/s by dividing by 1000. Extract the CURRENT column if side-by-side.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"hashrate_eh","value":<number in EH/s or null>,"unit":"EH/s",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "realization_rate": (
+        "You are a financial data extractor. Extract the bitcoin realization rate or mining "
+        "revenue per BTC as a ratio (0.0-1.0) from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"realization_rate","value":<ratio 0.0-1.0 or null>,"unit":"ratio","confidence":<0.0-1.0>}}\n'
+        "Rules: convert percentage to ratio (e.g. 95% → 0.95). If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+    "net_btc_balance_change": (
+        "You are a financial data extractor. Extract the net change in bitcoin holdings "
+        "this period (positive = accumulation, negative = reduction) from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"net_btc_balance_change","value":<signed number or null>,"unit":"BTC","confidence":<0.0-1.0>}}\n'
+        "Rules: include sign. If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+    "encumbered_btc": (
+        "You are a financial data extractor. Extract the total bitcoin pledged as collateral "
+        "or encumbered under loan facilities from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"encumbered_btc","value":<number or null>,"unit":"BTC","confidence":<0.0-1.0>}}\n'
+        "Rules: sum all collateral positions if multiple. If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+    "mining_mw": (
+        "You are a financial data extractor. Extract the total operational power capacity "
+        "used for bitcoin mining in megawatts (MW) from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"mining_mw","value":<number in MW or null>,"unit":"MW","confidence":<0.0-1.0>}}\n'
+        "Rules: operational MW only, not contracted or planned. If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+    "ai_hpc_mw": (
+        "You are a financial data extractor. Extract the total operational power capacity "
+        "dedicated to AI or HPC workloads in megawatts (MW) from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"ai_hpc_mw","value":<number in MW or null>,"unit":"MW","confidence":<0.0-1.0>}}\n'
+        "Rules: AI/HPC MW only, not bitcoin mining. If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+    "hpc_revenue_usd": (
+        "You are a financial data extractor. Extract the revenue from AI/HPC hosting "
+        "contracts in USD from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"hpc_revenue_usd","value":<number in USD or null>,"unit":"USD","confidence":<0.0-1.0>}}\n'
+        "Rules: convert millions to full dollars (e.g. $5.2M → 5200000). "
+        "If not found, set value to null.\n\nDocument:\n{text}"
+    ),
+    "gpu_count": (
+        "You are a financial data extractor. Extract the total number of GPU units deployed "
+        "(H100s, A100s, or equivalent) from the document below. "
+        "Return ONLY valid JSON with no other text:\n"
+        '{{"metric":"gpu_count","value":<integer or null>,"unit":"units","confidence":<0.0-1.0>}}\n'
+        "Rules: total deployed count only. If not found, set value to null.\n\n"
+        "Document:\n{text}"
+    ),
+}
+
+# Fallback for unknown metrics
+_DEFAULT_FALLBACK_PROMPT = (
+    "You are a financial data extractor. Extract the value for metric '{metric}' "
+    "from the document below. Return ONLY valid JSON with no other text:\n"
+    '{{"metric":"{metric}","value":<number or null>,"unit":"","confidence":<0.0-1.0>}}\n'
+    "If not found, set value to null.\n\nDocument:\n{{text}}"
+)
+
+
+# Default preamble for batch extraction. Extracted as a named constant so it can
+# be overridden via the config_settings DB key 'llm_batch_preamble'.
+_DEFAULT_BATCH_PREAMBLE = (
+    "You are a financial data extractor. Extract ALL of the following metrics "
+    "from the document in a single pass. Follow each metric's instructions carefully.\n\n"
+    "IMPORTANT: This document should be a monthly bitcoin mining production report. "
+    "If it appears to be general corporate news, a financing announcement, a strategic "
+    "update, a legal notice, or any document that does not contain monthly operational "
+    "mining statistics, return null for ALL metrics — do not guess or infer values.\n"
+)
+
+
+class LLMExtractor:
+    """
+    Calls Ollama to extract a named metric from document text.
+
+    Usage:
+        extractor = LLMExtractor(session=requests.Session(), db=miner_db)
+        result = extractor.extract(text, 'production_btc')
+        # Returns ExtractionResult or None
+    """
+
+    def __init__(self, session: requests.Session, db=None) -> None:
+        self._session = session
+        self._db = db  # Optional MinerDB for prompt lookup
+        self._last_call_meta: dict = {}  # Populated by _call_ollama with timing fields
+
+    @staticmethod
+    def get_default_prompt(metric: str) -> str:
+        """Return the hardcoded default prompt for a metric (no DB lookup)."""
+        if metric in _DEFAULT_PROMPTS:
+            return _DEFAULT_PROMPTS[metric]
+        return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
+
+    def check_connectivity(self) -> bool:
+        """Return True if Ollama is reachable AND the configured model exists."""
+        try:
+            resp = self._session.get(f"{LLM_BASE_URL}/api/version", timeout=5)
+            if resp.status_code != 200:
+                return False
+            # Verify the model is installed — Ollama returns 404 if not found.
+            # Without this check, llm_available stays True even when every
+            # /api/generate call gets a 404, causing all regex matches to route
+            # to REGEX_ONLY / review_queue instead of being auto-accepted.
+            model_id = _active_model(self._db)
+            model_resp = self._session.post(
+                f"{LLM_BASE_URL}/api/show",
+                json={"name": model_id},
+                timeout=10,
+            )
+            if model_resp.status_code == 404:
+                log.warning(
+                    "Ollama model '%s' not found — LLM disabled (install with: ollama pull %s)",
+                    model_id, model_id,
+                )
+                return False
+            return model_resp.status_code == 200
+        except Exception:
+            return False
+
+    def extract(self, text: str, metric: str) -> Optional[ExtractionResult]:
+        """
+        Extract a metric value from document text using the LLM.
+
+        Returns ExtractionResult or None on any failure.
+        Never raises exceptions.
+        """
+        try:
+            prompt = self._get_prompt(metric).replace('{text}', text)
+            raw_response = self._call_ollama(prompt)
+            if raw_response is None:
+                return None
+            return self._parse_response(raw_response, metric)
+        except Exception as e:
+            log.error("LLM extraction failed for metric %s: %s", metric, e, exc_info=True)
+            return None
+
+    # ------------------------------------------------------------------ #
+    #  Batch extraction (1 Ollama call → all metrics)                     #
+    # ------------------------------------------------------------------ #
+
+    def extract_batch(self, text: str, metrics: list, ticker: str = None) -> dict:
+        """
+        Extract all metrics in a single Ollama call.
+
+        Pays the document prefill cost once instead of once per metric (~13x).
+        Returns a dict of {metric: ExtractionResult} for metrics where a valid
+        value was found. Returns {} on any failure so the caller can fall back
+        to per-metric extract() calls.
+        """
+        try:
+            prompt = self._build_batch_prompt(text, metrics, ticker=ticker)
+            raw = self._call_ollama(prompt)
+            if raw is None:
+                return {}
+            return self._parse_batch_response(raw, metrics)
+        except Exception as e:
+            log.error("LLM batch extraction failed: %s", e, exc_info=True)
+            return {}
+
+    def extract_for_period(
+        self,
+        text: str,
+        metrics: list,
+        current_period: str,
+        target_period: str,
+    ) -> dict:
+        """Ask the LLM if text explicitly mentions figures for the PRIOR month.
+
+        Builds a targeted prompt instructing the LLM to extract values only for
+        target_period (not current_period). Returns a dict of
+        {metric: ExtractionResult} or {} on any failure.
+        """
+        try:
+            prompt = self._build_gap_fill_prompt(text, metrics, current_period, target_period)
+            raw = self._call_ollama(prompt)
+            if raw is None:
+                return {}
+            return self._parse_batch_response(raw, metrics)
+        except Exception as e:
+            log.error(
+                "LLM gap-fill extraction failed for %s→%s: %s",
+                current_period, target_period, e, exc_info=True,
+            )
+            return {}
+
+    def _get_prompt_instructions(self, metric: str) -> str:
+        """
+        Return the task-description block of a metric's prompt — everything
+        before the 'Return ONLY this JSON' output-format sentinel (or before
+        'Document:' as fallback). DB overrides are checked first.
+
+        Used by _build_batch_prompt to embed per-metric instructions without
+        duplicating the output-format boilerplate for each metric.
+        """
+        full_prompt = self._get_prompt(metric)
+
+        # Strip from the output-format sentinel onward
+        for sentinel in ("Return ONLY this JSON", "Return ONLY valid JSON",
+                         "Document:\n"):
+            idx = full_prompt.find(sentinel)
+            if idx != -1:
+                return full_prompt[:idx].rstrip()
+
+        # No sentinel found — return whole prompt minus trailing whitespace
+        return full_prompt.rstrip()
+
+    def _build_batch_prompt(self, text: str, metrics: list, ticker: str = None) -> str:
+        """
+        Build a single prompt that asks the LLM to extract all metrics at once.
+
+        Structure:
+          [preamble — from DB config_settings or _DEFAULT_BATCH_PREAMBLE]
+          [=== COMPANY CONTEXT: {ticker} === if hint is set]
+          === METRIC: <name> ===
+          [instructions from _get_prompt_instructions]
+          ...repeated for each metric...
+          === OUTPUT FORMAT ===
+          Return ONLY this JSON: { ... }
+          Document:
+          {text}
+
+        Unit hints are hardcoded per known metric.
+        NOTE: when new metrics are added to _DEFAULT_PROMPTS, add their unit
+        hint to _BATCH_UNIT_HINTS below.
+        """
+        _BATCH_UNIT_HINTS = {
+            "production_btc":          "BTC",
+            "hodl_btc":                "BTC",
+            "hodl_btc_unrestricted":   "BTC",
+            "hodl_btc_restricted":     "BTC",
+            "sold_btc":                "BTC",
+            "hashrate_eh":             "EH/s",
+            "realization_rate":        "ratio",
+            "net_btc_balance_change":  "BTC",
+            "encumbered_btc":          "BTC",
+            "mining_mw":               "MW",
+            "ai_hpc_mw":               "MW",
+            "hpc_revenue_usd":         "USD",
+            "gpu_count":               "units",
+        }
+
+        # Preamble: use DB override if available, otherwise hardcoded constant
+        preamble = _DEFAULT_BATCH_PREAMBLE
+        if self._db is not None:
+            try:
+                db_preamble = self._db.get_config('llm_batch_preamble')
+                if db_preamble:
+                    preamble = db_preamble
+            except Exception as e:
+                log.warning("Could not fetch llm_batch_preamble from DB: %s", e)
+
+        lines = [preamble]
+
+        # Per-ticker context hint (injected after preamble if set)
+        if ticker and self._db is not None:
+            try:
+                hint = self._db.get_ticker_hint(ticker)
+                if hint:
+                    lines.append(f"=== COMPANY CONTEXT: {ticker} ===")
+                    lines.append(hint)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch ticker hint for %s: %s", ticker, e)
+
+        for metric in metrics:
+            lines.append(f"=== METRIC: {metric} ===")
+            lines.append(self._get_prompt_instructions(metric))
+            lines.append("")
+
+        # Output format block
+        lines.append("=== OUTPUT FORMAT ===")
+        lines.append("Return ONLY this JSON object, no other text:")
+        lines.append("{")
+        for metric in metrics:
+            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            lines.append(
+                f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
+                f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
+            )
+        lines.append("}")
+        lines.append("")
+        lines.append("Document:")
+        lines.append(text)
+
+        return "\n".join(lines)
+
+    def _build_gap_fill_prompt(
+        self,
+        text: str,
+        metrics: list,
+        current_period: str,
+        target_period: str,
+    ) -> str:
+        """Build a targeted prompt for prior-period gap fill.
+
+        Instructs the LLM to only extract values explicitly attributed to
+        target_period (the prior month), not to current_period.
+        """
+        _BATCH_UNIT_HINTS = {
+            "production_btc": "BTC", "hodl_btc": "BTC", "sold_btc": "BTC",
+            "hodl_btc_unrestricted": "BTC", "hodl_btc_restricted": "BTC",
+            "hashrate_eh": "EH/s", "realization_rate": "ratio",
+            "net_btc_balance_change": "BTC", "encumbered_btc": "BTC",
+            "mining_mw": "MW", "ai_hpc_mw": "MW",
+            "hpc_revenue_usd": "USD", "gpu_count": "units",
+        }
+
+        lines = [
+            f"This document was published reporting figures for {current_period}. "
+            f"Your task: find values that are EXPLICITLY stated for the PRIOR month "
+            f"({target_period}). Do NOT extract values for {current_period}. "
+            f"Only return a value if the text names {target_period} (or the matching "
+            f"month name) specifically.\n",
+        ]
+
+        for metric in metrics:
+            lines.append(f"=== METRIC: {metric} ===")
+            lines.append(self._get_prompt_instructions(metric))
+            lines.append("")
+
+        lines.append("=== OUTPUT FORMAT ===")
+        lines.append("Return ONLY this JSON object, no other text:")
+        lines.append("{")
+        for metric in metrics:
+            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            lines.append(
+                f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
+                f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
+            )
+        lines.append("}")
+        lines.append("")
+        lines.append("Document:")
+        lines.append(text)
+
+        return "\n".join(lines)
+
+    def _parse_batch_response(self, raw: str, metrics: list) -> dict:
+        """
+        Parse the LLM's batch JSON response.
+
+        Iterates `metrics` (not data.keys()) to ignore LLM hallucinations.
+        Applies the same null/float/range/clamp checks as _parse_response.
+        Returns dict of {metric: ExtractionResult} for valid entries only.
+        """
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        if start == -1 or end == 0:
+            log.debug("No JSON object found in LLM batch response")
+            return {}
+
+        try:
+            data = json.loads(raw[start:end])
+        except (json.JSONDecodeError, ValueError) as e:
+            log.debug("Could not parse LLM batch JSON: %s", e)
+            return {}
+
+        results = {}
+        for metric in metrics:
+            entry = data.get(metric)
+            if not isinstance(entry, dict):
+                continue
+
+            value = entry.get('value')
+            if value is None:
+                continue
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                log.debug("Batch LLM value not numeric for %s: %r", metric, value)
+                continue
+
+            bounds = METRIC_VALID_RANGES.get(metric)
+            if bounds is not None:
+                lo, hi = bounds
+                if not (lo <= value <= hi):
+                    log.debug(
+                        "Batch LLM value %.4f out of range [%.1f, %.1f] for %s",
+                        value, lo, hi, metric,
+                    )
+                    continue
+
+            unit = str(entry.get('unit', ''))
+            confidence = float(entry.get('confidence', 0.5))
+            confidence = max(0.0, min(1.0, confidence))
+            source_snippet = str(entry.get('source_snippet') or raw[:200])
+
+            _model = _active_model(self._db)
+            results[metric] = ExtractionResult(
+                metric=metric,
+                value=value,
+                unit=unit,
+                confidence=confidence,
+                extraction_method=f"llm_{_model}",
+                source_snippet=source_snippet,
+                pattern_id=f"llm_{_model}",
+            )
+
+        return results
+
+    def _get_prompt(self, metric: str) -> str:
+        """Fetch prompt from llm_prompts DB table, or fall back to hardcoded default."""
+        if self._db is not None:
+            try:
+                with self._db._get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT prompt_text FROM llm_prompts WHERE metric=? AND active=1 "
+                        "ORDER BY id DESC LIMIT 1",
+                        (metric,)
+                    ).fetchone()
+                    if row:
+                        return row[0]
+            except Exception as e:
+                log.warning("Could not fetch LLM prompt from DB for %s: %s", metric, e)
+
+        # Fall back to hardcoded defaults
+        if metric in _DEFAULT_PROMPTS:
+            return _DEFAULT_PROMPTS[metric]
+
+        # Generic fallback for unknown metrics
+        return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
+
+    def _call_ollama(self, prompt: str) -> Optional[str]:
+        """
+        POST to Ollama /api/generate. Returns the response text or None on failure.
+
+        Uses blocking (stream=false) mode for simplicity.
+        Timeout: LLM_TIMEOUT_SECONDS (default 60s).
+        """
+        url = f"{LLM_BASE_URL}/api/generate"
+        payload = {
+            "model": _active_model(self._db),
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": "2h",  # Hold model in VRAM for 2 hours; avoids mid-run eviction
+            "think": False,       # Disable chain-of-thought (Qwen3); skips <think> tokens
+            "options": {
+                "temperature": 0.0,   # Deterministic output for structured JSON
+                "num_predict": 400,   # Batch JSON response is ~200-300 tokens; cap prevents runaway
+            },
+        }
+        try:
+            resp = self._session.post(url, json=payload, timeout=LLM_TIMEOUT_SECONDS)
+            if resp.status_code >= 400:
+                log.warning(
+                    "Ollama returned HTTP %d for /api/generate", resp.status_code
+                )
+                self._last_call_meta = {}
+                return None
+            data = resp.json()
+            response_text = data.get("response", "")
+            self._last_call_meta = {
+                'prompt_tokens': data.get('prompt_eval_count', 0) or 0,
+                'response_tokens': data.get('eval_count', 0) or 0,
+                'eval_duration_ms': (data.get('eval_duration', 0) or 0) / 1e6,
+                'total_duration_ms': (data.get('total_duration', 0) or 0) / 1e6,
+                'response_chars': len(response_text),
+            }
+            return response_text
+        except requests.Timeout:
+            log.warning("Ollama /api/generate timed out after %ds", LLM_TIMEOUT_SECONDS)
+            self._last_call_meta = {}
+            return None
+        except requests.RequestException as e:
+            log.error("Ollama request failed: %s", e)
+            self._last_call_meta = {}
+            return None
+        except (ValueError, KeyError) as e:
+            log.error("Ollama response malformed: %s", e)
+            self._last_call_meta = {}
+            return None
+
+    def _parse_response(self, raw: str, metric: str) -> Optional[ExtractionResult]:
+        """
+        Parse the LLM's response text as JSON.
+
+        Expected format: {"metric": "...", "value": <float|null>, "unit": "...", "confidence": <float>}
+
+        Returns ExtractionResult or None if:
+          - JSON cannot be parsed
+          - value is null / missing
+          - value is outside the metric's valid range
+        """
+        try:
+            # Find the JSON object in the response (LLM may include surrounding text)
+            start = raw.find('{')
+            end = raw.rfind('}') + 1
+            if start == -1 or end == 0:
+                log.debug("No JSON object found in LLM response for %s", metric)
+                return None
+            data = json.loads(raw[start:end])
+        except (json.JSONDecodeError, ValueError) as e:
+            log.debug("Could not parse LLM JSON for %s: %s", metric, e)
+            return None
+
+        value = data.get('value')
+        if value is None:
+            log.debug("LLM returned null value for %s", metric)
+            return None
+
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            log.debug("LLM value not numeric for %s: %r", metric, value)
+            return None
+
+        # Range check using the same bounds as confidence.py
+        bounds = METRIC_VALID_RANGES.get(metric)
+        if bounds is not None:
+            lo, hi = bounds
+            if not (lo <= value <= hi):
+                log.debug(
+                    "LLM value %.4f out of range [%.1f, %.1f] for %s",
+                    value, lo, hi, metric
+                )
+                return None
+
+        unit = str(data.get('unit', ''))
+        confidence = float(data.get('confidence', 0.5))
+        confidence = max(0.0, min(1.0, confidence))  # clamp to [0, 1]
+
+        # source_snippet: use the model's self-reported context if available
+        source_snippet = str(data.get('source_snippet', raw[:500]))
+
+        _model = _active_model(self._db)
+        return ExtractionResult(
+            metric=metric,
+            value=value,
+            unit=unit,
+            confidence=confidence,
+            extraction_method=f"llm_{_model}",
+            source_snippet=source_snippet,
+            pattern_id=f"llm_{_model}",
+        )

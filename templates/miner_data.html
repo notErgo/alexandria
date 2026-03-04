@@ -1,0 +1,1564 @@
+{% extends "base.html" %}
+
+{% block title %}Miner Data{% endblock %}
+
+{% block styles %}
+<style>
+/* ── Page layout ─────────────────────────────────────────────────────────── */
+.md-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Company tabs ─────────────────────────────────────────────────────────── */
+.md-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--theme-border);
+  padding-bottom: 0.5rem;
+}
+.md-tab {
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px 4px 0 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.3px;
+  transition: background 0.1s, color 0.1s;
+}
+.md-tab:hover {
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+}
+.md-tab.active {
+  background: var(--theme-bg-secondary);
+  border-color: var(--theme-border);
+  border-bottom-color: var(--theme-bg-secondary);
+  color: var(--theme-accent);
+}
+
+/* ── Upper area: info card + table ───────────────────────────────────────── */
+.md-upper {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+/* ── Company info card ────────────────────────────────────────────────────── */
+.md-info-card {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.82rem;
+  color: var(--theme-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-self: start;
+}
+.md-info-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--theme-text-primary);
+  margin-bottom: 0.25rem;
+}
+.md-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.md-info-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+}
+.md-info-value {
+  color: var(--theme-text-primary);
+  word-break: break-all;
+}
+.md-info-value a {
+  color: var(--theme-accent);
+  text-decoration: none;
+}
+.md-info-value a:hover { text-decoration: underline; }
+.md-info-placeholder {
+  color: var(--theme-text-muted);
+  font-style: italic;
+}
+
+/* ── Table area ──────────────────────────────────────────────────────────── */
+.md-table-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 55vh;
+}
+.md-table-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--theme-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+}
+.md-table-filters label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  color: var(--theme-text-secondary);
+}
+.md-table-filters input[type="month"] {
+  padding: 0.2rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.8rem;
+}
+.md-table-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/* ── Data table ──────────────────────────────────────────────────────────── */
+#timeline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+#timeline-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--theme-bg-tertiary);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  z-index: 1;
+}
+#timeline-table tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.08s;
+}
+#timeline-table tbody tr:hover { background: var(--theme-bg-tertiary); }
+#timeline-table tbody tr.selected { background: rgba(59,130,246,0.1); }
+#timeline-table tbody tr.row-gap { background: rgba(255,255,255,0.015); }
+#timeline-table tbody tr.row-gap td { color: var(--theme-text-muted); }
+#timeline-table td {
+  padding: 0.35rem 0.6rem;
+  vertical-align: middle;
+}
+.td-period {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+td.row-gap .td-period { color: var(--theme-text-muted); }
+.td-value { color: var(--theme-text-primary); }
+.td-empty { color: var(--theme-text-muted); }
+.td-nodoc { color: var(--theme-text-muted); font-style: italic; font-size: 0.75rem; }
+.td-gap-label {
+  color: rgba(249,115,22,0.6);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+.method-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--theme-text-muted);
+  background: var(--theme-bg-tertiary);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.src-badge {
+  font-size: 0.65rem;
+  color: var(--theme-accent);
+  margin-left: 4px;
+}
+.td-source-col { text-align: center; width: 50px; }
+.src-icon { font-size: 0.75rem; }
+.src-icon.has-doc { color: var(--theme-accent); }
+.src-icon.no-doc { color: var(--theme-text-muted); }
+
+/* Empty / loading states */
+.md-table-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--theme-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Document viewer panel (bottom drawer) ───────────────────────────────── */
+#doc-panel {
+  display: none;
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  flex-direction: column;
+  overflow: hidden;
+}
+#doc-panel.visible { display: flex; }
+.doc-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+#doc-panel-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+.doc-panel-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--theme-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 0.3rem;
+}
+.doc-panel-close:hover { color: var(--theme-text-primary); }
+
+/* Two-column body: source view left, rules right */
+.doc-panel-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  height: 420px;
+  overflow: hidden;
+}
+#doc-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-text-muted);
+  font-size: 0.85rem;
+  padding: 2rem;
+  text-align: center;
+}
+.rules-panel {
+  border-left: 1px solid var(--theme-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.rules-panel-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+#rules-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem;
+}
+.rule-card {
+  background: var(--theme-bg-tertiary);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  border-left: 3px solid var(--rule-color, var(--theme-border));
+}
+.rule-card-id {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--theme-accent);
+  margin-bottom: 0.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rule-card-status {
+  display: inline-block;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.rule-card-status.accepted {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--theme-success);
+}
+.rule-card-status.pending {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--theme-warning);
+}
+.rule-card-metric {
+  font-size: 0.68rem;
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.rule-card-value {
+  font-weight: 600;
+  color: var(--theme-text-primary);
+  margin: 0.1rem 0;
+}
+.rule-card-conf {
+  font-size: 0.7rem;
+  color: var(--theme-text-muted);
+}
+.rule-card-snippet {
+  font-size: 0.7rem;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0.2rem;
+}
+.rules-empty {
+  padding: 1rem 0.75rem;
+  color: var(--theme-text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* ── Pattern generator (inside doc panel) ───────────────────────────────── */
+#pattern-panel {
+  display: none;
+  border-top: 1px solid var(--theme-border);
+  padding: 0.6rem 0.75rem;
+  flex-shrink: 0;
+  background: var(--theme-bg-tertiary);
+}
+.pattern-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.4rem;
+}
+.pattern-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+.pattern-form-row label {
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  min-width: 56px;
+}
+.pattern-form-row input, .pattern-form-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.82rem;
+}
+#pattern-regex-input {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+#selected-text-display {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pattern-match-count {
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+}
+.pattern-match-count.good { color: var(--theme-success); }
+.pattern-match-count.zero { color: var(--theme-danger); }
+#apply-result {
+  display: none;
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--theme-bg-secondary);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+}
+
+/* ── Inline HTML source viewer ──────────────────────────────────────────── */
+#doc-source-view {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--theme-text-secondary);
+  line-height: 1.5;
+  background: var(--theme-bg-primary);
+  border-radius: 0 0 0 8px;
+  user-select: text;
+  cursor: text;
+}
+.doc-hl {
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Right-click context menu ───────────────────────────────────────────── */
+.source-ctx-menu {
+  position: fixed;
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 9999;
+  min-width: 160px;
+  padding: 0.25rem 0;
+  display: none;
+}
+.ctx-menu-item {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  color: var(--theme-text-primary);
+  cursor: pointer;
+}
+.ctx-menu-item:hover {
+  background: var(--theme-bg-tertiary);
+  color: var(--theme-accent);
+}
+
+/* ── Loading ─────────────────────────────────────────────────────────────── */
+.spin {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--theme-border);
+  border-top-color: var(--theme-accent);
+  border-radius: 50%;
+  animation: md-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes md-spin { to { transform: rotate(360deg); } }
+
+/* ── Ingest panel (inside info card) ─────────────────────────────────────── */
+.ingest-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--theme-border);
+}
+.btn-ingest {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+.btn-ingest:hover { color: var(--theme-accent); border-color: var(--theme-accent); }
+.btn-ingest:disabled { opacity: 0.5; cursor: not-allowed; }
+.ingest-status-text {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+}
+
+/* ── Manual fill panel (inside rules panel) ──────────────────────────────── */
+#manual-fill-panel {
+  border-top: 1px solid var(--theme-border);
+  padding: 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.fill-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.15rem;
+}
+#fill-metric, #fill-value, #fill-note {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.22rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.78rem;
+}
+#fill-submit {
+  padding: 0.22rem 0.5rem;
+  font-size: 0.78rem;
+  background: var(--theme-accent);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  align-self: flex-start;
+}
+#fill-submit:hover { opacity: 0.85; }
+#fill-status {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  min-height: 1em;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="md-page">
+
+  <!-- ── Company tabs ─────────────────────────────────────────────────── -->
+  <div id="company-tabs" class="md-tabs">
+    <span style="color:var(--theme-text-muted);font-size:0.82rem;align-self:center">
+      <span class="spin"></span> Loading companies…
+    </span>
+  </div>
+
+  <!-- ── Upper area ──────────────────────────────────────────────────── -->
+  <div class="md-upper">
+
+    <!-- Left: company info -->
+    <div class="md-info-card" id="company-info">
+      <div class="md-info-placeholder">Select a company above.</div>
+    </div>
+
+    <!-- Right: filters + table -->
+    <div class="md-table-panel">
+      <div class="md-table-filters">
+        <label>
+          <input type="checkbox" id="filter-gaps-only"> Gaps only
+        </label>
+        <label>
+          <input type="checkbox" id="filter-show-incomplete"> Incomplete only
+        </label>
+        <label>
+          From <input type="month" id="filter-from" style="margin-left:0.3rem">
+        </label>
+        <label>
+          To <input type="month" id="filter-to" style="margin-left:0.3rem">
+        </label>
+        <!-- Column visibility toggle -->
+        <div style="margin-left:auto;position:relative;" id="col-vis-wrap">
+          <button class="btn btn-secondary btn-sm" onclick="toggleColMenu()" id="col-vis-btn"
+            style="font-size:0.78rem;padding:0.2rem 0.55rem;">Columns &#9660;</button>
+          <div id="col-vis-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);
+            background:var(--theme-bg-secondary);border:1px solid var(--theme-border);
+            border-radius:6px;padding:0.5rem 0.75rem;z-index:50;min-width:180px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);margin-bottom:.4rem;">Show columns</div>
+            <!-- metric checkboxes injected by buildTableHeaders() -->
+            <div id="col-vis-metrics"></div>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="source" checked> Source</label>
+          </div>
+        </div>
+        <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+      </div>
+      <div class="md-table-scroll">
+        <table id="timeline-table">
+          <thead>
+            <tr id="timeline-thead-row">
+              <th data-sort="period">Period</th>
+              <!-- metric columns injected by buildTableHeaders() -->
+              <th class="td-source-col" data-col="source">Src</th>
+            </tr>
+          </thead>
+          <tbody id="timeline-tbody">
+            <tr><td colspan="20" class="md-table-empty">Select a company to load data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /.md-upper -->
+
+  <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
+  <div id="doc-panel">
+    <div class="doc-panel-header">
+      <div id="doc-panel-title">—</div>
+      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open rendered HTML in new tab" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Rendered</button>
+      <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
+    </div>
+    <div class="doc-panel-body">
+      <!-- Inline source viewer + placeholder -->
+      <div style="position:relative;overflow:hidden;display:flex;flex-direction:column;height:100%">
+        <div id="doc-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--theme-text-muted);font-size:0.85rem;background:var(--theme-bg-secondary);">
+          No source document.
+        </div>
+        <pre id="doc-source-view" style="display:none"></pre>
+      </div>
+      <!-- Rules panel -->
+      <div class="rules-panel">
+        <div class="rules-panel-header">LLM Extractions</div>
+        <div id="rules-list">
+          <div class="rules-empty">Select a row with a source document.</div>
+        </div>
+        <!-- Manual entry for periods where no pattern extracts a value -->
+        <div id="manual-fill-panel" style="display:none">
+          <div class="fill-header">Manual Entry</div>
+          <select id="fill-metric"></select>
+          <input type="number" id="fill-value" step="any" min="0" placeholder="value">
+          <input type="text" id="fill-note" placeholder="note (optional)">
+          <button id="fill-submit">Save</button>
+          <div id="fill-status"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Pattern generator — shown after text selection in source view -->
+    <div id="pattern-panel">
+      <div class="pattern-title">
+        Pattern Generator
+        <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
+          — select text in the document above
+        </span>
+      </div>
+      <div class="pattern-form-row">
+        <label>Selected</label>
+        <span id="selected-text-display"></span>
+      </div>
+      <div class="pattern-form-row">
+        <label>Metric</label>
+        <select id="pattern-metric">
+          <option value="production_btc">production_btc</option>
+          <option value="hodl_btc">hodl_btc</option>
+          <option value="sold_btc">sold_btc</option>
+          <option value="hashrate_eh">hashrate_eh</option>
+          <option value="realization_rate">realization_rate</option>
+        </select>
+      </div>
+      <div class="pattern-form-row">
+        <label>Regex</label>
+        <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
+        <span class="pattern-match-count" id="match-count-display"></span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
+        <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
+        <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
+        <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="apply-result"></div>
+    </div>
+  </div><!-- /#doc-panel -->
+
+</div><!-- /.md-page -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let _ticker = null;               // currently selected company ticker
+let _rows = [];                   // full unfiltered row list from API
+let _selectedPeriod = null;       // period of the currently open doc panel
+let _currentDocText = '';         // sanitized HTML text for pattern generation
+let _currentAnalysisMatches = []; // matches from /analysis — used for highlight
+let _sourceReady = false;        // true once loadSource() finishes fetching for current period
+let _analysisReady = false;       // true once loadAnalysis resolves for current period
+
+// Metric highlight colours — matches rule card left border colours
+const METRIC_COLORS = {
+  production_btc:   '#3b82f6',  // blue
+  hodl_btc:         '#8b5cf6',  // purple
+  sold_btc:         '#f59e0b',  // amber
+  hashrate_eh:      '#10b981',  // green
+  realization_rate: '#f97316',  // orange
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', boot);
+
+// Event delegation for row clicks — wired once at page load (anti-pattern #26 compliance).
+// Placing inside renderTable() would accumulate a listener on every filter change.
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('timeline-tbody').addEventListener('click', function(e) {
+    const row = e.target.closest('tr[data-period]');
+    if (!row) return;
+    selectPeriod(row.getAttribute('data-period'));
+  });
+
+  // Ingest button delegation — wired on the persistent #company-info container.
+  // The buttons themselves are recreated by renderInfoCard() on each company load,
+  // but #company-info itself always exists, so this listener survives re-renders.
+  document.getElementById('company-info').addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-ingest');
+    if (!btn || btn.disabled) return;
+    const source = btn.getAttribute('data-source');
+    if (source) triggerIngest(source);
+  });
+
+  // ── Text selection on source view ───────────────────────────────────────
+  // Pattern panel is hidden (LLM-only mode — no regex patterns to generate).
+  // Listener retained but no-ops so text selection still works for copy.
+  document.getElementById('doc-source-view').addEventListener('mouseup', function() {
+    /* pattern generator disabled in LLM-only mode */
+  });
+
+  // ── Right-click context menu ────────────────────────────────────────────
+  // "Add as Rule" option removed — pattern generator disabled in LLM-only mode.
+
+  // ── Column visibility init ──────────────────────────────────────────────
+  // Metric checkboxes are built dynamically by buildTableHeaders(), so we use
+  // event delegation on #col-vis-menu (wired once here) rather than per-checkbox
+  // listeners. localStorage restore happens in buildTableHeaders() too.
+  document.getElementById('col-vis-menu').addEventListener('change', function(e) {
+    if (!e.target.classList.contains('col-vis-cb')) return;
+    const state = {};
+    document.querySelectorAll('.col-vis-cb').forEach(function(c) {
+      state[c.getAttribute('data-col')] = c.checked;
+    });
+    localStorage.setItem(_COL_VIS_KEY, JSON.stringify(state));
+    applyColVisibility();
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!document.getElementById('col-vis-wrap').contains(e.target)) {
+      const menu = document.getElementById('col-vis-menu');
+      if (menu) menu.style.display = 'none';
+    }
+  });
+
+  // Manual fill submit — wired once on the static #fill-submit element.
+  document.getElementById('fill-submit').addEventListener('click', async function() {
+    if (!_ticker || !_selectedPeriod) return;
+    const metric = document.getElementById('fill-metric').value;
+    const rawValue = document.getElementById('fill-value').value.trim();
+    const note = document.getElementById('fill-note').value.trim();
+    const statusEl = document.getElementById('fill-status');
+
+    if (!rawValue) { statusEl.textContent = 'Value is required.'; return; }
+    const value = parseFloat(rawValue);
+    if (!isFinite(value) || value <= 0) { statusEl.textContent = 'Enter a positive number.'; return; }
+
+    statusEl.textContent = 'Saving…';
+    try {
+      const periodParam = _selectedPeriod.slice(0, 7);
+      const resp = await fetch(
+        `/api/miner/${encodeURIComponent(_ticker)}/${encodeURIComponent(periodParam)}/${encodeURIComponent(metric)}/fill`,
+        {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({value, note}),
+        }
+      );
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Failed');
+      statusEl.textContent = '✓ Saved';
+      document.getElementById('fill-value').value = '';
+      document.getElementById('fill-note').value = '';
+      showToast(`Saved ${metric} = ${value}`);
+      selectCompany(_ticker);
+    } catch (err) {
+      statusEl.textContent = `Error: ${escapeHtml(err.message)}`;
+      showToast(`Fill error: ${err.message}`, true);
+    }
+  });
+});
+
+async function boot() {
+  // Load companies to build tab strip
+  try {
+    const resp = await fetch('/api/companies');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    renderCompanyTabs(body.data);
+
+    // Restore last-selected ticker from localStorage
+    const saved = localStorage.getItem('miner-data-ticker');
+    const tickers = body.data.map(c => c.ticker);
+    const initial = (saved && tickers.includes(saved)) ? saved : (tickers[0] || null);
+    if (initial) selectCompany(initial);
+  } catch (err) {
+    document.getElementById('company-tabs').innerHTML =
+      `<span style="color:var(--theme-danger);font-size:0.82rem">Failed to load companies: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+function renderCompanyTabs(companies) {
+  // Only show companies that have data (tier 1 archivable set)
+  const tabs = document.getElementById('company-tabs');
+  tabs.innerHTML = '';
+  for (const c of companies) {
+    const btn = document.createElement('button');
+    btn.className = 'md-tab';
+    btn.textContent = c.ticker;
+    btn.setAttribute('data-ticker', c.ticker);
+    btn.addEventListener('click', function() { selectCompany(c.ticker); });
+    tabs.appendChild(btn);
+  }
+}
+
+// ── Select company ────────────────────────────────────────────────────────
+async function selectCompany(ticker) {
+  _ticker = ticker;
+  localStorage.setItem('miner-data-ticker', ticker);
+  closeDocPanel();
+
+  // Highlight active tab
+  document.querySelectorAll('.md-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-ticker') === ticker);
+  });
+
+  // Show loading state (colspan 20 — actual column count not yet known)
+  document.getElementById('timeline-tbody').innerHTML =
+    `<tr><td colspan="20" class="md-table-empty"><span class="spin"></span> Loading…</td></tr>`;
+  document.getElementById('company-info').innerHTML =
+    `<div class="md-info-placeholder"><span class="spin"></span> Loading…</div>`;
+
+  try {
+    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/timeline`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+    }
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+
+    const data = body.data;
+    _rows = data.rows;
+
+    // Update dynamic metric list and rebuild table headers + col-vis checkboxes
+    METRICS_ORDER = data.metric_keys || ['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'];
+    buildTableHeaders(METRICS_ORDER, data.metric_labels || {}, data.metric_units || {});
+
+    renderInfoCard(data.company, data.stats);
+    renderTable(_rows);
+    makeSortable('timeline-table');
+
+  } catch (err) {
+    document.getElementById('timeline-tbody').innerHTML =
+      `<tr><td colspan="20" class="md-table-empty" style="color:var(--theme-danger)">Error: ${escapeHtml(err.message)}</td></tr>`;
+    document.getElementById('company-info').innerHTML =
+      `<div class="md-info-placeholder" style="color:var(--theme-danger)">Load failed.</div>`;
+  }
+}
+
+// ── Company info card ─────────────────────────────────────────────────────
+function renderInfoCard(company, stats) {
+  const el = document.getElementById('company-info');
+  const irLink = company.ir_url
+    ? `<a href="${escapeHtml(company.ir_url)}" target="_blank" rel="noopener">${escapeHtml(company.ir_url)}</a>`
+    : '—';
+  const prLink = company.pr_base_url
+    ? `<a href="${escapeHtml(company.pr_base_url)}" target="_blank" rel="noopener">${escapeHtml(company.pr_base_url)}</a>`
+    : '—';
+
+  el.innerHTML = `
+    <div class="md-info-name">${escapeHtml(company.name)}</div>
+    <div class="md-info-row">
+      <span class="md-info-label">Ticker</span>
+      <span class="md-info-value">${escapeHtml(company.ticker)}</span>
+    </div>
+    <div class="md-info-row">
+      <span class="md-info-label">CIK</span>
+      <span class="md-info-value">${escapeHtml(company.cik || '—')}</span>
+    </div>
+    <div class="md-info-row">
+      <span class="md-info-label">IR URL</span>
+      <span class="md-info-value">${irLink}</span>
+    </div>
+    <div class="md-info-row">
+      <span class="md-info-label">PR Base</span>
+      <span class="md-info-value">${prLink}</span>
+    </div>
+    ${stats.total_periods > 0 ? `
+    <div class="md-info-row" style="margin-top:0.4rem">
+      <span class="md-info-label">Data range</span>
+      <span class="md-info-value">${escapeHtml(stats.first_period)} → ${escapeHtml(stats.last_period)}</span>
+    </div>
+    <div class="md-info-row">
+      <span class="md-info-label">Periods</span>
+      <span class="md-info-value">${stats.total_periods} months</span>
+    </div>
+    <div class="md-info-row">
+      <span class="md-info-label">Gaps</span>
+      <span class="md-info-value" style="color:${stats.gap_periods > 0 ? 'var(--theme-warning)' : 'var(--theme-success)'}">
+        ${stats.gap_periods}
+      </span>
+    </div>` : `<div class="md-info-placeholder">No data points ingested.</div>`}
+    <div class="ingest-bar">
+      <button class="btn-ingest" data-source="archive">↻ Archive</button>
+      <button class="btn-ingest" data-source="ir">↻ IR</button>
+      <button class="btn-ingest" data-source="edgar">↻ EDGAR</button>
+      <span id="ingest-status" class="ingest-status-text"></span>
+    </div>
+  `;
+}
+
+// ── Filter helpers ─────────────────────────────────────────────────────────
+function applyFilters(rows) {
+  const gapsOnly = document.getElementById('filter-gaps-only').checked;
+  const incompleteOnly = document.getElementById('filter-show-incomplete').checked;
+  const fromVal = document.getElementById('filter-from').value;  // YYYY-MM
+  const toVal = document.getElementById('filter-to').value;       // YYYY-MM
+
+  return rows.filter(function(row) {
+    if (gapsOnly && !row.is_gap) return false;
+    if (incompleteOnly) {
+      // incomplete = has at least one metric null but not all (i.e. not a full gap)
+      const vals = Object.values(row.metrics);
+      const nullCount = vals.filter(v => v === null).length;
+      if (nullCount === 0 || nullCount === vals.length) return false;
+    }
+    if (fromVal && row.period_label < fromVal) return false;
+    if (toVal && row.period_label > toVal) return false;
+    return true;
+  });
+}
+
+// ── Render table ──────────────────────────────────────────────────────────
+// METRICS_ORDER is populated dynamically by buildTableHeaders() when a company loads.
+let METRICS_ORDER = ['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'];
+let _metricLabelsCache = {};
+
+function fmtValue(m) {
+  // m is a metric cell object or null
+  if (!m || m.value == null) return null;
+  const v = m.value;
+  if (m.unit === '%') return v.toFixed(2) + '%';
+  if (m.unit === 'EH/s') return v.toFixed(2) + ' EH/s';
+  return v.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1});
+}
+
+function renderTable(allRows) {
+  const rows = applyFilters(allRows);
+  const tbody = document.getElementById('timeline-tbody');
+
+  document.getElementById('table-row-count').textContent =
+    `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+
+  if (rows.length === 0) {
+    tbody.innerHTML =
+      `<tr><td colspan="${METRICS_ORDER.length + 2}" class="md-table-empty">No rows match current filters.</td></tr>`;
+    return;
+  }
+
+  const parts = [];
+  for (const row of rows) {
+    const isGap = row.is_gap;
+    const rowClass = isGap ? 'row-gap' : '';
+    const isSelected = row.period === _selectedPeriod;
+    const selClass = isSelected ? ' selected' : '';
+
+    // Build metric cells
+    const metricCells = METRICS_ORDER.map(function(metric) {
+      const m = row.metrics[metric];
+      if (isGap) {
+        return `<td class="td-gap-label">—</td>`;
+      }
+      if (m && m.value != null) {
+        const formatted = escapeHtml(fmtValue(m) || '');
+        const badge = m.extraction_method
+          ? `<span class="method-badge">${escapeHtml(m.extraction_method)}</span>`
+          : '';
+        return `<td class="td-value">${formatted}${badge}</td>`;
+      }
+      // No value — check if has report (could fill)
+      if (row.has_report) {
+        return `<td class="td-empty">—</td>`;
+      }
+      return `<td class="td-nodoc">—</td>`;
+    });
+
+    // Source column
+    const srcCell = row.has_report
+      ? `<td class="td-source-col"><span class="src-icon has-doc" title="${escapeHtml(row.source_type || '')}">●</span></td>`
+      : `<td class="td-source-col"><span class="src-icon no-doc" title="no document">○</span></td>`;
+
+    parts.push(`
+      <tr class="${rowClass}${selClass}" data-period="${escapeHtml(row.period)}">
+        <td class="td-period">${escapeHtml(row.period_label)}</td>
+        ${metricCells.join('')}
+        ${srcCell}
+      </tr>`);
+  }
+  tbody.innerHTML = parts.join('');
+  applyColVisibility();
+}
+
+// ── Dynamic table headers + col-vis ───────────────────────────────────────
+// Core 5 metrics shown by default; non-core default to hidden unless saved state
+// says otherwise.
+const _CORE_5 = new Set(['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate']);
+const _COL_VIS_KEY = 'miners-visible-cols';
+
+function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
+  _metricLabelsCache = metricLabels || {};
+
+  // ── Rebuild <thead> metric columns ─────────────────────────────────────
+  const theadRow = document.getElementById('timeline-thead-row');
+  // Remove old metric ths (those with data-col but not "source")
+  Array.from(theadRow.querySelectorAll('th[data-col]')).forEach(function(th) {
+    if (th.getAttribute('data-col') !== 'source') th.remove();
+  });
+  const srcTh = theadRow.querySelector('th[data-col="source"]');
+  metricKeys.forEach(function(key) {
+    const label = (metricLabels && metricLabels[key]) || key;
+    const th = document.createElement('th');
+    th.setAttribute('data-sort', key);
+    th.setAttribute('data-sort-type', 'num');
+    th.setAttribute('data-col', key);
+    // ⚙ link to prompt editor — stopPropagation prevents sort trigger
+    const gearLink = `<a href="/patterns?metric=${encodeURIComponent(key)}" ` +
+      `title="Edit extraction prompt" ` +
+      `style="color:var(--theme-text-muted);font-size:0.7em;text-decoration:none;` +
+      `opacity:0.55;margin-left:3px;vertical-align:middle" ` +
+      `onclick="event.stopPropagation()">⚙</a>`;
+    th.innerHTML = escapeHtml(label) + gearLink;
+    theadRow.insertBefore(th, srcTh);
+  });
+
+  // ── Rebuild col-vis metric checkboxes ──────────────────────────────────
+  const metricsContainer = document.getElementById('col-vis-metrics');
+  let savedState = {};
+  const saved = localStorage.getItem(_COL_VIS_KEY);
+  if (saved) { try { savedState = JSON.parse(saved); } catch(e) {} }
+
+  metricsContainer.innerHTML = metricKeys.map(function(key) {
+    const label = (metricLabels && metricLabels[key]) || key;
+    const checked = (key in savedState) ? savedState[key] : _CORE_5.has(key);
+    return `<label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0">` +
+      `<input type="checkbox" class="col-vis-cb" data-col="${escapeHtml(key)}"${checked ? ' checked' : ''}> ` +
+      `${escapeHtml(label)}</label>`;
+  }).join('');
+
+  applyColVisibility();
+}
+
+// ── Column visibility ──────────────────────────────────────────────────────
+// Change listeners use event delegation on #col-vis-menu (wired once in
+// DOMContentLoaded) so they survive dynamic checkbox rebuilds.
+
+function toggleColMenu() {
+  const menu = document.getElementById('col-vis-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function applyColVisibility() {
+  const table = document.getElementById('timeline-table');
+  if (!table) return;
+
+  // Build col-key → column-index map from thead <th data-col="...">
+  const headers = Array.from(table.querySelectorAll('thead th'));
+  const colIndexByKey = {};
+  headers.forEach(function(th, idx) {
+    const key = th.getAttribute('data-col');
+    if (key) colIndexByKey[key] = idx;
+  });
+
+  // Read current checkbox state
+  const visible = {};
+  document.querySelectorAll('.col-vis-cb').forEach(function(cb) {
+    visible[cb.getAttribute('data-col')] = cb.checked;
+  });
+
+  // Apply to header cells
+  headers.forEach(function(th) {
+    const key = th.getAttribute('data-col');
+    if (key) th.style.display = visible[key] ? '' : 'none';
+  });
+
+  // Apply to all body rows
+  Array.from(table.querySelectorAll('tbody tr')).forEach(function(tr) {
+    Array.from(tr.cells).forEach(function(td, idx) {
+      // Find which col key this index maps to
+      for (const key in colIndexByKey) {
+        if (colIndexByKey[key] === idx) {
+          td.style.display = visible[key] ? '' : 'none';
+          break;
+        }
+      }
+    });
+  });
+}
+
+// Re-render on filter changes
+['filter-gaps-only', 'filter-show-incomplete'].forEach(function(id) {
+  document.getElementById(id).addEventListener('change', function() {
+    renderTable(_rows);
+  });
+});
+['filter-from', 'filter-to'].forEach(function(id) {
+  document.getElementById(id).addEventListener('input', function() {
+    renderTable(_rows);
+  });
+});
+
+// ── Select period → open doc panel ────────────────────────────────────────
+async function selectPeriod(period) {
+  if (!_ticker) return;
+  _selectedPeriod = period;
+
+  // Highlight selected row
+  document.querySelectorAll('#timeline-tbody tr[data-period]').forEach(function(r) {
+    r.classList.toggle('selected', r.getAttribute('data-period') === period);
+  });
+
+  const periodLabel = period.slice(0, 7);
+
+  // Find the row to get source info
+  const row = _rows.find(r => r.period === period);
+
+  // Show doc panel
+  const panel = document.getElementById('doc-panel');
+  panel.classList.add('visible');
+  document.getElementById('doc-panel-title').textContent =
+    `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
+
+  // Reset highlight + pattern state for new period
+  _sourceReady = false;
+  _analysisReady = false;
+  _currentAnalysisMatches = [];
+  document.getElementById('pattern-panel').style.display = 'none';
+  document.getElementById('pattern-save-status').textContent = '';
+  document.getElementById('apply-result').style.display = 'none';
+  _currentDocText = '';
+
+  // Populate manual fill dropdown with null metrics for this period
+  const fillPanel = document.getElementById('manual-fill-panel');
+  const fillMetricEl = document.getElementById('fill-metric');
+  if (row) {
+    const nullMetrics = METRICS_ORDER.filter(function(m) {
+      return !row.metrics[m] || row.metrics[m].value == null;
+    });
+    fillMetricEl.innerHTML = nullMetrics.map(function(m) {
+      return `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`;
+    }).join('');
+    // Show fill panel whenever there's at least one null metric (including gap rows)
+    fillPanel.style.display = nullMetrics.length > 0 ? 'flex' : 'none';
+  } else {
+    fillPanel.style.display = 'none';
+  }
+  document.getElementById('fill-status').textContent = '';
+  document.getElementById('fill-value').value = '';
+  document.getElementById('fill-note').value = '';
+
+  // Load source and analysis in parallel
+  loadSource(_ticker, period, row);
+  loadAnalysis(_ticker, period);
+
+  // Scroll panel into view
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Load source document ──────────────────────────────────────────────────
+async function loadSource(ticker, period, row) {
+  var sourceView = document.getElementById('doc-source-view');
+  var placeholder = document.getElementById('doc-placeholder');
+  _sourceReady = false;
+
+  if (!row || !row.has_report) {
+    sourceView.style.display = 'none';
+    placeholder.style.display = 'flex';
+    placeholder.textContent = 'No source document available for this period.';
+    return;
+  }
+
+  placeholder.style.display = 'none';
+  sourceView.style.display = '';
+  sourceView.textContent = 'Loading source\u2026';
+
+  var periodParam = period.slice(0, 7);
+  try {
+    var resp = await fetch(
+      '/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(periodParam) + '/raw-source'
+    );
+    _currentDocText = resp.ok ? await resp.text() : '';
+  } catch (e) {
+    _currentDocText = '';
+  }
+
+  _sourceReady = true;
+  tryRender();
+}
+
+// ── Load analysis (rule matches) ──────────────────────────────────────────
+async function loadAnalysis(ticker, period) {
+  const listEl = document.getElementById('rules-list');
+  listEl.innerHTML = `<div class="rules-empty"><span class="spin"></span></div>`;
+
+  try {
+    const periodParam = period.slice(0, 7);  // YYYY-MM
+    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/${encodeURIComponent(periodParam)}/analysis`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${resp.status}`);
+    }
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    renderRuleCards(body.data.matches);
+    _currentAnalysisMatches = body.data.matches || [];
+    _analysisReady = true;
+    tryRender();
+  } catch (err) {
+    listEl.innerHTML = `<div class="rules-empty" style="color:var(--theme-danger)">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderRuleCards(matches) {
+  const listEl = document.getElementById('rules-list');
+  if (!matches || matches.length === 0) {
+    listEl.innerHTML = '<div class="rules-empty">No LLM extractions for this period.</div>';
+    return;
+  }
+
+  const parts = matches.map(function(m) {
+    const confPct = Math.round((m.confidence || 0) * 100);
+    const valStr = m.value != null ? m.value.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1}) : '—';
+    const unit = m.unit || '';
+    // Strip llm_ prefix for display; show model name cleanly (e.g. "qwen3.5:35b")
+    const methodRaw = m.pattern_id || '—';
+    const methodLabel = methodRaw.startsWith('llm_') ? methodRaw.slice(4) : methodRaw;
+    const isPending = m.status === 'pending_review';
+    const statusLabel = isPending ? 'review' : 'accepted';
+    const statusClass = isPending ? 'pending' : 'accepted';
+    return `
+      <div class="rule-card" style="--rule-color:${METRIC_COLORS[m.metric] || '#6b7280'}">
+        <div class="rule-card-id">
+          <span>${escapeHtml(methodLabel)}</span>
+          <span class="rule-card-status ${escapeHtml(statusClass)}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="rule-card-metric">${escapeHtml(m.metric_label || m.metric)}</div>
+        <div class="rule-card-value">${escapeHtml(valStr)} ${escapeHtml(unit)}</div>
+        <div class="rule-card-conf">conf ${confPct}%</div>
+        ${m.source_snippet ? `<div class="rule-card-snippet" title="${escapeAttr(m.source_snippet)}">${escapeHtml(m.source_snippet.slice(0, 80))}</div>` : ''}
+      </div>`;
+  });
+  listEl.innerHTML = parts.join('');
+}
+
+// ── Close doc panel ────────────────────────────────────────────────────────
+function closeDocPanel() {
+  _selectedPeriod = null;
+  _currentDocText = '';
+  _currentAnalysisMatches = [];
+  _sourceReady = false;
+  _analysisReady = false;
+  const panel = document.getElementById('doc-panel');
+  panel.classList.remove('visible');
+  var sv = document.getElementById('doc-source-view');
+  sv.textContent = '';
+  sv.style.display = 'none';
+  document.getElementById('doc-placeholder').style.display = 'flex';
+  document.getElementById('doc-placeholder').textContent = 'No source document.';
+  document.getElementById('rules-list').innerHTML =
+    '<div class="rules-empty">Select a row with a source document.</div>';
+  document.getElementById('pattern-panel').style.display = 'none';
+  document.getElementById('manual-fill-panel').style.display = 'none';
+  document.getElementById('fill-status').textContent = '';
+  // Clear row selection
+  document.querySelectorAll('#timeline-tbody tr.selected').forEach(function(r) {
+    r.classList.remove('selected');
+  });
+}
+
+// Escape key closes doc panel
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && _selectedPeriod) closeDocPanel();
+});
+
+// ── Text selection → pattern generation (wired in DOMContentLoaded) ───────
+
+function showPatternPanel(selectedText) {
+  // Pattern generator disabled in LLM-only mode (no-op).
+}
+
+async function generatePattern(selectedText) {
+  if (!selectedText) return;
+  const metric = document.getElementById('pattern-metric').value;
+  try {
+    const resp = await fetch('/api/patterns/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        selected_text: selectedText,
+        metric: metric,
+        doc_text: _currentDocText.slice(0, 50000),
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast(err.error?.message || 'Pattern generation failed', true);
+      return;
+    }
+    const data = await resp.json();
+    if (!data.success) { showToast(data.error?.message || 'Failed', true); return; }
+    document.getElementById('pattern-regex-input').value = data.data.regex;
+    updateMatchCount(data.data.match_count);
+  } catch (err) {
+    showToast(`Pattern error: ${err.message}`, true);
+  }
+}
+
+function updateMatchCount(count) {
+  const el = document.getElementById('match-count-display');
+  if (count === 0) {
+    el.textContent = '0 matches';
+    el.className = 'pattern-match-count zero';
+  } else {
+    el.textContent = `${count} match${count === 1 ? '' : 'es'} ✓`;
+    el.className = 'pattern-match-count good';
+  }
+}
+
+async function testGeneratedPattern() {
+  const regex = document.getElementById('pattern-regex-input').value.trim();
+  if (!regex) return;
+  const metric = document.getElementById('pattern-metric').value;
+  if (!_currentDocText) { showToast('No document loaded', true); return; }
+  try {
+    const resp = await fetch('/api/patterns/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ regex, text: _currentDocText.slice(0, 50000), metric }),
+    });
+    const data = await resp.json();
+    if (!data.success) { showToast(data.error?.message || 'Test failed', true); return; }
+    updateMatchCount(data.data.matches.length);
+  } catch (err) {
+    showToast(`Test error: ${err.message}`, true);
+  }
+}
+
+async function saveGeneratedPattern() {
+  const regex = document.getElementById('pattern-regex-input').value.trim();
+  if (!regex) { showToast('No regex to save', true); return; }
+  const metric = document.getElementById('pattern-metric').value;
+  try {
+    const resp = await fetch(`/api/patterns/${encodeURIComponent(metric)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ regex, confidence_weight: 0.87 }),
+    });
+    const data = await resp.json();
+    if (!data.success) { showToast(data.error?.message || 'Save failed', true); return; }
+    const newId = data.data?.id || '';
+    document.getElementById('pattern-save-status').textContent = `Saved as ${newId}`;
+    showToast(`Pattern saved as ${newId}`);
+  } catch (err) {
+    showToast(`Save error: ${err.message}`, true);
+  }
+}
+
+// ── Open raw source in new tab ─────────────────────────────────────────────
+function openInNewTab() {
+  if (!_ticker || !_selectedPeriod) return;
+  const periodParam = _selectedPeriod.slice(0, 7);
+  window.open(
+    `/api/miner/${encodeURIComponent(_ticker)}/${encodeURIComponent(periodParam)}/raw-source`,
+    '_blank',
+    'noopener'
+  );
+}
+
+// ── Render coordination ────────────────────────────────────────────────────
+// Called after loadSource() or loadAnalysis() resolves.
+// Only proceeds when both flags are true — handles any completion order.
+function tryRender() {
+  if (!_sourceReady || !_analysisReady) return;
+  var sourceView = document.getElementById('doc-source-view');
+  if (!_currentDocText) {
+    sourceView.textContent = '(Source text unavailable)';
+    return;
+  }
+  sourceView.innerHTML = buildHighlightedSource(_currentDocText, _currentAnalysisMatches);
+  var firstHl = sourceView.querySelector('.doc-hl');
+  if (firstHl) firstHl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Builds an HTML string from rawText with colored <span> wrappers around
+// source_snippet matches.  escapeHtml() (from base.html) makes tags render
+// as visible text while the highlight spans are real markup.
+function buildHighlightedSource(rawText, matches) {
+  var regions = [];
+  for (var j = 0; j < matches.length; j++) {
+    var m = matches[j];
+    if (!m.source_snippet) continue;
+    var needle = m.source_snippet.replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (needle.length < 6) continue;
+    var idx = rawText.toLowerCase().indexOf(needle.toLowerCase());
+    if (idx < 0) continue;
+    regions.push({
+      start: idx, end: idx + needle.length,
+      color: METRIC_COLORS[m.metric] || '#9ca3af',
+      label: m.metric_label || m.metric,
+      patternId: m.pattern_id || '?',
+    });
+  }
+  regions.sort(function(a, b) { return a.start - b.start; });
+
+  var html = '';
+  var pos = 0;
+  for (var i = 0; i < regions.length; i++) {
+    var r = regions[i];
+    if (r.start < pos) continue; // skip overlapping
+    html += escapeHtml(rawText.slice(pos, r.start));
+    var title = escapeHtml(r.label + ' \u2014 ' + r.patternId);
+    html += '<span class="doc-hl" style="background:' + r.color
+      + '28;border-bottom:2px solid ' + r.color + '" title="' + title + '">'
+      + escapeHtml(rawText.slice(r.start, r.end)) + '</span>';
+    pos = r.end;
+  }
+  html += escapeHtml(rawText.slice(pos));
+  return html;
+}
+
+// ── Ingest triggers ───────────────────────────────────────────────────────
+async function triggerIngest(source) {
+  const statusEl = document.getElementById('ingest-status');
+  if (!statusEl) return;
+  document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = true; });
+  statusEl.textContent = `Starting ${source}…`;
+  try {
+    const resp = await fetch(`/api/ingest/${encodeURIComponent(source)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    const data = await resp.json();
+    if (!data.success) {
+      // 409 = already running — not a fatal error
+      statusEl.textContent = resp.status === 409
+        ? `${source} already running`
+        : (data.error?.message || `HTTP ${resp.status}`);
+      document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
+      return;
+    }
+    const taskId = data.data?.task_id;
+    if (!taskId) {
+      statusEl.textContent = 'Started';
+      document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
+      return;
+    }
+    pollIngestProgress(taskId, source);
+  } catch (err) {
+    const el = document.getElementById('ingest-status');
+    if (el) el.textContent = `Error: ${err.message}`;
+    document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
+  }
+}
+
+function pollIngestProgress(taskId, source) {
+  const interval = setInterval(async function() {
+    try {
+      const resp = await fetch(`/api/ingest/${encodeURIComponent(taskId)}/progress`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.success) return;
+      const p = data.data;
+      const statusEl = document.getElementById('ingest-status');
+      if (p.status === 'running' || p.status === 'queued') {
+        if (statusEl) statusEl.textContent = `${source}: running…`;
+      } else {
+        clearInterval(interval);
+        document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
+        if (p.status === 'error') {
+          if (statusEl) statusEl.textContent = `${source}: error`;
+          showToast(`${source} ingest error`, true);
+        } else {
+          const created = p.data_points_extracted || 0;
+          if (statusEl) statusEl.textContent = `Done — ${created} new`;
+          showToast(`${source} ingest done — ${created} new data point${created !== 1 ? 's' : ''}`);
+          if (_ticker) selectCompany(_ticker);
+        }
+      }
+    } catch (e) {
+      clearInterval(interval);
+      document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
+    }
+  }, 1500);
+}
+
+async function applyPatternToArchive() {
+  const regex = document.getElementById('pattern-regex-input').value.trim();
+  if (!regex) { showToast('No regex to apply', true); return; }
+  const metric = document.getElementById('pattern-metric').value;
+  const btn = document.getElementById('apply-archive-btn');
+  const resultEl = document.getElementById('apply-result');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
+  resultEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/patterns/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ regex, metric, confidence_weight: 0.87 }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error?.message || 'Apply failed');
+
+    const d = data.data;
+    const parts = [];
+    if (d.created > 0) parts.push(`<span style="color:var(--theme-success)">${d.created} created</span>`);
+    if (d.skipped_existing > 0) parts.push(`${d.skipped_existing} skipped`);
+    if (d.low_confidence > 0) parts.push(`${d.low_confidence} → review queue`);
+    if (d.no_match > 0) parts.push(`${d.no_match} no match`);
+    resultEl.innerHTML = `Applied to ${d.applied_to} reports — ${parts.join(', ') || 'no changes'}.`;
+    resultEl.style.display = '';
+
+    if (d.created > 0) {
+      showToast(`Applied: ${d.created} new data point${d.created !== 1 ? 's' : ''} created`);
+      // Refresh table for current company
+      selectCompany(_ticker);
+    } else {
+      showToast('Pattern applied — no new data points created');
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<span style="color:var(--theme-danger)">Apply error: ${escapeHtml(err.message)}</span>`;
+    resultEl.style.display = '';
+    showToast(`Apply error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply to Archive';
+  }
+}
+</script>
+{% endblock %}

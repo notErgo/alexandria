@@ -1,0 +1,7 @@
+{
+  "metric": "net_btc_balance_change",
+  "valid_range": [-200000, 200000],
+  "unit": "BTC",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

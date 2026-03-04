@@ -1,0 +1,30 @@
+{
+  "color": [
+    "#00d4ff", "#ffb700", "#00ff88", "#ff6b6b", "#c77dff",
+    "#ff9f43", "#54a0ff", "#ffeaa7", "#fd79a8", "#00cec9",
+    "#e17055", "#a29bfe", "#55efc4"
+  ],
+  "backgroundColor": "#000000",
+  "legend": {
+    "textStyle": { "color": "#ffffff" },
+    "inactiveColor": "#555555"
+  },
+  "tooltip": {
+    "backgroundColor": "#111111",
+    "borderColor": "rgba(255,255,255,0.4)",
+    "textStyle": { "color": "#ffffff" }
+  },
+  "categoryAxis": {
+    "axisLine": { "lineStyle": { "color": "rgba(255,255,255,0.4)" } },
+    "axisTick": { "lineStyle": { "color": "rgba(255,255,255,0.4)" } },
+    "axisLabel": { "color": "#ffffff" },
+    "splitLine": { "show": false }
+  },
+  "valueAxis": {
+    "axisLine":  { "show": false },
+    "axisTick":  { "show": false },
+    "axisLabel": { "color": "#ffffff" },
+    "splitLine": { "lineStyle": { "color": "rgba(255,255,255,0.25)" } }
+  },
+  "bar": { "itemStyle": { "borderRadius": 2 } }
+}

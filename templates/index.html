@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Data Explorer{% endblock %}
+
+{% block styles %}{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Bitcoin Miner Data Explorer</h1>
+
+<!-- ── Pipeline status bar ─────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
+  <span id="pipeline-status" style="font-size:0.85rem;color:var(--theme-text-secondary)">Loading pipeline status…</span>
+  <a href="/operations" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">→ Operations</a>
+  <a href="/review?status=PENDING" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">→ Review Queue</a>
+</div>
+
+<div class="card">
+  <form class="filter-form" id="filter-form" onsubmit="return false">
+    <div class="form-group">
+      <label>Company</label>
+      <select id="f-ticker" multiple size="4">
+        {% for c in companies %}
+        <option value="{{ c.ticker }}">{{ c.ticker }} — {{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Metric</label>
+      <select id="f-metric">
+        <option value="">All metrics</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>From (YYYY-MM)</label>
+      <input type="month" id="f-from" />
+    </div>
+    <div class="form-group">
+      <label>To (YYYY-MM)</label>
+      <input type="month" id="f-to" />
+    </div>
+    <div class="form-group">
+      <label>Min Confidence: <span id="conf-label">0.00</span></label>
+      <input type="range" id="f-confidence" min="0" max="1" step="0.05" value="0"
+             oninput="document.getElementById('conf-label').textContent = parseFloat(this.value).toFixed(2)">
+    </div>
+    <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
+      <span id="results-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+      <button class="btn btn-primary" onclick="fetchData()">Search</button>
+      <button class="btn btn-secondary" onclick="exportCsv()">Export CSV</button>
+    </div>
+  </form>
+</div>
+
+<div id="error-banner" class="error-banner" hidden></div>
+
+<div class="card">
+  <table id="results-table">
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="period">Period</th>
+        <th data-sort="metric">Metric</th>
+        <th data-sort="value" data-sort-type="num">Value</th>
+        <th data-sort="unit">Unit</th>
+        <th data-sort="confidence" data-sort-type="num">Confidence</th>
+        <th data-sort="method">Method</th>
+        <th>Snippet</th>
+      </tr>
+    </thead>
+    <tbody id="results-body">
+      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function currentParams() {
+  const tickers = Array.from(document.getElementById('f-ticker').selectedOptions).map(o=>o.value);
+  const params = new URLSearchParams();
+  tickers.forEach(t => params.append('ticker', t));
+  const metric = document.getElementById('f-metric').value;
+  if (metric) params.set('metric', metric);
+  const from = document.getElementById('f-from').value;
+  if (from) params.set('from_period', from);
+  const to = document.getElementById('f-to').value;
+  if (to) params.set('to_period', to);
+  const conf = parseFloat(document.getElementById('f-confidence').value);
+  if (conf > 0) params.set('min_confidence', conf.toFixed(2));
+  return params;
+}
+
+async function fetchData() {
+  const banner = document.getElementById('error-banner');
+  banner.hidden = true;
+  try {
+    const resp = await fetch('/api/data?' + currentParams().toString());
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    renderTable(json.data);
+  } catch(e) {
+    banner.textContent = 'Error: ' + e.message;
+    banner.hidden = false;
+  }
+}
+
+function confidenceBadge(conf) {
+  const cls = conf >= 0.90 ? 'badge-success' : conf >= 0.75 ? 'badge-warning' : 'badge-danger';
+  return `<span class="badge ${cls}">${escapeHtml(conf.toFixed(3))}</span>`;
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('results-body');
+  const countEl = document.getElementById('results-count');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No data found.</td></tr>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  if (countEl) countEl.textContent = rows.length + ' row' + (rows.length === 1 ? '' : 's') + (rows.length === 1000 ? ' (limit)' : '');
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${escapeHtml(r.ticker)}</td>
+    <td>${escapeHtml(r.period ? r.period.slice(0,7) : '')}</td>
+    <td>${escapeHtml(r.metric)}</td>
+    <td>${escapeHtml(r.value != null ? r.value.toLocaleString() : '')}</td>
+    <td>${escapeHtml(r.unit)}</td>
+    <td>${confidenceBadge(r.confidence || 0)}</td>
+    <td>${escapeHtml(r.extraction_method)}</td>
+    <td title="${escapeHtml(r.source_snippet)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.source_snippet || '').slice(0, 80))}</td>
+  </tr>`).join('');
+}
+
+function exportCsv() {
+  window.location = '/api/export.csv?' + currentParams().toString();
+}
+
+makeSortable('results-table');
+
+document.addEventListener('DOMContentLoaded', function() {
+  fetchData();
+  loadPipelineStatus();
+  loadMetricOptions();
+});
+
+// ── Pipeline status bar ────────────────────────────────────────────────────
+function loadPipelineStatus() {
+  fetch('/api/coverage/summary')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!data || !data.success) return;
+      const d = data.data;
+      const el = document.getElementById('pipeline-status');
+      if (!el) return;
+      const reviewLink = d.pending_review > 0
+        ? ` · <a href="/review?status=PENDING" style="color:var(--theme-highlight)">${d.pending_review} pending review</a>`
+        : ` · ${d.pending_review} pending review`;
+      el.innerHTML = `${d.total_reports} reports · ${d.pending_extraction} pending extraction${reviewLink}`;
+    })
+    .catch(function() {});
+}
+
+// ── Dynamic metric dropdown ────────────────────────────────────────────────
+function loadMetricOptions() {
+  fetch('/api/metrics')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!data || !data.success) return;
+      const sel = document.getElementById('f-metric');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">All metrics</option>';
+      data.data.metrics.forEach(function(m) {
+        const opt = document.createElement('option');
+        opt.value = m.key;
+        opt.textContent = m.label + (m.unit ? ' (' + m.unit + ')' : '');
+        sel.appendChild(opt);
+      });
+    })
+    .catch(function() {});
+}
+</script>
+{% endblock %}

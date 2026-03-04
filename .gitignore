@@ -1,0 +1,20 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+pytest-of-*/
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.db
+*.db-shm
+*.db-wal
+# Raw archive data — regenerable, too large for git
+historic_parsing/
+# LibreOffice/OpenOffice lock files
+.~lock.*
+# Spreadsheets
+*.xlsx
+*.csv

@@ -1,0 +1,7 @@
+{
+  "metric": "gpu_count",
+  "valid_range": [0, 1000000],
+  "unit": "",
+  "conflict_resolution": "highest_confidence",
+  "patterns": []
+}

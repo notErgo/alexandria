@@ -1,0 +1,556 @@
+"""
+Tests for extractors.extraction_pipeline.extract_report.
+
+Written test-first per TDD requirement. These tests FAIL before
+extraction_pipeline.py is created and PASS after implementation.
+
+Monkeypatches LLMExtractor.check_connectivity → False to force the
+regex-only code path, so tests are deterministic (no Ollama dependency).
+"""
+import pytest
+from helpers import make_report, make_data_point
+
+
+@pytest.fixture
+def db_with_company(db):
+    """db fixture (from conftest) with a MARA company row pre-inserted."""
+    db.insert_company({
+        'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+        'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+        'pr_base_url': 'https://www.marathondh.com',
+        'cik': '0001437491', 'active': 1,
+    })
+    return db
+
+
+@pytest.fixture
+def registry():
+    from extractors.pattern_registry import PatternRegistry
+    from config import CONFIG_DIR
+    return PatternRegistry.load(CONFIG_DIR)
+
+
+class TestExtractReport:
+    def test_extract_report_stores_data_point(self, db_with_company, registry, monkeypatch):
+        """LLM batch path: connectivity=True, LLM returns known value → data_point stored."""
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+        import extractors.extraction_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=700.0, unit='BTC', confidence=0.95,
+                extraction_method='llm_test', source_snippet='MARA mined 700 BTC',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert len(rows) >= 1
+        assert any(abs(r['value'] - 700.0) < 0.01 for r in rows)
+
+    def test_extract_report_analyst_protected(self, db_with_company, registry, monkeypatch):
+        """Analyst-protected data point must not be overwritten by the pipeline."""
+        from extractors.llm_extractor import LLMExtractor
+        monkeypatch.setattr(LLMExtractor, 'check_connectivity', lambda self: False)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        # Insert analyst-protected data point with a sentinel value (999)
+        db_with_company.insert_data_point({
+            'report_id': report_id, 'ticker': 'MARA', 'period': '2024-09-01',
+            'metric': 'production_btc', 'value': 999.0, 'unit': 'BTC',
+            'confidence': 1.0, 'extraction_method': 'analyst',
+            'source_snippet': 'analyst override',
+        })
+
+        report = db_with_company.get_report(report_id)
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert len(rows) == 1
+        assert abs(rows[0]['value'] - 999.0) < 0.01, "Analyst value must not be overwritten"
+
+    def test_extract_report_marks_extracted_at(self, db_with_company, registry, monkeypatch):
+        """After extract_report(), the report must no longer appear in get_unextracted_reports()."""
+        from extractors.llm_extractor import LLMExtractor
+        monkeypatch.setattr(LLMExtractor, 'check_connectivity', lambda self: False)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+
+        # Confirm not yet extracted
+        unextracted_before = db_with_company.get_unextracted_reports()
+        assert any(r['id'] == report_id for r in unextracted_before)
+
+        report = db_with_company.get_report(report_id)
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        # Must no longer appear in unextracted list
+        unextracted_after = db_with_company.get_unextracted_reports()
+        assert not any(r['id'] == report_id for r in unextracted_after), \
+            "Report should be marked as extracted after extract_report() runs"
+
+    def test_extract_report_returns_summary(self, db_with_company, registry, monkeypatch):
+        """extract_report must return an ExtractionSummary with reports_processed=1."""
+        from extractors.llm_extractor import LLMExtractor
+        monkeypatch.setattr(LLMExtractor, 'check_connectivity', lambda self: False)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_company, registry)
+
+        assert isinstance(summary, ExtractionSummary)
+        assert summary.reports_processed == 1
+
+    def test_extract_report_empty_text_increments_errors(self, db_with_company, registry, monkeypatch):
+        """A report with empty raw_text must increment errors and still mark extracted."""
+        from extractors.llm_extractor import LLMExtractor
+        monkeypatch.setattr(LLMExtractor, 'check_connectivity', lambda self: False)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.errors == 1
+        # Should still be marked extracted (to avoid infinite re-processing)
+        unextracted = db_with_company.get_unextracted_reports()
+        assert not any(r['id'] == report_id for r in unextracted)
+
+
+class TestExtractReportBatchPath:
+    """extract_report uses extract_batch (1 LLM call) instead of per-metric loop."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def test_pipeline_calls_extract_batch_not_per_metric(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """When LLM available, extract_batch called once; per-metric extract() not called."""
+        import extractors.extraction_pipeline as _ep
+        from miner_types import ExtractionResult
+        from config import LLM_MODEL_ID
+
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: _make_mock_llm())
+
+        batch_called = []
+        extract_called = []
+
+        def fake_batch(text, metrics, ticker=None):
+            batch_called.append(metrics)
+            return {
+                "production_btc": ExtractionResult(
+                    metric="production_btc", value=700.0, unit="BTC",
+                    confidence=0.95, extraction_method=f"llm_{LLM_MODEL_ID}",
+                    source_snippet="mined 700 BTC", pattern_id=f"llm_{LLM_MODEL_ID}",
+                )
+            }
+
+        def fake_extract(text, metric):
+            extract_called.append(metric)
+            return None
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch = fake_batch
+        mock_llm.extract = fake_extract
+        mock_llm.extract_for_period.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        assert len(batch_called) == 1, "extract_batch must be called exactly once"
+        assert len(extract_called) == 0, "per-metric extract() must not be called"
+
+    def test_pipeline_falls_back_to_per_metric_when_batch_empty(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """When extract_batch returns {}, extract() called once per metric."""
+        import extractors.extraction_pipeline as _ep
+
+        extract_called = []
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch = lambda text, metrics, ticker=None: {}
+        mock_llm.extract = lambda text, metric: extract_called.append(metric) or None
+        mock_llm.extract_for_period.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        assert len(extract_called) == len(registry.metrics), (
+            "Fallback must call extract() once per metric"
+        )
+
+    def test_pipeline_batch_marks_report_extracted(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """mark_report_extracted fires even when LLM batch is used."""
+        import extractors.extraction_pipeline as _ep
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch = lambda text, metrics, ticker=None: {}
+        mock_llm.extract = lambda text, metric: None
+        mock_llm.extract_for_period.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        unextracted = db_with_company.get_unextracted_reports()
+        assert not any(r['id'] == report_id for r in unextracted)
+
+
+class TestLLMOnlyRouting:
+    """LLM_ONLY decision: high confidence → data_points, low → review_queue."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def _make_llm_only_batch(self, value, confidence):
+        """Build a mock LLM that returns one metric at given confidence; no regex fires."""
+        from miner_types import ExtractionResult
+        from config import LLM_MODEL_ID
+
+        def fake_batch(text, metrics, ticker=None):
+            return {
+                "production_btc": ExtractionResult(
+                    metric="production_btc", value=value, unit="BTC",
+                    confidence=confidence, extraction_method=f"llm_{LLM_MODEL_ID}",
+                    source_snippet="LLM found it", pattern_id=f"llm_{LLM_MODEL_ID}",
+                )
+            }
+
+        mock = _make_mock_llm()
+        mock.extract_batch = fake_batch
+        mock.extract_for_period.return_value = {}
+        return mock
+
+    def test_llm_only_high_confidence_auto_accepts(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """LLM_ONLY with confidence >= threshold → stored directly in data_points."""
+        import extractors.extraction_pipeline as _ep
+        from config import CONFIDENCE_REVIEW_THRESHOLD
+
+        # Empty registry so regex always returns nothing
+        from extractors.pattern_registry import PatternRegistry
+        empty_registry = PatternRegistry(metrics={m: [] for m in registry.metrics})
+
+        mock = self._make_llm_only_batch(value=700.0, confidence=CONFIDENCE_REVIEW_THRESHOLD)
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        summary = extract_report(report, db_with_company, empty_registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert any(abs(r['value'] - 700.0) < 0.01 for r in rows), \
+            "High-confidence LLM_ONLY must land in data_points"
+        assert summary.data_points_extracted >= 1
+
+    def test_llm_only_low_confidence_goes_to_review(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """LLM_ONLY with confidence < threshold → review_queue, not data_points."""
+        import extractors.extraction_pipeline as _ep
+        from config import CONFIDENCE_REVIEW_THRESHOLD
+
+        from extractors.pattern_registry import PatternRegistry
+        empty_registry = PatternRegistry(metrics={m: [] for m in registry.metrics})
+
+        low_conf = max(0.0, CONFIDENCE_REVIEW_THRESHOLD - 0.1)
+        mock = self._make_llm_only_batch(value=700.0, confidence=low_conf)
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        summary = extract_report(report, db_with_company, empty_registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert len(rows) == 0, "Low-confidence LLM_ONLY must NOT land in data_points"
+        assert summary.review_flagged >= 1
+
+
+def _make_mock_llm():
+    """Return a mock LLM extractor with connectivity=True."""
+    from unittest.mock import MagicMock
+    mock = MagicMock()
+    mock.check_connectivity.return_value = True
+    return mock
+
+
+# ── Boilerplate Stripping ───────────────────────────────────────────────────
+
+class TestBoilerplateStripping:
+    """_clean_for_llm strips boilerplate from back 60%+ of document."""
+
+    def test_forward_looking_at_end_stripped(self):
+        """FORWARD-LOOKING STATEMENTS in back 60% is stripped."""
+        from extractors.extraction_pipeline import _clean_for_llm
+        prefix = "A" * 500 + "MARA mined 700 BTC in January.\n\n"
+        suffix = "FORWARD-LOOKING STATEMENTS\nBlah blah legal text."
+        text = prefix + suffix
+        result = _clean_for_llm(text)
+        assert "FORWARD-LOOKING STATEMENTS" not in result
+        assert "700 BTC" in result
+
+    def test_sentinel_in_first_40pct_not_stripped(self):
+        """FORWARD-LOOKING STATEMENTS in first 40% is NOT stripped."""
+        from extractors.extraction_pipeline import _clean_for_llm
+        # Put sentinel at character 10 of a 5000+ char document (well within first 40%)
+        preamble = "FORWARD-LOOKING STATEMENTS paragraph at beginning. "
+        rest = "A" * 5000 + " MARA mined 700 BTC in January."
+        text = preamble + rest
+        result = _clean_for_llm(text)
+        assert "700 BTC" in result
+
+    def test_no_sentinel_unchanged(self):
+        """Document with no boilerplate sentinels is returned unchanged."""
+        from extractors.extraction_pipeline import _clean_for_llm
+        text = "MARA mined 700 BTC in January. No legal sections here."
+        result = _clean_for_llm(text)
+        assert result == text.rstrip()
+
+    def test_multiple_sentinels_strips_at_earliest(self):
+        """When multiple sentinels match in back 60%, strips at the earliest one."""
+        from extractors.extraction_pipeline import _clean_for_llm
+        prefix = "A" * 600 + " MARA mined 700 BTC.\n\n"
+        text = prefix + "SAFE HARBOR STATEMENTS\nsome text\n\nCAUTIONARY STATEMENTS\nmore text"
+        result = _clean_for_llm(text)
+        assert "700 BTC" in result
+        assert "SAFE HARBOR" not in result
+        assert "CAUTIONARY STATEMENTS" not in result
+
+    def test_about_company_section_stripped(self):
+        """About [Company] section in back 60% is stripped."""
+        from extractors.extraction_pipeline import _clean_for_llm
+        prefix = "A" * 600 + " MARA mined 700 BTC.\n\n"
+        text = prefix + "About MARA\nWe are a company that mines BTC."
+        result = _clean_for_llm(text)
+        assert "700 BTC" in result
+        assert "About MARA" not in result
+
+
+# ── Gap Fill ─────────────────────────────────────────────────────────────────
+
+class TestGapFill:
+    """_try_gap_fill stores prior-period data when LLM finds it."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def test_gap_fill_disabled_when_llm_unavailable(self, db_with_company, registry, monkeypatch):
+        """Gap fill must not be attempted when LLM is unavailable."""
+        import extractors.extraction_pipeline as _ep
+
+        # LLM not available → _try_gap_fill should not be called
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: None)
+        gap_fill_called = []
+        monkeypatch.setattr(_ep, '_try_gap_fill', lambda *a, **kw: gap_fill_called.append(1))
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024. In August we mined 650 BTC.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+        assert len(gap_fill_called) == 0
+
+    def test_gap_fill_skips_when_prior_period_fully_populated(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """Gap fill returns early if all metrics already have data for prior period."""
+        import extractors.extraction_pipeline as _ep
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        # Pre-populate all metrics for prior period (2024-08-01)
+        for metric in registry.metrics:
+            db_with_company.insert_data_point({
+                'report_id': None, 'ticker': 'MARA', 'period': '2024-08-01',
+                'metric': metric, 'value': 1.0, 'unit': 'BTC',
+                'confidence': 0.9, 'extraction_method': 'analyst',
+                'source_snippet': 'pre-filled',
+            })
+
+        extract_for_period_calls = []
+        mock_llm.extract_for_period = lambda *a, **kw: extract_for_period_calls.append(1) or {}
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+        # extract_for_period must not be called — all prior-period slots already filled
+        assert len(extract_for_period_calls) == 0
+
+    def test_gap_fill_stores_data_at_prior_period(self, db_with_company, registry, monkeypatch):
+        """Gap fill stores LLM result at prior period when slot is empty."""
+        import extractors.extraction_pipeline as _ep
+        from miner_types import ExtractionResult
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch.return_value = {}
+        mock_llm.extract.return_value = None  # prevent per-metric fallback side-effects
+        prior_result = ExtractionResult(
+            metric='production_btc', value=650.0, unit='BTC', confidence=0.90,
+            extraction_method='llm_gap_fill', source_snippet='August mined 650 BTC',
+            pattern_id='llm_gap_fill',
+        )
+        mock_llm.extract_for_period.return_value = {'production_btc': prior_result}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024. In August we mined 650 BTC.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert any(
+            r['period'] == '2024-08-01' and abs(r['value'] - 650.0) < 0.01
+            for r in rows
+        ), "Gap fill must store the prior-period value at period=2024-08-01"
+
+    def test_gap_fill_does_not_overwrite_existing_data(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """Gap fill must not overwrite existing data at prior period."""
+        import extractors.extraction_pipeline as _ep
+        from miner_types import ExtractionResult
+
+        mock_llm = _make_mock_llm()
+        mock_llm.extract_batch.return_value = {}
+        mock_llm.extract.return_value = None  # prevent per-metric fallback side-effects
+        prior_result = ExtractionResult(
+            metric='production_btc', value=650.0, unit='BTC', confidence=0.90,
+            extraction_method='llm_gap_fill', source_snippet='August mined 650 BTC',
+            pattern_id='llm_gap_fill',
+        )
+        mock_llm.extract_for_period.return_value = {'production_btc': prior_result}
+        monkeypatch.setattr(_ep, '_get_llm_extractor', lambda db: mock_llm)
+
+        # Pre-insert prior-period data at a different sentinel value
+        db_with_company.insert_data_point({
+            'report_id': None, 'ticker': 'MARA', 'period': '2024-08-01',
+            'metric': 'production_btc', 'value': 999.0, 'unit': 'BTC',
+            'confidence': 0.95, 'extraction_method': 'llm_test',
+            'source_snippet': 'existing',
+        })
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September. In August we mined 650 BTC.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from extractors.extraction_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        aug_rows = [r for r in rows if r['period'] == '2024-08-01']
+        assert len(aug_rows) == 1
+        assert abs(aug_rows[0]['value'] - 999.0) < 0.01, "Existing data must not be overwritten"
+
+    def test_prior_period_helper_wraps_january_to_december(self):
+        """_prior_period('2024-01-01') → '2023-12-01'; wrap and normal cases correct."""
+        from extractors.extraction_pipeline import _prior_period
+        assert _prior_period('2024-01-01') == '2023-12-01'
+        assert _prior_period('2024-03-01') == '2024-02-01'
+        assert _prior_period('invalid') is None
