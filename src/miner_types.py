@@ -126,13 +126,19 @@ class IngestState(str, Enum):
 
 
 class CellState(str, Enum):
-    """Coverage state of a (ticker, period) cell in the coverage grid."""
-    NO_SOURCE = "no_source"
-    LEGACY_UNDATED = "legacy_undated"
-    PENDING_INGEST = "pending_ingest"
-    INGESTED_PENDING_EXTRACTION = "ingested_pending_extraction"
-    EXTRACTED_IN_REVIEW = "extracted_in_review"
-    ACCEPTED = "accepted"
+    """Coverage state of a (ticker, period) cell in the redesigned coverage grid.
+
+    Priority (highest first when multiple apply):
+      DATA > REVIEW_PENDING > PARSE_FAILED > EXTRACT_FAILED >
+      SCRAPER_ERROR > ANALYST_GAP > NO_DOCUMENT
+    """
+    DATA           = 'data'           # accepted data_point exists
+    REVIEW_PENDING = 'review_pending' # review_queue item awaiting analyst
+    PARSE_FAILED   = 'parse_failed'   # document present, parser failed
+    EXTRACT_FAILED = 'extract_failed' # document parsed, extraction yielded nothing
+    NO_DOCUMENT    = 'no_document'    # no manifest entry and no report
+    SCRAPER_ERROR  = 'scraper_error'  # scraper recorded an error for this company
+    ANALYST_GAP    = 'analyst_gap'    # analyst explicitly marked no data expected
 
 
 @dataclass
@@ -167,3 +173,59 @@ class ParseResult:
     parse_quality: str
     parser_used: str
     page_count: int
+
+
+# ── Phase II: new types for platform redesign ─────────────────────────────────
+
+class RegimeCadence(str, Enum):
+    """Expected reporting cadence for a company in a given period."""
+    MONTHLY   = 'monthly'
+    QUARTERLY = 'quarterly'
+
+
+class ScrapeStatus(str, Enum):
+    """Lifecycle status of a company's scraper."""
+    NEVER_RUN    = 'never_run'
+    PROBING      = 'probing'
+    PROBE_OK     = 'probe_ok'
+    PROBE_FAILED = 'probe_failed'
+    JS_HEAVY     = 'js_heavy'
+    OK           = 'ok'
+    ERROR        = 'error'
+    RUNNING      = 'running'
+
+
+@dataclass
+class RegimeWindow:
+    """A time window during which a company reports at a given cadence."""
+    ticker:     str
+    cadence:    RegimeCadence
+    start_date: str            # YYYY-MM-DD
+    end_date:   Optional[str]  # YYYY-MM-DD or None (= current regime)
+    notes:      str = ''
+    id:         Optional[int] = None
+
+
+@dataclass
+class ScrapeJob:
+    """A queued or completed scrape job for one company."""
+    id:           int
+    ticker:       str
+    mode:         str            # 'historic' or 'forward'
+    status:       str            # ScrapeStatus value
+    created_at:   str
+    started_at:   Optional[str] = None
+    completed_at: Optional[str] = None
+    error_msg:    Optional[str] = None
+
+
+@dataclass
+class MetricSchemaDef:
+    """Definition of a tracked metric within a sector's global schema."""
+    key:                    str
+    label:                  str
+    unit:                   str
+    sector:                 str
+    has_extraction_pattern: bool
+    analyst_defined:        bool
+    id:                     Optional[int] = None

@@ -43,9 +43,55 @@ def test_ingest_state_values():
 
 
 def test_cell_state_count():
-    """CellState enum has 6 values."""
+    """CellState enum has 7 values matching the redesign cell model."""
     from miner_types import CellState
-    assert len(list(CellState)) == 6
+    assert len(list(CellState)) == 7
+    assert set(CellState) == {
+        CellState.DATA, CellState.REVIEW_PENDING, CellState.PARSE_FAILED,
+        CellState.EXTRACT_FAILED, CellState.NO_DOCUMENT,
+        CellState.SCRAPER_ERROR, CellState.ANALYST_GAP,
+    }
+
+
+class TestNewTypes:
+
+    def test_regime_cadence_values(self):
+        from miner_types import RegimeCadence
+        assert set(v.value for v in RegimeCadence) == {'monthly', 'quarterly'}
+
+    def test_scrape_status_values(self):
+        from miner_types import ScrapeStatus
+        expected = {'never_run', 'probing', 'probe_ok', 'probe_failed',
+                    'js_heavy', 'ok', 'error', 'running'}
+        assert set(v.value for v in ScrapeStatus) == expected
+
+    def test_regime_window_dataclass_fields(self):
+        from miner_types import RegimeWindow, RegimeCadence
+        rw = RegimeWindow(ticker='MARA', cadence=RegimeCadence.MONTHLY,
+                          start_date='2020-10-01', end_date=None, notes='')
+        assert rw.ticker == 'MARA'
+        assert rw.cadence == RegimeCadence.MONTHLY
+        assert rw.end_date is None
+
+    def test_scrape_job_dataclass_fields(self):
+        from miner_types import ScrapeJob
+        job = ScrapeJob(id=1, ticker='MARA', mode='historic',
+                        status='pending', created_at='2026-01-01')
+        assert job.id == 1
+        assert job.ticker == 'MARA'
+        assert job.mode == 'historic'
+        assert job.started_at is None
+        assert job.completed_at is None
+        assert job.error_msg is None
+
+    def test_metric_schema_def_dataclass_fields(self):
+        from miner_types import MetricSchemaDef
+        m = MetricSchemaDef(key='production_btc', label='BTC Produced',
+                            unit='BTC', sector='BTC-miners',
+                            has_extraction_pattern=True, analyst_defined=False)
+        assert m.key == 'production_btc'
+        assert m.has_extraction_pattern is True
+        assert m.id is None
 
 
 def test_scan_result_defaults():
