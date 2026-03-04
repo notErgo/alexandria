@@ -155,3 +155,114 @@ def test_summarize_grid_excludes_summary_key():
     summary = summarize_grid(grid)
     # Should count only MARA's cell
     assert summary.get('accepted') == 1
+
+
+# ── compute_cell_state_v2 ─────────────────────────────────────────────────────
+
+class TestComputeCellStateV2:
+
+    def _call(self, **kwargs):
+        from coverage_logic import compute_cell_state_v2
+        defaults = dict(
+            is_analyst_gap=False,
+            has_data_point=False,
+            has_review_pending=False,
+            has_manifest=False,
+            has_parse_error=False,
+            has_extract_error=False,
+            has_scraper_error=False,
+        )
+        defaults.update(kwargs)
+        return compute_cell_state_v2(**defaults)
+
+    def test_v2_data_state(self):
+        assert self._call(has_data_point=True, has_manifest=True) == 'data'
+
+    def test_v2_review_pending_state(self):
+        assert self._call(has_review_pending=True) == 'review_pending'
+
+    def test_v2_parse_failed_state(self):
+        assert self._call(has_manifest=True, has_parse_error=True) == 'parse_failed'
+
+    def test_v2_extract_failed_state(self):
+        assert self._call(has_manifest=True, has_extract_error=True) == 'extract_failed'
+
+    def test_v2_no_document_state(self):
+        assert self._call() == 'no_document'
+
+    def test_v2_scraper_error_state(self):
+        assert self._call(has_scraper_error=True) == 'scraper_error'
+
+    def test_v2_analyst_gap_state(self):
+        assert self._call(is_analyst_gap=True) == 'analyst_gap'
+
+    def test_v2_analyst_gap_wins_over_data(self):
+        assert self._call(is_analyst_gap=True, has_data_point=True) == 'analyst_gap'
+
+
+# ── compute_expected_periods ──────────────────────────────────────────────────
+
+class TestComputeExpectedPeriods:
+    from datetime import date as _date
+
+    def _call(self, windows, as_of_date):
+        from coverage_logic import compute_expected_periods
+        return compute_expected_periods(windows, as_of_date)
+
+    def test_monthly_single_window(self):
+        from datetime import date
+        windows = [{'cadence': 'monthly', 'start_date': '2024-01-01', 'end_date': None}]
+        result = self._call(windows, date(2024, 3, 31))
+        assert result == ['2024-01-01', '2024-02-01', '2024-03-01']
+
+    def test_quarterly_single_window(self):
+        from datetime import date
+        windows = [{'cadence': 'quarterly', 'start_date': '2024-01-01', 'end_date': None}]
+        result = self._call(windows, date(2024, 9, 30))
+        assert result == ['2024-01-01', '2024-04-01', '2024-07-01']
+
+    def test_two_windows_regime_change(self):
+        from datetime import date
+        windows = [
+            {'cadence': 'monthly', 'start_date': '2024-01-01', 'end_date': '2024-06-30'},
+            {'cadence': 'quarterly', 'start_date': '2024-07-01', 'end_date': None},
+        ]
+        result = self._call(windows, date(2024, 12, 31))
+        assert len(result) == 8  # 6 monthly + 2 quarterly
+
+    def test_empty_windows_returns_empty_list(self):
+        from datetime import date
+        assert self._call([], date(2024, 12, 31)) == []
+
+
+# ── rank_extractions ──────────────────────────────────────────────────────────
+
+class TestRankExtractions:
+
+    def _call(self, candidates):
+        from coverage_logic import rank_extractions
+        return rank_extractions(candidates)
+
+    def test_analyst_protected_wins_over_pipeline(self):
+        candidates = [
+            {'value': 100, 'confidence': 0.5, 'extraction_method': 'analyst', 'created_at': '2024-01-01'},
+            {'value': 200, 'confidence': 0.99, 'extraction_method': 'regex', 'created_at': '2024-01-01'},
+        ]
+        result = self._call(candidates)
+        assert result[0]['extraction_method'] == 'analyst'
+
+    def test_highest_confidence_wins_among_pipeline(self):
+        candidates = [
+            {'value': 100, 'confidence': 0.7, 'extraction_method': 'regex', 'created_at': '2024-01-01'},
+            {'value': 200, 'confidence': 0.9, 'extraction_method': 'regex', 'created_at': '2024-01-01'},
+        ]
+        result = self._call(candidates)
+        assert result[0]['confidence'] == 0.9
+
+    def test_equal_confidence_latest_timestamp_wins(self):
+        candidates = [
+            {'value': 100, 'confidence': 0.8, 'extraction_method': 'regex', 'created_at': '2024-01-01'},
+            {'value': 200, 'confidence': 0.8, 'extraction_method': 'regex', 'created_at': '2024-06-01'},
+        ]
+        result = self._call(candidates)
+        assert result[0]['created_at'] == '2024-06-01'

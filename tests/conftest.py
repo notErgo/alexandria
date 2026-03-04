@@ -12,7 +12,7 @@ def db(tmp_path):
 
 @pytest.fixture
 def db_with_company(db):
-    """MinerDB with one MARA company row pre-inserted."""
+    """MinerDB with one MARA company row pre-inserted (scraper_mode='skip')."""
     db.insert_company({
         'ticker': 'MARA',
         'name': 'MARA Holdings, Inc.',
@@ -22,4 +22,20 @@ def db_with_company(db):
         'cik': '0001437491',
         'active': 1,
     })
+    return db
+
+
+@pytest.fixture
+def db_with_active_company(db):
+    """MinerDB with one MARA company row pre-inserted with scraper_mode='rss'."""
+    db.insert_company({
+        'ticker': 'MARA',
+        'name': 'MARA Holdings, Inc.',
+        'tier': 1,
+        'ir_url': 'https://www.marathondh.com/news',
+        'pr_base_url': 'https://www.marathondh.com',
+        'cik': '0001437491',
+        'active': 1,
+    })
+    db.update_company_scraper_fields('MARA', scraper_mode='rss')
     return db

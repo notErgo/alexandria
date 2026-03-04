@@ -1574,6 +1574,203 @@ class MinerDB:
             return [dict(r) for r in rows]
 
 
+    # ── Phase III: regime_config CRUD ────────────────────────────────────────
+
+    def upsert_regime_window(
+        self, ticker: str, cadence: str, start_date: str,
+        end_date: Optional[str], notes: str
+    ) -> dict:
+        """Insert a new regime window for a company. Returns the new row as a dict."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO regime_config (ticker, cadence, start_date, end_date, notes)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (ticker, cadence, start_date, end_date, notes),
+            )
+            row = conn.execute(
+                "SELECT * FROM regime_config WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    def get_regime_windows(self, ticker: str) -> list:
+        """Return all regime windows for a company, ordered by start_date ascending."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM regime_config WHERE ticker = ? ORDER BY start_date ASC",
+                (ticker,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_regime_window(self, window_id: int) -> None:
+        """Delete a regime window by id."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM regime_config WHERE id = ?", (window_id,))
+
+    # ── Phase III: scrape_queue CRUD ──────────────────────────────────────────
+
+    def enqueue_scrape_job(self, ticker: str, mode: str) -> dict:
+        """Enqueue a scrape job. Raises ValueError if company scraper_mode is 'skip'."""
+        company = self.get_company(ticker)
+        if company and company.get('scraper_mode', 'skip') == 'skip':
+            raise ValueError(
+                f"Scrape skipped — scraper_mode is 'skip' for {ticker}. "
+                f"Update scraper_mode before triggering a scrape."
+            )
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO scrape_queue (ticker, mode) VALUES (?, ?)",
+                (ticker, mode),
+            )
+            row = conn.execute(
+                "SELECT * FROM scrape_queue WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    def get_pending_scrape_jobs(self) -> list:
+        """Return all pending scrape jobs in FIFO order."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM scrape_queue WHERE status = 'pending' ORDER BY created_at ASC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def claim_scrape_job(self, job_id: int) -> None:
+        """Mark a job as running with the current timestamp."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE scrape_queue SET status='running', started_at=datetime('now') "
+                "WHERE id = ? AND status = 'pending'",
+                (job_id,),
+            )
+
+    def complete_scrape_job(self, job_id: int) -> None:
+        """Mark a job as done."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE scrape_queue SET status='done', completed_at=datetime('now') WHERE id = ?",
+                (job_id,),
+            )
+
+    def fail_scrape_job(self, job_id: int, error_msg: str) -> None:
+        """Mark a job as failed with an error message."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE scrape_queue SET status='error', completed_at=datetime('now'), "
+                "error_msg=? WHERE id = ?",
+                (error_msg, job_id),
+            )
+
+    def reset_interrupted_scrape_jobs(self) -> int:
+        """Reset any jobs left in 'running' state back to 'pending'. Returns count reset.
+
+        Called on server startup to handle jobs orphaned by a previous process crash
+        (Anti-pattern #28 mitigation).
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE scrape_queue SET status='pending', started_at=NULL WHERE status='running'"
+            )
+            return cursor.rowcount
+
+    def get_scrape_queue_status(self) -> list:
+        """Return recent scrape queue rows joined with company scraper_status. Limit 50."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT sq.*, c.scraper_status
+                   FROM scrape_queue sq
+                   JOIN companies c ON sq.ticker = c.ticker
+                   ORDER BY sq.created_at DESC LIMIT 50"""
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Phase III: metric_schema CRUD ─────────────────────────────────────────
+
+    def get_metric_schema(self, sector: str) -> list:
+        """Return all metric schema rows for a sector, ordered by key."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM metric_schema WHERE sector = ? ORDER BY key ASC",
+                (sector,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def add_analyst_metric(self, key: str, label: str, unit: str, sector: str) -> dict:
+        """Add an analyst-defined metric to the schema. Raises IntegrityError on duplicate key+sector."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO metric_schema (key, label, unit, sector, has_extraction_pattern, analyst_defined)
+                   VALUES (?, ?, ?, ?, 0, 1)""",
+                (key, label, unit, sector),
+            )
+            row = conn.execute(
+                "SELECT * FROM metric_schema WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    # ── Phase III: extended company CRUD ─────────────────────────────────────
+
+    def update_company_scraper_fields(
+        self,
+        ticker: str,
+        scraper_status: str = None,
+        scraper_mode: str = None,
+        last_scrape_at: str = None,
+        last_scrape_error: str = None,
+        probe_completed_at: str = None,
+    ) -> None:
+        """Update one or more scraper-related fields on a company row.
+
+        Only non-None arguments are included in the UPDATE statement.
+        """
+        field_map = {
+            'scraper_status': scraper_status,
+            'scraper_mode': scraper_mode,
+            'last_scrape_at': last_scrape_at,
+            'last_scrape_error': last_scrape_error,
+            'probe_completed_at': probe_completed_at,
+        }
+        updates = {k: v for k, v in field_map.items() if v is not None}
+        if not updates:
+            return
+        set_clause = ', '.join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [ticker]
+        with self._get_connection() as conn:
+            conn.execute(
+                f"UPDATE companies SET {set_clause} WHERE ticker = ?", values
+            )
+
+    def update_company_config(self, ticker: str, **kwargs) -> dict:
+        """Update editable company fields. Allowed: name, pr_base_url, scraper_mode,
+        scraper_issues_log, cik, sector. Returns updated company dict."""
+        allowed = {'name', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if updates:
+            set_clause = ', '.join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [ticker]
+            with self._get_connection() as conn:
+                conn.execute(
+                    f"UPDATE companies SET {set_clause} WHERE ticker = ?", values
+                )
+        return self.get_company(ticker)
+
+    def add_company(
+        self, ticker: str, name: str, tier: int = 2, ir_url: str = '',
+        sector: str = 'BTC-miners', scraper_mode: str = 'skip',
+        pr_base_url: str = None, cik: str = None,
+        scraper_issues_log: str = '', active: int = 1,
+    ) -> dict:
+        """Add a new company. Returns the new company row as a dict."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO companies
+                   (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ticker, name, tier, ir_url, pr_base_url, cik, active,
+                 sector, scraper_mode, scraper_issues_log),
+            )
+        return self.get_company(ticker)
+
+
 def _metric_unit(metric: str) -> str:
     """Return canonical unit string for a metric name."""
     units = {

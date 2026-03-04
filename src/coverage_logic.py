@@ -2,6 +2,7 @@
 Pure functions for coverage grid computation. No DB dependencies.
 """
 from datetime import date, timedelta
+from typing import List, Optional
 
 
 def generate_month_range(months: int) -> list:
@@ -50,6 +51,112 @@ def compute_cell_state(manifest_entries: list, reports: list, has_dp: bool, has_
             return 'ingested_pending_extraction'
         return 'pending_ingest'
     return 'no_source'
+
+
+def compute_cell_state_v2(
+    is_analyst_gap: bool,
+    has_data_point: bool,
+    has_review_pending: bool,
+    has_manifest: bool,
+    has_parse_error: bool,
+    has_extract_error: bool,
+    has_scraper_error: bool,
+) -> str:
+    """Return one of 7 CellState values for a (ticker, period, metric) cell.
+
+    Priority (highest first):
+      1. analyst_gap  — analyst explicitly marked this period as intentionally empty
+      2. data         — a data_point exists
+      3. review_pending — a PENDING review_queue item exists
+      4. parse_failed — manifest entry exists; parse_quality = 'parse_failed'
+      5. extract_failed — manifest entry exists; extraction ran; no value found
+      6. scraper_error — scrape was attempted; HTTP/parse error logged
+      7. no_document  — no manifest entry; no scrape attempted
+    """
+    if is_analyst_gap:
+        return 'analyst_gap'
+    if has_data_point:
+        return 'data'
+    if has_review_pending:
+        return 'review_pending'
+    if has_parse_error:
+        return 'parse_failed'
+    if has_extract_error:
+        return 'extract_failed'
+    if has_scraper_error:
+        return 'scraper_error'
+    return 'no_document'
+
+
+def compute_expected_periods(windows: list, as_of_date) -> list:
+    """Compute all expected reporting periods from a list of regime windows.
+
+    Args:
+        windows: list of dicts (or RegimeWindow objects) with cadence, start_date, end_date.
+                 cadence: 'monthly' | 'quarterly'
+                 start_date: YYYY-MM-DD string
+                 end_date: YYYY-MM-DD string or None (= current regime, bounded by as_of_date)
+        as_of_date: datetime.date — ceiling; periods after this are excluded.
+
+    Returns: sorted deduplicated list of YYYY-MM-01 strings.
+    """
+    if not windows:
+        return []
+
+    periods = set()
+    for window in windows:
+        # Support both dict and dataclass-like objects
+        cadence = window['cadence'] if isinstance(window, dict) else window.cadence
+        start_str = window['start_date'] if isinstance(window, dict) else window.start_date
+        end_str = window.get('end_date') if isinstance(window, dict) else window.end_date
+
+        current = date.fromisoformat(start_str).replace(day=1)
+        end_ceiling = date.fromisoformat(end_str) if end_str else as_of_date
+
+        step_months = 1 if cadence == 'monthly' else 3
+
+        while current <= min(end_ceiling, as_of_date):
+            periods.add(current.strftime('%Y-%m-01'))
+            # Advance by step_months using timedelta through end-of-month
+            for _ in range(step_months):
+                current = (current + timedelta(days=32)).replace(day=1)
+
+    return sorted(periods)
+
+
+_ANALYST_METHODS = frozenset({'analyst', 'analyst_approved', 'review_approved', 'review_edited'})
+
+
+def rank_extractions(candidates: list) -> list:
+    """Sort extraction candidates by mutation governance hierarchy.
+
+    Each candidate is a dict with: value, confidence, extraction_method, created_at.
+
+    Ranking:
+      1. Analyst-protected (extraction_method in _ANALYST_METHODS) — always rank 1
+      2. Among pipeline candidates: highest confidence first
+      3. Equal confidence: most recent created_at first (lexicographic ISO sort works)
+
+    Returns: sorted list (best first). Does NOT filter.
+    """
+    def sort_key(c):
+        is_analyst = 1 if c.get('extraction_method') in _ANALYST_METHODS else 0
+        confidence = c.get('confidence', 0.0)
+        # Negate string to get descending order: '2024-06-01' > '2024-01-01' so
+        # negating the comparison by using reverse sort on the tuple is cleaner.
+        created_at = c.get('created_at', '')
+        return (-is_analyst, -confidence, created_at)
+
+    # Sort ascending on key, but created_at is a string so we need descending there.
+    # Use a two-pass: first sort by created_at desc, then stable-sort by the rest.
+    by_date = sorted(candidates, key=lambda c: c.get('created_at', ''), reverse=True)
+
+    def final_key(c):
+        is_analyst = 1 if c.get('extraction_method') in _ANALYST_METHODS else 0
+        confidence = c.get('confidence', 0.0)
+        return (-is_analyst, -confidence)
+
+    return sorted(by_date, key=final_key)
 
 
 def summarize_grid(grid: dict) -> dict:

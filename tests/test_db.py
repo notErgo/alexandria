@@ -241,3 +241,33 @@ class TestPatternApplyHelpers:
         report_id = db_with_company.insert_report(make_report())
         db_with_company.insert_data_point(make_data_point(report_id=report_id))
         assert not db_with_company.data_point_exists('MARA', '2024-09-01', 'hodl_btc')
+
+
+
+# ── Phase III: new company CRUD methods ──────────────────────────────────────
+
+class TestCompanyScraperFields:
+
+    def test_update_company_scraper_fields(self, db_with_company):
+        db_with_company.update_company_scraper_fields(
+            'MARA', scraper_status='probe_ok', last_scrape_at='2026-01-01'
+        )
+        company = db_with_company.get_company('MARA')
+        assert company['scraper_status'] == 'probe_ok'
+        assert company['last_scrape_at'] == '2026-01-01'
+
+    def test_update_company_config(self, db_with_company):
+        db_with_company.update_company_config('MARA', scraper_mode='rss', sector='BTC-miners')
+        company = db_with_company.get_company('MARA')
+        assert company['scraper_mode'] == 'rss'
+        assert company['sector'] == 'BTC-miners'
+
+    def test_add_company_creates_new_row(self, db):
+        db.add_company(
+            ticker='RIOT', name='Riot Platforms', tier=1,
+            ir_url='https://www.riotplatforms.com/news',
+            sector='BTC-miners', scraper_mode='skip',
+        )
+        company = db.get_company('RIOT')
+        assert company is not None
+        assert company['ticker'] == 'RIOT'
