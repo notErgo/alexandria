@@ -42,6 +42,21 @@ def get_registry():
     return _registry
 
 
+_scrape_worker = None
+_scrape_worker_lock = threading.Lock()
+
+
+def get_scrape_worker():
+    """Return the singleton ScrapeWorker (creates it if not yet instantiated)."""
+    global _scrape_worker
+    if _scrape_worker is None:
+        with _scrape_worker_lock:
+            if _scrape_worker is None:
+                from scrapers.scrape_worker import ScrapeWorker
+                _scrape_worker = ScrapeWorker(get_db())
+    return _scrape_worker
+
+
 def reload_registry():
     """Force-reload PatternRegistry from disk. Called after pattern edits."""
     global _registry

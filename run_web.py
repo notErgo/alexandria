@@ -136,7 +136,12 @@ def create_app() -> Flask:
 
 
 def _shutdown(signum, frame):
-    log.info("Shutting down...")
+    log.info("Shutdown signal received — stopping ScrapeWorker")
+    try:
+        from app_globals import get_scrape_worker
+        get_scrape_worker().stop()
+    except Exception:
+        pass
     sys.exit(0)
 
 
@@ -144,6 +149,14 @@ signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
 if __name__ == '__main__':
+    from app_globals import get_db, get_scrape_worker
+    # Reset any jobs orphaned by a previous crash before starting worker
+    reset_count = get_db().reset_interrupted_scrape_jobs()
+    if reset_count:
+        log.info("Reset %d interrupted scrape jobs on startup", reset_count)
+    worker = get_scrape_worker()
+    worker.start()
+    log.info("ScrapeWorker started")
     app = create_app()
     log.info("Starting Miner Data Platform on port %d", FLASK_PORT)
     app.run(host='0.0.0.0', port=FLASK_PORT, debug=True, threaded=True)
