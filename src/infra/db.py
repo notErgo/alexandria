@@ -133,6 +133,11 @@ class MinerDB:
                 if version < 6:
                     self._migrate_v6(conn)
                     conn.execute("PRAGMA user_version = 6")
+                    version = 6
+
+                if version < 7:
+                    self._migrate_v7(conn)
+                    conn.execute("PRAGMA user_version = 7")
 
     def _migrate_v2(self, conn: sqlite3.Connection) -> None:
         """Schema migration from version 1 to version 2.
@@ -334,6 +339,99 @@ class MinerDB:
             CREATE INDEX IF NOT EXISTS idx_bench_ticker
                 ON llm_benchmark_runs(ticker);
         """)
+
+    def _seed_metric_schema(self, conn: sqlite3.Connection) -> None:
+        """Seed metric_schema with the 13 known BTC-miners extraction metrics.
+
+        Uses INSERT OR IGNORE so re-runs on an already-seeded DB are no-ops.
+        Ordered to match the 13 pattern JSON files in config/patterns/.
+        """
+        metrics = [
+            ('production_btc',          'BTC Produced',                 'BTC'),
+            ('hodl_btc',                'BTC Holdings (Total)',          'BTC'),
+            ('sold_btc',                'BTC Sold',                      'BTC'),
+            ('hashrate_eh',             'Hashrate',                      'EH/s'),
+            ('realization_rate',        'BTC Realization Rate',          '%'),
+            ('ai_hpc_mw',               'AI/HPC Capacity',               'MW'),
+            ('encumbered_btc',          'Encumbered BTC',                'BTC'),
+            ('gpu_count',               'GPU Count',                     'units'),
+            ('hodl_btc_restricted',     'BTC Holdings (Restricted)',     'BTC'),
+            ('hodl_btc_unrestricted',   'BTC Holdings (Unrestricted)',   'BTC'),
+            ('hpc_revenue_usd',         'HPC Revenue',                   'USD'),
+            ('mining_mw',               'Mining Capacity',               'MW'),
+            ('net_btc_balance_change',  'Net BTC Balance Change',        'BTC'),
+        ]
+        conn.executemany(
+            """INSERT OR IGNORE INTO metric_schema
+               (key, label, unit, sector, has_extraction_pattern, analyst_defined)
+               VALUES (?, ?, ?, 'BTC-miners', 1, 0)""",
+            metrics,
+        )
+
+    def _migrate_v7(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 6 to version 7.
+
+        Adds:
+          - companies: sector, scraper_mode, scraper_issues_log, scraper_status,
+                       last_scrape_at, last_scrape_error, probe_completed_at
+          - asset_manifest: mutation_log
+          - NEW TABLE: regime_config
+          - NEW TABLE: metric_schema
+          - NEW TABLE: scrape_queue
+        """
+        # ALTER TABLE does not support multiple columns per statement in SQLite;
+        # each column requires its own ALTER TABLE call.
+        alterations = [
+            "ALTER TABLE companies ADD COLUMN sector TEXT NOT NULL DEFAULT 'BTC-miners'",
+            "ALTER TABLE companies ADD COLUMN scraper_mode TEXT NOT NULL DEFAULT 'skip'",
+            "ALTER TABLE companies ADD COLUMN scraper_issues_log TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE companies ADD COLUMN scraper_status TEXT NOT NULL DEFAULT 'never_run'",
+            "ALTER TABLE companies ADD COLUMN last_scrape_at TEXT",
+            "ALTER TABLE companies ADD COLUMN last_scrape_error TEXT",
+            "ALTER TABLE companies ADD COLUMN probe_completed_at TEXT",
+            "ALTER TABLE asset_manifest ADD COLUMN mutation_log TEXT",
+        ]
+        for sql in alterations:
+            conn.execute(sql)
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS regime_config (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker     TEXT NOT NULL REFERENCES companies(ticker),
+                cadence    TEXT NOT NULL CHECK(cadence IN ('monthly','quarterly')),
+                start_date TEXT NOT NULL,
+                end_date   TEXT,
+                notes      TEXT NOT NULL DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS metric_schema (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                key                   TEXT NOT NULL,
+                label                 TEXT NOT NULL,
+                unit                  TEXT NOT NULL DEFAULT '',
+                sector                TEXT NOT NULL DEFAULT 'BTC-miners',
+                has_extraction_pattern INTEGER NOT NULL DEFAULT 0,
+                analyst_defined       INTEGER NOT NULL DEFAULT 0,
+                created_at            TEXT DEFAULT (datetime('now')),
+                UNIQUE(key, sector)
+            );
+
+            CREATE TABLE IF NOT EXISTS scrape_queue (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker       TEXT NOT NULL REFERENCES companies(ticker),
+                mode         TEXT NOT NULL DEFAULT 'historic'
+                                 CHECK(mode IN ('historic','forward')),
+                status       TEXT NOT NULL DEFAULT 'pending'
+                                 CHECK(status IN ('pending','running','done','error')),
+                created_at   TEXT DEFAULT (datetime('now')),
+                started_at   TEXT,
+                completed_at TEXT,
+                error_msg    TEXT
+            );
+        """)
+
+        self._seed_metric_schema(conn)
 
     # ── Company CRUD ─────────────────────────────────────────────────────────
 

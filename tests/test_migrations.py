@@ -116,15 +116,15 @@ class TestSchemaV5:
         assert version >= 5
 
     def test_v5_asset_manifest_table_exists(self, raw_conn):
-        """asset_manifest table must exist with 11 columns."""
+        """asset_manifest table must exist with the v5 columns (plus any later additions)."""
         cols = _table_columns(raw_conn, 'asset_manifest')
-        assert len(cols) == 11, f"Expected 11 columns, got {len(cols)}: {cols}"
+        # v5 required columns; later migrations may add more
         expected = {
             'id', 'ticker', 'period', 'source_type', 'file_path',
             'filename', 'discovered_at', 'ingest_state', 'report_id',
             'ingest_error', 'notes',
         }
-        assert set(cols) == expected
+        assert expected.issubset(cols), f"Missing v5 cols: {expected - cols}"
 
     def test_v5_document_chunks_table_exists(self, raw_conn):
         """document_chunks table must exist with correct columns."""
@@ -150,9 +150,9 @@ class TestSchemaV6:
     """Tests for schema migration version 6 (llm_benchmark_runs)."""
 
     def test_v6_schema_version_is_6(self, raw_conn):
-        """PRAGMA user_version must be 6 after fresh DB init."""
+        """PRAGMA user_version must be at least 6 after fresh DB init."""
         version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 6
+        assert version >= 6
 
     def test_v6_benchmark_runs_table_exists(self, raw_conn):
         """llm_benchmark_runs table must exist with correct columns."""
