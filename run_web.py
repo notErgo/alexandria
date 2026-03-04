@@ -8,6 +8,7 @@ Override port: MINERS_PORT=5010 python3 run_web.py
 import os
 import sys
 import signal
+import subprocess
 
 # Add src/ to path so imports resolve without package installation
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -38,8 +39,33 @@ from routes.benchmark import bp as benchmark_bp
 from routes.scrape import bp as scrape_bp
 from routes.regime import bp as regime_bp
 from routes.explorer import bp as explorer_bp
+from routes.metric_rules import bp as metric_rules_bp
 
 log = logging.getLogger('miners.web')
+
+
+def _build_fingerprint() -> dict:
+    repo_path = os.path.dirname(__file__)
+
+    def _git(*args: str) -> str:
+        try:
+            out = subprocess.check_output(['git', *args], cwd=repo_path, stderr=subprocess.DEVNULL)
+            return out.decode('utf-8', errors='replace').strip()
+        except Exception:
+            return 'unknown'
+
+    sha = _git('rev-parse', '--short', 'HEAD')
+    branch = _git('rev-parse', '--abbrev-ref', 'HEAD')
+    dirty_raw = _git('status', '--porcelain', '--untracked-files=no')
+    return {
+        'repo_path': repo_path,
+        'git_sha': sha,
+        'git_branch': branch,
+        'dirty': bool(dirty_raw),
+    }
+
+
+_BUILD_FINGERPRINT = _build_fingerprint()
 
 
 def create_app() -> Flask:
@@ -70,6 +96,7 @@ def create_app() -> Flask:
     app.register_blueprint(scrape_bp)
     app.register_blueprint(regime_bp)
     app.register_blueprint(explorer_bp)
+    app.register_blueprint(metric_rules_bp)
 
     @app.errorhandler(404)
     def not_found(e):
@@ -101,6 +128,12 @@ def create_app() -> Flask:
                 'pending_review': pending_review,
             }
         })
+
+
+
+    @app.route('/api/build_fingerprint')
+    def build_fingerprint():
+        return jsonify({'success': True, 'data': _BUILD_FINGERPRINT})
 
     @app.route('/')
     def index():
@@ -134,8 +167,7 @@ def create_app() -> Flask:
 
     @app.route('/review')
     def review_page():
-        from flask import redirect
-        return redirect('/ops?tab=review')
+        return render_template('review.html')
 
     @app.route('/miner-data')
     def miner_data_page():

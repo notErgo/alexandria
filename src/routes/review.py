@@ -26,6 +26,9 @@ def list_review_items():
         db = get_db()
 
         status = request.args.get('status')
+        ticker = request.args.get('ticker') or None
+        period = request.args.get('period') or None
+        metric = request.args.get('metric') or None
         try:
             limit = int(request.args.get('limit', 50))
             offset = int(request.args.get('offset', 0))
@@ -37,7 +40,10 @@ def list_review_items():
                 'message': "'limit' must be an integer between 1 and 200"
             }}), 400
 
-        items = db.get_review_items(status=status, limit=limit, offset=offset)
+        items = db.get_review_items(
+            status=status, limit=limit, offset=offset,
+            ticker=ticker, period=period, metric=metric,
+        )
         total = db.count_review_items(status=status or 'PENDING')
         return jsonify({'success': True, 'data': {'items': items, 'total': total}})
     except Exception:

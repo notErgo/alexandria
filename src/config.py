@@ -34,6 +34,8 @@ FLASK_PORT: int = int(_os.environ.get("MINERS_PORT", 5004))
 # Full-text search API — requires User-Agent header, otherwise returns 403
 EDGAR_BASE_URL: str = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_COMPANY_URL: str = "https://www.sec.gov/cgi-bin/browse-edgar"
+# Submissions API — returns all filings for a CIK in one JSON blob
+EDGAR_SUBMISSIONS_URL: str = "https://data.sec.gov/submissions/CIK{cik}.json"
 # Probed 2026-03-01: 0.1s between requests works without 429; conservative floor
 EDGAR_REQUEST_DELAY_SECONDS: float = 0.1
 
@@ -59,8 +61,49 @@ MAX_SOURCE_SNIPPET_LEN: int = 1000
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:35b-a3b")
 LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s; 300s gives headroom
-# Within 2% tolerance → auto-accept (regex value stored); outside → review_queue
+# Deprecated: replaced by METRIC_AGREEMENT_THRESHOLDS. Kept for backward compatibility.
 LLM_AGREEMENT_THRESHOLD: float = 0.02
+
+# Per-metric LLM/regex agreement tolerance (absolute fractional difference).
+# BTC counts are integers — 1% catches rounding. Hashrate rounds to 1 decimal EH/s.
+# These are seed values; runtime reads from metric_rules DB table when available.
+METRIC_AGREEMENT_THRESHOLDS: dict = {
+    'production_btc':          0.01,   # integer BTC counts: 1% tolerance
+    'hodl_btc':                0.01,
+    'sold_btc':                0.01,
+    'hodl_btc_unrestricted':   0.01,
+    'hodl_btc_restricted':     0.01,
+    'net_btc_balance_change':  0.02,
+    'encumbered_btc':          0.01,
+    'hashrate_eh':             0.10,   # 1-decimal EH/s: 10% tolerance
+    'realization_rate':        0.05,   # ratio: 5%
+    'mining_mw':               0.05,   # MW: 5%
+    'ai_hpc_mw':               0.05,
+    'hpc_revenue_usd':         0.05,   # USD revenue rounds
+    'gpu_count':               0.01,   # integer GPU count
+}
+# Fallback for any metric not in METRIC_AGREEMENT_THRESHOLDS
+METRIC_AGREEMENT_THRESHOLD_DEFAULT: float = 0.02
+
+# --- Statistical Outlier Detection ---
+# Cross-report outlier thresholds: flag if |candidate - trailing_avg| / avg > threshold.
+# These are seed values; runtime reads from metric_rules DB table when available.
+OUTLIER_THRESHOLDS: dict = {
+    'production_btc':          0.40,   # 40% swing in one month is unusual
+    'hodl_btc':                0.30,
+    'sold_btc':                1.00,   # sold_btc is volatile; 100% (2x) to flag
+    'hodl_btc_unrestricted':   0.30,
+    'hodl_btc_restricted':     1.00,
+    'hashrate_eh':             0.25,
+    'realization_rate':        0.20,
+    'net_btc_balance_change':  1.00,
+    'encumbered_btc':          1.00,
+    'mining_mw':               0.30,
+    'ai_hpc_mw':               0.50,
+    'hpc_revenue_usd':         0.50,
+    'gpu_count':               0.50,
+}
+OUTLIER_MIN_HISTORY: int = 3   # Minimum prior months needed to flag outliers
 
 # --- Source Types ---
 # Canonical source_type values used in reports and asset_manifest tables.
@@ -73,6 +116,19 @@ SOURCE_TYPES: dict = {
     'edgar_10k':         'SEC EDGAR 10-K filing',
     'manual':            'Manual entry',
 }
+
+# --- Quarterly/Annual Metric Classification ---
+# Metrics where quarterly total = sum of monthly values (can infer missing month from remainder)
+FLOW_METRICS: frozenset = frozenset({
+    'production_btc', 'sold_btc', 'net_btc_balance_change',
+})
+
+# Metrics where quarterly value is a point-in-time snapshot (cannot disaggregate across months)
+SNAPSHOT_METRICS: frozenset = frozenset({
+    'hodl_btc', 'hodl_btc_restricted', 'hodl_btc_unrestricted',
+    'hashrate_eh', 'realization_rate', 'encumbered_btc',
+    'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
+})
 
 # --- New metric valid ranges documented here for cross-reference with confidence.py ---
 # net_btc_balance_change: signed delta, large range to handle any direction

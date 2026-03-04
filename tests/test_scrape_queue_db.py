@@ -51,7 +51,8 @@ class TestScrapeQueueDB:
         jobs = db_with_active_company.get_pending_scrape_jobs()
         assert any(j['id'] == job['id'] for j in jobs)
 
-    def test_scrape_mode_skip_is_rejected(self, db_with_company):
-        # MARA's scraper_mode defaults to 'skip' after migration
+    def test_scrape_mode_skip_is_rejected(self, db):
+        # CORZ has scrape_mode='skip' in companies.json — sync_companies_from_config
+        # populates it on DB init. enqueue_scrape_job must raise ValueError for 'skip'.
         with pytest.raises(ValueError, match='skip'):
-            db_with_company.enqueue_scrape_job('MARA', 'historic')
+            db.enqueue_scrape_job('CORZ', 'historic')

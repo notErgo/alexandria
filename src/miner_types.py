@@ -129,16 +129,23 @@ class CellState(str, Enum):
     """Coverage state of a (ticker, period) cell in the redesigned coverage grid.
 
     Priority (highest first when multiple apply):
-      DATA > REVIEW_PENDING > PARSE_FAILED > EXTRACT_FAILED >
+      DATA > DATA_QUARTERLY > REVIEW_PENDING > PARSE_FAILED > EXTRACT_FAILED >
       SCRAPER_ERROR > ANALYST_GAP > NO_DOCUMENT
     """
-    DATA           = 'data'           # accepted data_point exists
-    REVIEW_PENDING = 'review_pending' # review_queue item awaiting analyst
-    PARSE_FAILED   = 'parse_failed'   # document present, parser failed
-    EXTRACT_FAILED = 'extract_failed' # document parsed, extraction yielded nothing
-    NO_DOCUMENT    = 'no_document'    # no manifest entry and no report
-    SCRAPER_ERROR  = 'scraper_error'  # scraper recorded an error for this company
-    ANALYST_GAP    = 'analyst_gap'    # analyst explicitly marked no data expected
+    DATA             = 'data'             # accepted data_point exists (monthly source)
+    DATA_QUARTERLY   = 'data_quarterly'   # data from 10-Q/10-K carry/inferred
+    REVIEW_PENDING   = 'review_pending'   # review_queue item awaiting analyst
+    PARSE_FAILED     = 'parse_failed'     # document present, parser failed
+    EXTRACT_FAILED   = 'extract_failed'   # document parsed, extraction yielded nothing
+    NO_DOCUMENT      = 'no_document'      # no manifest entry and no report
+    SCRAPER_ERROR    = 'scraper_error'    # scraper recorded an error for this company
+    ANALYST_GAP      = 'analyst_gap'      # analyst explicitly marked no data expected
+
+
+# Extraction method string constants (stored as TEXT in data_points.extraction_method)
+EXTRACTION_METHOD_QUARTERLY_CARRY    = 'quarterly_carry'     # Q/3 or snapshot last-month
+EXTRACTION_METHOD_QUARTERLY_INFERRED = 'quarterly_inferred'  # Q - known months
+EXTRACTION_METHOD_ANNUAL_CARRY       = 'annual_carry'        # 10-K derived
 
 
 @dataclass
@@ -217,6 +224,16 @@ class ScrapeJob:
     started_at:   Optional[str] = None
     completed_at: Optional[str] = None
     error_msg:    Optional[str] = None
+
+
+@dataclass
+class BridgeSummary:
+    """Result counts from a coverage_bridge.bridge_gaps or bridge_all_gaps run."""
+    cells_evaluated: int = 0
+    cells_filled_carry: int = 0
+    cells_filled_inferred: int = 0
+    cells_routed_review: int = 0
+    cells_skipped_no_quarterly: int = 0
 
 
 @dataclass

@@ -47,6 +47,13 @@ _LLM_AVAILABLE_CACHE_TTL: float = 300.0      # seconds
 # full raw_text, so no data is lost; the LLM just sees a shorter window.
 _LLM_TEXT_MAX_CHARS = 8000
 
+# Quarterly/annual filings are larger; send up to 40K chars to cover MD&A section.
+_LLM_QUARTERLY_TEXT_MAX_CHARS = 40_000
+
+# Source types that follow the quarterly/annual extraction path
+_QUARTERLY_SOURCES = frozenset({'edgar_10q'})
+_ANNUAL_SOURCES    = frozenset({'edgar_10k'})
+
 # Sentinel phrases that mark the start of boilerplate sections.
 # Only stripped when the match falls at or after the 40% mark of the document,
 # preventing false positives from titles like "Forward-Looking Statements Disclosure".
@@ -61,6 +68,38 @@ _BOILERPLATE_SENTINELS = [
         re.IGNORECASE,
     ),
 ]
+
+
+def _build_concern_context(decision, metric: str, trailing_avg) -> str:
+    """Build a human-readable concern string for the self-correction prompt.
+
+    Called when the agreement engine routes to REVIEW_QUEUE (disagreement or outlier).
+    Provides the LLM with specific context about why the first extraction was flagged.
+    """
+    if getattr(decision, 'outlier_flag', False) and trailing_avg is not None:
+        return (
+            f"The agreed value {decision.llm_value} for {metric} deviates significantly "
+            f"from this company's 3-month trailing average of {trailing_avg:.4f}. "
+            f"Did you capture a network-wide, year-to-date, or quarterly figure instead of "
+            f"the company's single-month operational value?"
+        )
+    rv = decision.regex_value
+    lv = decision.llm_value
+    if rv is not None and lv is not None:
+        pct = abs(rv - lv) / max(abs(rv), abs(lv), 1e-9) * 100
+        return (
+            f"Regex pattern found {metric} = {rv:.4f}, but you returned {lv:.4f} "
+            f"({pct:.1f}% difference). "
+            f"Re-read the document to determine which value is correct for THIS company's "
+            f"current reporting month."
+        )
+    if rv is None and lv is not None:
+        return (
+            f"No regex pattern matched {metric} in the document, but you returned {lv:.4f}. "
+            f"Verify that this value is explicitly stated in the document for the current month "
+            f"and not inferred or approximated."
+        )
+    return f"First extraction result for {metric} was flagged for review. Please re-read carefully."
 
 
 def _clean_for_llm(text: str) -> str:
@@ -89,6 +128,16 @@ def _prior_period(period_str: str) -> Optional[str]:
         return f"{year}-{month - 1:02d}-01"
     except Exception:
         return None
+
+
+def _is_quarterly_doc(report: dict) -> bool:
+    """Return True if report.source_type is a quarterly filing (10-Q)."""
+    return report.get('source_type') in _QUARTERLY_SOURCES
+
+
+def _is_annual_doc(report: dict) -> bool:
+    """Return True if report.source_type is an annual filing (10-K)."""
+    return report.get('source_type') in _ANNUAL_SOURCES
 
 
 def _get_missing_metrics(db, ticker: str, period: str, all_metrics: list) -> list:
@@ -273,8 +322,18 @@ def _apply_agreement(
     llm_available: bool,
     confidence_threshold: float,
     summary,
+    attribution: Optional[str] = None,
+    llm_extractor=None,
 ) -> None:
-    """Apply the agreement engine for one metric in one report. Writes to DB."""
+    """Apply the agreement engine for one metric in one report. Writes to DB.
+
+    When attribution is set (e.g. 'codex'), it overrides the extraction_method
+    stored in data_points so the source agent is recorded. Analyst-protected
+    methods are never overwritten regardless.
+
+    llm_extractor is passed so the self-correction pass can make a targeted
+    retry call when disagreement or outlier is detected.
+    """
     from extractors.agreement import evaluate_agreement
 
     ticker = report['ticker']
@@ -294,7 +353,91 @@ def _apply_agreement(
                 return
 
     if llm_available:
-        decision = evaluate_agreement(regex_best, llm_result)
+        decision = evaluate_agreement(regex_best, llm_result, metric=metric)
+
+        # Outlier detection: if AUTO_ACCEPT, check against trailing data points
+        # (also used by self-correction pass below — initialize here for both uses)
+        is_outlier = False
+        trailing_vals: list = []
+        outlier_threshold = 1.0
+        if decision.decision == 'AUTO_ACCEPT' and decision.accepted_value is not None:
+            from config import OUTLIER_THRESHOLDS, OUTLIER_MIN_HISTORY
+            from extractors.agreement import detect_outlier
+            outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
+            try:
+                trailing_rows = db.get_trailing_data_points(
+                    ticker, period_str, metric, limit=OUTLIER_MIN_HISTORY
+                )
+                trailing_vals = [r['value'] for r in trailing_rows]
+                is_outlier, trailing_avg = detect_outlier(
+                    decision.accepted_value, trailing_vals, outlier_threshold
+                )
+            except Exception as _oe:
+                log.debug("Outlier check failed for %s %s %s (non-fatal): %s",
+                          ticker, period_str, metric, _oe)
+                is_outlier, trailing_avg = False, None
+
+            if is_outlier:
+                log.info(
+                    "Outlier flagged: %s %s %s = %.4f (trailing_avg=%.4f, threshold=%.0f%%)",
+                    ticker, period_str, metric, decision.accepted_value,
+                    trailing_avg, outlier_threshold * 100,
+                )
+                decision.decision = 'REVIEW_QUEUE'
+                decision.accepted_value = None
+                decision.outlier_flag = True
+                decision.outlier_trailing_avg = trailing_avg
+
+        # Conditional self-correction pass: if routed to review (disagree or outlier),
+        # give the LLM one targeted retry with explicit concern context.
+        # Only runs when a raw_text is available on the report dict (always true for
+        # monthly reports; quarterly/annual use a different path).
+        if decision.decision == 'REVIEW_QUEUE':
+            raw_text = report.get('raw_text') or ''
+            if raw_text and llm_result is not None and llm_extractor is not None:
+                try:
+                    concern = _build_concern_context(decision, metric, trailing_avg if is_outlier else None)
+                    llm_text = _clean_for_llm(raw_text)[:_LLM_TEXT_MAX_CHARS]
+                    corrected = llm_extractor.extract_with_correction(
+                        llm_text, metric, llm_result.value, concern, ticker=ticker
+                    )
+                    if corrected is not None and corrected.value is not None:
+                        from extractors.agreement import detect_outlier
+                        re_decision = evaluate_agreement(regex_best, corrected, metric=metric)
+                        if re_decision.decision == 'AUTO_ACCEPT':
+                            # Check outlier again on corrected value
+                            _outlier_ok = True
+                            if trailing_vals:
+                                _is_out, _ = detect_outlier(
+                                    re_decision.accepted_value, trailing_vals, outlier_threshold
+                                )
+                                _outlier_ok = not _is_out
+                            if _outlier_ok:
+                                log.info(
+                                    "Self-correction resolved: %s %s %s = %.4f",
+                                    ticker, period_str, metric, re_decision.accepted_value,
+                                )
+                                db.insert_data_point({
+                                    "report_id": report_id,
+                                    "ticker": ticker,
+                                    "period": period_str,
+                                    "metric": metric,
+                                    "value": re_decision.accepted_value,
+                                    "unit": corrected.unit,
+                                    "confidence": corrected.confidence,
+                                    "extraction_method": attribution or 'llm_corrected',
+                                    "source_snippet": corrected.source_snippet,
+                                })
+                                summary.data_points_extracted += 1
+                                return  # Skip review_queue write below
+                        # Correction failed or still outlier — fall through to review_queue
+                        decision.llm_value = corrected.value  # store corrected value for analyst
+                        log.debug(
+                            "Self-correction did not resolve %s %s %s — routing to review",
+                            ticker, period_str, metric,
+                        )
+                except Exception as _corr_err:
+                    log.debug("Self-correction pass failed (non-fatal): %s", _corr_err)
 
         if decision.decision == 'AUTO_ACCEPT':
             db.insert_data_point({
@@ -305,7 +448,7 @@ def _apply_agreement(
                 "value": regex_best.value,
                 "unit": regex_best.unit,
                 "confidence": regex_best.confidence,
-                "extraction_method": regex_best.extraction_method,
+                "extraction_method": attribution or regex_best.extraction_method,
                 "source_snippet": regex_best.source_snippet,
             })
             summary.data_points_extracted += 1
@@ -323,7 +466,7 @@ def _apply_agreement(
                     "value": llm_result.value,
                     "unit": llm_result.unit,
                     "confidence": llm_result.confidence,
-                    "extraction_method": llm_result.extraction_method,
+                    "extraction_method": attribution or llm_result.extraction_method,
                     "source_snippet": llm_result.source_snippet,
                 })
                 summary.data_points_extracted += 1
@@ -353,6 +496,11 @@ def _apply_agreement(
                 regex_best.source_snippet if regex_best else
                 (llm_result.source_snippet if llm_result else "")
             )
+            # Use OUTLIER_FLAGGED status when the outlier check fired
+            agreement_status = (
+                'OUTLIER_FLAGGED' if getattr(decision, 'outlier_flag', False)
+                else decision.decision
+            )
             db.insert_review_item({
                 "data_point_id": None,
                 "ticker": ticker,
@@ -364,7 +512,7 @@ def _apply_agreement(
                 "status": "PENDING",
                 "llm_value": decision.llm_value,
                 "regex_value": decision.regex_value,
-                "agreement_status": decision.decision,
+                "agreement_status": agreement_status,
             })
             summary.review_flagged += 1
         # NO_EXTRACTION → period gap, skip
@@ -381,7 +529,7 @@ def _apply_agreement(
             "value": regex_best.value,
             "unit": regex_best.unit,
             "confidence": regex_best.confidence,
-            "extraction_method": regex_best.extraction_method,
+            "extraction_method": attribution or regex_best.extraction_method,
             "source_snippet": regex_best.source_snippet,
         }
         if regex_best.confidence >= confidence_threshold:
@@ -404,7 +552,124 @@ def _apply_agreement(
             summary.review_flagged += 1
 
 
-def extract_report(report: dict, db, registry) -> 'ExtractionSummary':
+def _extract_quarterly_report(
+    report: dict,
+    db,
+    registry,
+    summary,
+    attribution: Optional[str] = None,
+) -> 'ExtractionSummary':
+    """Quarterly/annual extraction path: LLM only, wider text window, provenance fields.
+
+    Called automatically by extract_report() when source_type is 'edgar_10q' or 'edgar_10k'.
+    Regex extraction is not run for these source types — the LLM receives a wider text window
+    and uses quarterly/annual-specific prompts.
+    """
+    from config import CONFIDENCE_REVIEW_THRESHOLD
+
+    source_type = report.get('source_type', '')
+    period_type = 'annual' if source_type in _ANNUAL_SOURCES else 'quarterly'
+    ticker = report.get('ticker', '')
+    report_id = report.get('id')
+    covering_period = report.get('covering_period')
+
+    if not covering_period:
+        log.warning(
+            "Quarterly report id=%s ticker=%s has no covering_period — skipping",
+            report_id, ticker,
+        )
+        db.mark_report_extracted(report_id)
+        summary.errors += 1
+        return summary
+
+    text = (report.get('raw_text') or '')[:_LLM_QUARTERLY_TEXT_MAX_CHARS]
+
+    llm_extractor = _get_llm_extractor(db)
+    llm_available = _check_llm_available(llm_extractor)
+
+    if not llm_available:
+        log.warning(
+            "LLM not available for quarterly report id=%s ticker=%s %s — skipping",
+            report_id, ticker, covering_period,
+        )
+        db.mark_report_extracted(report_id)
+        return summary
+
+    all_metrics = list(registry.metrics.keys()) if registry.metrics else []
+    if not all_metrics:
+        log.warning("No metrics in registry for quarterly extraction %s %s", ticker, covering_period)
+        db.mark_report_extracted(report_id)
+        return summary
+
+    try:
+        llm_results = llm_extractor.extract_quarterly_batch(
+            text, all_metrics, ticker=ticker, period_type=period_type
+        )
+    except Exception as e:
+        log.error(
+            "Quarterly LLM extraction failed for %s %s: %s", ticker, covering_period, e, exc_info=True
+        )
+        db.mark_report_extracted(report_id)
+        summary.errors += 1
+        return summary
+
+    for metric, result in llm_results.items():
+        if result is None:
+            continue
+
+        # Check if a quarterly data_point already exists for this covering_period
+        existing_q = db.get_quarterly_data_point(ticker, covering_period, metric)
+        if existing_q is not None and existing_q.get('confidence', 0) >= result.confidence:
+            log.debug(
+                "Skipping quarterly %s %s %s — existing DP has equal or higher confidence",
+                ticker, covering_period, metric,
+            )
+            continue
+
+        # Route based on confidence threshold
+        if result.confidence >= CONFIDENCE_REVIEW_THRESHOLD:
+            dp = {
+                'report_id':          report_id,
+                'ticker':             ticker,
+                'period':             covering_period,  # quarterly row: period = covering_period
+                'metric':             metric,
+                'value':              result.value,
+                'unit':               result.unit,
+                'confidence':         result.confidence,
+                'extraction_method':  attribution or result.extraction_method,
+                'source_snippet':     result.source_snippet,
+                'source_period_type': period_type,
+                'covering_report_id': report_id,
+                'covering_period':    covering_period,
+            }
+            db.upsert_data_point_quarterly(dp)
+            summary.data_points_extracted += 1
+            log.debug(
+                "Stored %s data_point: %s %s %s = %.4f (conf=%.2f)",
+                period_type, ticker, covering_period, metric, result.value, result.confidence,
+            )
+        else:
+            db.insert_review_item({
+                'data_point_id':  None,
+                'ticker':         ticker,
+                'period':         covering_period,
+                'metric':         metric,
+                'raw_value':      str(result.value),
+                'confidence':     result.confidence,
+                'source_snippet': result.source_snippet,
+                'status':         'PENDING',
+                'llm_value':      result.value,
+                'regex_value':    None,
+                'agreement_status': 'LLM_ONLY',
+            })
+            summary.review_flagged += 1
+
+    summary.reports_processed += 1
+    db.mark_report_extracted(report_id)
+    return summary
+
+
+def extract_report(report: dict, db, registry, attribution: Optional[str] = None) -> 'ExtractionSummary':
     """
     Run LLM+regex+agreement on one stored report.
 
@@ -431,9 +696,18 @@ def extract_report(report: dict, db, registry) -> 'ExtractionSummary':
 
     try:
         log.info(
-            "Extracting report id=%s ticker=%s period=%s",
+            "Extracting report id=%s ticker=%s period=%s source=%s",
             report.get('id'), report.get('ticker'), report.get('report_date'),
+            report.get('source_type'),
         )
+
+        source_type = report.get('source_type', '')
+
+        # Route quarterly and annual SEC filings to the dedicated extraction path.
+        # These do not use regex extraction — LLM only with wider text window.
+        if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES:
+            return _extract_quarterly_report(report, db, registry, summary, attribution)
+
         report_date = report.get('report_date')
         regex_by_metric = _build_regex_by_metric(text, registry, report_date=report_date)
 
@@ -500,6 +774,8 @@ def extract_report(report: dict, db, registry) -> 'ExtractionSummary':
                 llm_available=llm_available,
                 confidence_threshold=CONFIDENCE_REVIEW_THRESHOLD,
                 summary=summary,
+                attribution=attribution,
+                llm_extractor=llm_extractor,
             )
 
         # Second-pass: try to fill prior-period gaps if LLM found figures for last month

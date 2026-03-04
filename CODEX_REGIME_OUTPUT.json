@@ -1,0 +1,65 @@
+[
+  {
+    "ticker": "BTDR",
+    "cadence": "monthly",
+    "start_date": "2023-01-01",
+    "end_date": null,
+    "notes": "Active monthly production and operations updates. RSS confirmed live. 526 BTC mined in November 2025. Reporting cadence unchanged as of December 2025."
+  },
+  {
+    "ticker": "CIFR",
+    "cadence": "monthly",
+    "start_date": "2021-01-01",
+    "end_date": "2025-09-30",
+    "notes": "Monthly operational updates Jan 2021 through Sep 2025. After Sep 2025 shifted to quarterly Business Update format (Q3 2025 = Oct 2025, Q4 2025 = Feb 2026)."
+  },
+  {
+    "ticker": "HIVE",
+    "cadence": "monthly",
+    "start_date": "2021-01-01",
+    "end_date": null,
+    "notes": "Monthly production reports confirmed through Nov 2025 (290 BTC). Distributed via Newsfile Corp RSS. Fiscal year ends March 31."
+  },
+  {
+    "ticker": "IREN",
+    "cadence": "monthly",
+    "start_date": "2022-01-01",
+    "end_date": "2025-08-31",
+    "notes": "Monthly operating updates through Aug 2025. Officially announced discontinuation Oct 2025 in press release stating transition to standardized quarterly reporting."
+  },
+  {
+    "ticker": "WULF",
+    "cadence": "monthly",
+    "start_date": "2022-01-01",
+    "end_date": "2024-12-31",
+    "notes": "Monthly production and operations updates through December 2024. Switched to quarterly reporting Jan 2025. Company pivoted to HPC/AI data center infrastructure."
+  },
+  {
+    "ticker": "CORZ",
+    "cadence": "monthly",
+    "start_date": "2022-01-01",
+    "end_date": "2025-03-31",
+    "notes": "Monthly production updates. Gap during bankruptcy (Chapter 11 Dec 2022 - Jan 2024). Resumed monthly reporting Jan 2025. Last monthly report March 2025 (published Apr 7, 2025). Switched to quarterly after."
+  },
+  {
+    "ticker": "HUT8",
+    "cadence": "monthly",
+    "start_date": "2021-01-01",
+    "end_date": "2025-03-31",
+    "notes": "Monthly operations updates. Template confirmed for Jan-Mar 2025. March 2025 final monthly update (published Apr 4, 2025) explicitly announced switch to quarterly. Mining transferred to ABTC subsidiary from April 2025."
+  },
+  {
+    "ticker": "ARBK",
+    "cadence": "monthly",
+    "start_date": "2021-01-01",
+    "end_date": null,
+    "notes": "Monthly operational updates continuing via accessnewswire.com despite severe financial distress. LSE delisted December 11, 2025. Nasdaq delisting proceedings began July 2025. Very low volume (40-130 BTC/month in 2025)."
+  },
+  {
+    "ticker": "SDIG",
+    "cadence": "monthly",
+    "start_date": "2022-01-01",
+    "end_date": "2024-06-30",
+    "notes": "Monthly production reports through approximately mid-2024. Merger with Bitfarms closed March 14, 2025. Capacity now included in BITF monthly reports."
+  }
+]

@@ -1,7 +1,7 @@
 """
 Agreement engine: compare LLM and regex extraction results.
 
-Implements the 2% tolerance rule:
+Implements per-metric tolerance rules:
   abs(llm - regex) / max(llm, regex) <= threshold → AUTO_ACCEPT (regex value stored)
   Otherwise → REVIEW_QUEUE
 
@@ -11,11 +11,22 @@ Decision codes:
   LLM_ONLY      — only LLM found a value (regex found nothing)
   REGEX_ONLY    — only regex found a value (LLM found nothing)
   NO_EXTRACTION — neither source found a value (period gap)
+
+agreement_status values for review_queue:
+  REVIEW_QUEUE       — LLM/regex disagreement beyond per-metric threshold
+  LLM_ONLY           — only LLM found a value
+  REGEX_ONLY         — only regex found a value
+  OUTLIER_FLAGGED    — agreed but value deviates > outlier threshold vs trailing avg
+  CORRECTION_FAILED  — self-correction pass ran but candidate still disagreed/outlier
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
-from config import LLM_AGREEMENT_THRESHOLD
+from config import (
+    METRIC_AGREEMENT_THRESHOLDS,
+    METRIC_AGREEMENT_THRESHOLD_DEFAULT,
+    OUTLIER_MIN_HISTORY,
+)
 from miner_types import ExtractionResult
 
 
@@ -29,11 +40,14 @@ class AgreementDecision:
     agreement_pct: Optional[float]      # Absolute percentage difference (e.g. 1.96 means 1.96%)
     regex_result: Optional[ExtractionResult]
     llm_result: Optional[ExtractionResult]
+    outlier_flag: bool = False
+    outlier_trailing_avg: Optional[float] = None
 
 
 def evaluate_agreement(
     regex_result: Optional[ExtractionResult],
     llm_result: Optional[ExtractionResult],
+    metric: Optional[str] = None,
 ) -> AgreementDecision:
     """
     Compare regex and LLM extraction results for the same document and metric.
@@ -41,6 +55,8 @@ def evaluate_agreement(
     Args:
         regex_result: Best result from the regex extractor, or None.
         llm_result:   Result from the LLM extractor, or None.
+        metric:       Metric name (e.g. 'hashrate_eh') for per-metric threshold
+                      lookup. If None, uses METRIC_AGREEMENT_THRESHOLD_DEFAULT.
 
     Returns:
         AgreementDecision with routing decision and candidate values.
@@ -103,7 +119,9 @@ def evaluate_agreement(
     else:
         agreement_pct = abs(rv - lv) / denominator * 100.0
 
-    threshold_pct = LLM_AGREEMENT_THRESHOLD * 100.0
+    # Per-metric threshold lookup
+    threshold = METRIC_AGREEMENT_THRESHOLDS.get(metric, METRIC_AGREEMENT_THRESHOLD_DEFAULT)
+    threshold_pct = threshold * 100.0
 
     if agreement_pct <= threshold_pct:
         # Within tolerance → auto-accept, store regex value
@@ -127,3 +145,32 @@ def evaluate_agreement(
             regex_result=regex_result,
             llm_result=llm_result,
         )
+
+
+def detect_outlier(
+    candidate: float,
+    trailing_values: list,
+    threshold_pct: float,
+) -> tuple:
+    """Return (is_outlier, trailing_avg).
+
+    Compares candidate against the mean of trailing_values.
+    is_outlier=True if |candidate - avg| / max(avg, 1e-9) > threshold_pct.
+    Returns (False, None) if len(trailing_values) < OUTLIER_MIN_HISTORY.
+
+    Args:
+        candidate:      The new value to test.
+        trailing_values: Historical values (monthly) for the same ticker+metric.
+        threshold_pct:  Fractional deviation threshold (e.g. 0.40 = 40%).
+
+    Returns:
+        (is_outlier: bool, trailing_avg: float or None)
+    """
+    if len(trailing_values) < OUTLIER_MIN_HISTORY:
+        return False, None
+
+    avg = sum(trailing_values) / len(trailing_values)
+    denominator = max(abs(avg), 1e-9)
+    deviation = abs(candidate - avg) / denominator
+    is_outlier = deviation > threshold_pct
+    return is_outlier, avg

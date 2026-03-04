@@ -43,12 +43,12 @@ def test_ingest_state_values():
 
 
 def test_cell_state_count():
-    """CellState enum has 7 values matching the redesign cell model."""
+    """CellState enum has 8 values including DATA_QUARTERLY added in Phase 2."""
     from miner_types import CellState
-    assert len(list(CellState)) == 7
+    assert len(list(CellState)) == 8
     assert set(CellState) == {
-        CellState.DATA, CellState.REVIEW_PENDING, CellState.PARSE_FAILED,
-        CellState.EXTRACT_FAILED, CellState.NO_DOCUMENT,
+        CellState.DATA, CellState.DATA_QUARTERLY, CellState.REVIEW_PENDING,
+        CellState.PARSE_FAILED, CellState.EXTRACT_FAILED, CellState.NO_DOCUMENT,
         CellState.SCRAPER_ERROR, CellState.ANALYST_GAP,
     }
 

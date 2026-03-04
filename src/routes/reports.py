@@ -78,26 +78,24 @@ def _run_ir_ingest(task_id: str) -> None:
 def _run_edgar_ingest(task_id: str) -> None:
     import requests as req_lib
     from datetime import date
-    from app_globals import get_db, get_registry
+    from app_globals import get_db
     from scrapers.edgar_connector import EdgarConnector
 
     _update_progress(task_id, {'status': 'running', 'source': 'edgar'})
     try:
         db = get_db()
-        registry = get_registry()
         session = req_lib.Session()
-        connector = EdgarConnector(db=db, registry=registry, session=session)
+        connector = EdgarConnector(db=db, session=session)
         companies = db.get_companies(active_only=True)
-        since = date(2020, 1, 1)
-        totals = {'reports_ingested': 0, 'data_points_extracted': 0,
-                  'review_flagged': 0, 'errors': 0}
+        since = date(2019, 1, 1)
+        totals = {'reports_ingested': 0, 'errors': 0}
         for company in companies:
             if company.get('cik'):
-                s = connector.fetch_production_filings(
+                s = connector.fetch_all_filings(
                     cik=company['cik'], ticker=company['ticker'], since_date=since
                 )
-                for k in totals:
-                    totals[k] += getattr(s, k)
+                totals['reports_ingested'] += s.reports_ingested
+                totals['errors'] += s.errors
         _update_progress(task_id, {'status': 'complete', 'source': 'edgar', **totals})
     except Exception as e:
         log.error("EDGAR ingest failed: %s", e, exc_info=True)
@@ -105,6 +103,31 @@ def _run_edgar_ingest(task_id: str) -> None:
     finally:
         with _tasks_lock:
             _running_tasks.discard('edgar')
+
+
+def _run_edgar_bridge(task_id: str, ticker: Optional[str]) -> None:
+    from app_globals import get_db
+    from coverage_bridge import bridge_all_gaps
+
+    _update_progress(task_id, {'status': 'running', 'source': 'edgar_bridge'})
+    try:
+        db = get_db()
+        summary = bridge_all_gaps(db, ticker=ticker)
+        _update_progress(task_id, {
+            'status': 'complete',
+            'source': 'edgar_bridge',
+            'cells_evaluated': summary.cells_evaluated,
+            'cells_filled_carry': summary.cells_filled_carry,
+            'cells_filled_inferred': summary.cells_filled_inferred,
+            'cells_routed_review': summary.cells_routed_review,
+            'cells_skipped_no_quarterly': summary.cells_skipped_no_quarterly,
+        })
+    except Exception as e:
+        log.error("EDGAR bridge failed: %s", e, exc_info=True)
+        _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
+    finally:
+        with _tasks_lock:
+            _running_tasks.discard('edgar_bridge')
 
 
 @bp.route('/api/ingest/archive', methods=['POST'])
@@ -151,6 +174,86 @@ def ingest_edgar():
     task_id = str(uuid.uuid4())
     _update_progress(task_id, {'status': 'queued', 'source': 'edgar'})
     t = threading.Thread(target=_run_edgar_ingest, args=(task_id,), daemon=True)
+    t.start()
+    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
+
+
+@bp.route('/api/ingest/edgar/refetch_8k', methods=['POST'])
+def ingest_edgar_refetch_8k():
+    """Re-fetch exhibit text for stale 8-K records that stored the EDGAR index page.
+
+    Optional body: {"ticker": "MARA"} to limit to one ticker.
+    """
+    body = request.get_json(silent=True) or {}
+    ticker = body.get('ticker')
+    if ticker is not None and not isinstance(ticker, str):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT', 'message': "'ticker' must be a string"
+        }}), 400
+
+    with _tasks_lock:
+        if 'edgar_refetch_8k' in _running_tasks:
+            return jsonify({'success': False, 'error': {
+                'code': 'ALREADY_RUNNING', 'message': '8-K refetch already in progress'
+            }}), 409
+        _running_tasks.add('edgar_refetch_8k')
+
+    task_id = str(uuid.uuid4())
+    _update_progress(task_id, {'status': 'queued', 'source': 'edgar_refetch_8k'})
+    t = threading.Thread(
+        target=_run_edgar_refetch_8k, args=(task_id, ticker), daemon=True
+    )
+    t.start()
+    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
+
+
+def _run_edgar_refetch_8k(task_id: str, ticker: Optional[str]) -> None:
+    import requests as req_lib
+    from app_globals import get_db
+    from scrapers.edgar_connector import EdgarConnector
+
+    _update_progress(task_id, {'status': 'running', 'source': 'edgar_refetch_8k'})
+    try:
+        db = get_db()
+        session = req_lib.Session()
+        connector = EdgarConnector(db=db, session=session)
+        summary = connector.refetch_stale_8k_exhibits(ticker=ticker)
+        _update_progress(task_id, {
+            'status': 'complete',
+            'source': 'edgar_refetch_8k',
+            'refetched': summary.reports_ingested,
+            'errors': summary.errors,
+        })
+    except Exception as e:
+        log.error("8-K refetch failed: %s", e, exc_info=True)
+        _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
+    finally:
+        with _tasks_lock:
+            _running_tasks.discard('edgar_refetch_8k')
+
+
+@bp.route('/api/ingest/edgar/bridge', methods=['POST'])
+def ingest_edgar_bridge():
+    """Trigger coverage bridge pass to fill monthly gaps from quarterly/annual filings."""
+    body = request.get_json(silent=True) or {}
+    ticker = body.get('ticker')
+    if ticker is not None and not isinstance(ticker, str):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT', 'message': "'ticker' must be a string"
+        }}), 400
+
+    with _tasks_lock:
+        if 'edgar_bridge' in _running_tasks:
+            return jsonify({'success': False, 'error': {
+                'code': 'ALREADY_RUNNING', 'message': 'EDGAR bridge already in progress'
+            }}), 409
+        _running_tasks.add('edgar_bridge')
+
+    task_id = str(uuid.uuid4())
+    _update_progress(task_id, {'status': 'queued', 'source': 'edgar_bridge'})
+    t = threading.Thread(
+        target=_run_edgar_bridge, args=(task_id, ticker), daemon=True
+    )
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 

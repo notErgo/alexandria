@@ -84,9 +84,13 @@ def cmd_ingest(args):
         from scrapers.edgar_connector import EdgarConnector
         session = req_lib.Session()
         connector = EdgarConnector(db=db, registry=registry, session=session)
-        companies = db.get_companies(active_only=True)
+        # When a specific ticker is requested, search ALL companies (including inactive)
+        # so that EDGAR can be fetched for companies that switched to quarterly-only.
         if args.ticker:
+            companies = db.get_companies(active_only=False)
             companies = [c for c in companies if c['ticker'] == args.ticker.upper()]
+        else:
+            companies = db.get_companies(active_only=True)
         since = date(2020, 1, 1)
         if args.since:
             parts = args.since.split('-')
@@ -158,6 +162,7 @@ def cmd_extract(args):
     db = get_db()
     registry = get_registry()
     ticker_filter = args.ticker.upper() if args.ticker else None
+    attribution = getattr(args, 'attribution', None) or None
 
     if args.force:
         reports = db.get_all_reports_for_extraction(ticker=ticker_filter)
@@ -168,13 +173,18 @@ def cmd_extract(args):
         print("No reports to extract.")
         return
 
+    if attribution:
+        print(f"Attribution override: extraction_method will be stored as '{attribution}'")
+
     total = ExtractionSummary()
-    for report in reports:
-        s = extract_report(report, db, registry)
+    for i, report in enumerate(reports, 1):
+        s = extract_report(report, db, registry, attribution=attribution)
         total.reports_processed += s.reports_processed
         total.data_points_extracted += s.data_points_extracted
         total.review_flagged += s.review_flagged
         total.errors += s.errors
+        if i % 10 == 0 or i == len(reports):
+            print(f"  [{i}/{len(reports)}] {total.data_points_extracted} data points so far")
 
     print(
         f"Extracted {total.reports_processed} reports: "
@@ -182,6 +192,21 @@ def cmd_extract(args):
         f"{total.review_flagged} flagged for review, "
         f"{total.errors} errors"
     )
+
+
+def cmd_broad_extract(args):
+    """Run broad LLM extraction on stored reports to capture ALL numeric values."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+    from extractors.broad_extractor import BroadExtractor
+
+    db = get_db()
+    ticker_filter = args.ticker.upper() if args.ticker else None
+    extractor = BroadExtractor(db)
+    result = extractor.extract_all(ticker=ticker_filter, force=getattr(args, 'force', False))
+    print(f"Broad extraction complete: {result['reports_processed']} reports, "
+          f"{result['metrics_stored']} metrics stored, "
+          f"{result['errors']} errors")
 
 
 def cmd_purge(args):
@@ -361,10 +386,24 @@ def main():
         '--force', action='store_true', default=False,
         help='Re-extract already-extracted reports (use after pattern changes)',
     )
+    p_extract.add_argument(
+        '--attribution',
+        metavar='METHOD',
+        help='Override extraction_method stored in data_points (e.g. "codex")',
+    )
 
     # diagnose
     p_diagnose = sub.add_parser('diagnose', help='Show coverage matrix: metrics per period + gap reasons')
     p_diagnose.add_argument('--ticker', help='Limit to one ticker')
+
+    # broad_extract
+    p_broad = sub.add_parser(
+        'broad_extract',
+        help='Run broad LLM extraction on all stored reports to capture ALL numeric values',
+    )
+    p_broad.add_argument('--ticker', help='Limit to one ticker')
+    p_broad.add_argument('--force', action='store_true', default=False,
+                         help='Re-extract even reports already in raw_extractions')
 
     # purge
     p_purge = sub.add_parser(
@@ -387,6 +426,8 @@ def main():
         cmd_extract(args)
     elif args.command == 'diagnose':
         cmd_diagnose(args)
+    elif args.command == 'broad_extract':
+        cmd_broad_extract(args)
     elif args.command == 'purge':
         cmd_purge(args)
 

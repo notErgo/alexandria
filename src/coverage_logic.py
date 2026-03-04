@@ -61,21 +61,25 @@ def compute_cell_state_v2(
     has_parse_error: bool,
     has_extract_error: bool,
     has_scraper_error: bool,
+    data_is_quarterly: bool = False,
 ) -> str:
-    """Return one of 7 CellState values for a (ticker, period, metric) cell.
+    """Return one of 8 CellState values for a (ticker, period, metric) cell.
 
     Priority (highest first):
       1. analyst_gap  — analyst explicitly marked this period as intentionally empty
-      2. data         — a data_point exists
-      3. review_pending — a PENDING review_queue item exists
-      4. parse_failed — manifest entry exists; parse_quality = 'parse_failed'
-      5. extract_failed — manifest entry exists; extraction ran; no value found
-      6. scraper_error — scrape was attempted; HTTP/parse error logged
-      7. no_document  — no manifest entry; no scrape attempted
+      2. data         — a monthly data_point exists
+      3. data_quarterly — data from a 10-Q/10-K carry or inferred value
+      4. review_pending — a PENDING review_queue item exists
+      5. parse_failed — manifest entry exists; parse_quality = 'parse_failed'
+      6. extract_failed — manifest entry exists; extraction ran; no value found
+      7. scraper_error — scrape was attempted; HTTP/parse error logged
+      8. no_document  — no manifest entry; no scrape attempted
     """
     if is_analyst_gap:
         return 'analyst_gap'
     if has_data_point:
+        if data_is_quarterly:
+            return 'data_quarterly'
         return 'data'
     if has_review_pending:
         return 'review_pending'

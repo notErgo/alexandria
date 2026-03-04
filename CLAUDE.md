@@ -9,6 +9,14 @@
 - **No `str(e)` in `jsonify()`** — log the full exception server-side, return a generic fixed string to the caller.
 - Tests are written before implementation. A failing test must exist before any new function is written.
 
+## Worktree Policy
+
+Follow the shared, canonical worktree policy in the global workspace docs:
+- `~/Documents/Hermeneutic/CODEX.md`
+- `~/Documents/Hermeneutic/CLAUDE.md`
+
+Project-local default remains single-folder `OffChain/miners` unless parallel agent execution is explicitly requested.
+
 ## Purpose
 
 Bitcoin miner intelligence platform. LLM-first extraction (Qwen3.5-35B-A3B via Ollama) + regex validation for 13 public mining companies. Ingests archived PDFs/HTMLs, live IR press releases, and SEC EDGAR 8-K filings. Agreement engine routes to data_points (auto-accept) or review_queue (disagreement/LLM-only).

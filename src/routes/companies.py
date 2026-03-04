@@ -1,6 +1,7 @@
 """Company and metric schema API routes."""
 import logging
 import sqlite3
+from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 log = logging.getLogger('miners.routes.companies')
@@ -60,6 +61,26 @@ def get_company(ticker):
             'code': 'NOT_FOUND', 'message': f'Company {ticker!r} not found'
         }}), 404
     return jsonify({'success': True, 'data': company})
+
+
+@bp.route('/api/companies/sync', methods=['POST'])
+def sync_companies():
+    """Re-sync companies table from companies.json config file.
+
+    Upserts all config fields (name, URLs, scraper settings).
+    Preserves operational fields (scraper_status, last_scrape_at, etc.).
+    """
+    from app_globals import get_db
+    db = get_db()
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'companies.json'
+    if not config_path.exists():
+        return jsonify({'success': False, 'error': {'message': 'companies.json not found'}}), 404
+    try:
+        result = db.sync_companies_from_config(str(config_path))
+    except Exception:
+        log.error("Failed to sync companies from config", exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+    return jsonify({'success': True, 'data': result})
 
 
 @bp.route('/api/companies/<ticker>', methods=['PUT'])

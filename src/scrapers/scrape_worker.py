@@ -84,19 +84,19 @@ class ScrapeWorker(threading.Thread):
             )
             log.info("Scrape completed for %s", ticker)
 
-            # Auto-trigger extraction on newly ingested reports
-            try:
-                from extractors.extraction_pipeline import extract_report
-                from app_globals import get_registry
-                registry = get_registry()
-                unextracted = self._db.get_unextracted_reports(ticker=ticker)
-                for report in unextracted:
-                    try:
-                        extract_report(report, self._db, registry)
-                    except Exception as ex:
-                        log.error("Extraction failed for report %s: %s", report.get('id'), ex, exc_info=True)
-            except Exception as ex:
-                log.error("Auto-extraction trigger failed for %s: %s", ticker, ex, exc_info=True)
+            # EDGAR fetch: 8-K + 10-Q + 10-K for companies with CIK (ingest only, no extraction)
+            cik = company.get('cik')
+            if cik:
+                try:
+                    import requests as _req
+                    from scrapers.edgar_connector import EdgarConnector
+                    from datetime import date
+                    edgar = EdgarConnector(db=self._db, session=_req.Session())
+                    since = date(2019, 1, 1)
+                    edgar.fetch_all_filings(cik=cik, ticker=ticker, since_date=since)
+                    log.info("EDGAR fetch completed for %s", ticker)
+                except Exception as ex:
+                    log.error("EDGAR fetch failed for %s: %s", ticker, ex, exc_info=True)
 
         except Exception as e:
             self._db.update_company_scraper_fields(

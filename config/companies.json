@@ -11,6 +11,7 @@
     "scrape_mode": "rss",
     "url_template": null,
     "pr_start_year": 2020,
+    "skip_reason": null,
     "sandbox_note": "ir.mara.com must be added to settings.json networkAllowList"
   },
   {
@@ -24,7 +25,9 @@
     "active": true,
     "scrape_mode": "template",
     "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
-    "pr_start_year": 2020
+    "pr_start_year": 2020,
+    "skip_reason": null,
+    "sandbox_note": null
   },
   {
     "ticker": "CLSK",
@@ -38,6 +41,7 @@
     "scrape_mode": "template",
     "url_template": "https://investors.cleanspark.com/news/news-details/{year}/CleanSpark-Releases-{Month}-{year}-Bitcoin-Mining-Update/default.aspx",
     "pr_start_year": 2021,
+    "skip_reason": null,
     "sandbox_note": "investors.cleanspark.com must be added to settings.json networkAllowList"
   },
   {
@@ -46,13 +50,14 @@
     "tier": 1,
     "ir_url": "https://investors.corescientific.com/news-events/press-releases",
     "pr_base_url": "https://investors.corescientific.com",
-    "rss_url": null,
+    "rss_url": "https://investors.corescientific.com/news-events/press-releases/rss",
     "cik": "0001725526",
-    "active": true,
-    "scrape_mode": "index",
+    "active": false,
+    "scrape_mode": "skip",
     "url_template": null,
-    "pr_start_year": 2021,
-    "sandbox_note": "Old URL ir.core-scientific.com was dead (connection refused); correct URL is investors.corescientific.com. Detail pages use /news-events/press-releases/detail/{id}/{slug} — index scrape required."
+    "pr_start_year": 2022,
+    "skip_reason": "Discontinued monthly production reporting after March 2025. No April 2025 or later monthly updates found. Company pivoted to AI/HPC colocation. Last monthly report: March 2025 (published April 7, 2025). Now quarterly earnings only.",
+    "sandbox_note": "Static HTML index with RSS at /news-events/press-releases/rss. URL pattern: /news-events/press-releases/detail/{numeric_id}/{slug}. Pre-bankruptcy (Chapter 11 filed Dec 2022, emerged Jan 2024) PRs were on old domain ir.core-scientific.com. Business Wire also distributes PRs. Monthly updates confirmed Jan-Mar 2025 only."
   },
   {
     "ticker": "BITF",
@@ -66,7 +71,8 @@
     "scrape_mode": "template",
     "url_template": "https://investor.bitfarms.com/news-releases/news-release-details/bitfarms-provides-{month}-{year}-production-and-operations-update",
     "pr_start_year": 2021,
-    "sandbox_note": "investor.bitfarms.com must be added to settings.json networkAllowList"
+    "skip_reason": null,
+    "sandbox_note": "investor.bitfarms.com must be added to settings.json networkAllowList. BITF acquired Stronghold Digital Mining (SDIG) with merger close March 14, 2025 — SDIG capacity now included in BITF monthly reports."
   },
   {
     "ticker": "BTBT",
@@ -79,21 +85,24 @@
     "active": true,
     "scrape_mode": "template",
     "url_template": "https://bit-digital.com/press-releases/bit-digital-inc-announces-monthly-production-update-for-{month}-{year}/",
-    "pr_start_year": 2021
+    "pr_start_year": 2021,
+    "skip_reason": null,
+    "sandbox_note": null
   },
   {
     "ticker": "CIFR",
-    "name": "Cipher Mining Inc.",
+    "name": "Cipher Mining Inc. (rebranded as Cipher Digital)",
     "tier": 2,
-    "ir_url": "https://investors.ciphermining.com/news-releases",
-    "pr_base_url": "https://investors.ciphermining.com",
-    "rss_url": null,
+    "ir_url": "https://investors.cipherdigital.com/news-events/press-releases",
+    "pr_base_url": "https://investors.cipherdigital.com",
+    "rss_url": "https://investors.cipherdigital.com/rss/news-releases.xml",
     "cik": "0001838247",
     "active": true,
-    "scrape_mode": "skip",
+    "scrape_mode": "rss",
     "url_template": null,
-    "pr_start_year": null,
-    "skip_reason": "Acquired by Bitfarms Nov 2024 — investors.ciphermining.com redirects to cipherdigital.com home page; individual press release URLs no longer resolve correctly"
+    "pr_start_year": 2021,
+    "skip_reason": null,
+    "sandbox_note": "Was incorrectly marked as acquired by Bitfarms — that was SDIG, not CIFR. Cipher Mining rebranded to Cipher Digital; investors.ciphermining.com redirects 301 to investors.cipherdigital.com. Monthly updates Jan-Sep 2025 confirmed (210-251 BTC/month). After Sep 2025 shifted to quarterly Business Update format. GlobeNewswire also distributes. RSS confirmed live: investors.cipherdigital.com/rss/news-releases.xml."
   },
   {
     "ticker": "HIVE",
@@ -101,13 +110,14 @@
     "tier": 2,
     "ir_url": "https://www.hivedigitaltechnologies.com/news/",
     "pr_base_url": "https://www.hivedigitaltechnologies.com",
-    "rss_url": null,
+    "rss_url": "https://feeds.newsfilecorp.com/company/5335",
     "cik": "0001537808",
     "active": true,
-    "scrape_mode": "index",
+    "scrape_mode": "rss",
     "url_template": null,
-    "pr_start_year": 2024,
-    "sandbox_note": "Correct index URL is /news/ (not /news/press-releases/ which 404s). Individual slugs are long and unpredictable — index mode required. Site is JS-rendered; scraper needs to filter links containing 'production' and 'results'. Monthly reports confirmed from April 2024 onward."
+    "pr_start_year": 2021,
+    "skip_reason": null,
+    "sandbox_note": "News page has static HTML links at /news/{slug}/ — not a JS SPA. Production reports distributed via Newsfile Corp RSS (feeds.newsfilecorp.com/company/5335). GlobeNewswire was used for some 2022-2023 releases but Newsfile is the current distribution channel. Newsfile RSS includes RETRANSMISSION duplicates — filter by 'Production Report' or 'Bitcoin Production' in title. Monthly reporting confirmed through Nov 2025 (290 BTC). Fiscal year ends March 31. Dual-listed TSX-V:HIVE and NASDAQ:HIVE."
   },
   {
     "ticker": "HUT8",
@@ -116,40 +126,43 @@
     "ir_url": "https://www.hut8.com/news-insights/press-releases",
     "pr_base_url": "https://www.hut8.com",
     "rss_url": null,
-    "cik": "0001928898",
-    "active": true,
-    "scrape_mode": "template",
+    "cik": "0001558370",
+    "active": false,
+    "scrape_mode": "skip",
     "url_template": "https://www.hut8.com/news-insights/press-releases/hut-8-operations-update-for-{month}-{year}",
-    "pr_start_year": 2023,
-    "sandbox_note": "Monthly reports start Nov 2023. Template confirmed against March/Feb/Jan 2025 URLs."
+    "pr_start_year": 2021,
+    "skip_reason": "Discontinued monthly reporting after March 2025. Final monthly update (March 2025, published April 4, 2025) explicitly stated switch to quarterly reporting. Launched American Bitcoin (ABTC) subsidiary April 1, 2025 which absorbed mining operations.",
+    "sandbox_note": "Template URL hut8.com/news-insights/press-releases/hut-8-operations-update-for-{month}-{year} confirmed for Jan-Mar 2025. Coverage gap Jul-Dec 2024: some months used date-based paths (/2024/12/05/hut-8-operations-update-for-november-2024/) rather than the standard template path. GlobeNewswire also distributes. Monthly reports confirmed Nov 2023 through Mar 2025."
   },
   {
     "ticker": "ARBK",
     "name": "Argo Blockchain plc",
-    "tier": 2,
-    "ir_url": "https://ir.argo.partners/news",
-    "pr_base_url": "https://ir.argo.partners",
+    "tier": 3,
+    "ir_url": "https://www.accessnewswire.com/newsroom/en/blockchain-and-cryptocurrency",
+    "pr_base_url": "https://www.accessnewswire.com",
     "rss_url": null,
     "cik": "0001708187",
     "active": true,
-    "scrape_mode": "skip",
+    "scrape_mode": "index",
     "url_template": null,
     "pr_start_year": 2021,
-    "skip_reason": "IR site returned 502 Bad Gateway at audit date 2026-03; site unreachable for automated scraping"
+    "skip_reason": null,
+    "sandbox_note": "Press releases distributed via accessnewswire.com. URL pattern: /newsroom/en/blockchain-and-cryptocurrency/argo-blockchain-plc-announces-{month}-operational-update-{id} but IDs are non-sequential so template mode is not viable. Company in severe financial distress: LSE delisted December 11, 2025; Nasdaq delisting proceedings began July 2025. Monthly updates continued through at least July 2025 (129 BTC at 4.2 BTC/day). Very low volume (~40-130 BTC/month). Index scrape from /newsroom/en/blockchain-and-cryptocurrency filtered by 'Argo'."
   },
   {
     "ticker": "SDIG",
-    "name": "Stronghold Digital Mining, Inc.",
-    "tier": 2,
-    "ir_url": "https://ir.strongdigital.com/press-releases",
-    "pr_base_url": "https://ir.strongdigital.com",
+    "name": "Stronghold Digital Mining, Inc. (acquired by Bitfarms)",
+    "tier": 3,
+    "ir_url": null,
+    "pr_base_url": null,
     "rss_url": null,
     "cik": "0001830029",
     "active": false,
     "scrape_mode": "skip",
     "url_template": null,
-    "pr_start_year": null,
-    "skip_reason": "Acquired by Bitfarms Q1 2025 — no standalone monthly reports after acquisition"
+    "pr_start_year": 2022,
+    "skip_reason": "Acquired by Bitfarms (BITF). Stockholders approved February 27, 2025 (99.6% approval). Merger closed March 14, 2025. No longer an independent public company. Former SDIG capacity is now included in BITF monthly production reports.",
+    "sandbox_note": "Last standalone monthly reports were mid-2024. Q3 2024 was the last quarterly earnings report. ir.strongholddigitalmining.com is no longer active as standalone IR."
   },
   {
     "ticker": "WULF",
@@ -158,25 +171,117 @@
     "ir_url": "https://investors.terawulf.com/news-events/press-releases",
     "pr_base_url": "https://investors.terawulf.com",
     "rss_url": "https://investors.terawulf.com/news-events/press-releases/rss",
-    "cik": "0001855052",
-    "active": true,
-    "scrape_mode": "rss",
+    "cik": "0001083301",
+    "active": false,
+    "scrape_mode": "skip",
     "url_template": null,
     "pr_start_year": 2022,
-    "skip_reason": "Monthly production reports discontinued after December 2024"
+    "skip_reason": "Discontinued monthly production reporting after December 2024. Last monthly PR: December 2024 (published January 3, 2025). Switched to quarterly reporting only in 2025. Pivoted to HPC/AI data center focus (signed $12.8B in AI/HPC contracts).",
+    "sandbox_note": "RSS feed at investors.terawulf.com/news-events/press-releases/rss is live but contains no monthly production updates since December 2024. Q1 2025: 372 BTC self-mined (quarterly). Company now primarily an HPC/AI infrastructure provider."
   },
   {
     "ticker": "IREN",
     "name": "IREN Limited",
-    "tier": 2,
-    "ir_url": "https://investors.iren.com/news-releases",
-    "pr_base_url": "https://investors.iren.com",
-    "rss_url": null,
-    "cik": "0001873044",
-    "active": true,
+    "tier": 1,
+    "ir_url": "https://iren.gcs-web.com/news-releases",
+    "pr_base_url": "https://iren.gcs-web.com",
+    "rss_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ==",
+    "cik": "0001878848",
+    "active": false,
     "scrape_mode": "skip",
     "url_template": null,
     "pr_start_year": 2022,
-    "skip_reason": "IR site returned 502 Bad Gateway at audit date 2026-03; site unreachable for automated scraping"
+    "skip_reason": "Discontinued monthly production updates October 2025. Last monthly report: August 2025 (published September 8, 2025). Now reporting quarterly only. GlobeNewswire RSS still active but no monthly production updates will appear.",
+    "sandbox_note": "investors.iren.com dead (ECONNREFUSED). Alternate IR: irisenergy.gcs-web.com or iren.gcs-web.com. GlobeNewswire org ID: 82e8_jAApdE1qYPVHkynKQ==. Monthly updates covered Jan-Aug 2025. Company pivoted to AI Cloud (Microsoft $3.6B GPU contract). 50 EH/s at peak. GlobeNewswire RSS confirmed active."
+  },
+  {
+    "ticker": "BTDR",
+    "name": "Bitdeer Technologies Group",
+    "tier": 2,
+    "ir_url": "https://ir.bitdeer.com/news-releases",
+    "pr_base_url": "https://ir.bitdeer.com",
+    "rss_url": "https://ir.bitdeer.com/rss/news-releases.xml",
+    "cik": "0001899123",
+    "active": true,
+    "scrape_mode": "rss",
+    "url_template": null,
+    "pr_start_year": 2023,
+    "skip_reason": null,
+    "sandbox_note": "Singapore-based, NASDAQ listed. Monthly production reports at ir.bitdeer.com with slug-based URLs: /news-releases/news-release-details/{slug}. RSS feed confirmed at /rss/news-releases.xml. Also has /rss/sec-filings.xml and /rss/events.xml. Monthly updates confirmed Jan-Nov 2025 (526 BTC in Nov 2025, 41.2 EH/s in Oct 2025). PR title format: 'Bitdeer Announces {Month} {Year} Production and Operations Update'. Company also developing proprietary SEALMINER ASICs. Files 6-K with SEC (not 8-K)."
+  },
+  {
+    "ticker": "ABTC",
+    "name": "American Bitcoin Corp.",
+    "tier": 2,
+    "ir_url": "https://www.abtc.com/news",
+    "pr_base_url": "https://www.abtc.com",
+    "rss_url": null,
+    "cik": "0001755953",
+    "active": true,
+    "scrape_mode": "index",
+    "url_template": null,
+    "pr_start_year": 2025,
+    "skip_reason": null,
+    "sandbox_note": "Treasury-style miner. Primary KPI: strategic_reserve_btc (not monthly BTC mined). News index at abtc.com/news with /content/{slug} article URLs. Launched April 1, 2025 (HUT8 spin-out). Merged with Gryphon Digital Mining September 3, 2025. 25 EH/s, ~78,000 ASICs. Strategic reserve: 4,783 BTC as of Dec 10, 2025. Quarterly earnings via PRNewswire. CIK 1755953 (formerly Gryphon Digital Mining). Agent D handles explicit URL fetch for all 9 known press releases. source_period_type=announcement for treasury reserve updates."
+  },
+  {
+    "ticker": "APLD",
+    "name": "Applied Digital Corporation",
+    "tier": 3,
+    "ir_url": "https://ir.applieddigital.com",
+    "pr_base_url": "https://ir.applieddigital.com",
+    "rss_url": null,
+    "cik": null,
+    "active": false,
+    "scrape_mode": "skip",
+    "url_template": null,
+    "pr_start_year": null,
+    "skip_reason": "Pivoted to AI/HPC data center infrastructure. No monthly Bitcoin production reports published.",
+    "sandbox_note": "Primarily an AI data center company. Any historical mining data would require quarterly earnings reports, not monthly production updates."
+  },
+  {
+    "ticker": "GRDI",
+    "name": "GRIID Infrastructure Inc. (acquired by CleanSpark)",
+    "tier": 3,
+    "ir_url": null,
+    "pr_base_url": null,
+    "rss_url": null,
+    "cik": null,
+    "active": false,
+    "scrape_mode": "skip",
+    "url_template": null,
+    "pr_start_year": null,
+    "skip_reason": "Acquired by CleanSpark (CLSK) in October 2024. No longer an independent public company. Production folded into CLSK monthly updates.",
+    "sandbox_note": null
+  },
+  {
+    "ticker": "MIGI",
+    "name": "Mawson Infrastructure Group Inc.",
+    "tier": 3,
+    "ir_url": "https://www.mawsoninc.com/investors",
+    "pr_base_url": "https://www.mawsoninc.com",
+    "rss_url": null,
+    "cik": null,
+    "active": false,
+    "scrape_mode": "skip",
+    "url_template": null,
+    "pr_start_year": null,
+    "skip_reason": "Bitcoin mining now negligible (less than $0.1M/month revenue as of October 2025). Primarily energy management and digital colocation. Monthly updates published but not Bitcoin-mining-focused.",
+    "sandbox_note": "GlobeNewswire distributes monthly financial updates. URL on mawsoninc.com. If BTC mining scale increases significantly, reconsider for inclusion."
+  },
+  {
+    "ticker": "GREE",
+    "name": "Greenidge Generation Holdings Inc.",
+    "tier": 3,
+    "ir_url": "https://ir.greenidge.com/news-releases",
+    "pr_base_url": "https://ir.greenidge.com",
+    "rss_url": null,
+    "cik": null,
+    "active": false,
+    "scrape_mode": "skip",
+    "url_template": null,
+    "pr_start_year": null,
+    "skip_reason": "Quarterly reporting only. Approximately 110 BTC per quarter in 2025 — too small scale for monthly tracking. No monthly production updates.",
+    "sandbox_note": "Still operating but small scale. Sold Mississippi facility September 2025. Primarily NY and North Dakota operations. Uses Business Wire for press releases. IR at ir.greenidge.com with slug-based URLs."
   }
 ]

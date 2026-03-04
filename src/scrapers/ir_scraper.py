@@ -40,6 +40,7 @@ MONTH_MAP: dict = {
 _PRODUCTION_KEYWORDS: tuple = (
     "production",
     "operations update",
+    "operational update",
     "mining operations",
     "bitcoin production",
     "monthly bitcoin",

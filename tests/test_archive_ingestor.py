@@ -10,7 +10,7 @@ from scrapers.archive_ingestor import (
     is_quarterly_filing,
     extract_quarterly_months,
 )
-from scrapers.edgar_connector import _parse_edgar_hit
+from scrapers.edgar_connector import parse_submissions_filings
 
 
 class TestInferPeriod:
@@ -524,24 +524,31 @@ class TestForceReingest:
 
 
 class TestParseEdgarHit:
-    def test_parse_edgar_search_result(self):
-        hit = {
-            "_source": {
-                "period_ending": "2024-10-01",
-                "file_date": "2024-10-08",
-                "entity_name": "Marathon Digital Holdings",
-                "file_num": "001-12345",
-            },
-            "_id": "0001437491-24-000001",
+    def test_parse_submissions_extracts_10q_filings(self):
+        """parse_submissions_filings parses EDGAR Submissions JSON for 10-Q entries."""
+        filings_data = {
+            "filings": {
+                "recent": {
+                    "form": ["10-Q", "8-K", "10-Q"],
+                    "filingDate": ["2024-11-04", "2024-10-15", "2024-08-05"],
+                    "accessionNumber": ["0001437491-24-000010", "0001437491-24-000009", "0001437491-24-000008"],
+                    "primaryDocument": ["mara-20240930.htm", "8k.htm", "mara-20240630.htm"],
+                    "periodOfReport": ["2024-09-30", "2024-10-14", "2024-06-30"],
+                }
+            }
         }
-        result = _parse_edgar_hit(hit)
-        assert result["filed_date"] == date(2024, 10, 8)
-        assert result["accession_number"] == "0001437491-24-000001"
+        results = parse_submissions_filings(filings_data, form_type="10-Q")
+        assert len(results) == 2
+        accessions = {r["accession_number"] for r in results}
+        assert "0001437491-24-000010" in accessions
+        assert "0001437491-24-000008" in accessions
+        assert "0001437491-24-000009" not in accessions  # 8-K excluded
 
-    def test_edgar_cik_registry_has_13_entries(self):
+    def test_edgar_cik_registry_has_correct_entries(self):
         import os
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'companies.json')
         with open(config_path) as f:
             companies = json.load(f)
         tickers_with_cik = [c for c in companies if c.get('cik')]
-        assert len(tickers_with_cik) == 13
+        # Original 13 + BTDR (0001899123) + ABTC (0001755953) = 15
+        assert len(tickers_with_cik) == 15

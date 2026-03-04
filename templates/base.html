@@ -21,6 +21,29 @@
       position: relative;
       top: -1px;
     }
+
+    .ui-inspector-chip {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.94);
+      color: #e2e8f0;
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      border-radius: 6px;
+      padding: 4px 7px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      line-height: 1.25;
+      white-space: nowrap;
+      display: none;
+      max-width: min(90vw, 680px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ui-inspector-highlight {
+      outline: 2px solid rgba(59, 130, 246, 0.8) !important;
+      outline-offset: 1px;
+    }
   </style>
   {% block styles %}{% endblock %}
   <script>
@@ -35,7 +58,8 @@
 <nav>
   <span class="brand">⛏ Miner Data</span>
   <a href="/">Scorecard</a>
-  <a href="/ops">Operations <span id="nav-review-badge" class="nav-badge" style="display:none"></span></a>
+  <a href="/ops">Operations</a>
+  <a href="/review">Review Queue <span id="nav-review-badge" class="nav-badge" style="display:none"></span></a>
   <a href="/miner-data">Miner Data</a>
   <a href="/data-explorer">Data Explorer</a>
   <a href="/diagnostics">Diagnostics</a>
@@ -47,6 +71,9 @@
 <div class="container">
   {% block content %}{% endblock %}
 </div>
+
+
+<div id="build-fingerprint" style="font-size:0.7rem;color:var(--theme-text-muted);text-align:right;padding:0.25rem 0.5rem 0.5rem;opacity:0.85">build: loading…</div>
 
 <div id="toast" class="toast hide"></div>
 
@@ -125,6 +152,83 @@ function makeSortable(tableId) {
     });
   });
 }
+
+// UI spec hover inspector.
+// Hover any element tagged with data-ui-id to see: component ID, name, source.
+(function() {
+  let byId = {};
+  let chip = null;
+  let highlighted = null;
+
+  function ensureChip() {
+    if (chip) return chip;
+    chip = document.createElement('div');
+    chip.id = 'ui-inspector-chip';
+    chip.className = 'ui-inspector-chip';
+    document.body.appendChild(chip);
+    return chip;
+  }
+
+  function clearHighlight() {
+    if (highlighted) {
+      highlighted.classList.remove('ui-inspector-highlight');
+      highlighted = null;
+    }
+  }
+
+  function hideChip() {
+    if (!chip) return;
+    chip.style.display = 'none';
+    chip.textContent = '';
+  }
+
+  function onHover(e) {
+    const el = e.target.closest('[data-ui-id]');
+    if (!el) {
+      clearHighlight();
+      hideChip();
+      return;
+    }
+    const id = el.getAttribute('data-ui-id');
+    if (!id) return;
+
+    if (highlighted !== el) {
+      clearHighlight();
+      highlighted = el;
+      highlighted.classList.add('ui-inspector-highlight');
+    }
+
+    const meta = byId[id] || {};
+    const text = id
+      + (meta.name ? ' · ' + meta.name : '')
+      + (meta.source ? ' · ' + meta.source : '');
+
+    const badge = ensureChip();
+    badge.textContent = text;
+    badge.style.display = 'block';
+    badge.style.left = (e.clientX + 14) + 'px';
+    badge.style.top = (e.clientY + 14) + 'px';
+  }
+
+  function loadSpec() {
+    fetch('/static/data/ui_spec.json')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        const components = (data && data.components) || [];
+        byId = {};
+        components.forEach(function(c) { byId[c.id] = c; });
+      })
+      .catch(function() {});
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    ensureChip();
+    loadSpec();
+    document.addEventListener('mousemove', onHover, true);
+    document.addEventListener('scroll', function() { hideChip(); clearHighlight(); }, true);
+  });
+})();
+
 </script>
 
 {% block scripts %}{% endblock %}
@@ -155,5 +259,30 @@ function makeSortable(tableId) {
   });
 })();
 </script>
+
+
+<script>
+// ── Build fingerprint (repo path + git sha) ───────────────────────────────
+(function() {
+  function renderFingerprint(d) {
+    var el = document.getElementById('build-fingerprint');
+    if (!el) return;
+    var text = 'build: ' + (d.git_branch || 'unknown') + '@' + (d.git_sha || 'unknown');
+    if (d.dirty) text += ' (dirty)';
+    text += ' · ' + (d.repo_path || 'unknown');
+    el.textContent = text;
+    try { console.info('[miners build]', d); } catch (_) {}
+  }
+
+  fetch('/api/build_fingerprint')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(payload) {
+      if (!payload || !payload.success || !payload.data) return;
+      renderFingerprint(payload.data);
+    })
+    .catch(function() {});
+})();
+</script>
+
 </body>
 </html>

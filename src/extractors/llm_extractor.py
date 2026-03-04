@@ -37,6 +37,13 @@ def _active_model(db=None) -> str:
 from extractors.confidence import METRIC_VALID_RANGES
 from miner_types import ExtractionResult
 
+# Valid ranges for quarterly/annual aggregated values (3x the monthly bounds for flow metrics).
+# Snapshot metrics (hodl_btc, hashrate_eh, etc.) keep the same bounds since they are
+# point-in-time values, not sums.
+_QUARTERLY_VALID_RANGES = {
+    k: (lo, hi * 3) for k, (lo, hi) in METRIC_VALID_RANGES.items()
+}
+
 log = logging.getLogger('miners.extractors.llm_extractor')
 
 # Hardcoded default prompts per metric.
@@ -62,7 +69,10 @@ _DEFAULT_PROMPTS: dict = {
         "   Look instead for total BTC produced including all operations (e.g. in prose: "
         "   'produced 1,202 bitcoin in October. This total includes X bitcoin from our JV').\n"
         "4. REJECT: quarterly (Q1-Q4), annual, year-to-date, cumulative, or network-wide stats.\n"
-        "5. Numbers may contain commas (1,242 = 1242).\n\n"
+        "5. ALWAYS reject values preceded by 'year-to-date', 'YTD', 'fiscal year', 'full year', "
+        "   'Q1', 'Q2', 'Q3', 'Q4', 'first quarter', 'second quarter', 'third quarter', or "
+        "   'fourth quarter'.\n"
+        "6. Numbers may contain commas (1,242 = 1242).\n\n"
         "Return ONLY this JSON, no other text:\n"
         '{{"metric":"production_btc","value":<number or null>,"unit":"BTC",'
         '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
@@ -87,7 +97,11 @@ _DEFAULT_PROMPTS: dict = {
         "[current] [year-ago] [%] [current] [prior-month] [%]. "
         "The FIRST number after the label is always the current period.\n"
         "3. Do NOT extract a delta or change ('added 86 BTC' → ignore 86, find the new total).\n"
-        "4. Numbers may contain commas (13,286 = 13286).\n\n"
+        "4. Numbers may contain commas (13,286 = 13286).\n"
+        "5. The phrase 'total bitcoin holdings to approximately X' means the NEW total is X. "
+        "   Use X as the value (do not use any prior-period number mentioned nearby).\n"
+        "6. REJECT a value described as 'holdings as of [date]' if that date is in a prior month "
+        "   — extract only the current-period total.\n\n"
         "Return ONLY this JSON, no other text:\n"
         '{{"metric":"hodl_btc","value":<number or null>,"unit":"BTC",'
         '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
@@ -155,8 +169,15 @@ _DEFAULT_PROMPTS: dict = {
         "- 'operational hashrate of X EH/s', 'energized hashrate X EH/s', 'X EH/s deployed'\n"
         "- 'hash rate of X EH/s', 'X exahash', 'X PH/s operational' (divide PH/s by 1000)\n"
         "- Table rows like: 'Energized Hashrate (EH/s) | 57.4'\n\n"
-        "REJECT: contracted, planned, or total installed capacity that is not yet operational. "
-        "Convert PH/s → EH/s by dividing by 1000. Extract the CURRENT column if side-by-side.\n\n"
+        "CRITICAL DISAMBIGUATION RULES:\n"
+        "1. REJECT network or industry hashrate figures (e.g., 'Bitcoin network hashrate: 850 EH/s', "
+        "   'global hashrate reached 900 EH/s', 'network hashrate increased to 850 EH/s'). "
+        "   These are industry metrics, not the company's deployed capacity.\n"
+        "2. The company's hashrate is ALWAYS an order of magnitude smaller than the Bitcoin network "
+        "   hashrate. If the reported value exceeds 100 EH/s, treat it with high skepticism — "
+        "   verify the phrase describes THIS company's operations, not the Bitcoin network.\n"
+        "3. REJECT contracted, planned, or total installed capacity that is not yet energized.\n"
+        "4. Convert PH/s to EH/s by dividing by 1000. Extract the CURRENT column if side-by-side.\n\n"
         "Return ONLY this JSON, no other text:\n"
         '{{"metric":"hashrate_eh","value":<number in EH/s or null>,"unit":"EH/s",'
         '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
@@ -231,6 +252,102 @@ _DEFAULT_FALLBACK_PROMPT = (
 
 # Default preamble for batch extraction. Extracted as a named constant so it can
 # be overridden via the config_settings DB key 'llm_batch_preamble'.
+_QUARTERLY_BATCH_PREAMBLE = (
+    "You are a financial data extractor working on a SEC quarterly report (10-Q) or annual "
+    "report (10-K). Extract QUARTERLY TOTALS (for flow metrics) or END-OF-QUARTER VALUES "
+    "(for snapshot metrics). Do NOT extract individual monthly figures or year-to-date cumulative "
+    "figures unless specifically asked. The target period is stated in the document type.\n\n"
+    "IMPORTANT: This is a multi-page filing. Mining operations data appears in the MD&A section "
+    "(Management Discussion & Analysis) or in tables labeled 'Mining Operations', "
+    "'Bitcoin Production', or similar.\n"
+)
+
+_ANNUAL_BATCH_PREAMBLE = (
+    "You are a financial data extractor working on a SEC annual report (10-K). "
+    "Extract FULL-YEAR TOTALS (flow metrics) or YEAR-END VALUES (snapshot metrics). "
+    "Do NOT extract quarterly or monthly sub-period figures.\n\n"
+    "Mining operations data appears in Item 1 (Business), Item 7 (MD&A), or exhibit tables.\n"
+)
+
+# Per-metric instructions for quarterly context (inverted from monthly prompts).
+# These replace the 'REJECT: quarterly' language with 'REJECT: individual month' language.
+_QUARTERLY_PROMPTS: dict = {
+    "production_btc": (
+        "Extract the TOTAL bitcoin MINED, PRODUCED, or EARNED for the QUARTER (or full year). "
+        "Common phrasings: 'mined X bitcoin during Q1', 'produced X BTC in fiscal 2024', "
+        "'total BTC produced: X', 'bitcoin production for the quarter was X'.\n"
+        "REJECT: individual month figures, year-to-date cumulative figures that span multiple quarters."
+    ),
+    "hodl_btc": (
+        "Extract the company's TOTAL bitcoin BALANCE or HOLDINGS at the END of the reported quarter "
+        "or fiscal year. This is a point-in-time snapshot.\n"
+        "REJECT: beginning-of-period balances, average balances."
+    ),
+    "sold_btc": (
+        "Extract bitcoin SOLD or LIQUIDATED during the quarter or fiscal year (cumulative total).\n"
+        "REJECT: individual month figures."
+    ),
+    "hodl_btc_unrestricted": (
+        "Extract UNRESTRICTED bitcoin holdings at quarter-end or year-end.\n"
+        "REJECT: beginning-of-period balances."
+    ),
+    "hodl_btc_restricted": (
+        "Extract RESTRICTED or PLEDGED bitcoin holdings at quarter-end or year-end.\n"
+        "REJECT: beginning-of-period balances."
+    ),
+    "hashrate_eh": (
+        "Extract OPERATIONAL hash rate in EH/s at the END of the reported quarter or fiscal year.\n"
+        "REJECT: planned or contracted capacity that is not yet operational."
+    ),
+    "realization_rate": (
+        "Extract the bitcoin realization rate as a ratio (0.0–1.0) for the reported quarter "
+        "or fiscal year. Convert percentages to ratios (e.g. 95% -> 0.95).\n"
+        "If not found, set value to null."
+    ),
+    "net_btc_balance_change": (
+        "Extract the net change in bitcoin holdings over the quarter or fiscal year "
+        "(positive = accumulation, negative = reduction).\n"
+        "REJECT: month-by-month breakdowns."
+    ),
+    "encumbered_btc": (
+        "Extract the total bitcoin pledged as collateral or encumbered at quarter-end or year-end.\n"
+        "Sum all collateral positions if multiple facilities are listed."
+    ),
+    "mining_mw": (
+        "Extract total operational power capacity for bitcoin mining in MW at quarter-end or year-end.\n"
+        "REJECT: contracted, planned, or not-yet-operational capacity."
+    ),
+    "ai_hpc_mw": (
+        "Extract total operational AI/HPC power capacity in MW at quarter-end or year-end.\n"
+        "REJECT: contracted or planned capacity."
+    ),
+    "hpc_revenue_usd": (
+        "Extract AI/HPC hosting revenue in USD for the quarter or fiscal year. "
+        "Convert millions to full dollars (e.g. $5.2M -> 5200000).\n"
+        "REJECT: individual month figures."
+    ),
+    "gpu_count": (
+        "Extract the total GPU units deployed (H100s, A100s, or equivalents) at quarter-end or year-end.\n"
+        "REJECT: planned or ordered units not yet deployed."
+    ),
+}
+
+_BATCH_UNIT_HINTS: dict = {
+    "production_btc":          "BTC",
+    "hodl_btc":                "BTC",
+    "hodl_btc_unrestricted":   "BTC",
+    "hodl_btc_restricted":     "BTC",
+    "sold_btc":                "BTC",
+    "hashrate_eh":             "EH/s",
+    "realization_rate":        "ratio",
+    "net_btc_balance_change":  "BTC",
+    "encumbered_btc":          "BTC",
+    "mining_mw":               "MW",
+    "ai_hpc_mw":               "MW",
+    "hpc_revenue_usd":         "USD",
+    "gpu_count":               "units",
+}
+
 _DEFAULT_BATCH_PREAMBLE = (
     "You are a financial data extractor. Extract ALL of the following metrics "
     "from the document in a single pass. Follow each metric's instructions carefully.\n\n"
@@ -355,6 +472,79 @@ class LLMExtractor:
             )
             return {}
 
+    def extract_with_correction(
+        self,
+        text: str,
+        metric: str,
+        first_value,
+        concern_context: str,
+        ticker: str = None,
+    ) -> Optional[ExtractionResult]:
+        """Run a targeted self-correction pass with explicit concern context.
+
+        Used when the agreement engine routes to REVIEW_QUEUE or OUTLIER_FLAGGED.
+        Wraps the standard metric prompt with a preamble explaining the concern
+        so the LLM can re-read the document with that specific issue in mind.
+
+        Args:
+            text:            Document text (already truncated by caller).
+            metric:          Metric being corrected (e.g. 'hashrate_eh').
+            first_value:     The value returned in the first extraction pass.
+            concern_context: Human-readable explanation of the concern
+                             (e.g. disagreement magnitude, outlier vs trailing avg).
+            ticker:          Optional ticker for prompt hints.
+
+        Returns:
+            ExtractionResult or None on failure.
+        """
+        try:
+            base_instructions = self._get_prompt_instructions(metric)
+            unit = _BATCH_UNIT_HINTS.get(metric, '')
+            preamble = (
+                f"Your first extraction returned {metric} = {first_value} {unit}.\n"
+                f"A cross-check raised a concern: {concern_context}\n\n"
+                f"Re-read the document carefully with this specific concern in mind "
+                f"and extract again.\n\n"
+                f"{base_instructions}\n\n"
+            )
+            # Add ticker hint if available
+            if ticker and self._db is not None:
+                try:
+                    hint_row = self._db.get_ticker_hint(ticker)
+                    if hint_row:
+                        preamble = f"=== COMPANY CONTEXT: {ticker} ===\n{hint_row}\n\n" + preamble
+                except Exception:
+                    pass
+
+            output_fmt = (
+                f"Return ONLY this JSON, no other text:\n"
+                f'{{"metric":"{metric}","value":<number or null>,"unit":"{unit}",'
+                f'"confidence":<0.0-1.0>,"source_snippet":"<exact phrase, max 100 chars>"}}\n\n'
+            )
+            prompt = preamble + output_fmt + "Document:\n" + text
+
+            raw = self._call_ollama(prompt)
+            if raw is None:
+                return None
+            result = self._parse_response(raw, metric)
+            if result is not None:
+                result = result.__class__(
+                    value=result.value,
+                    unit=result.unit,
+                    confidence=result.confidence,
+                    extraction_method='llm_correction',
+                    source_snippet=result.source_snippet,
+                    metric=result.metric,
+                    pattern_id=result.pattern_id,
+                )
+            return result
+        except Exception as e:
+            log.error(
+                "Self-correction extraction failed for %s metric=%s: %s",
+                ticker or 'unknown', metric, e, exc_info=True,
+            )
+            return None
+
     def _get_prompt_instructions(self, metric: str) -> str:
         """
         Return the task-description block of a metric's prompt — everything
@@ -391,26 +581,10 @@ class LLMExtractor:
           Document:
           {text}
 
-        Unit hints are hardcoded per known metric.
+        Unit hints are defined in the module-level _BATCH_UNIT_HINTS dict.
         NOTE: when new metrics are added to _DEFAULT_PROMPTS, add their unit
-        hint to _BATCH_UNIT_HINTS below.
+        hint to _BATCH_UNIT_HINTS at module level.
         """
-        _BATCH_UNIT_HINTS = {
-            "production_btc":          "BTC",
-            "hodl_btc":                "BTC",
-            "hodl_btc_unrestricted":   "BTC",
-            "hodl_btc_restricted":     "BTC",
-            "sold_btc":                "BTC",
-            "hashrate_eh":             "EH/s",
-            "realization_rate":        "ratio",
-            "net_btc_balance_change":  "BTC",
-            "encumbered_btc":          "BTC",
-            "mining_mw":               "MW",
-            "ai_hpc_mw":               "MW",
-            "hpc_revenue_usd":         "USD",
-            "gpu_count":               "units",
-        }
-
         # Preamble: use DB override if available, otherwise hardcoded constant
         preamble = _DEFAULT_BATCH_PREAMBLE
         if self._db is not None:
@@ -468,15 +642,6 @@ class LLMExtractor:
         Instructs the LLM to only extract values explicitly attributed to
         target_period (the prior month), not to current_period.
         """
-        _BATCH_UNIT_HINTS = {
-            "production_btc": "BTC", "hodl_btc": "BTC", "sold_btc": "BTC",
-            "hodl_btc_unrestricted": "BTC", "hodl_btc_restricted": "BTC",
-            "hashrate_eh": "EH/s", "realization_rate": "ratio",
-            "net_btc_balance_change": "BTC", "encumbered_btc": "BTC",
-            "mining_mw": "MW", "ai_hpc_mw": "MW",
-            "hpc_revenue_usd": "USD", "gpu_count": "units",
-        }
-
         lines = [
             f"This document was published reporting figures for {current_period}. "
             f"Your task: find values that are EXPLICITLY stated for the PRIOR month "
@@ -641,6 +806,153 @@ class LLMExtractor:
             log.error("Ollama response malformed: %s", e)
             self._last_call_meta = {}
             return None
+
+    # ------------------------------------------------------------------ #
+    #  Quarterly / annual batch extraction                               #
+    # ------------------------------------------------------------------ #
+
+    def extract_quarterly_batch(
+        self,
+        text: str,
+        metrics: list,
+        ticker: str = None,
+        period_type: str = 'quarterly',  # 'quarterly' | 'annual'
+    ) -> dict:
+        """Like extract_batch() but uses quarterly/annual prompts and preamble.
+
+        Returns dict of {metric: ExtractionResult} for metrics where a valid value
+        was found. Returns {} on any failure so caller can handle gracefully.
+        """
+        try:
+            prompt = self._build_quarterly_batch_prompt(
+                text, metrics, ticker=ticker, period_type=period_type
+            )
+            raw = self._call_ollama(prompt)
+            if raw is None:
+                return {}
+            return self._parse_quarterly_batch_response(raw, metrics, period_type=period_type)
+        except Exception as e:
+            log.error("LLM quarterly batch extraction failed: %s", e, exc_info=True)
+            return {}
+
+    def _build_quarterly_batch_prompt(
+        self,
+        text: str,
+        metrics: list,
+        ticker: str = None,
+        period_type: str = 'quarterly',
+    ) -> str:
+        """Build a prompt for quarterly or annual extraction.
+
+        Uses _QUARTERLY_BATCH_PREAMBLE or _ANNUAL_BATCH_PREAMBLE and
+        _QUARTERLY_PROMPTS instructions (which omit 'REJECT: quarterly' language).
+        """
+        preamble = _ANNUAL_BATCH_PREAMBLE if period_type == 'annual' else _QUARTERLY_BATCH_PREAMBLE
+
+        lines = [preamble]
+
+        # Per-ticker context hint (injected after preamble if set)
+        if ticker and self._db is not None:
+            try:
+                hint = self._db.get_ticker_hint(ticker)
+                if hint:
+                    lines.append(f"=== COMPANY CONTEXT: {ticker} ===")
+                    lines.append(hint)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch ticker hint for %s: %s", ticker, e)
+
+        for metric in metrics:
+            lines.append(f"=== METRIC: {metric} ===")
+            instructions = _QUARTERLY_PROMPTS.get(metric)
+            if instructions is None:
+                # Fall back to standard per-metric instructions but strip monthly rejections
+                instructions = self._get_prompt_instructions(metric)
+            lines.append(instructions)
+            lines.append("")
+
+        lines.append("=== OUTPUT FORMAT ===")
+        lines.append("Return ONLY this JSON object, no other text:")
+        lines.append("{")
+        for metric in metrics:
+            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            lines.append(
+                f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
+                f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
+            )
+        lines.append("}")
+        lines.append("")
+        lines.append("Document:")
+        lines.append(text)
+
+        return "\n".join(lines)
+
+    def _parse_quarterly_batch_response(
+        self, raw: str, metrics: list, period_type: str = 'quarterly'
+    ) -> dict:
+        """Parse LLM batch response for quarterly/annual extraction.
+
+        Like _parse_batch_response but applies 3x range bounds for 'quarterly'
+        period_type to accommodate quarterly/annual aggregated values.
+        """
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        if start == -1 or end == 0:
+            log.debug("No JSON object found in LLM quarterly batch response")
+            return {}
+
+        try:
+            data = json.loads(raw[start:end])
+        except (json.JSONDecodeError, ValueError) as e:
+            log.debug("Could not parse LLM quarterly batch JSON: %s", e)
+            return {}
+
+        # Quarterly/annual data gets wider valid ranges for flow metrics
+        valid_ranges = _QUARTERLY_VALID_RANGES if period_type in ('quarterly', 'annual') else METRIC_VALID_RANGES
+
+        results = {}
+        for metric in metrics:
+            entry = data.get(metric)
+            if not isinstance(entry, dict):
+                continue
+
+            value = entry.get('value')
+            if value is None:
+                continue
+
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                log.debug("Quarterly batch LLM value not numeric for %s: %r", metric, value)
+                continue
+
+            bounds = valid_ranges.get(metric)
+            if bounds is not None:
+                lo, hi = bounds
+                if not (lo <= value <= hi):
+                    log.debug(
+                        "Quarterly batch LLM value %.4f out of range [%.1f, %.1f] for %s",
+                        value, lo, hi, metric,
+                    )
+                    continue
+
+            unit = str(entry.get('unit', ''))
+            confidence = float(entry.get('confidence', 0.5))
+            confidence = max(0.0, min(1.0, confidence))
+            source_snippet = str(entry.get('source_snippet') or raw[:200])
+
+            _model = _active_model(self._db)
+            results[metric] = ExtractionResult(
+                metric=metric,
+                value=value,
+                unit=unit,
+                confidence=confidence,
+                extraction_method=f"llm_{_model}",
+                source_snippet=source_snippet,
+                pattern_id=f"llm_{_model}",
+            )
+
+        return results
 
     def _parse_response(self, raw: str, metric: str) -> Optional[ExtractionResult]:
         """
