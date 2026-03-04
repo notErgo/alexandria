@@ -138,6 +138,34 @@ class MinerDB:
                 if version < 7:
                     self._migrate_v7(conn)
                     conn.execute("PRAGMA user_version = 7")
+                    version = 7
+
+                if version < 8:
+                    self._migrate_v8(conn)
+                    conn.execute("PRAGMA user_version = 8")
+                    version = 8
+
+                if version < 9:
+                    self._migrate_v9(conn)
+                    conn.execute("PRAGMA user_version = 9")
+                    version = 9
+
+                if version < 10:
+                    self._migrate_v10(conn)
+                    conn.execute("PRAGMA user_version = 10")
+                    version = 10
+
+                if version < 11:
+                    self._migrate_v11(conn)
+                    conn.execute("PRAGMA user_version = 11")
+                    version = 11
+
+        # Sync company config from companies.json on every startup.
+        # This is idempotent — it updates stale rows and inserts new ones without
+        # touching operational fields (scraper_status, last_scrape_at, etc.).
+        config_path = Path(__file__).parent.parent.parent / 'config' / 'companies.json'
+        if config_path.exists():
+            self.sync_companies_from_config(str(config_path))
 
     def _migrate_v2(self, conn: sqlite3.Connection) -> None:
         """Schema migration from version 1 to version 2.
@@ -433,7 +461,228 @@ class MinerDB:
 
         self._seed_metric_schema(conn)
 
+    def _migrate_v8(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 7 to version 8.
+
+        Adds config fields to companies table that are present in companies.json
+        but were never persisted to the DB:
+          - rss_url: RSS feed URL for scraping
+          - url_template: template URL pattern (e.g. with {month}/{year})
+          - pr_start_year: year when press release archive begins
+          - skip_reason: human-readable reason why scraper_mode is 'skip'
+          - sandbox_note: notes on IR site behaviour, URL patterns, quirks
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        for col, typedef in [
+            ('rss_url',      'TEXT'),
+            ('url_template', 'TEXT'),
+            ('pr_start_year','INTEGER'),
+            ('skip_reason',  'TEXT'),
+            ('sandbox_note', 'TEXT'),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE companies ADD COLUMN {col} {typedef}")
+
+    def _migrate_v9(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 8 to version 9.
+
+        Adds provenance and period-type columns to support quarterly/annual filing ingestion:
+          - data_points: source_period_type, covering_report_id, covering_period
+          - reports: covering_period
+          - llm_prompts: document_type
+          - companies: last_edgar_at
+        """
+        existing_dp = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
+        for col, typedef in [
+            ('source_period_type', "TEXT NOT NULL DEFAULT 'monthly'"),
+            ('covering_report_id', 'INTEGER REFERENCES reports(id)'),
+            ('covering_period',    'TEXT'),
+        ]:
+            if col not in existing_dp:
+                conn.execute(f"ALTER TABLE data_points ADD COLUMN {col} {typedef}")
+
+        existing_rpt = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        if 'covering_period' not in existing_rpt:
+            conn.execute("ALTER TABLE reports ADD COLUMN covering_period TEXT")
+
+        existing_lp = {row[1] for row in conn.execute("PRAGMA table_info(llm_prompts)").fetchall()}
+        if 'document_type' not in existing_lp:
+            conn.execute(
+                "ALTER TABLE llm_prompts ADD COLUMN document_type TEXT NOT NULL DEFAULT 'monthly'"
+            )
+
+        existing_co = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        if 'last_edgar_at' not in existing_co:
+            conn.execute("ALTER TABLE companies ADD COLUMN last_edgar_at TEXT")
+
+    def _migrate_v10(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 9 to version 10.
+
+        Adds raw_extractions table: stores ALL numeric values extracted from every
+        report via the broad LLM extraction pass. Unlike data_points (which tracks
+        only the 13 standard metrics), raw_extractions captures everything the LLM
+        finds — miners deployed, facility MWs, GPU counts, revenue, energy cost,
+        custom KPIs, etc. Unknown metrics are stored with best-guess classification.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS raw_extractions (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id         INTEGER NOT NULL REFERENCES reports(id),
+                ticker            TEXT NOT NULL,
+                period            TEXT NOT NULL,
+                metric_key        TEXT NOT NULL,
+                category          TEXT NOT NULL DEFAULT 'unknown',
+                value             REAL,
+                value_text        TEXT NOT NULL,
+                unit              TEXT,
+                description       TEXT,
+                raw_json          TEXT,
+                confidence        REAL NOT NULL DEFAULT 0.0,
+                source_snippet    TEXT,
+                extraction_method TEXT NOT NULL DEFAULT 'llm_broad',
+                created_at        TEXT DEFAULT (datetime('now')),
+                UNIQUE(report_id, metric_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_rex_ticker_period
+                ON raw_extractions(ticker, period);
+
+            CREATE INDEX IF NOT EXISTS idx_rex_metric_key
+                ON raw_extractions(metric_key);
+
+            CREATE INDEX IF NOT EXISTS idx_rex_category
+                ON raw_extractions(category);
+        """)
+
+    def _migrate_v11(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 10 to version 11.
+
+        Adds metric_rules table: stores per-metric agreement and outlier thresholds
+        that can be edited from the Ops UI without a code deploy.
+        Seeded from config.py METRIC_AGREEMENT_THRESHOLDS and OUTLIER_THRESHOLDS.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS metric_rules (
+                metric                TEXT PRIMARY KEY,
+                agreement_threshold   REAL NOT NULL DEFAULT 0.02,
+                outlier_threshold     REAL NOT NULL DEFAULT 0.40,
+                outlier_min_history   INTEGER NOT NULL DEFAULT 3,
+                enabled               INTEGER NOT NULL DEFAULT 1,
+                notes                 TEXT,
+                updated_at            TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mr_metric ON metric_rules(metric);
+        """)
+        self._seed_metric_rules(conn)
+
+    def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
+        """Seed metric_rules with config.py threshold values.
+
+        Uses INSERT OR IGNORE so re-runs on an already-seeded DB are no-ops.
+        """
+        from config import METRIC_AGREEMENT_THRESHOLDS, OUTLIER_THRESHOLDS, OUTLIER_MIN_HISTORY
+        all_metrics = set(METRIC_AGREEMENT_THRESHOLDS) | set(OUTLIER_THRESHOLDS)
+        rows = []
+        for m in sorted(all_metrics):
+            rows.append((
+                m,
+                METRIC_AGREEMENT_THRESHOLDS.get(m, 0.02),
+                OUTLIER_THRESHOLDS.get(m, 0.40),
+                OUTLIER_MIN_HISTORY,
+            ))
+        conn.executemany(
+            """INSERT OR IGNORE INTO metric_rules
+               (metric, agreement_threshold, outlier_threshold, outlier_min_history)
+               VALUES (?, ?, ?, ?)""",
+            rows,
+        )
+
     # ── Company CRUD ─────────────────────────────────────────────────────────
+
+    def sync_companies_from_config(self, config_path: str) -> dict:
+        """Upsert all companies from a companies.json config file into the DB.
+
+        Config fields (name, URLs, scraper settings) are always updated from JSON.
+        Operational fields (scraper_status, last_scrape_at, last_scrape_error,
+        probe_completed_at, scraper_issues_log) are preserved from the existing row.
+
+        Returns {'added': N, 'updated': N}.
+        """
+        with open(config_path) as f:
+            companies = json.load(f)
+
+        added = updated = 0
+        with self._get_connection() as conn:
+            for c in companies:
+                ticker = c.get('ticker', '').strip().upper()
+                if not ticker:
+                    continue
+                existing = conn.execute(
+                    "SELECT ticker FROM companies WHERE ticker = ?", (ticker,)
+                ).fetchone()
+
+                if existing is None:
+                    # New company — insert with all fields
+                    conn.execute(
+                        """INSERT INTO companies
+                           (ticker, name, tier, ir_url, pr_base_url, cik, active,
+                            rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
+                            scraper_mode, sector, scraper_issues_log, scraper_status)
+                           VALUES
+                           (:ticker,:name,:tier,:ir_url,:pr_base_url,:cik,:active,
+                            :rss_url,:url_template,:pr_start_year,:skip_reason,:sandbox_note,
+                            :scraper_mode,:sector,'','never_run')""",
+                        {
+                            'ticker':        ticker,
+                            'name':          c.get('name', ticker),
+                            'tier':          int(c.get('tier', 2)),
+                            'ir_url':        c.get('ir_url') or '',
+                            'pr_base_url':   c.get('pr_base_url'),
+                            'cik':           c.get('cik'),
+                            'active':        1 if c.get('active', True) else 0,
+                            'rss_url':       c.get('rss_url'),
+                            'url_template':  c.get('url_template'),
+                            'pr_start_year': c.get('pr_start_year'),
+                            'skip_reason':   c.get('skip_reason'),
+                            'sandbox_note':  c.get('sandbox_note'),
+                            'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
+                            'sector':        c.get('sector', 'BTC-miners'),
+                        },
+                    )
+                    added += 1
+                else:
+                    # Existing company — update config fields only, preserve operational state
+                    conn.execute(
+                        """UPDATE companies SET
+                           name=:name, tier=:tier, ir_url=:ir_url, pr_base_url=:pr_base_url,
+                           cik=:cik, active=:active,
+                           rss_url=:rss_url, url_template=:url_template,
+                           pr_start_year=:pr_start_year, skip_reason=:skip_reason,
+                           sandbox_note=:sandbox_note,
+                           scraper_mode=:scraper_mode, sector=:sector
+                           WHERE ticker=:ticker""",
+                        {
+                            'ticker':        ticker,
+                            'name':          c.get('name', ticker),
+                            'tier':          int(c.get('tier', 2)),
+                            'ir_url':        c.get('ir_url') or '',
+                            'pr_base_url':   c.get('pr_base_url'),
+                            'cik':           c.get('cik'),
+                            'active':        1 if c.get('active', True) else 0,
+                            'rss_url':       c.get('rss_url'),
+                            'url_template':  c.get('url_template'),
+                            'pr_start_year': c.get('pr_start_year'),
+                            'skip_reason':   c.get('skip_reason'),
+                            'sandbox_note':  c.get('sandbox_note'),
+                            'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
+                            'sector':        c.get('sector', 'BTC-miners'),
+                        },
+                    )
+                    updated += 1
+
+        log.info("sync_companies_from_config: %d added, %d updated from %s", added, updated, config_path)
+        return {'added': added, 'updated': updated}
 
     def insert_company(self, company: dict) -> None:
         with self._get_connection() as conn:
@@ -480,10 +729,11 @@ class MinerDB:
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT INTO reports
-                   (ticker, report_date, published_date, source_type, source_url, raw_text, parsed_at)
+                   (ticker, report_date, published_date, source_type, source_url, raw_text,
+                    parsed_at, covering_period)
                    VALUES (:ticker, :report_date, :published_date, :source_type,
-                           :source_url, :raw_text, :parsed_at)""",
-                report,
+                           :source_url, :raw_text, :parsed_at, :covering_period)""",
+                {**report, 'covering_period': report.get('covering_period')},
             )
             return cursor.lastrowid
 
@@ -531,13 +781,23 @@ class MinerDB:
                 (datetime.utcnow().isoformat(), report_id),
             )
 
-    def get_unextracted_reports(self, ticker: Optional[str] = None) -> list:
-        """Return reports with raw_text that have not yet been through the extraction pipeline."""
+    def get_unextracted_reports(
+        self,
+        ticker: Optional[str] = None,
+        source_type: Optional[str] = None,
+    ) -> list:
+        """Return reports with raw_text that have not yet been through the extraction pipeline.
+
+        Optionally filter by ticker and/or source_type (e.g. 'edgar_10q').
+        """
         clauses = ["raw_text IS NOT NULL", "raw_text != ''", "extracted_at IS NULL"]
         params: list = []
         if ticker:
             clauses.append("ticker = ?")
             params.append(ticker)
+        if source_type:
+            clauses.append("source_type = ?")
+            params.append(source_type)
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -545,6 +805,125 @@ class MinerDB:
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_quarterly_data_point(
+        self, ticker: str, covering_period: str, metric: str
+    ) -> Optional[dict]:
+        """Return a data_point with source_period_type IN ('quarterly','annual') for the
+        given covering_period (e.g. '2025-Q1' or '2024-FY'), or None if not found."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT * FROM data_points
+                   WHERE ticker = ? AND period = ? AND metric = ?
+                   AND source_period_type IN ('quarterly', 'annual')
+                   LIMIT 1""",
+                (ticker, covering_period, metric),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def upsert_data_point_quarterly(self, dp: dict) -> int:
+        """Insert or replace a quarterly/annual data_point.
+
+        dp must include source_period_type ('quarterly'|'annual'),
+        covering_period (e.g. '2025-Q1'), and covering_report_id.
+        The UNIQUE key is (ticker, period, metric) — quarterly rows use
+        covering_period as the period value (e.g. '2025-Q1').
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT OR REPLACE INTO data_points
+                   (report_id, ticker, period, metric, value, unit, confidence,
+                    extraction_method, source_snippet,
+                    source_period_type, covering_report_id, covering_period)
+                   VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
+                           :confidence, :extraction_method, :source_snippet,
+                           :source_period_type, :covering_report_id, :covering_period)""",
+                {
+                    'report_id':         dp.get('report_id'),
+                    'ticker':            dp['ticker'],
+                    'period':            dp['period'],
+                    'metric':            dp['metric'],
+                    'value':             dp['value'],
+                    'unit':              dp.get('unit', ''),
+                    'confidence':        dp['confidence'],
+                    'extraction_method': dp.get('extraction_method'),
+                    'source_snippet':    dp.get('source_snippet'),
+                    'source_period_type': dp.get('source_period_type', 'quarterly'),
+                    'covering_report_id': dp.get('covering_report_id'),
+                    'covering_period':   dp.get('covering_period'),
+                },
+            )
+            return cursor.lastrowid
+
+    def get_reports_by_source_type(self, ticker: str, source_type: str) -> list:
+        """Return all reports for a ticker with the given source_type, ordered by report_date."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM reports
+                   WHERE ticker = ? AND source_type = ?
+                   ORDER BY report_date ASC""",
+                (ticker, source_type),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_company_last_edgar(self, ticker: str) -> None:
+        """Set last_edgar_at to current UTC time for a company."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE companies SET last_edgar_at = ? WHERE ticker = ?",
+                (datetime.utcnow().isoformat(), ticker),
+            )
+
+    def get_data_point_value(self, ticker: str, period: str, metric: str) -> Optional[float]:
+        """Return the value of a data_point for the given ticker/period/metric, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT value FROM data_points WHERE ticker=? AND period=? AND metric=?",
+                (ticker, period, metric),
+            ).fetchone()
+            return float(row[0]) if row else None
+
+    def get_data_point_by_key(self, ticker: str, period: str, metric: str) -> Optional[dict]:
+        """Return the full data_point row for the given ticker/period/metric, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM data_points WHERE ticker=? AND period=? AND metric=?",
+                (ticker, period, metric),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_all_quarterly_data_points(self, ticker: Optional[str] = None) -> list:
+        """Return all data_points with source_period_type != 'monthly'."""
+        clauses = ["source_period_type != 'monthly'"]
+        params: list = []
+        if ticker:
+            clauses.append("ticker = ?")
+            params.append(ticker)
+        where = "WHERE " + " AND ".join(clauses)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM data_points {where} ORDER BY ticker, period, metric",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_regime_cadence_for_period(self, ticker: str, period: str) -> str:
+        """Return the cadence ('monthly' or 'quarterly') for a ticker at a given period.
+
+        Looks up regime_config for the ticker where start_date <= period and
+        (end_date IS NULL or end_date >= period). Returns 'monthly' if no match.
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT cadence FROM regime_config
+                   WHERE ticker = ?
+                   AND start_date <= ?
+                   AND (end_date IS NULL OR end_date >= ?)
+                   ORDER BY start_date DESC
+                   LIMIT 1""",
+                (ticker, period, period),
+            ).fetchone()
+            return row[0] if row else 'monthly'
 
     def get_all_reports_for_extraction(self, ticker: Optional[str] = None) -> list:
         """Return all reports with raw_text regardless of extracted_at (for --force re-extraction)."""
@@ -583,9 +962,43 @@ class MinerDB:
             ).fetchone()
             return row is not None
 
+    def update_report_raw_text(
+        self, report_id: int, raw_text: str, source_url: str = None
+    ) -> None:
+        """Update raw_text (and optionally source_url) for an existing report."""
+        with self._get_connection() as conn:
+            if source_url is not None:
+                conn.execute(
+                    "UPDATE reports SET raw_text=?, source_url=?, parsed_at=? WHERE id=?",
+                    (raw_text, source_url, datetime.utcnow().isoformat(), report_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE reports SET raw_text=?, parsed_at=? WHERE id=?",
+                    (raw_text, datetime.utcnow().isoformat(), report_id),
+                )
+
+    def get_stale_8k_reports(self, ticker: str = None) -> list:
+        """Return edgar_8k reports where raw_text is the EDGAR index page boilerplate."""
+        with self._get_connection() as conn:
+            if ticker:
+                rows = conn.execute(
+                    "SELECT id, ticker, report_date, source_url FROM reports "
+                    "WHERE source_type='edgar_8k' AND ticker=? "
+                    "AND raw_text LIKE 'EDGAR Filing Documents%'",
+                    (ticker,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, ticker, report_date, source_url FROM reports "
+                    "WHERE source_type='edgar_8k' "
+                    "AND raw_text LIKE 'EDGAR Filing Documents%'"
+                ).fetchall()
+            return [dict(r) for r in rows]
+
     def delete_report(self, ticker: str, report_date: str, source_type: str) -> int:
         """
-        Delete a report and all its associated data_points and review_queue items.
+        Delete a report and all dependent rows that reference it.
         Returns the number of reports deleted (0 or 1).
         Used by force-reingest to clear stale records before re-processing.
         """
@@ -607,7 +1020,10 @@ class MinerDB:
                 conn.execute(
                     "DELETE FROM review_queue WHERE ticker=? AND period=?", (ticker, p)
                 )
+            conn.execute("UPDATE asset_manifest SET report_id=NULL WHERE report_id=?", (report_id,))
+            conn.execute("DELETE FROM raw_extractions WHERE report_id=?", (report_id,))
             conn.execute("DELETE FROM data_points WHERE report_id=?", (report_id,))
+            conn.execute("DELETE FROM document_chunks WHERE report_id=?", (report_id,))
             conn.execute("DELETE FROM reports WHERE id=?", (report_id,))
             return 1
 
@@ -672,6 +1088,168 @@ class MinerDB:
     def count_data_points(self) -> int:
         with self._get_connection() as conn:
             return conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0]
+
+    def purge_data_points(self, ticker: Optional[str] = None) -> int:
+        """Delete all data_points (or for one ticker). Returns row count deleted.
+
+        Also resets reports.extracted_at = NULL for the affected ticker(s) so
+        reports can be re-extracted without the --force flag.
+        """
+        with self._get_connection() as conn:
+            if ticker:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM data_points WHERE ticker = ?", (ticker,)
+                ).fetchone()[0]
+                conn.execute("DELETE FROM data_points WHERE ticker = ?", (ticker,))
+                conn.execute(
+                    "UPDATE reports SET extracted_at = NULL WHERE ticker = ?", (ticker,)
+                )
+            else:
+                count = conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0]
+                conn.execute("DELETE FROM data_points")
+                conn.execute("UPDATE reports SET extracted_at = NULL")
+        log.info("purge_data_points: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
+        return count
+
+    def purge_review_queue(self, ticker: Optional[str] = None) -> int:
+        """Delete all review_queue rows (or for one ticker). Returns row count deleted."""
+        with self._get_connection() as conn:
+            if ticker:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM review_queue WHERE ticker = ?", (ticker,)
+                ).fetchone()[0]
+                conn.execute("DELETE FROM review_queue WHERE ticker = ?", (ticker,))
+            else:
+                count = conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+                conn.execute("DELETE FROM review_queue")
+        log.info("purge_review_queue: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
+        return count
+
+    def purge_all(self, ticker: Optional[str] = None) -> dict:
+        """Delete all operational data and reset company scraper state.
+
+        FK-safe deletion order (enforced because PRAGMA foreign_keys = ON):
+          review_queue      — child of data_points (must precede data_points)
+          raw_extractions   — child of reports
+          data_points       — child of reports AND document_chunks
+                              (must precede document_chunks)
+          document_chunks   — child of reports (must follow data_points)
+          asset_manifest    — child of reports and companies
+          reports           — child of companies
+          scrape_queue      — child of companies
+          btc_loans, facilities, source_audit, llm_benchmark_runs — no FK deps
+
+        Then resets companies operational fields back to their initial state
+        so the companies list reflects a never-scraped baseline.
+
+        Config tables are NOT touched:
+          companies (rows kept, operational fields reset), regime_config,
+          llm_prompts, llm_ticker_hints, metric_schema, config_settings,
+          patterns, metric_rules.
+
+        Args:
+            ticker: if given, scope the purge to that ticker only.
+
+        Returns:
+            dict with row counts deleted per table.
+        """
+        counts: dict = {}
+        with self._get_connection() as conn:
+            def _del(table: str, where: str = '', params: tuple = ()) -> int:
+                sql = f"SELECT COUNT(*) FROM {table}"
+                if where:
+                    sql += f" WHERE {where}"
+                n = conn.execute(sql, params).fetchone()[0]
+                sql = f"DELETE FROM {table}"
+                if where:
+                    sql += f" WHERE {where}"
+                conn.execute(sql, params)
+                return n
+
+            if ticker:
+                t = ticker
+                # review_queue before data_points (FK: review_queue.data_point_id → data_points)
+                counts['review_queue'] = _del('review_queue', 'ticker = ?', (t,))
+                # raw_extractions before reports
+                counts['raw_extractions'] = _del('raw_extractions', 'ticker = ?', (t,))
+                # data_points before document_chunks (FK: data_points.chunk_id → document_chunks)
+                counts['data_points'] = _del('data_points', 'ticker = ?', (t,))
+                # document_chunks after data_points, before reports
+                counts['document_chunks'] = conn.execute(
+                    "SELECT COUNT(*) FROM document_chunks WHERE report_id IN "
+                    "(SELECT id FROM reports WHERE ticker = ?)", (t,)
+                ).fetchone()[0]
+                conn.execute(
+                    "DELETE FROM document_chunks WHERE report_id IN "
+                    "(SELECT id FROM reports WHERE ticker = ?)", (t,)
+                )
+                # asset_manifest before reports
+                counts['asset_manifest'] = _del('asset_manifest', 'ticker = ?', (t,))
+                counts['reports'] = _del('reports', 'ticker = ?', (t,))
+                counts['scrape_queue'] = _del('scrape_queue', 'ticker = ?', (t,))
+                counts['btc_loans'] = _del('btc_loans', 'ticker = ?', (t,))
+                counts['facilities'] = _del('facilities', 'ticker = ?', (t,))
+                counts['source_audit'] = _del('source_audit', 'ticker = ?', (t,))
+                counts['llm_benchmark_runs'] = _del('llm_benchmark_runs', 'ticker = ?', (t,))
+                # Reset operational fields on the company row
+                conn.execute(
+                    """UPDATE companies
+                       SET scraper_status = 'never_run',
+                           last_scrape_at = NULL,
+                           last_scrape_error = NULL,
+                           probe_completed_at = NULL,
+                           scraper_issues_log = ''
+                       WHERE ticker = ?""",
+                    (t,),
+                )
+            else:
+                # review_queue before data_points
+                counts['review_queue'] = _del('review_queue')
+                # raw_extractions before reports
+                counts['raw_extractions'] = _del('raw_extractions')
+                # data_points before document_chunks
+                counts['data_points'] = _del('data_points')
+                # document_chunks after data_points, before reports
+                counts['document_chunks'] = _del('document_chunks')
+                counts['asset_manifest'] = _del('asset_manifest')
+                counts['reports'] = _del('reports')
+                counts['scrape_queue'] = _del('scrape_queue')
+                counts['btc_loans'] = _del('btc_loans')
+                counts['facilities'] = _del('facilities')
+                counts['source_audit'] = _del('source_audit')
+                counts['llm_benchmark_runs'] = _del('llm_benchmark_runs')
+                # Reset operational fields on all companies
+                conn.execute(
+                    """UPDATE companies
+                       SET scraper_status = 'never_run',
+                           last_scrape_at = NULL,
+                           last_scrape_error = NULL,
+                           probe_completed_at = NULL,
+                           scraper_issues_log = ''"""
+                )
+
+        log.info("purge_all: %s (ticker=%s)", counts, ticker or 'ALL')
+        return counts
+
+    def get_trailing_data_points(
+        self, ticker: str, metric: str, before_period: str, limit: int = 3
+    ) -> list:
+        """Return up to `limit` monthly data_points for (ticker, metric) with
+        period < before_period, ordered DESC by period.
+
+        Used by outlier detection to compute a trailing average.
+        Only returns source_period_type='monthly' rows.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT period, value, source_period_type FROM data_points
+                   WHERE ticker = ? AND metric = ? AND period < ?
+                   AND (source_period_type IS NULL OR source_period_type = 'monthly')
+                   ORDER BY period DESC
+                   LIMIT ?""",
+                (ticker, metric, before_period, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def query_data_points_for_export(
         self,
@@ -766,14 +1344,32 @@ class MinerDB:
             return dict(row) if row else None
 
     def get_review_items(
-        self, status: Optional[str] = None, limit: int = 50, offset: int = 0
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        ticker: Optional[str] = None,
+        period: Optional[str] = None,
+        metric: Optional[str] = None,
     ) -> list:
+        conditions = []
+        params: list = []
         if status:
-            sql = "SELECT * FROM review_queue WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params = [status, limit, offset]
-        else:
-            sql = "SELECT * FROM review_queue ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params = [limit, offset]
+            conditions.append("status = ?")
+            params.append(status)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(ticker)
+        if period:
+            # Accept YYYY-MM or YYYY-MM-DD; match by year-month prefix
+            conditions.append("period LIKE ?")
+            params.append(period[:7] + '%')
+        if metric:
+            conditions.append("metric = ?")
+            params.append(metric)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        sql = f"SELECT * FROM review_queue {where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params += [limit, offset]
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
@@ -1022,6 +1618,45 @@ class MinerDB:
                 m = 1
                 y += 1
         return gaps
+
+    # ── Metric Rules CRUD ─────────────────────────────────────────────────────
+
+    def get_metric_rules(self, metric: Optional[str] = None) -> list:
+        """Return all metric_rules rows, or a single row if metric is specified."""
+        with self._get_connection() as conn:
+            if metric:
+                row = conn.execute(
+                    "SELECT * FROM metric_rules WHERE metric = ?", (metric,)
+                ).fetchone()
+                return [dict(row)] if row else []
+            rows = conn.execute(
+                "SELECT * FROM metric_rules ORDER BY metric"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def upsert_metric_rule(
+        self,
+        metric: str,
+        agreement_threshold: float,
+        outlier_threshold: float,
+        outlier_min_history: int,
+        enabled: int = 1,
+        notes: Optional[str] = None,
+    ) -> dict:
+        """Insert or replace a metric_rules row. Returns the updated row."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO metric_rules
+                   (metric, agreement_threshold, outlier_threshold,
+                    outlier_min_history, enabled, notes, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (metric, agreement_threshold, outlier_threshold,
+                 outlier_min_history, enabled, notes),
+            )
+            row = conn.execute(
+                "SELECT * FROM metric_rules WHERE metric = ?", (metric,)
+            ).fetchone()
+            return dict(row)
 
     def get_snippets(self, limit: int = 2000) -> list:
         """Return source snippets from data_points and review_queue for keyword analysis."""
@@ -1769,6 +2404,100 @@ class MinerDB:
                  sector, scraper_mode, scraper_issues_log),
             )
         return self.get_company(ticker)
+
+    # ── raw_extractions CRUD ──────────────────────────────────────────────────
+
+    def upsert_raw_extraction(self, rex: dict) -> int:
+        """Insert or replace a raw_extraction row.
+
+        rex keys: report_id, ticker, period, metric_key, category, value,
+                  value_text, unit, description, raw_json, confidence,
+                  source_snippet, extraction_method.
+        UNIQUE constraint on (report_id, metric_key) — last writer wins.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT OR REPLACE INTO raw_extractions
+                   (report_id, ticker, period, metric_key, category, value,
+                    value_text, unit, description, raw_json, confidence,
+                    source_snippet, extraction_method)
+                   VALUES (:report_id, :ticker, :period, :metric_key, :category,
+                           :value, :value_text, :unit, :description, :raw_json,
+                           :confidence, :source_snippet, :extraction_method)""",
+                {
+                    'report_id':         rex['report_id'],
+                    'ticker':            rex['ticker'],
+                    'period':            rex['period'],
+                    'metric_key':        rex['metric_key'],
+                    'category':          rex.get('category', 'unknown'),
+                    'value':             rex.get('value'),
+                    'value_text':        rex.get('value_text', str(rex.get('value', ''))),
+                    'unit':              rex.get('unit'),
+                    'description':       rex.get('description'),
+                    'raw_json':          rex.get('raw_json'),
+                    'confidence':        rex.get('confidence', 0.0),
+                    'source_snippet':    rex.get('source_snippet'),
+                    'extraction_method': rex.get('extraction_method', 'llm_broad'),
+                },
+            )
+            return cursor.lastrowid
+
+    def get_raw_extractions(
+        self,
+        ticker: Optional[str] = None,
+        period: Optional[str] = None,
+        category: Optional[str] = None,
+        metric_key: Optional[str] = None,
+    ) -> list:
+        """Return raw_extraction rows with optional filters."""
+        clauses, params = [], []
+        if ticker:
+            clauses.append("ticker = ?"); params.append(ticker)
+        if period:
+            clauses.append("period = ?"); params.append(period)
+        if category:
+            clauses.append("category = ?"); params.append(category)
+        if metric_key:
+            clauses.append("metric_key = ?"); params.append(metric_key)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM raw_extractions {where} ORDER BY ticker, period, metric_key",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_raw_extraction_count(self, ticker: Optional[str] = None) -> int:
+        """Return count of raw_extraction rows, optionally filtered by ticker."""
+        params = []
+        where = ""
+        if ticker:
+            where = "WHERE ticker = ?"
+            params.append(ticker)
+        with self._get_connection() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM raw_extractions {where}", params
+            ).fetchone()
+            return row[0]
+
+    def get_reports_without_broad_extraction(self, ticker: Optional[str] = None) -> list:
+        """Return reports that have raw_text but no rows in raw_extractions yet."""
+        clauses = ["r.raw_text IS NOT NULL", "r.raw_text != ''"]
+        params = []
+        if ticker:
+            clauses.append("r.ticker = ?")
+            params.append(ticker)
+        where = "WHERE " + " AND ".join(clauses)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"""SELECT r.* FROM reports r
+                    LEFT JOIN raw_extractions rex ON rex.report_id = r.id
+                    {where}
+                    AND rex.id IS NULL
+                    ORDER BY r.ticker, r.report_date""",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
 
 
 def _metric_unit(metric: str) -> str:

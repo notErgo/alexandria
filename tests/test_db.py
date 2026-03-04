@@ -28,6 +28,9 @@ class TestSchema:
 
 class TestCompanyCRUD:
     def test_insert_and_retrieve_company(self, db):
+        # MARA is pre-seeded by sync_companies_from_config on DB init.
+        # insert_company is idempotent (INSERT OR IGNORE) — the call
+        # below is a no-op but the row still exists with the canonical name.
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
             'ir_url': 'https://example.com', 'pr_base_url': None,
@@ -35,7 +38,8 @@ class TestCompanyCRUD:
         })
         result = db.get_company('MARA')
         assert result is not None
-        assert result['name'] == 'MARA Holdings'
+        # Canonical name comes from companies.json sync, not the insert above.
+        assert result['ticker'] == 'MARA'
 
     def test_get_company_returns_none_for_unknown(self, db):
         assert db.get_company('UNKNOWN') is None
@@ -263,11 +267,237 @@ class TestCompanyScraperFields:
         assert company['sector'] == 'BTC-miners'
 
     def test_add_company_creates_new_row(self, db):
+        # Use a test-only ticker not present in companies.json so sync_companies_from_config
+        # does not pre-populate it, allowing add_company to create a new row.
         db.add_company(
-            ticker='RIOT', name='Riot Platforms', tier=1,
-            ir_url='https://www.riotplatforms.com/news',
+            ticker='TESTX', name='Test Company', tier=2,
+            ir_url='https://example.com/ir',
             sector='BTC-miners', scraper_mode='skip',
         )
-        company = db.get_company('RIOT')
+        company = db.get_company('TESTX')
         assert company is not None
-        assert company['ticker'] == 'RIOT'
+        assert company['ticker'] == 'TESTX'
+
+
+# ── Phase 1: Purge and trailing data point methods ───────────────────────────
+
+class TestPurgeDataPoints:
+
+    def test_purge_data_points_all(self, db_with_company):
+        """Insert 3 data_points, purge all, count == 0."""
+        db_with_company.insert_data_point(make_data_point(period='2024-07-01', value=600.0))
+        db_with_company.insert_data_point(make_data_point(period='2024-08-01', value=650.0))
+        db_with_company.insert_data_point(make_data_point(period='2024-09-01', value=700.0))
+        assert db_with_company.count_data_points() == 3
+
+        deleted = db_with_company.purge_data_points()
+        assert deleted == 3
+        assert db_with_company.count_data_points() == 0
+
+    def test_purge_data_points_by_ticker(self, db):
+        """Insert MARA + RIOT rows, purge MARA only, RIOT survives."""
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_company({'ticker': 'RIOT', 'name': 'Riot Platforms', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_data_point(make_data_point(ticker='MARA', period='2024-09-01'))
+        db.insert_data_point(make_data_point(ticker='RIOT', period='2024-09-01'))
+        assert db.count_data_points() == 2
+
+        deleted = db.purge_data_points(ticker='MARA')
+        assert deleted == 1
+        remaining = db.query_data_points()
+        assert len(remaining) == 1
+        assert remaining[0]['ticker'] == 'RIOT'
+
+    def test_purge_resets_extracted_at(self, db_with_company):
+        """After purge, reports.extracted_at is set back to NULL."""
+        report_id = db_with_company.insert_report(make_report())
+        db_with_company.mark_report_extracted(report_id)
+        report = db_with_company.get_report(report_id)
+        assert report['extracted_at'] is not None
+
+        db_with_company.purge_data_points(ticker='MARA')
+        report = db_with_company.get_report(report_id)
+        assert report['extracted_at'] is None
+
+    def test_purge_review_queue_all(self, db_with_company):
+        """Insert 2 review items, purge all, count == 0."""
+        db_with_company.insert_review_item(make_review_item(period='2024-08-01'))
+        db_with_company.insert_review_item(make_review_item(period='2024-09-01'))
+        assert db_with_company.count_review_items(status=None) == 2
+
+        deleted = db_with_company.purge_review_queue()
+        assert deleted == 2
+        assert db_with_company.count_review_items(status=None) == 0
+
+    def test_purge_review_queue_by_ticker(self, db):
+        """Purge review_queue rows for one ticker only."""
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_company({'ticker': 'RIOT', 'name': 'Riot Platforms', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_review_item(make_review_item(ticker='MARA'))
+        db.insert_review_item(make_review_item(ticker='RIOT'))
+        assert db.count_review_items(status=None) == 2
+
+        deleted = db.purge_review_queue(ticker='MARA')
+        assert deleted == 1
+        remaining = db.get_review_items()
+        assert len(remaining) == 1
+        assert remaining[0]['ticker'] == 'RIOT'
+
+
+class TestPurgeAll:
+
+    def test_purge_all_clears_reports_and_data_points(self, db_with_company):
+        """purge_all removes reports and data_points, returns non-zero counts."""
+        report_id = db_with_company.insert_report(make_report(raw_text='MARA mined 750 BTC.'))
+        db_with_company.insert_data_point(make_data_point(period='2024-09-01'))
+        db_with_company.insert_review_item(make_review_item(period='2024-09-01'))
+
+        counts = db_with_company.purge_all()
+
+        assert counts['reports'] == 1
+        assert counts['data_points'] == 1
+        assert counts['review_queue'] == 1
+
+        # Verify tables are empty
+        with db_with_company._get_connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0] == 0
+
+    def test_purge_all_resets_company_scraper_fields(self, db_with_company):
+        """purge_all resets operational scraper fields on companies to initial state."""
+        db_with_company.update_company_scraper_fields(
+            'MARA', scraper_status='ok', last_scrape_at='2025-01-01T00:00:00'
+        )
+        company_before = db_with_company.get_company('MARA')
+        assert company_before['scraper_status'] == 'ok'
+        assert company_before['last_scrape_at'] == '2025-01-01T00:00:00'
+
+        db_with_company.purge_all()
+
+        company_after = db_with_company.get_company('MARA')
+        assert company_after['scraper_status'] == 'never_run'
+        assert company_after['last_scrape_at'] is None
+        assert company_after['last_scrape_error'] is None
+
+    def test_purge_all_preserves_company_rows(self, db_with_company):
+        """purge_all keeps company config rows — only operational fields are reset."""
+        db_with_company.purge_all()
+        company = db_with_company.get_company('MARA')
+        assert company is not None
+        assert company['ticker'] == 'MARA'
+
+    def test_purge_all_by_ticker_scopes_deletion(self, db):
+        """purge_all(ticker=X) deletes only X rows; other tickers survive."""
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_company({'ticker': 'RIOT', 'name': 'Riot Platforms', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_report(make_report(ticker='MARA'))
+        db.insert_report(make_report(ticker='RIOT'))
+
+        counts = db.purge_all(ticker='MARA')
+
+        assert counts['reports'] == 1
+        with db._get_connection() as conn:
+            remaining = conn.execute("SELECT ticker FROM reports").fetchall()
+        assert [r[0] for r in remaining] == ['RIOT']
+
+    def test_purge_all_with_chunk_id_fk(self, db_with_company):
+        """purge_all succeeds when data_points.chunk_id references document_chunks.
+
+        Regression: original code deleted document_chunks before data_points,
+        causing a FK constraint error (PRAGMA foreign_keys = ON) and a silent
+        full rollback when any data_point had a non-NULL chunk_id.
+        """
+        report_id = db_with_company.insert_report(make_report(raw_text='MARA mined 750 BTC.'))
+        # Insert a document_chunk
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO document_chunks(report_id, chunk_index, text) VALUES (?, 0, 'chunk text')",
+                (report_id,)
+            )
+            chunk_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        # Insert a data_point that references the chunk
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO data_points
+                   (ticker, period, metric, value, unit, confidence, chunk_id)
+                   VALUES ('MARA', '2024-09-01', 'production_btc', 750.0, 'BTC', 0.9, ?)""",
+                (chunk_id,)
+            )
+
+        # Must not raise — FK-safe order: data_points deleted before document_chunks
+        counts = db_with_company.purge_all()
+
+        assert counts['data_points'] == 1
+        assert counts['document_chunks'] == 1
+        assert counts['reports'] == 1
+        with db_with_company._get_connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+
+
+class TestGetTrailingDataPoints:
+
+    def test_returns_desc_sorted_rows(self, db_with_company):
+        """get_trailing_data_points returns rows in DESC period order."""
+        for period, value in [
+            ('2024-07-01', 600.0),
+            ('2024-08-01', 650.0),
+            ('2024-09-01', 700.0),
+        ]:
+            db_with_company.insert_data_point(
+                make_data_point(period=period, value=value)
+            )
+        # before_period is 2024-10-01, so all 3 qualify
+        rows = db_with_company.get_trailing_data_points('MARA', 'production_btc', '2024-10-01', limit=3)
+        assert len(rows) == 3
+        periods = [r['period'] for r in rows]
+        assert periods == sorted(periods, reverse=True)
+
+    def test_filters_by_before_period(self, db_with_company):
+        """Only rows with period < before_period are returned."""
+        for period, value in [
+            ('2024-07-01', 600.0),
+            ('2024-08-01', 650.0),
+            ('2024-09-01', 700.0),
+        ]:
+            db_with_company.insert_data_point(
+                make_data_point(period=period, value=value)
+            )
+        # before_period = 2024-09-01 should exclude 2024-09-01 and later
+        rows = db_with_company.get_trailing_data_points('MARA', 'production_btc', '2024-09-01', limit=3)
+        assert all(r['period'] < '2024-09-01' for r in rows)
+        assert len(rows) == 2
+
+    def test_respects_limit(self, db_with_company):
+        """Limit parameter caps returned rows."""
+        for i in range(5):
+            db_with_company.insert_data_point(
+                make_data_point(
+                    period=f'2024-0{i+1}-01' if i < 9 else f'2024-{i+1}-01',
+                    value=float(600 + i * 10),
+                    metric='production_btc',
+                )
+            )
+        rows = db_with_company.get_trailing_data_points('MARA', 'production_btc', '2025-01-01', limit=3)
+        assert len(rows) == 3
+
+    def test_returns_only_monthly_rows(self, db_with_company):
+        """Only source_period_type='monthly' rows are returned."""
+        db_with_company.insert_data_point(make_data_point(period='2024-08-01', value=650.0))
+        # Insert a quarterly row
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO data_points
+                   (ticker, period, metric, value, unit, confidence, extraction_method, source_period_type)
+                   VALUES ('MARA', '2024-Q3', 'production_btc', 1950.0, 'BTC', 0.9, 'llm', 'quarterly')"""
+            )
+        rows = db_with_company.get_trailing_data_points('MARA', 'production_btc', '2025-01-01', limit=10)
+        assert all(r.get('source_period_type', 'monthly') == 'monthly' for r in rows)
+        assert not any(r['period'] == '2024-Q3' for r in rows)

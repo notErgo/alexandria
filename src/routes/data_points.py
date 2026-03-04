@@ -228,3 +228,56 @@ def scorecard():
             'metrics': metrics,
         })
     return jsonify({'success': True, 'data': result})
+
+
+@bp.route('/api/data/purge', methods=['POST'])
+def purge_data():
+    """Delete all operational data (full reset to null state).
+
+    Clears reports, data_points, review_queue, scrape_queue, asset_manifest,
+    document_chunks, raw_extractions, btc_loans, facilities, source_audit, and
+    llm_benchmark_runs. Resets company scraper operational fields to never_run.
+    Config tables (regime_config, llm_prompts, metric_rules, etc.) are preserved.
+
+    Body (JSON):
+        confirm (bool, required): must be true to proceed
+        ticker  (str, optional): limit purge to one ticker
+
+    Returns:
+        {"success": true, "data": {"counts": {...}, "ticker": "ALL"}}
+    """
+    from app_globals import get_db
+    body = request.get_json(silent=True) or {}
+
+    if not body.get('confirm'):
+        return jsonify({'success': False, 'error': {
+            'code': 'CONFIRM_REQUIRED',
+            'message': 'Request body must include {"confirm": true}',
+        }}), 400
+
+    ticker = body.get('ticker')
+    if ticker:
+        ticker = str(ticker).strip().upper()
+        if not ticker:
+            ticker = None
+
+    db = get_db()
+
+    if ticker and not db.get_company(ticker):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER',
+            'message': f'Ticker {ticker!r} not recognized',
+        }}), 400
+
+    try:
+        counts = db.purge_all(ticker=ticker)
+    except Exception as e:
+        log.error("Purge failed: %s", e, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'PURGE_ERROR', 'message': 'Internal error during purge',
+        }}), 500
+
+    return jsonify({'success': True, 'data': {
+        'counts': counts,
+        'ticker': ticker or 'ALL',
+    }})

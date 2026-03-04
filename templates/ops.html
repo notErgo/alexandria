@@ -57,6 +57,10 @@
 /* Registry tab */
 .registry-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .registry-filters select, .registry-filters input { font-size: 0.8rem; padding: 4px 8px; }
+
+/* Danger zone */
+.btn-danger { background: var(--theme-danger); color: #fff; border: none; }
+.btn-danger:hover { opacity: 0.88; }
 </style>
 {% endblock %}
 
@@ -67,7 +71,8 @@
   <button class="ops-tab" data-pane="companies">Companies</button>
   <button class="ops-tab" data-pane="registry">Registry</button>
   <button class="ops-tab" data-pane="explorer">Explorer</button>
-  <button class="ops-tab" data-pane="review">Review Queue <span id="ops-review-count" style="display:none"></span></button>
+  <button class="ops-tab" data-pane="rules">Metric Rules</button>
+  <a class="ops-tab" href="/review" style="text-decoration:none">Review Queue <span id="ops-review-count" style="display:none"></span></a>
 </div>
 
 <!-- ── Companies tab ──────────────────────────────────────────────────── -->
@@ -75,6 +80,7 @@
   <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
     <h2 style="margin:0;font-size:1rem">Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
+    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
@@ -113,10 +119,10 @@
       <tr>
         <th data-sort="ticker">Ticker</th>
         <th data-sort="name">Name</th>
-        <th>Scraper Mode</th>
+        <th>Mode</th>
+        <th>IR / Feed URLs</th>
         <th>Status</th>
         <th>Last Scrape</th>
-        <th>Regime</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -177,6 +183,29 @@
         <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <!-- Danger Zone ──────────────────────────────────────────────────────── -->
+  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px">
+    <h3 style="font-size:0.85rem;margin:0 0 0.6rem;color:var(--theme-danger)">Danger Zone</h3>
+    <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+      Purge deletes all operational data: reports, data_points, review_queue,
+      scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans,
+      facilities, and source_audit. Company scraper state is reset to never_run.
+      Config is preserved (regime windows, LLM prompts, metric rules, patterns).
+    </p>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+      <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
+      <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
+             style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">PURGE</code>&nbsp;to confirm:</label>
+      <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
+             style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+      <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
+      <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
   </div>
 </div>
 
@@ -300,41 +329,44 @@
   </div>
 </div>
 
-<!-- ── Review tab ─────────────────────────────────────────────────────── -->
+<!-- ── Review tab — redirects to full review page ──────────────────── -->
 <div class="ops-pane" id="pane-review">
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
-    <span style="font-size:0.78rem;color:var(--theme-text-muted)">
-      <kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> approve · <kbd>R</kbd> focus reject
-    </span>
-    <select id="rv-status">
-      <option value="PENDING">Pending</option>
-      <option value="APPROVED">Approved</option>
-      <option value="REJECTED">Rejected</option>
-      <option value="">All</option>
-    </select>
-    <input id="rv-ticker" type="text" maxlength="10" placeholder="Ticker" style="width:80px">
-    <button class="btn btn-sm btn-primary" onclick="loadReview()">Search</button>
-    <button class="btn btn-sm btn-secondary" onclick="bulkApprove()" id="rv-bulk-approve" disabled>Approve Selected</button>
-    <span id="rv-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  <div style="padding:2rem;text-align:center;color:var(--theme-text-secondary)">
+    <p style="margin-bottom:1rem">The full Review Queue interface (document viewer, LLM vs regex comparison, re-extract from selection) is available at the dedicated review page.</p>
+    <a href="/review" class="btn btn-primary">Open Review Queue</a>
   </div>
-  <table id="review-table">
+</div>
+
+<!-- ── Metric Rules pane ───────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-rules">
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+    <h2 style="margin:0;font-size:1rem">Metric Rules</h2>
+    <span style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:0.5rem">
+      Per-metric LLM/regex agreement and outlier detection thresholds
+    </span>
+    <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
+  </div>
+  <table id="rules-table" style="width:100%;font-size:0.82rem">
     <thead>
       <tr>
-        <th><input type="checkbox" id="rv-select-all" onclick="toggleSelectAll()"></th>
-        <th data-sort="ticker">Ticker</th>
-        <th data-sort="period">Period</th>
-        <th data-sort="metric">Metric</th>
-        <th data-sort="regex_value" data-sort-type="num">Regex</th>
-        <th data-sort="llm_value" data-sort-type="num">LLM</th>
-        <th>Agreement</th>
-        <th>Status</th>
-        <th>Actions</th>
+        <th data-sort="metric" style="text-align:left">Metric</th>
+        <th data-sort="agreement_threshold" data-sort-type="num" style="text-align:left">Agreement Threshold</th>
+        <th data-sort="outlier_threshold" data-sort-type="num" style="text-align:left">Outlier Threshold</th>
+        <th data-sort="outlier_min_history" data-sort-type="num" style="text-align:left">Min History</th>
+        <th style="text-align:left">Enabled</th>
+        <th style="text-align:left">Action</th>
       </tr>
     </thead>
-    <tbody id="review-tbody">
-      <tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+    <tbody id="rules-tbody">
+      <tr><td colspan="6" style="color:var(--theme-text-muted)">Loading...</td></tr>
     </tbody>
   </table>
+  <p style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:1rem">
+    Agreement Threshold: max fractional difference (0.0-1.0) for LLM/regex auto-accept.
+    Outlier Threshold: max deviation from trailing average before routing to review (0.0-N).
+    Min History: minimum prior months required to run outlier check.
+    Changes take effect on the next extraction run (no restart needed).
+  </p>
 </div>
 {% endblock %}
 
@@ -342,7 +374,7 @@
 <script src="/static/js/doc_panel.js"></script>
 <script>
 // ── Tab routing ─────────────────────────────────────────────────────────────
-const VALID_TABS = ['companies', 'registry', 'explorer', 'review'];
+const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review'];
 let _activeTab = null;
 
 function activateTab(name) {
@@ -367,6 +399,7 @@ function activateTab(name) {
     if (!_explorerLoaded) loadExplorer();
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
+  if (name === 'rules') loadMetricRules();
 }
 
 // Tab button click — event delegation wired once (Anti-pattern #25)
@@ -415,24 +448,144 @@ function renderCompanies() {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">No companies.</td></tr>';
     return;
   }
-  tbody.innerHTML = _companies.map(function(c) {
-    const modeBadge = '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_mode || 'skip') + '">' + escapeHtml(c.scraper_mode || 'skip') + '</span>';
+  const rows = [];
+  _companies.forEach(function(c) {
+    const mode = c.scraper_mode || 'skip';
+    const modeBadge = '<span class="scraper-badge scraper-badge-' + escapeHtml(mode) + '">' + escapeHtml(mode) + '</span>';
+    const activeBadge = c.active
+      ? '<span class="scraper-badge scraper-badge-ok" style="margin-left:4px">active</span>'
+      : '<span class="scraper-badge scraper-badge-skip" style="margin-left:4px">inactive</span>';
     const statusBadge = c.scraper_status && c.scraper_status !== 'never_run'
       ? '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_status) + '">' + escapeHtml(c.scraper_status) + '</span>'
       : '<span style="color:var(--theme-text-muted);font-size:0.75rem">never run</span>';
     const lastScrape = c.last_scrape_at ? c.last_scrape_at.slice(0, 10) : '—';
-    return '<tr>'
-      + '<td><a href="/company/' + escapeHtml(c.ticker) + '" style="color:var(--theme-accent);font-weight:600">' + escapeHtml(c.ticker) + '</a></td>'
-      + '<td>' + escapeHtml(c.name) + '</td>'
-      + '<td>' + modeBadge + '</td>'
+
+    // URL column: show ir_url link, rss_url link if present, url_template if present
+    let urlParts = [];
+    if (c.ir_url) {
+      urlParts.push('<a href="' + escapeAttr(c.ir_url) + '" target="_blank" rel="noopener" style="font-size:0.75rem;color:var(--theme-accent)" title="IR page">IR</a>');
+    }
+    if (c.rss_url) {
+      urlParts.push('<a href="' + escapeAttr(c.rss_url) + '" target="_blank" rel="noopener" style="font-size:0.75rem;color:var(--theme-highlight)" title="' + escapeAttr(c.rss_url) + '">RSS</a>');
+    }
+    if (c.url_template) {
+      urlParts.push('<span style="font-size:0.7rem;color:var(--theme-text-muted)" title="' + escapeAttr(c.url_template) + '">template</span>');
+    }
+    const urlCell = urlParts.length ? urlParts.join(' &middot; ') : '<span style="color:var(--theme-text-muted);font-size:0.75rem">—</span>';
+
+    const detailId = 'cdetail-' + escapeHtml(c.ticker);
+
+    // Skip reason shown inline (brief); sandbox_note in expandable detail
+    let nameExtra = '';
+    if (c.skip_reason) {
+      nameExtra = '<div style="font-size:0.7rem;color:var(--theme-text-muted);margin-top:2px;max-width:320px;white-space:normal">' + escapeHtml(c.skip_reason.slice(0, 120)) + (c.skip_reason.length > 120 ? '…' : '') + '</div>';
+    }
+
+    const hasDetail = !!(c.url_template || c.sandbox_note || (c.skip_reason && c.skip_reason.length > 120));
+    const expandBtn = hasDetail
+      ? '<button class="btn btn-sm btn-secondary" style="padding:1px 6px;font-size:0.7rem" data-ticker="' + escapeAttr(c.ticker) + '" onclick="toggleCompanyDetail(this.getAttribute(\'data-ticker\'))">+</button>'
+      : '';
+
+    rows.push(
+      '<tr id="crow-' + escapeHtml(c.ticker) + '">'
+      + '<td style="white-space:nowrap">'
+          + '<a href="/company/' + escapeHtml(c.ticker) + '" style="color:var(--theme-accent);font-weight:600">' + escapeHtml(c.ticker) + '</a>'
+          + activeBadge
+        + '</td>'
+      + '<td>' + escapeHtml(c.name) + nameExtra + '</td>'
+      + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px">from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
+      + '<td style="font-size:0.8rem">' + urlCell + '</td>'
       + '<td>' + statusBadge + '</td>'
       + '<td style="font-size:0.78rem;color:var(--theme-text-muted)">' + escapeHtml(lastScrape) + '</td>'
-      + '<td><button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="editRegime(this.getAttribute(\'data-ticker\'))">Regime</button></td>'
-      + '<td style="display:flex;gap:4px">'
-        + (c.scraper_mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
-      + '</td>'
-      + '</tr>';
-  }).join('');
+      + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
+          + expandBtn
+          + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="editRegime(this.getAttribute(\'data-ticker\'))">Regime</button>'
+          + (mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
+        + '</td>'
+      + '</tr>'
+    );
+
+    // Expandable detail row (hidden by default)
+    if (hasDetail) {
+      const detailParts = [];
+      if (c.url_template) {
+        detailParts.push('<div><span style="color:var(--theme-text-muted);font-size:0.72rem">Template: </span><code style="font-size:0.72rem">' + escapeHtml(c.url_template) + '</code></div>');
+      }
+      if (c.skip_reason && c.skip_reason.length > 120) {
+        detailParts.push('<div style="margin-top:4px"><span style="color:var(--theme-text-muted);font-size:0.72rem">Skip reason: </span><span style="font-size:0.75rem">' + escapeHtml(c.skip_reason) + '</span></div>');
+      }
+      if (c.sandbox_note) {
+        detailParts.push('<div style="margin-top:4px"><span style="color:var(--theme-text-muted);font-size:0.72rem">Notes: </span><span style="font-size:0.75rem">' + escapeHtml(c.sandbox_note) + '</span></div>');
+      }
+      rows.push(
+        '<tr id="' + escapeHtml(detailId) + '" style="display:none"><td colspan="7" style="background:var(--theme-bg-tertiary);padding:8px 16px">'
+        + detailParts.join('')
+        + '</td></tr>'
+      );
+    }
+  });
+  tbody.innerHTML = rows.join('');
+}
+
+function toggleCompanyDetail(ticker) {
+  const row = document.getElementById('cdetail-' + ticker);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function onPurgeInput() {
+  const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
+  const confirmWord = ticker || 'PURGE';
+  document.getElementById('purge-confirm-hint').textContent = confirmWord;
+  const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
+  document.getElementById('purge-btn').disabled = (typed !== confirmWord);
+}
+
+async function executePurge() {
+  const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
+  const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
+  const confirmWord = ticker || 'PURGE';
+  if (typed !== confirmWord) return;   // safety guard — button should already be disabled
+  const msgEl = document.getElementById('purge-msg');
+  msgEl.style.color = 'var(--theme-text-muted)';
+  msgEl.textContent = 'Purging…';
+  document.getElementById('purge-btn').disabled = true;
+  document.getElementById('purge-confirm-input').value = '';
+  onPurgeInput();
+  try {
+    const body = { confirm: true };
+    if (ticker) body.ticker = ticker;
+    const resp = await fetch('/api/data/purge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error((json.error && json.error.message) || 'Purge failed');
+    const d = json.data || {};
+    const c = d.counts || {};
+    const total = Object.values(c).reduce(function(s, v) { return s + v; }, 0);
+    msgEl.style.color = 'var(--theme-success)';
+    msgEl.textContent = 'Purged ' + total + ' rows (' + (d.ticker || 'ALL') + '). Reload to see null state.';
+    _companiesLoaded = false;
+    loadCompanies();
+    loadScrapeQueue();
+  } catch(err) {
+    msgEl.style.color = 'var(--theme-danger)';
+    msgEl.textContent = 'Error: ' + escapeHtml(String(err));
+  }
+}
+
+async function syncCompanyConfig() {
+  const msg = document.getElementById('companies-msg');
+  msg.textContent = 'Syncing…';
+  const resp = await fetch('/api/companies/sync', { method: 'POST' });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Sync failed', true); msg.textContent = ''; return; }
+  const r = data.data || {};
+  msg.textContent = 'Synced: ' + (r.added || 0) + ' added, ' + (r.updated || 0) + ' updated';
+  _companiesLoaded = false;
+  loadCompanies();
 }
 
 function openAddCompany() {
@@ -931,5 +1084,78 @@ function highlightReviewRow(rows) {
   rows.forEach(function(r, i) { r.style.background = i === _reviewIdx ? 'var(--theme-bg-tertiary)' : ''; });
   if (rows[_reviewIdx]) rows[_reviewIdx].scrollIntoView({ block: 'nearest' });
 }
+
+// ── Metric Rules tab ─────────────────────────────────────────────────────────
+
+async function loadMetricRules() {
+  const tbody = document.getElementById('rules-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted)">Loading...</td></tr>';
+  try {
+    const resp = await fetch('/api/metric_rules');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    const rules = json.data || [];
+    if (!rules.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted)">No rules found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rules.map(function(r) {
+      return '<tr>' +
+        '<td style="font-family:monospace">' + escapeHtml(r.metric) + '</td>' +
+        '<td><input class="rules-input" type="number" step="0.001" min="0" max="1" ' +
+          'value="' + r.agreement_threshold + '" ' +
+          'data-metric="' + escapeHtml(r.metric) + '" data-field="agreement_threshold" ' +
+          'style="width:80px"></td>' +
+        '<td><input class="rules-input" type="number" step="0.01" min="0" ' +
+          'value="' + r.outlier_threshold + '" ' +
+          'data-metric="' + escapeHtml(r.metric) + '" data-field="outlier_threshold" ' +
+          'style="width:80px"></td>' +
+        '<td><input class="rules-input" type="number" step="1" min="1" ' +
+          'value="' + r.outlier_min_history + '" ' +
+          'data-metric="' + escapeHtml(r.metric) + '" data-field="outlier_min_history" ' +
+          'style="width:60px"></td>' +
+        '<td><select class="rules-input" data-metric="' + escapeHtml(r.metric) + '" data-field="enabled">' +
+          '<option value="1"' + (r.enabled ? ' selected' : '') + '>On</option>' +
+          '<option value="0"' + (!r.enabled ? ' selected' : '') + '>Off</option>' +
+          '</select></td>' +
+        '<td><button class="btn btn-xs btn-primary" onclick="saveMetricRule(' + "'" + escapeHtml(r.metric) + "'" + ')">Save</button>' +
+          ' <span id="rules-msg-' + escapeHtml(r.metric) + '" style="font-size:0.75rem;color:var(--theme-text-muted)"></span></td>' +
+        '</tr>';
+    }).join('');
+    makeSortable('rules-table');
+  } catch(err) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-danger)">Error: ' + escapeHtml(String(err)) + '</td></tr>';
+  }
+}
+
+async function saveMetricRule(metric) {
+  const getVal = function(field) {
+    const el = document.querySelector('[data-metric="' + metric + '"][data-field="' + field + '"]');
+    return el ? el.value : null;
+  };
+  const body = {
+    agreement_threshold: parseFloat(getVal('agreement_threshold')),
+    outlier_threshold: parseFloat(getVal('outlier_threshold')),
+    outlier_min_history: parseInt(getVal('outlier_min_history'), 10),
+    enabled: parseInt(getVal('enabled'), 10),
+  };
+  const msgEl = document.getElementById('rules-msg-' + metric);
+  try {
+    const resp = await fetch('/api/metric_rules/' + encodeURIComponent(metric), {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
+    if (msgEl) { msgEl.textContent = 'Saved'; setTimeout(function() { if (msgEl) msgEl.textContent = ''; }, 2000); }
+  } catch(err) {
+    if (msgEl) msgEl.style.color = 'var(--theme-danger)';
+    if (msgEl) msgEl.textContent = String(err);
+  }
+}
 </script>
 {% endblock %}
+
+
