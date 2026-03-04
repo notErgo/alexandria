@@ -79,7 +79,7 @@ OffChain/miners/
 │   ├── companies.json          13 companies with CIKs
 │   └── patterns/               5 metric pattern JSON files
 └── tests/
-    └── 454 passing unit tests (T3)
+    └── 532 passing unit tests (T3)
 ```
 
 ## Schema Version History
@@ -91,6 +91,8 @@ OffChain/miners/
 | v3 | reports.extracted_at (two-stage pipeline) |
 | v4 | config_settings, llm_ticker_hints |
 | v5 | asset_manifest, document_chunks, data_points.chunk_id, reports.parse_quality |
+| v6 | (see migration history) |
+| v7 | companies: sector, scraper_mode, scraper_issues_log, scraper_status, last_scrape_at, last_scrape_error, probe_completed_at; asset_manifest.mutation_log; regime_config; metric_schema; scrape_queue |
 
 ## Data Flow (v3 — two-stage pipeline)
 
@@ -199,31 +201,49 @@ MARA, RIOT, CLSK, CORZ, BITF, BTBT, CIFR, HIVE, HUT8, ARBK, SDIG, WULF, IREN
 pymupdf (fitz) is required for AnnualReportParser.parse_pdf(). Listed in requirements.txt as `pymupdf>=1.23.0`.
 If not installed, parse_pdf() returns ParseResult with parse_quality='parse_failed'.
 
-### Coverage Dashboard (Schema v5)
+### Unified Ops Page (Schema v7)
 
-- `GET /coverage` — coverage heatmap page (coverage.html)
-- `GET /api/coverage/summary` — aggregate counts
-- `GET /api/coverage/grid?months=36` — full heatmap (1≤months≤120)
-- `GET /api/coverage/assets/<ticker>/<period>` — cell detail (manifest + reports)
-- `POST /api/manifest/scan` — scan OffChain/Miner/ and upsert asset_manifest
-- `GET /operations` — operations panel page (operations.html)
-- `GET /api/operations/queue` — pending extraction + legacy_undated files
-- `POST /api/operations/extract` — trigger background extraction ({ticker, force?})
-- `GET /api/operations/extract/<task_id>/progress` — poll extraction progress
-- `POST /api/operations/assign_period` — assign period to legacy_undated file ({manifest_id, period})
+Landing page (`/`) → `landing.html` — sector scorecard (latest metric per company).
+Ops page (`/ops?tab=<tab>`) → `ops.html` — 4-tab unified interface.
+
+**Tabs:**
+- `companies` — company list, scraper config, regime windows, scrape queue. Redirected from `/operations`.
+- `registry` — asset_manifest browser (filter by ticker/period/doc_type/extraction_status). Redirected from `/coverage`.
+- `explorer` — coverage heatmap (7-state cells), cell detail, edit value, mark gap, re-extract. Filter by state/metric/months.
+- `review` — review queue with J/K/A/R keyboard nav + bulk approve. Redirected from `/review`.
+
+**New API endpoints (v7):**
+- `GET /api/regime/<ticker>` — list regime windows
+- `POST /api/regime/<ticker>` — add window ({cadence, start_date, end_date?, notes})
+- `DELETE /api/regime/<ticker>/<window_id>` — remove window
+- `POST /api/scrape/trigger/<ticker>` — enqueue scrape job (returns 202)
+- `GET /api/scrape/queue` — all recent scrape jobs
+- `GET /api/explorer/grid?ticker&months&state&metric&min_confidence` — cell grid
+- `GET /api/explorer/cell/<ticker>/<period>/<metric>` — cell detail with raw_text + matches
+- `POST /api/explorer/cell/.../save` — analyst edit (mutation hierarchy enforced)
+- `POST /api/explorer/cell/.../gap` — analyst gap sentinel
+- `POST /api/explorer/reextract` — regex re-extraction on selection
+- `GET /api/registry?ticker&period&doc_type&extraction_status` — asset_manifest browser
+- `GET /api/scorecard` — latest 7 metrics per company
+- `GET /api/metric_schema?sector` — list metric schema
+- `POST /api/metric_schema` — add metric (409 on duplicate key)
+- `GET /api/companies` — list companies (active_only=False)
+- `POST /api/companies` — add company
+- `PUT /api/companies/<ticker>` — update company config
+
+**Background worker:**
+`ScrapeWorker` thread started in `run_web.py`. Polls scrape_queue every 5s. Claims job → runs `IRScraper` → auto-triggers extraction → completes/fails. Startup scrub resets orphaned `running` jobs.
+
+**Shared components:**
+- `static/js/doc_panel.js` — `DocPanel.init/open/close/buildHighlightedSource`
+- `static/css/style.css` — `.doc-panel`, `.doc-panel-body`, `.doc-source-view`, `.doc-hl` classes
 
 Initial manifest scan after deployment: `POST http://localhost:5004/api/manifest/scan`
-
-Schema v5 rollback:
-```sql
-sqlite3 ~/Documents/Hermeneutic/data/miners/minerdata.db \
-  "DROP TABLE IF EXISTS asset_manifest; DROP TABLE IF EXISTS document_chunks; PRAGMA user_version=4;"
-```
 
 ## Running Tests
 
 ```bash
-venv/bin/pytest tests/ -v  # 454 tests, all should pass
+venv/bin/pytest tests/ -v  # 532 tests, all should pass
 ```
 
 ## Pipeline Commands

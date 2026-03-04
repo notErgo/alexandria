@@ -52,16 +52,50 @@ ls ~/Documents/Hermeneutic/OffChain/Miner/Miner\ Monthly/ | head -5
 
 ## T2: Smoke Tests
 
-### 2.1 Web UI (`/`)
-- [ ] `GET /` → 200, filter form renders with all 13 companies in dropdown
-- [ ] Submitting empty form → table shows data (if DB populated) or "No data found"
-- [ ] Export CSV button → downloads `miners_export.csv`
+### 2.1 Landing Page (`/`)
+- [ ] `GET /` → 200, scorecard renders with all 13 company cards
+- [ ] Stats strip shows companies, data_points, pending_review from `/api/status`
+- [ ] Each company card shows latest metric values from `/api/scorecard`
 
-### 2.2 Review Queue (`/review`)
-- [ ] `GET /review` → 200, tabs render (Pending / Approved / Rejected / Edited)
-- [ ] Pending tab loads items from `/api/review?status=PENDING`
-- [ ] Approve button → card changes to "Approved" without page reload
-- [ ] Edit form → accepts corrected value + note; card changes to "Edited"
+### 2.2 Ops Page (`/ops`)
+- [ ] `GET /ops` → 200, 4 tabs render: Companies, Registry, Explorer, Review Queue
+- [ ] `GET /ops?tab=companies` → Companies tab active on load
+- [ ] `GET /ops?tab=review` → Review tab active on load
+- [ ] `GET /ops?tab=explorer&state=review_pending` → Explorer tab with review_pending pre-selected
+- [ ] `/review` redirect → 302 to `/ops?tab=review`
+- [ ] `/coverage` redirect → 302 to `/ops?tab=registry`
+- [ ] `/operations` redirect → 302 to `/ops?tab=companies`
+
+#### Companies Tab
+- [ ] Company list loads from `/api/companies`
+- [ ] Scraper mode badges render correctly (rss/index/skip)
+- [ ] Regime windows editor opens inline on Regime button click
+- [ ] Add window form posts to `/api/regime/<ticker>` and refreshes tags
+- [ ] Delete window button calls `DELETE /api/regime/<ticker>/<id>`
+- [ ] Scrape button posts to `/api/scrape/trigger/<ticker>` and shows queue update
+- [ ] Add Company form validates ticker (max 10) and name (max 100)
+- [ ] Scrape queue loads from `/api/scrape/queue` and renders status badges
+
+#### Registry Tab
+- [ ] Registry loads on tab activation with default filters
+- [ ] Filter by ticker/period/doc_type/extraction_status and re-fetch
+- [ ] Item count shown in result header
+
+#### Explorer Tab
+- [ ] Metric selector pre-loads from `/api/metric_schema`
+- [ ] Grid loads on tab activation with 36-month default
+- [ ] Cells colored by state (data=green, review_pending=orange, no_document=dark)
+- [ ] Clicking a cell loads detail panel from `/api/explorer/cell/<ticker>/<period>/<metric>`
+- [ ] Edit value form posts to `.../save`, shows 409 message for analyst-protected values
+- [ ] Mark Gap button posts to `.../gap` and reloads cell
+- [ ] Re-extract panel accepts pasted text and calls `/api/explorer/reextract`
+
+#### Review Tab
+- [ ] Review queue loads from `/api/review?status=PENDING`
+- [ ] J/K keys navigate rows (highlight changes)
+- [ ] A key approves focused row; R key opens reject prompt
+- [ ] Checkboxes enable bulk approve button; Bulk Approve processes all checked items
+- [ ] On total failure, error shown — UI stays open (Anti-pattern #15 compliance)
 
 ### 2.3 Company Chart (`/company/<ticker>`)
 - [ ] `GET /company/MARA` → 200, ECharts renders with data
@@ -120,62 +154,38 @@ curl -s -X POST http://localhost:5003/api/review/3/edit \
 ```
 
 ### 2.7 Cross-Cutting Concerns
-- [ ] Navigation links correct on all pages (Data Explorer, Review Queue, Coverage, Operations)
+- [ ] Navigation links correct on all pages (Scorecard, Operations, Miner Data, Data Explorer)
 - [ ] Dark/light theme toggle persists across page refresh (localStorage)
 - [ ] 404 page renders for unknown routes
 - [ ] `/api/*` routes return JSON errors; page routes render HTML errors
 
-### 2.8 Coverage Dashboard (`/coverage`)
-- [ ] `GET /coverage` → 200, coverage.html renders
-- [ ] Summary strip loads 6 stat boxes from `/api/coverage/summary`
-- [ ] Grid loads for default 36 months with all 13 tickers visible
-- [ ] Clicking a cell shows cell detail panel with manifest + report info
-- [ ] Close button hides cell detail panel
-
-#### 2.8 API Endpoints
+### 2.8 New API Endpoints (v7)
 ```bash
-# Coverage summary
-curl -s http://localhost:5004/api/coverage/summary | python3 -m json.tool
+# Regime windows
+curl -s http://localhost:5004/api/regime/MARA | python3 -m json.tool
+curl -s -X POST http://localhost:5004/api/regime/MARA \
+  -H "Content-Type: application/json" \
+  -d '{"cadence":"monthly","start_date":"2021-01-01"}' | python3 -m json.tool
 
-# Coverage grid (default 36 months)
-curl -s "http://localhost:5004/api/coverage/grid" | python3 -c "import json,sys; d=json.load(sys.stdin); print('tickers:', len([k for k in d['data']['grid'] if k != 'summary']))"
+# Scrape queue
+curl -s http://localhost:5004/api/scrape/queue | python3 -m json.tool
+curl -s -X POST http://localhost:5004/api/scrape/trigger/MARA | python3 -m json.tool
+# Expected: 400 if scraper_mode=skip; 202 if mode=rss/index/template
 
-# Coverage grid (custom months)
-curl -s "http://localhost:5004/api/coverage/grid?months=12" | python3 -m json.tool
+# Explorer grid
+curl -s "http://localhost:5004/api/explorer/grid?ticker=MARA&months=12" | python3 -m json.tool
 
-# Invalid months
-curl -s "http://localhost:5004/api/coverage/grid?months=0"
-# Expected: 400
+# Explorer cell
+curl -s "http://localhost:5004/api/explorer/cell/MARA/2024-09-01/production_btc" | python3 -m json.tool
 
-# Cell detail
-curl -s "http://localhost:5004/api/coverage/assets/MARA/2024-01-01" | python3 -m json.tool
+# Registry (asset manifest browser)
+curl -s "http://localhost:5004/api/registry?ticker=MARA" | python3 -m json.tool
 
-# Manifest scan (dry run — does real filesystem scan)
-curl -s -X POST http://localhost:5004/api/manifest/scan | python3 -m json.tool
-```
+# Scorecard
+curl -s http://localhost:5004/api/scorecard | python3 -m json.tool
 
-### 2.9 Operations Panel (`/operations`)
-- [ ] `GET /operations` → 200, operations.html renders
-- [ ] Queue loads with pending extraction table + legacy files
-- [ ] Extract button triggers extraction and shows progress
-- [ ] Assign period form validates YYYY-MM-01 format before submitting
-- [ ] Sync Archive button triggers manifest scan and refreshes queue
-
-#### 2.9 API Endpoints
-```bash
-# Operations queue
-curl -s http://localhost:5004/api/operations/queue | python3 -m json.tool
-
-# Trigger extraction (MARA)
-curl -s -X POST http://localhost:5004/api/operations/extract \
-  -H "Content-Type: application/json" -d '{"ticker":"MARA"}' | python3 -m json.tool
-
-# Poll progress (use task_id from above)
-curl -s "http://localhost:5004/api/operations/extract/<task_id>/progress" | python3 -m json.tool
-
-# Assign period
-curl -s -X POST http://localhost:5004/api/operations/assign_period \
-  -H "Content-Type: application/json" -d '{"manifest_id":1,"period":"2024-01-01"}' | python3 -m json.tool
+# Metric schema
+curl -s http://localhost:5004/api/metric_schema | python3 -m json.tool
 ```
 
 ### Quick Smoke Test
@@ -197,7 +207,7 @@ curl -s -X POST http://localhost:5004/api/operations/assign_period \
 ```bash
 cd OffChain/miners
 venv/bin/pytest tests/ -v
-# Expected: 454 passed
+# Expected: 532 passed, 38 skipped
 ```
 
 | Test file | Coverage |
@@ -210,6 +220,12 @@ venv/bin/pytest tests/ -v
 | `test_pattern_registry.py` (5) | 5 metrics loaded, sorted by priority, required keys, get_patterns, KeyError for unknown |
 | `test_archive_ingestor.py` (13) | Period inference (ISO/month-name), ticker from path, production filename detection, EDGAR hit parsing, CIK registry |
 | `test_ir_scraper.py` (8) | Production PR detection, financial results rejection, period from title |
+| `test_migrations_v7.py` (16) | Schema v7 migration: new company columns, asset_manifest.mutation_log, regime_config, metric_schema (UNIQUE), scrape_queue, seed count=13 |
+| `test_coverage_logic.py` (new) | compute_cell_state_v2 (7-state), compute_expected_periods (monthly/quarterly), rank_extractions (analyst > confidence > recency) |
+| `test_regime_db.py` (4) | Regime window CRUD: upsert, list, delete, 404 on missing ticker |
+| `test_scrape_queue_db.py` (7) | Enqueue, claim, complete, fail, reset_interrupted, reject skip-mode, status listing |
+| `test_metric_schema_db.py` (3) | Seed count=13, add custom metric, duplicate key rejected |
+| `test_scrape_worker.py` (4) | Worker starts/stops, processes one job, marks error on failure, resets interrupted on startup |
 
 ---
 

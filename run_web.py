@@ -35,6 +35,9 @@ from routes.dashboard import bp as dashboard_bp
 from routes.coverage import bp as coverage_bp
 from routes.operations import bp as operations_bp
 from routes.benchmark import bp as benchmark_bp
+from routes.scrape import bp as scrape_bp
+from routes.regime import bp as regime_bp
+from routes.explorer import bp as explorer_bp
 
 log = logging.getLogger('miners.web')
 
@@ -64,6 +67,9 @@ def create_app() -> Flask:
     app.register_blueprint(coverage_bp)
     app.register_blueprint(operations_bp)
     app.register_blueprint(benchmark_bp)
+    app.register_blueprint(scrape_bp)
+    app.register_blueprint(regime_bp)
+    app.register_blueprint(explorer_bp)
 
     @app.errorhandler(404)
     def not_found(e):
@@ -101,7 +107,18 @@ def create_app() -> Flask:
         from app_globals import get_db
         db = get_db()
         companies = db.get_companies()
+        return render_template('landing.html', companies=companies)
+
+    @app.route('/data-explorer')
+    def data_explorer_page():
+        from app_globals import get_db
+        db = get_db()
+        companies = db.get_companies()
         return render_template('index.html', companies=companies)
+
+    @app.route('/ops')
+    def ops_page():
+        return render_template('ops.html')
 
     @app.route('/patterns')
     def patterns_page():
@@ -117,7 +134,8 @@ def create_app() -> Flask:
 
     @app.route('/review')
     def review_page():
-        return render_template('review.html')
+        from flask import redirect
+        return redirect('/ops?tab=review')
 
     @app.route('/miner-data')
     def miner_data_page():

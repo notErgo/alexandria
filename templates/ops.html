@@ -1,0 +1,935 @@
+{% extends "base.html" %}
+{% block title %}Operations{% endblock %}
+
+{% block styles %}
+<style>
+.ops-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--theme-border); margin-bottom: 1rem; }
+.ops-tab  { padding: 0.55rem 1.1rem; font-size: 0.85rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--theme-text-secondary); background: none; border-top: none; border-left: none; border-right: none; }
+.ops-tab:hover { color: var(--theme-text-primary); }
+.ops-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
+.ops-pane { display: none; }
+.ops-pane.active { display: block; }
+
+/* Companies tab */
+.company-row-scraper { font-size: 0.78rem; color: var(--theme-text-muted); }
+.scraper-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+.scraper-badge-rss      { background: #3b82f620; color: #3b82f6; }
+.scraper-badge-index    { background: #10b98120; color: #10b981; }
+.scraper-badge-template { background: #8b5cf620; color: #8b5cf6; }
+.scraper-badge-skip     { background: #6b728020; color: #6b7280; }
+.scraper-badge-running  { background: #f9731620; color: #f97316; }
+.scraper-badge-ok       { background: #22c55e20; color: #22c55e; }
+.scraper-badge-error    { background: #ef444420; color: #ef4444; }
+
+/* Regime windows inline form */
+.regime-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; margin-top: 0.5rem; }
+.regime-form input, .regime-form select { font-size: 0.8rem; padding: 3px 6px; }
+.regime-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--theme-bg-tertiary); border: 1px solid var(--theme-border); border-radius: 12px; padding: 2px 8px 2px 10px; font-size: 0.75rem; margin: 2px; }
+.regime-tag-del { background: none; border: none; color: var(--theme-text-muted); cursor: pointer; font-size: 0.8rem; padding: 0; }
+
+/* Explorer heatmap */
+.explorer-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
+.explorer-grid-scroll { overflow-x: auto; }
+.explorer-cell { width: 20px; height: 20px; border-radius: 3px; cursor: pointer; display: inline-block; }
+.explorer-cell:hover { outline: 2px solid var(--theme-text-primary); outline-offset: 1px; }
+.cell-state-data          { background: #22c55e; }
+.cell-state-review_pending { background: #f97316; }
+.cell-state-parse_failed  { background: #a855f7; }
+.cell-state-extract_failed { background: #ef4444; }
+.cell-state-no_document   { background: #1e1e1e; border: 1px solid #333; }
+.cell-state-scraper_error { background: #f43f5e; }
+.cell-state-analyst_gap   { background: #6b7280; }
+
+/* Cell detail panel */
+.cell-detail { background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 1rem; }
+.cell-detail-header { font-weight: 600; margin-bottom: 0.75rem; }
+.cell-detail-row { display: flex; justify-content: space-between; font-size: 0.82rem; padding: 3px 0; border-bottom: 1px solid var(--theme-border); }
+.cell-detail-label { color: var(--theme-text-muted); }
+.cell-detail-value { color: var(--theme-text-primary); font-family: ui-monospace, monospace; }
+.cell-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.snippet-box { margin-top: 0.75rem; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 0.5rem; font-size: 0.72rem; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; color: var(--theme-text-secondary); max-height: 120px; overflow-y: auto; }
+
+/* Reextract panel */
+.reextract-panel { margin-top: 1rem; background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 0.75rem; }
+.reextract-candidate { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; border-radius: 5px; font-size: 0.8rem; cursor: pointer; }
+.reextract-candidate:hover { background: var(--theme-bg-tertiary); }
+
+/* Registry tab */
+.registry-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.registry-filters select, .registry-filters input { font-size: 0.8rem; padding: 4px 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Operations</h1>
+
+<div class="ops-tabs">
+  <button class="ops-tab" data-pane="companies">Companies</button>
+  <button class="ops-tab" data-pane="registry">Registry</button>
+  <button class="ops-tab" data-pane="explorer">Explorer</button>
+  <button class="ops-tab" data-pane="review">Review Queue <span id="ops-review-count" style="display:none"></span></button>
+</div>
+
+<!-- ── Companies tab ──────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-companies">
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+    <h2 style="margin:0;font-size:1rem">Companies</h2>
+    <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
+    <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin:0 0 0.5rem">Add Company</h3>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <label style="font-size:0.75rem;display:block">Ticker *</label>
+        <input id="ac-ticker" type="text" maxlength="10" style="width:80px" placeholder="MARA">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Name *</label>
+        <input id="ac-name" type="text" maxlength="100" style="width:200px" placeholder="Marathon Digital Holdings">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Sector</label>
+        <input id="ac-sector" type="text" value="BTC-miners" style="width:100px">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Scraper Mode</label>
+        <select id="ac-mode">
+          <option value="skip">skip</option>
+          <option value="rss">rss</option>
+          <option value="index">index</option>
+          <option value="template">template</option>
+        </select>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="submitAddCompany()">Save</button>
+      <button class="btn btn-sm btn-secondary" onclick="document.getElementById('add-company-form').style.display='none'">Cancel</button>
+    </div>
+    <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
+  </div>
+
+  <table id="companies-table">
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="name">Name</th>
+        <th>Scraper Mode</th>
+        <th>Status</th>
+        <th>Last Scrape</th>
+        <th>Regime</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="companies-tbody">
+      <tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Inline regime editor (shown below selected company row) -->
+  <div id="regime-editor" style="display:none" class="card" style="margin-top:0.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem">Regime windows</h3>
+      <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
+    </div>
+    <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
+    <div class="regime-form" style="margin-top:0.5rem">
+      <div>
+        <label style="font-size:0.72rem;display:block">Cadence</label>
+        <select id="rw-cadence">
+          <option value="monthly">monthly</option>
+          <option value="quarterly">quarterly</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Start date</label>
+        <input id="rw-start" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">End date (optional)</label>
+        <input id="rw-end" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Notes</label>
+        <input id="rw-notes" type="text" style="width:160px" placeholder="">
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="addRegimeWindow()">Add Window</button>
+    </div>
+    <div id="rw-error" style="color:var(--theme-danger);font-size:0.78rem;margin-top:0.3rem"></div>
+  </div>
+
+  <!-- Scrape queue -->
+  <div style="margin-top:1.5rem">
+    <h2 style="font-size:1rem;margin-bottom:0.5rem">Scrape Queue</h2>
+    <table id="scrape-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th data-sort="ticker">Ticker</th>
+          <th>Type</th>
+          <th data-sort="status">Status</th>
+          <th>Queued</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="scrape-tbody">
+        <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Registry tab ───────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-registry">
+  <div class="registry-filters">
+    <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <input id="reg-period" type="month" placeholder="Period">
+    <select id="reg-doc-type">
+      <option value="">All doc types</option>
+      <option value="archive_html">archive_html</option>
+      <option value="archive_pdf">archive_pdf</option>
+      <option value="ir_press_release">ir_press_release</option>
+      <option value="edgar_10k">edgar_10k</option>
+      <option value="edgar_10q">edgar_10q</option>
+    </select>
+    <select id="reg-extraction-status">
+      <option value="">All extraction</option>
+      <option value="not_extracted">not extracted</option>
+      <option value="extracted">extracted</option>
+      <option value="parse_failed">parse failed</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
+    <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+  <table id="registry-table">
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="period">Period</th>
+        <th>Doc Type</th>
+        <th>Ingest State</th>
+        <th data-sort="parse_quality">Parse</th>
+        <th data-sort="metrics_found" data-sort-type="num">Metrics</th>
+        <th>Extracted</th>
+        <th>File</th>
+      </tr>
+    </thead>
+    <tbody id="registry-tbody">
+      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Explorer tab ───────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-explorer">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+    <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <select id="ex-state">
+      <option value="">All states</option>
+      <option value="data">data</option>
+      <option value="review_pending">review pending</option>
+      <option value="parse_failed">parse failed</option>
+      <option value="extract_failed">extract failed</option>
+      <option value="no_document">no document</option>
+      <option value="scraper_error">scraper error</option>
+      <option value="analyst_gap">analyst gap</option>
+    </select>
+    <select id="ex-metric">
+      <option value="">All metrics</option>
+    </select>
+    <select id="ex-months">
+      <option value="12">12 months</option>
+      <option value="24">24 months</option>
+      <option value="36" selected>36 months</option>
+      <option value="60">60 months</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadExplorer()">Search</button>
+    <span id="ex-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <!-- Legend -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.75rem;font-size:0.72rem">
+    <span><span class="legend-dot" style="background:#22c55e"></span>data</span>
+    <span><span class="legend-dot" style="background:#f97316"></span>review pending</span>
+    <span><span class="legend-dot" style="background:#a855f7"></span>parse failed</span>
+    <span><span class="legend-dot" style="background:#ef4444"></span>extract failed</span>
+    <span><span class="legend-dot" style="background:#1e1e1e;border:1px solid #555"></span>no document</span>
+    <span><span class="legend-dot" style="background:#f43f5e"></span>scraper error</span>
+    <span><span class="legend-dot" style="background:#6b7280"></span>analyst gap</span>
+  </div>
+
+  <div class="explorer-wrap">
+    <div class="explorer-grid-scroll">
+      <div id="explorer-grid">
+        <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
+      </div>
+    </div>
+
+    <!-- Cell detail side panel -->
+    <div class="cell-detail" id="cell-detail-panel" style="display:none">
+      <div class="cell-detail-header" id="cell-detail-header">—</div>
+      <div id="cell-detail-rows"></div>
+      <div class="cell-actions" id="cell-actions"></div>
+
+      <!-- Save value form -->
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem">
+        <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
+        <div style="display:flex;gap:0.4rem;align-items:center">
+          <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
+          <input id="cell-save-note" type="text" maxlength="500" style="flex:1" placeholder="Note (optional)">
+          <button class="btn btn-sm btn-primary" onclick="submitSaveCell()">Save</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-save-form').style.display='none'">✕</button>
+        </div>
+        <div id="cell-save-error" style="color:var(--theme-danger);font-size:0.75rem;margin-top:0.3rem"></div>
+      </div>
+
+      <!-- Re-extract panel -->
+      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem">
+        <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
+        <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
+        <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
+          <button class="btn btn-sm btn-primary" onclick="submitReextract()">Extract</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-reextract-panel').style.display='none'">Cancel</button>
+        </div>
+        <div id="reextract-results" style="margin-top:0.5rem"></div>
+      </div>
+
+      <div id="cell-snippet" class="snippet-box" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Review tab ─────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-review">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+    <span style="font-size:0.78rem;color:var(--theme-text-muted)">
+      <kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> approve · <kbd>R</kbd> focus reject
+    </span>
+    <select id="rv-status">
+      <option value="PENDING">Pending</option>
+      <option value="APPROVED">Approved</option>
+      <option value="REJECTED">Rejected</option>
+      <option value="">All</option>
+    </select>
+    <input id="rv-ticker" type="text" maxlength="10" placeholder="Ticker" style="width:80px">
+    <button class="btn btn-sm btn-primary" onclick="loadReview()">Search</button>
+    <button class="btn btn-sm btn-secondary" onclick="bulkApprove()" id="rv-bulk-approve" disabled>Approve Selected</button>
+    <span id="rv-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+  <table id="review-table">
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="rv-select-all" onclick="toggleSelectAll()"></th>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="period">Period</th>
+        <th data-sort="metric">Metric</th>
+        <th data-sort="regex_value" data-sort-type="num">Regex</th>
+        <th data-sort="llm_value" data-sort-type="num">LLM</th>
+        <th>Agreement</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="review-tbody">
+      <tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/doc_panel.js"></script>
+<script>
+// ── Tab routing ─────────────────────────────────────────────────────────────
+const VALID_TABS = ['companies', 'registry', 'explorer', 'review'];
+let _activeTab = null;
+
+function activateTab(name) {
+  if (!VALID_TABS.includes(name)) name = 'companies';
+  if (_activeTab === name) return;
+  _activeTab = name;
+  document.querySelectorAll('.ops-tab').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-pane') === name);
+  });
+  document.querySelectorAll('.ops-pane').forEach(function(p) {
+    p.classList.toggle('active', p.id === 'pane-' + name);
+  });
+  // Update URL without navigation
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', name);
+  history.replaceState(null, '', url.toString());
+  // Lazy-load tab data on first activation
+  if (name === 'companies' && !_companiesLoaded) loadCompanies();
+  if (name === 'registry' && !_registryLoaded) loadRegistry();
+  if (name === 'explorer') {
+    if (!_metricsLoaded) loadExplorerMetrics();
+    if (!_explorerLoaded) loadExplorer();
+  }
+  if (name === 'review' && !_reviewLoaded) loadReview();
+}
+
+// Tab button click — event delegation wired once (Anti-pattern #25)
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelector('.ops-tabs').addEventListener('click', function(e) {
+    const btn = e.target.closest('.ops-tab');
+    if (!btn) return;
+    activateTab(btn.getAttribute('data-pane'));
+  });
+
+  // Read initial tab from URL params (also handles redirects from /coverage, /operations)
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('tab') || 'companies';
+  // Pre-apply state filter from redirect (e.g. /review → /ops?tab=explorer&state=review_pending)
+  const stateParam = params.get('state');
+  if (stateParam) {
+    const sel = document.getElementById('ex-state');
+    if (sel) sel.value = stateParam;
+  }
+  activateTab(tab);
+
+  makeSortable('companies-table');
+  makeSortable('scrape-table');
+  makeSortable('registry-table');
+  makeSortable('review-table');
+});
+
+// ── Companies tab ───────────────────────────────────────────────────────────
+let _companiesLoaded = false;
+let _companies = [];
+let _regimeTicker = null;
+
+async function loadCompanies() {
+  _companiesLoaded = true;
+  const resp = await fetch('/api/companies');
+  if (!resp.ok) { showToast('Failed to load companies', true); return; }
+  const data = await resp.json();
+  _companies = data.data || [];
+  renderCompanies();
+  loadScrapeQueue();
+}
+
+function renderCompanies() {
+  const tbody = document.getElementById('companies-tbody');
+  if (!_companies.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">No companies.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _companies.map(function(c) {
+    const modeBadge = '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_mode || 'skip') + '">' + escapeHtml(c.scraper_mode || 'skip') + '</span>';
+    const statusBadge = c.scraper_status && c.scraper_status !== 'never_run'
+      ? '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_status) + '">' + escapeHtml(c.scraper_status) + '</span>'
+      : '<span style="color:var(--theme-text-muted);font-size:0.75rem">never run</span>';
+    const lastScrape = c.last_scrape_at ? c.last_scrape_at.slice(0, 10) : '—';
+    return '<tr>'
+      + '<td><a href="/company/' + escapeHtml(c.ticker) + '" style="color:var(--theme-accent);font-weight:600">' + escapeHtml(c.ticker) + '</a></td>'
+      + '<td>' + escapeHtml(c.name) + '</td>'
+      + '<td>' + modeBadge + '</td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td style="font-size:0.78rem;color:var(--theme-text-muted)">' + escapeHtml(lastScrape) + '</td>'
+      + '<td><button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="editRegime(this.getAttribute(\'data-ticker\'))">Regime</button></td>'
+      + '<td style="display:flex;gap:4px">'
+        + (c.scraper_mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
+      + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function openAddCompany() {
+  document.getElementById('add-company-form').style.display = '';
+  document.getElementById('ac-error').textContent = '';
+  document.getElementById('ac-ticker').focus();
+}
+
+async function submitAddCompany() {
+  const ticker = document.getElementById('ac-ticker').value.trim().toUpperCase();
+  const name   = document.getElementById('ac-name').value.trim();
+  const sector = document.getElementById('ac-sector').value.trim() || 'BTC-miners';
+  const mode   = document.getElementById('ac-mode').value;
+  document.getElementById('ac-error').textContent = '';
+  const resp = await fetch('/api/companies', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ticker, name, sector, scraper_mode: mode }),
+  });
+  const data = await resp.json();
+  if (!data.success) {
+    document.getElementById('ac-error').textContent = data.error?.message || 'Error';
+    return;
+  }
+  document.getElementById('add-company-form').style.display = 'none';
+  _companiesLoaded = false;
+  loadCompanies();
+}
+
+async function triggerScrape(ticker) {
+  const resp = await fetch('/api/scrape/trigger/' + encodeURIComponent(ticker), { method: 'POST' });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Failed to trigger scrape', true); return; }
+  showToast('Scrape queued for ' + ticker);
+  setTimeout(loadScrapeQueue, 1000);
+}
+
+async function loadScrapeQueue() {
+  const resp = await fetch('/api/scrape/queue');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  const jobs = data.data || [];
+  const tbody = document.getElementById('scrape-tbody');
+  if (!jobs.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = jobs.map(function(j) {
+    return '<tr>'
+      + '<td style="font-size:0.72rem;color:var(--theme-text-muted)">' + escapeHtml(j.id) + '</td>'
+      + '<td>' + escapeHtml(j.ticker) + '</td>'
+      + '<td style="font-size:0.75rem">' + escapeHtml(j.job_type || '') + '</td>'
+      + '<td><span class="scraper-badge scraper-badge-' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span></td>'
+      + '<td style="font-size:0.72rem">' + escapeHtml((j.queued_at || '').slice(0, 16)) + '</td>'
+      + '<td style="font-size:0.72rem">' + escapeHtml((j.started_at || '—').slice(0, 16)) + '</td>'
+      + '<td style="font-size:0.72rem">' + escapeHtml((j.finished_at || '—').slice(0, 16)) + '</td>'
+      + '<td style="font-size:0.72rem;color:var(--theme-danger);max-width:160px;overflow:hidden;text-overflow:ellipsis" title="' + escapeAttr(j.error_message || '') + '">' + escapeHtml((j.error_message || '').slice(0, 40)) + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// ── Regime editor ────────────────────────────────────────────────────────────
+async function editRegime(ticker) {
+  _regimeTicker = ticker;
+  document.getElementById('regime-editor-title').textContent = 'Regime windows — ' + ticker;
+  document.getElementById('rw-error').textContent = '';
+  document.getElementById('regime-editor').style.display = '';
+  await refreshRegimeTags();
+}
+
+function closeRegimeEditor() {
+  document.getElementById('regime-editor').style.display = 'none';
+  _regimeTicker = null;
+}
+
+async function refreshRegimeTags() {
+  if (!_regimeTicker) return;
+  const resp = await fetch('/api/regime/' + encodeURIComponent(_regimeTicker));
+  const data = await resp.json();
+  const windows = data.data || [];
+  const container = document.getElementById('regime-tags');
+  if (!windows.length) {
+    container.innerHTML = '<span style="font-size:0.75rem;color:var(--theme-text-muted)">No windows — defaults to monthly, last 36 months.</span>';
+    return;
+  }
+  container.innerHTML = windows.map(function(w) {
+    return '<span class="regime-tag">'
+      + escapeHtml(w.cadence) + ' from ' + escapeHtml(w.start_date)
+      + (w.end_date ? ' to ' + escapeHtml(w.end_date) : '')
+      + (w.notes ? ' · ' + escapeHtml(w.notes) : '')
+      + '<button class="regime-tag-del" data-id="' + escapeAttr(String(w.id)) + '" title="Remove" onclick="deleteRegimeWindow(this.getAttribute(\'data-id\'))">✕</button>'
+      + '</span>';
+  }).join('');
+}
+
+async function addRegimeWindow() {
+  if (!_regimeTicker) return;
+  const cadence    = document.getElementById('rw-cadence').value;
+  const start_date = document.getElementById('rw-start').value;
+  const end_date   = document.getElementById('rw-end').value || null;
+  const notes      = document.getElementById('rw-notes').value;
+  document.getElementById('rw-error').textContent = '';
+  if (!start_date) { document.getElementById('rw-error').textContent = 'Start date required'; return; }
+  const resp = await fetch('/api/regime/' + encodeURIComponent(_regimeTicker), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ cadence, start_date, end_date, notes }),
+  });
+  const data = await resp.json();
+  if (!data.success) { document.getElementById('rw-error').textContent = data.error?.message || 'Error'; return; }
+  await refreshRegimeTags();
+}
+
+async function deleteRegimeWindow(windowId) {
+  if (!_regimeTicker) return;
+  await fetch('/api/regime/' + encodeURIComponent(_regimeTicker) + '/' + encodeURIComponent(windowId), { method: 'DELETE' });
+  await refreshRegimeTags();
+}
+
+// ── Registry tab ─────────────────────────────────────────────────────────────
+let _registryLoaded = false;
+
+async function loadRegistry() {
+  _registryLoaded = true;
+  const ticker   = document.getElementById('reg-ticker').value.trim().toUpperCase() || '';
+  const period   = document.getElementById('reg-period').value || '';
+  const docType  = document.getElementById('reg-doc-type').value || '';
+  const exStatus = document.getElementById('reg-extraction-status').value || '';
+  const params = new URLSearchParams();
+  if (ticker)   params.set('ticker', ticker);
+  if (period)   params.set('period', period.slice(0, 7)); // YYYY-MM
+  if (docType)  params.set('doc_type', docType);
+  if (exStatus) params.set('extraction_status', exStatus);
+  const resp = await fetch('/api/registry?' + params.toString());
+  if (!resp.ok) { showToast('Failed to load registry', true); return; }
+  const data = await resp.json();
+  const items = data.data?.items || [];
+  document.getElementById('reg-count').textContent = items.length + ' items';
+  const tbody = document.getElementById('registry-tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No records.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(function(item) {
+    const parseQual = item.parse_quality || '';
+    const parseColor = parseQual === 'parse_failed' ? 'var(--theme-danger)' : parseQual === 'ok' ? 'var(--theme-success)' : 'var(--theme-text-muted)';
+    return '<tr>'
+      + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
+      + '<td>' + escapeHtml(item.period || '') + '</td>'
+      + '<td style="font-size:0.75rem">' + escapeHtml(item.source_type || '') + '</td>'
+      + '<td style="font-size:0.75rem">' + escapeHtml(item.ingest_state || '') + '</td>'
+      + '<td style="font-size:0.75rem;color:' + parseColor + '">' + escapeHtml(parseQual || '—') + '</td>'
+      + '<td style="text-align:right">' + escapeHtml(String(item.metrics_found || 0)) + '</td>'
+      + '<td style="font-size:0.72rem;color:var(--theme-text-muted)">' + escapeHtml((item.extracted_at || '—').slice(0, 16)) + '</td>'
+      + '<td style="font-size:0.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="' + escapeAttr(item.source_path || '') + '">' + escapeHtml((item.source_path || item.source_url || '').split('/').slice(-1)[0]) + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// ── Explorer tab ─────────────────────────────────────────────────────────────
+let _explorerLoaded = false;
+let _metricsLoaded = false;
+let _explorerGrid = [];
+let _selectedCell = null;
+
+async function loadExplorerMetrics() {
+  _metricsLoaded = true;
+  const resp = await fetch('/api/metric_schema');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  const metrics = data.data || [];
+  const sel = document.getElementById('ex-metric');
+  metrics.forEach(function(m) {
+    const opt = document.createElement('option');
+    opt.value = m.key;
+    opt.textContent = m.label || m.key;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadExplorer() {
+  _explorerLoaded = true;
+  const ticker  = document.getElementById('ex-ticker').value.trim().toUpperCase() || '';
+  const state   = document.getElementById('ex-state').value || '';
+  const metric  = document.getElementById('ex-metric').value || '';
+  const months  = document.getElementById('ex-months').value || '36';
+  const params = new URLSearchParams({ months });
+  if (ticker) params.set('ticker', ticker);
+  if (state)  params.set('state', state);
+  if (metric) params.set('metric', metric);
+  const resp = await fetch('/api/explorer/grid?' + params.toString());
+  if (!resp.ok) { showToast('Failed to load explorer grid', true); return; }
+  const data = await resp.json();
+  _explorerGrid = data.data?.grid || [];
+  document.getElementById('ex-count').textContent = _explorerGrid.length + ' cells';
+  renderExplorerGrid(_explorerGrid);
+}
+
+function renderExplorerGrid(grid) {
+  const container = document.getElementById('explorer-grid');
+  if (!grid.length) {
+    container.innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.85rem">No cells match the current filters.</p>';
+    return;
+  }
+  // Group by ticker, then period (rows = tickers, cols = period×metric)
+  const byTicker = {};
+  const periodsSet = new Set();
+  const metricsSet = new Set();
+  grid.forEach(function(cell) {
+    if (!byTicker[cell.ticker]) byTicker[cell.ticker] = {};
+    const key = cell.period + '|' + cell.metric;
+    byTicker[cell.ticker][key] = cell;
+    periodsSet.add(cell.period);
+    metricsSet.add(cell.metric);
+  });
+  const periods = Array.from(periodsSet).sort().reverse();
+  const metrics = Array.from(metricsSet).sort();
+  const tickers = Object.keys(byTicker).sort();
+
+  let html = '<table style="border-spacing:2px;border-collapse:separate"><thead><tr>'
+    + '<th style="font-size:0.7rem;text-align:right;padding-right:6px;white-space:nowrap;color:var(--theme-text-secondary)">Ticker</th>';
+  periods.forEach(function(p) {
+    metrics.forEach(function(m) {
+      html += '<th style="font-size:0.55rem;writing-mode:vertical-lr;padding:2px;color:var(--theme-text-muted);width:22px" title="' + escapeAttr(p + ' / ' + m) + '">' + escapeHtml(p.slice(5) + '/' + m.slice(0, 4)) + '</th>';
+    });
+  });
+  html += '</tr></thead><tbody>';
+  tickers.forEach(function(ticker) {
+    html += '<tr><td style="font-size:0.72rem;font-weight:600;text-align:right;padding-right:6px;color:var(--theme-text-secondary)">' + escapeHtml(ticker) + '</td>';
+    periods.forEach(function(p) {
+      metrics.forEach(function(m) {
+        const cell = byTicker[ticker][p + '|' + m];
+        const state = cell ? cell.state : 'no_document';
+        const val   = cell && cell.value != null ? cell.value : '';
+        html += '<td><span class="explorer-cell cell-state-' + escapeHtml(state) + '"'
+          + ' data-ticker="' + escapeAttr(ticker) + '"'
+          + ' data-period="' + escapeAttr(p) + '"'
+          + ' data-metric="' + escapeAttr(m) + '"'
+          + ' title="' + escapeAttr(ticker + ' ' + p + ' ' + m + ': ' + state + (val !== '' ? ' = ' + val : '')) + '"'
+          + '></span></td>';
+      });
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// Explorer cell click — event delegation wired once (Anti-pattern #25)
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('explorer-grid').addEventListener('click', function(e) {
+    const span = e.target.closest('.explorer-cell');
+    if (!span) return;
+    const ticker = span.getAttribute('data-ticker');
+    const period = span.getAttribute('data-period');
+    const metric = span.getAttribute('data-metric');
+    loadCellDetail(ticker, period, metric);
+  });
+});
+
+async function loadCellDetail(ticker, period, metric) {
+  _selectedCell = { ticker, period, metric };
+  const panel = document.getElementById('cell-detail-panel');
+  panel.style.display = '';
+  document.getElementById('cell-detail-header').textContent = ticker + ' · ' + period + ' · ' + metric;
+  document.getElementById('cell-detail-rows').innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.8rem">Loading…</p>';
+  document.getElementById('cell-actions').innerHTML = '';
+  document.getElementById('cell-save-form').style.display = 'none';
+  document.getElementById('cell-reextract-panel').style.display = 'none';
+  document.getElementById('cell-snippet').style.display = 'none';
+
+  const url = '/api/explorer/cell/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(period) + '/' + encodeURIComponent(metric);
+  const resp = await fetch(url);
+  if (!resp.ok) { document.getElementById('cell-detail-rows').innerHTML = '<p style="color:var(--theme-danger)">Error loading cell</p>'; return; }
+  const data = await resp.json();
+  const d = data.data;
+
+  const rows = [
+    ['State', d.state || '—'],
+    ['Value', d.value != null ? d.value : '—'],
+    ['Confidence', d.confidence != null ? d.confidence.toFixed(3) : '—'],
+    ['Method', d.extraction_method || '—'],
+  ];
+  document.getElementById('cell-detail-rows').innerHTML = rows.map(function(r) {
+    return '<div class="cell-detail-row"><span class="cell-detail-label">' + escapeHtml(r[0]) + '</span><span class="cell-detail-value">' + escapeHtml(String(r[1])) + '</span></div>';
+  }).join('');
+
+  // Actions
+  const actEl = document.getElementById('cell-actions');
+  actEl.innerHTML = '';
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn btn-sm btn-secondary';
+  editBtn.textContent = 'Edit Value';
+  editBtn.onclick = function() {
+    document.getElementById('cell-save-value').value = d.value != null ? d.value : '';
+    document.getElementById('cell-save-form').style.display = '';
+  };
+  actEl.appendChild(editBtn);
+
+  const gapBtn = document.createElement('button');
+  gapBtn.className = 'btn btn-sm btn-secondary';
+  gapBtn.textContent = 'Mark Gap';
+  gapBtn.onclick = function() { submitMarkGap(); };
+  actEl.appendChild(gapBtn);
+
+  const reexBtn = document.createElement('button');
+  reexBtn.className = 'btn btn-sm btn-secondary';
+  reexBtn.textContent = 'Re-extract';
+  reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
+  actEl.appendChild(reexBtn);
+
+  // Source snippet
+  if (d.source_snippet) {
+    const snippetEl = document.getElementById('cell-snippet');
+    snippetEl.textContent = d.source_snippet;
+    snippetEl.style.display = '';
+  }
+}
+
+async function submitSaveCell() {
+  if (!_selectedCell) return;
+  const value = parseFloat(document.getElementById('cell-save-value').value);
+  const note  = document.getElementById('cell-save-note').value;
+  document.getElementById('cell-save-error').textContent = '';
+  if (isNaN(value)) { document.getElementById('cell-save-error').textContent = 'Value must be numeric'; return; }
+  const { ticker, period, metric } = _selectedCell;
+  const resp = await fetch('/api/explorer/cell/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(period) + '/' + encodeURIComponent(metric) + '/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ value, note }),
+  });
+  const data = await resp.json();
+  if (!data.success) {
+    const msg = data.error?.message || 'Error';
+    // 409 = analyst-protected — show clearly but not as a crash
+    document.getElementById('cell-save-error').textContent = msg;
+    if (resp.status !== 409) showToast(msg, true);
+    return;
+  }
+  document.getElementById('cell-save-form').style.display = 'none';
+  showToast('Value saved');
+  loadCellDetail(ticker, period, metric);
+}
+
+async function submitMarkGap() {
+  if (!_selectedCell) return;
+  const { ticker, period, metric } = _selectedCell;
+  const resp = await fetch('/api/explorer/cell/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(period) + '/' + encodeURIComponent(metric) + '/gap', { method: 'POST' });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
+  showToast('Marked as gap');
+  loadCellDetail(ticker, period, metric);
+}
+
+async function submitReextract() {
+  if (!_selectedCell) return;
+  const { ticker, period } = _selectedCell;
+  const selection = document.getElementById('cell-reextract-text').value.trim();
+  if (!selection) { showToast('Paste document text first', true); return; }
+  const resp = await fetch('/api/explorer/reextract', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ selection, ticker, period }),
+  });
+  const data = await resp.json();
+  const candidates = data.data?.candidates || [];
+  const el = document.getElementById('reextract-results');
+  if (!candidates.length) { el.innerHTML = '<p style="font-size:0.75rem;color:var(--theme-text-muted)">No matches found.</p>'; return; }
+  el.innerHTML = candidates.map(function(c) {
+    return '<div class="reextract-candidate" title="' + escapeAttr(c.snippet || '') + '">'
+      + '<span style="font-weight:600">' + escapeHtml(c.metric) + '</span>'
+      + '<span style="color:var(--theme-text-muted)">' + escapeHtml(String(c.value)) + '</span>'
+      + '<span style="font-size:0.72rem;color:var(--theme-text-muted)">' + escapeHtml((c.confidence || 0).toFixed(2)) + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+// ── Review tab ────────────────────────────────────────────────────────────────
+let _reviewLoaded = false;
+let _reviewItems = [];
+let _reviewIdx = -1;
+
+async function loadReview() {
+  _reviewLoaded = true;
+  const status = document.getElementById('rv-status').value;
+  const ticker = document.getElementById('rv-ticker').value.trim().toUpperCase();
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (ticker) params.set('ticker', ticker);
+  const resp = await fetch('/api/review?' + params.toString());
+  if (!resp.ok) { showToast('Failed to load review queue', true); return; }
+  const data = await resp.json();
+  _reviewItems = data.data?.items || [];
+  document.getElementById('rv-count').textContent = _reviewItems.length + ' items';
+  renderReview();
+}
+
+function renderReview() {
+  const tbody = document.getElementById('review-tbody');
+  if (!_reviewItems.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _reviewItems.map(function(item, idx) {
+    const statusColor = item.status === 'APPROVED' ? 'var(--theme-success)' : item.status === 'REJECTED' ? 'var(--theme-danger)' : 'var(--theme-warning)';
+    return '<tr data-idx="' + idx + '">'
+      + '<td><input type="checkbox" class="rv-cb" data-id="' + escapeAttr(String(item.id)) + '"></td>'
+      + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
+      + '<td>' + escapeHtml(item.period || '') + '</td>'
+      + '<td style="font-size:0.75rem">' + escapeHtml(item.metric || '') + '</td>'
+      + '<td style="text-align:right">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
+      + '<td style="text-align:right">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
+      + '<td style="font-size:0.75rem">' + escapeHtml(item.agreement_status || '') + '</td>'
+      + '<td style="color:' + statusColor + ';font-size:0.75rem">' + escapeHtml(item.status || '') + '</td>'
+      + '<td style="display:flex;gap:4px">'
+        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="approveItem(this.getAttribute(\'data-id\'))">A</button>'
+        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="rejectItem(this.getAttribute(\'data-id\'))">R</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function toggleSelectAll() {
+  const checked = document.getElementById('rv-select-all').checked;
+  document.querySelectorAll('.rv-cb').forEach(function(cb) { cb.checked = checked; });
+  document.getElementById('rv-bulk-approve').disabled = !checked;
+}
+
+// Event delegation for checkbox changes — wired once
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('review-tbody').addEventListener('change', function(e) {
+    if (!e.target.classList.contains('rv-cb')) return;
+    const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
+    document.getElementById('rv-bulk-approve').disabled = !anyChecked;
+  });
+});
+
+async function approveItem(id) {
+  const resp = await fetch('/api/review/' + encodeURIComponent(id) + '/approve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
+  showToast('Approved');
+  loadReview();
+}
+
+async function rejectItem(id) {
+  const note = prompt('Rejection note (optional):') || '';
+  const resp = await fetch('/api/review/' + encodeURIComponent(id) + '/reject', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ note }),
+  });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
+  showToast('Rejected');
+  loadReview();
+}
+
+async function bulkApprove() {
+  const ids = Array.from(document.querySelectorAll('.rv-cb:checked')).map(function(cb) { return cb.getAttribute('data-id'); });
+  if (!ids.length) return;
+  let failed = 0;
+  for (const id of ids) {
+    const resp = await fetch('/api/review/' + encodeURIComponent(id) + '/approve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    const data = await resp.json();
+    if (!data.success) failed++;
+  }
+  if (failed) showToast(failed + ' items failed to approve', true);
+  else showToast(ids.length + ' items approved');
+  loadReview();
+}
+
+// Keyboard navigation — J/K/A/R (Anti-pattern #33)
+document.addEventListener('keydown', function(e) {
+  if (_activeTab !== 'review') return;
+  const rows = document.querySelectorAll('#review-tbody tr[data-idx]');
+  if (!rows.length) return;
+  if (e.key === 'j' || e.key === 'J') {
+    _reviewIdx = Math.min(_reviewIdx + 1, rows.length - 1);
+    highlightReviewRow(rows);
+  } else if (e.key === 'k' || e.key === 'K') {
+    _reviewIdx = Math.max(_reviewIdx - 1, 0);
+    highlightReviewRow(rows);
+  } else if ((e.key === 'a' || e.key === 'A') && _reviewIdx >= 0) {
+    const row = rows[_reviewIdx];
+    const btn = row ? row.querySelector('[data-id]') : null;
+    if (btn) approveItem(btn.getAttribute('data-id'));
+  } else if ((e.key === 'r' || e.key === 'R') && _reviewIdx >= 0) {
+    const row = rows[_reviewIdx];
+    const btn = row ? row.querySelectorAll('[data-id]')[1] : null;
+    if (btn) rejectItem(btn.getAttribute('data-id'));
+  }
+});
+
+function highlightReviewRow(rows) {
+  rows.forEach(function(r, i) { r.style.background = i === _reviewIdx ? 'var(--theme-bg-tertiary)' : ''; });
+  if (rows[_reviewIdx]) rows[_reviewIdx].scrollIntoView({ block: 'nearest' });
+}
+</script>
+{% endblock %}

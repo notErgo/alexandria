@@ -10,7 +10,7 @@ Coverage dashboard API routes.
 import logging
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, render_template
+from flask import Blueprint, jsonify, request, render_template, redirect
 
 log = logging.getLogger('miners.routes.coverage')
 
@@ -150,5 +150,5 @@ def manifest_scan():
 
 @bp.route('/coverage')
 def coverage_page():
-    """Render coverage dashboard page."""
-    return render_template('coverage.html')
+    """Redirect to unified ops page, registry tab."""
+    return redirect('/ops?tab=registry')

@@ -15,7 +15,7 @@ import uuid
 import re
 import json
 
-from flask import Blueprint, jsonify, request, render_template, Response
+from flask import Blueprint, jsonify, request, render_template, Response, redirect
 
 log = logging.getLogger('miners.routes.operations')
 
@@ -343,5 +343,5 @@ def manifest_detect_period(manifest_id: int):
 
 @bp.route('/operations')
 def operations_page():
-    """Render operations panel page."""
-    return render_template('operations.html')
+    """Redirect to unified ops page, companies tab."""
+    return redirect('/ops?tab=companies')

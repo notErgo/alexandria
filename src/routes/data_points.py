@@ -193,3 +193,38 @@ def export_csv():
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=miners_export.csv'
     return response
+
+
+@bp.route('/api/scorecard')
+def scorecard():
+    """Return latest known value for 7 scorecard metrics per company."""
+    from app_globals import get_db
+    db = get_db()
+    SCORECARD_METRICS = [
+        'hodl_btc', 'encumbered_btc', 'hodl_btc_unrestricted',
+        'production_btc', 'sold_btc', 'hashrate_eh', 'ai_hpc_mw',
+    ]
+    companies = db.get_companies(active_only=False)
+    result = []
+    for company in companies:
+        ticker = company['ticker']
+        metrics = {}
+        for metric in SCORECARD_METRICS:
+            dps = db.query_data_points(ticker=ticker, metric=metric, limit=1)
+            dps_sorted = sorted(dps, key=lambda d: d.get('period', ''), reverse=True)
+            if dps_sorted:
+                dp = dps_sorted[0]
+                metrics[metric] = {
+                    'value': dp.get('value'),
+                    'period': dp.get('period'),
+                    'confidence': dp.get('confidence'),
+                }
+            else:
+                metrics[metric] = None
+        result.append({
+            'ticker': ticker,
+            'name': company.get('name'),
+            'scraper_status': company.get('scraper_status'),
+            'metrics': metrics,
+        })
+    return jsonify({'success': True, 'data': result})

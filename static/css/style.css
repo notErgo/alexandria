@@ -367,3 +367,14 @@ tr:hover td { background: rgba(255,255,255,0.03); }
 .sortable-th.sort-active { color: var(--theme-accent); }
 .sortable-th.sort-active.sort-asc::after  { content: ' ↑'; opacity: 0.8; font-size: 0.7em; }
 .sortable-th.sort-active.sort-desc::after { content: ' ↓'; opacity: 0.8; font-size: 0.7em; }
+
+/* ── Shared doc-panel component (doc_panel.js) ──────────────────────────── */
+.doc-panel { display: none; background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; flex-direction: column; overflow: hidden; }
+.doc-panel.visible { display: flex; }
+.doc-panel-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--theme-border); flex-shrink: 0; }
+.doc-panel-title { font-size: 0.9rem; font-weight: 600; color: var(--theme-text-primary); flex: 1; }
+.doc-panel-close { margin-left: auto; background: none; border: none; color: var(--theme-text-muted); cursor: pointer; font-size: 1rem; padding: 0 0.3rem; }
+.doc-panel-close:hover { color: var(--theme-text-primary); }
+.doc-panel-body { display: grid; grid-template-columns: 1fr 280px; height: 420px; overflow: hidden; }
+.doc-source-view { flex: 1; overflow: auto; margin: 0; padding: 0.75rem; font-size: 0.72rem; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: var(--theme-text-secondary); line-height: 1.5; background: var(--theme-bg-primary); border-radius: 0 0 0 8px; user-select: text; cursor: text; }
+.doc-hl { border-radius: 2px; padding: 0 1px; }
