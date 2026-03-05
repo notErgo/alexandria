@@ -50,6 +50,70 @@ def test_operations_queue_returns_200(client):
     assert 'legacy_files' in queue
 
 
+def test_pipeline_observability_includes_counts_and_config_health(client):
+    """GET /api/operations/pipeline_observability returns global + ticker metrics."""
+    import app_globals
+    db = app_globals.get_db()
+
+    db.update_company_config('MARA', scraper_mode='rss', rss_url=None)
+    db.upsert_asset_manifest({
+        'ticker': 'MARA',
+        'period': '2025-01-01',
+        'source_type': 'ir_press_release',
+        'file_path': '/tmp/mara_2025_01.html',
+        'filename': 'mara_2025_01.html',
+        'ingest_state': 'pending',
+    })
+    report_id = db.insert_report({
+        'ticker': 'MARA',
+        'report_date': '2025-01-01',
+        'published_date': None,
+        'source_type': 'ir_press_release',
+        'source_url': 'https://example.test/mara',
+        'raw_text': 'MARA mined 100 BTC',
+        'parsed_at': '2025-02-01T00:00:00',
+    })
+    db.mark_report_extracted(report_id)
+    db.insert_data_point({
+        'report_id': report_id,
+        'ticker': 'MARA',
+        'period': '2025-01-01',
+        'metric': 'production_btc',
+        'value': 100.0,
+        'unit': 'BTC',
+        'confidence': 0.9,
+        'extraction_method': 'regex',
+        'source_snippet': 'mined 100 BTC',
+    })
+    db.insert_review_item({
+        'data_point_id': None,
+        'ticker': 'MARA',
+        'period': '2025-01-01',
+        'metric': 'hodl_btc',
+        'raw_value': '5000',
+        'confidence': 0.6,
+        'source_snippet': 'holdings',
+        'status': 'PENDING',
+    })
+
+    resp = client.get('/api/operations/pipeline_observability')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    snap = data['data']
+
+    assert snap['totals']['companies_total'] >= 1
+    assert snap['totals']['manifest_total'] >= 1
+    assert snap['totals']['reports_total'] >= 1
+    assert snap['totals']['reports_extracted'] >= 1
+    assert snap['totals']['data_points_total'] >= 1
+    assert snap['totals']['review_pending'] >= 1
+    assert 'manifest_ingest_state' in snap['by_state']
+    assert 'reports_source_type' in snap['by_state']
+    assert snap['scraper_config']['invalid_count'] >= 1
+    assert any(r['ticker'] == 'MARA' for r in snap['tickers'])
+
+
 # ── Operations extract ────────────────────────────────────────────────────────
 
 def test_extract_missing_ticker_runs_all(client):

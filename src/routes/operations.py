@@ -2,6 +2,9 @@
 Operations panel API routes.
 
   GET  /api/operations/queue                       — pending extraction queue + legacy files
+  GET  /api/operations/pipeline_observability      — end-to-end ingest/extract counts + config health
+  POST /api/operations/observer_swarm/start        — trigger observer swarm discovery/scrape run
+  GET  /api/operations/observer_swarm/<id>/status  — observer swarm run status
   POST /api/operations/extract                     — trigger extraction for a ticker
   GET  /api/operations/extract/<task_id>/progress  — extraction progress
   POST /api/operations/assign_period               — assign period to a legacy_undated file
@@ -14,6 +17,9 @@ import threading
 import uuid
 import re
 import json
+from datetime import datetime, timezone
+from pathlib import Path
+from textwrap import dedent
 
 from flask import Blueprint, jsonify, request, render_template, Response, redirect
 
@@ -26,6 +32,138 @@ _active_tickers: set = set()
 _active_tickers_lock = threading.Lock()
 _extraction_progress: dict = {}
 _progress_lock = threading.Lock()
+_observer_swarm_progress: dict = {}
+_observer_swarm_lock = threading.Lock()
+_observer_swarm_running_task_id: str | None = None
+
+_OBSERVER_PROMPT_REFERENCES = [
+    Path(__file__).resolve().parents[2] / "scripts" / "prompts" / "00_wire_services.md",
+    Path(__file__).resolve().parents[2] / "scripts" / "prompts" / "agent_B_clsk_bitf_btbt.md",
+]
+
+
+def _safe_read(path: Path) -> str:
+    try:
+        return path.read_text()
+    except Exception as exc:  # noqa: BLE001
+        return f"[unavailable: {path} :: {exc}]"
+
+
+def _write_observer_prompt_artifacts(
+    *,
+    run_id: str,
+    output_dir: Path,
+    tickers: list[str],
+    scout_count: int,
+    max_attempts_source: int,
+    max_no_yield: int,
+    execute_scrape: bool,
+    scouts: list[dict],
+) -> dict:
+    prompts_dir = output_dir / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+
+    refs = {str(p): _safe_read(p) for p in _OBSERVER_PROMPT_REFERENCES}
+    observer_prompt = dedent(
+        f"""
+        # Observer Prompt Trace
+        run_id: {run_id}
+        objective: Discover + validate PRNewswire/GlobeNewswire/IR source schema and execute scraping where allowed.
+        tickers: {", ".join(tickers)}
+        scout_count: {scout_count}
+
+        ## Deterministic Core
+        - Source order: IR -> GlobeNewswire -> PRNewswire
+        - Exhaustion gate: max_attempts_per_source={max_attempts_source}, max_consecutive_no_yield={max_no_yield}
+        - Coverage gate: block if no IR source and wire sample_count == 0
+        - Execute scrape: {execute_scrape}
+
+        ## Prompt References (verbatim)
+        """
+    ).strip() + "\n"
+    for path, body in refs.items():
+        observer_prompt += f"\n### {path}\n\n{body}\n"
+
+    observer_prompt_path = prompts_dir / f"observer_prompt_{run_id}.md"
+    observer_prompt_path.write_text(observer_prompt)
+
+    scout_paths = []
+    for scout in scouts:
+        scout_id = scout.get("scout_id", "scout-unknown")
+        scout_tickers = scout.get("tickers", [])
+        scout_prompt = dedent(
+            f"""
+            # Scout Prompt Trace
+            run_id: {run_id}
+            scout_id: {scout_id}
+            assigned_tickers: {", ".join(scout_tickers)}
+
+            ## Execution Rules
+            - Use deterministic source order and contracts.
+            - Respect exhaustion + coverage gates.
+            - Emit evidence URLs and structured blockers.
+            - Do not silently skip a source family.
+            """
+        ).strip() + "\n"
+        for path, body in refs.items():
+            scout_prompt += f"\n### {path}\n\n{body}\n"
+        scout_path = prompts_dir / f"{scout_id}_prompt_{run_id}.md"
+        scout_path.write_text(scout_prompt)
+        scout_paths.append(str(scout_path))
+
+    index = {
+        "run_id": run_id,
+        "observer_prompt": str(observer_prompt_path),
+        "scout_prompts": scout_paths,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    index_path = prompts_dir / f"prompt_trace_{run_id}.json"
+    index_path.write_text(json.dumps(index, indent=2))
+    return {"index": str(index_path), "observer_prompt": str(observer_prompt_path), "scout_prompts": scout_paths}
+
+
+def _write_observer_decision_trace(*, run_id: str, output_dir: Path, merged_contracts_path: str) -> dict:
+    path = Path(merged_contracts_path or "")
+    trace_path = output_dir / "prompts" / f"decision_trace_{run_id}.json"
+    try:
+        payload = json.loads(path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        trace = {
+            "run_id": run_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "error": f"failed_to_read_merged_contracts:{exc}",
+            "merged_contracts_path": str(path),
+            "tickers": [],
+        }
+        trace_path.write_text(json.dumps(trace, indent=2))
+        return {"path": str(trace_path)}
+
+    contracts = payload.get("contracts", []) if isinstance(payload, dict) else []
+    rows = []
+    for c in contracts:
+        rows.append({
+            "ticker": c.get("ticker"),
+            "status": c.get("status"),
+            "attempts_by_family": c.get("attempts_by_family", {}),
+            "sources": [
+                {
+                    "family": s.get("family"),
+                    "method": s.get("discovery_method"),
+                    "sample_count": (s.get("validation") or {}).get("sample_count", 0),
+                    "entry_url": s.get("entry_url"),
+                }
+                for s in c.get("sources", [])
+            ],
+            "blockers": c.get("blockers", []),
+        })
+    trace = {
+        "run_id": run_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "merged_contracts_path": str(path),
+        "tickers": sorted(rows, key=lambda r: (r.get("ticker") or "")),
+    }
+    trace_path.write_text(json.dumps(trace, indent=2))
+    return {"path": str(trace_path)}
 
 
 @bp.route('/api/operations/queue')
@@ -41,6 +179,155 @@ def operations_queue():
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+@bp.route('/api/operations/pipeline_observability')
+def operations_pipeline_observability():
+    """Return global/ticker pipeline counts and scraper configuration health."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+        snapshot = db.get_pipeline_observability()
+        return jsonify({'success': True, 'data': snapshot})
+    except Exception:
+        log.error('Error in operations_pipeline_observability', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/observer_swarm/start', methods=['POST'])
+def operations_observer_swarm_start():
+    """Trigger background observer swarm run."""
+    try:
+        body = request.get_json(silent=True) or {}
+        tickers_raw = body.get('tickers') or []
+        if isinstance(tickers_raw, str):
+            tickers = [t.strip().upper() for t in tickers_raw.split(',') if t.strip()]
+        elif isinstance(tickers_raw, list):
+            tickers = [str(t).strip().upper() for t in tickers_raw if str(t).strip()]
+        else:
+            tickers = []
+
+        scout_count = max(1, int(body.get('scout_count', 4)))
+        max_attempts_source = max(1, int(body.get('max_attempts_source', 5)))
+        max_no_yield = max(1, int(body.get('max_no_yield', 3)))
+        execute_scrape = bool(body.get('execute_scrape', True))
+        run_feedback_loop = bool(body.get('run_feedback_loop', True))
+        apply_validated_primitives = bool(body.get('apply_validated_primitives', False))
+        run_id = str(body.get('run_id') or f"observer_ui_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}")
+        output_dir = Path(str(body.get('output_dir') or '.data/miners_progress'))
+        if not output_dir.is_absolute():
+            output_dir = Path(__file__).resolve().parents[2] / output_dir
+
+        global _observer_swarm_running_task_id
+        with _observer_swarm_lock:
+            if _observer_swarm_running_task_id:
+                active = _observer_swarm_progress.get(_observer_swarm_running_task_id) or {}
+                if active.get('status') in {'queued', 'running'}:
+                    return jsonify({'success': False, 'error': {
+                        'code': 'ALREADY_RUNNING',
+                        'message': f"Observer swarm already running (task_id={_observer_swarm_running_task_id})",
+                    }}), 409
+
+            task_id = str(uuid.uuid4())
+            _observer_swarm_running_task_id = task_id
+            _observer_swarm_progress[task_id] = {
+                'task_id': task_id,
+                'run_id': run_id,
+                'status': 'queued',
+                'tickers': tickers,
+                'scout_count': scout_count,
+                'max_attempts_source': max_attempts_source,
+                'max_no_yield': max_no_yield,
+                'execute_scrape': execute_scrape,
+                'run_feedback_loop': run_feedback_loop,
+                'apply_validated_primitives': apply_validated_primitives,
+                'output_dir': str(output_dir),
+                'created_at': datetime.now(timezone.utc).isoformat(),
+            }
+
+        def _run() -> None:
+            global _observer_swarm_running_task_id
+            try:
+                from config import CONFIG_DIR
+                from scrapers.observer_swarm import ScoutConfig, run_observer
+
+                output_dir.mkdir(parents=True, exist_ok=True)
+                rows = json.loads((Path(CONFIG_DIR) / "companies.json").read_text())
+                companies_by_ticker = {r["ticker"].upper(): r for r in rows}
+                targets = tickers or sorted([r["ticker"].upper() for r in rows])
+                cfg = ScoutConfig(
+                    max_attempts_per_source=max_attempts_source,
+                    max_consecutive_no_yield=max_no_yield,
+                    execute_scrape=execute_scrape,
+                    run_feedback_loop=run_feedback_loop,
+                    apply_validated_primitives=apply_validated_primitives,
+                )
+                with _observer_swarm_lock:
+                    _observer_swarm_progress[task_id]['status'] = 'running'
+                    _observer_swarm_progress[task_id]['started_at'] = datetime.now(timezone.utc).isoformat()
+                    _observer_swarm_progress[task_id]['tickers'] = targets
+
+                summary = run_observer(
+                    run_id=run_id,
+                    tickers=targets,
+                    scout_count=scout_count,
+                    output_dir=output_dir,
+                    config=cfg,
+                    companies_by_ticker=companies_by_ticker,
+                )
+                prompt_trace = _write_observer_prompt_artifacts(
+                    run_id=run_id,
+                    output_dir=output_dir,
+                    tickers=targets,
+                    scout_count=scout_count,
+                    max_attempts_source=max_attempts_source,
+                    max_no_yield=max_no_yield,
+                    execute_scrape=execute_scrape,
+                    scouts=summary.get('scouts', []),
+                )
+                decision_trace = _write_observer_decision_trace(
+                    run_id=run_id,
+                    output_dir=output_dir,
+                    merged_contracts_path=summary.get('artifacts', {}).get('merged_source_contracts', ''),
+                )
+                summary['prompt_trace'] = prompt_trace
+                summary['decision_trace'] = decision_trace
+
+                with _observer_swarm_lock:
+                    _observer_swarm_progress[task_id]['status'] = 'complete'
+                    _observer_swarm_progress[task_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
+                    _observer_swarm_progress[task_id]['summary'] = summary
+            except Exception as exc:  # noqa: BLE001
+                log.error('Observer swarm task %s failed: %s', task_id, exc, exc_info=True)
+                with _observer_swarm_lock:
+                    _observer_swarm_progress[task_id]['status'] = 'error'
+                    _observer_swarm_progress[task_id]['completed_at'] = datetime.now(timezone.utc).isoformat()
+                    _observer_swarm_progress[task_id]['error_message'] = str(exc)
+            finally:
+                with _observer_swarm_lock:
+                    if _observer_swarm_running_task_id == task_id:
+                        _observer_swarm_running_task_id = None
+
+        t = threading.Thread(target=_run, daemon=True, name=f"observer-swarm-{task_id[:8]}")
+        t.start()
+        return jsonify({'success': True, 'data': {'task_id': task_id, 'run_id': run_id}})
+    except Exception:
+        log.error('Error in operations_observer_swarm_start', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/observer_swarm/<task_id>/status')
+def operations_observer_swarm_status(task_id: str):
+    """Return observer swarm task status."""
+    try:
+        with _observer_swarm_lock:
+            state = dict(_observer_swarm_progress.get(task_id) or {})
+        if not state:
+            return jsonify({'success': False, 'error': {'message': 'Task not found'}}), 404
+        return jsonify({'success': True, 'data': state})
+    except Exception:
+        log.error('Error in operations_observer_swarm_status', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
 @bp.route('/api/operations/extract', methods=['POST'])
 def operations_extract():
     """Trigger background extraction for a ticker (or all tickers). Returns task_id."""
@@ -48,6 +335,7 @@ def operations_extract():
         body = request.get_json(silent=True) or {}
         ticker = (body.get('ticker') or '').strip().upper() or None
         force = bool(body.get('force', False))
+        warm_model = bool(body.get('warm_model', True))
         run_key = ticker or '__ALL__'
 
         # 409 guard — prevent duplicate extraction runs
@@ -70,7 +358,10 @@ def operations_extract():
                 'errors': 0,
             }
 
-        log.info("Starting extraction task %s for ticker %s (force=%s)", task_id, ticker or 'ALL', force)
+        log.info(
+            "Starting extraction task %s for ticker %s (force=%s, warm_model=%s)",
+            task_id, ticker or 'ALL', force, warm_model
+        )
 
         def _run():
             try:
@@ -78,6 +369,7 @@ def operations_extract():
                 from extractors.extraction_pipeline import extract_report
                 from extractors.pattern_registry import PatternRegistry
                 from app_globals import get_registry
+                from infra.ollama_warmup import warm_ollama_for_extraction
 
                 db = get_db()
                 registry = get_registry()
@@ -87,6 +379,9 @@ def operations_extract():
 
                 with _progress_lock:
                     _extraction_progress[task_id]['reports_total'] = len(reports)
+
+                if warm_model and reports:
+                    warm_ollama_for_extraction(db=db, reason='operations_extract')
 
                 for i, report in enumerate(reports):
                     try:

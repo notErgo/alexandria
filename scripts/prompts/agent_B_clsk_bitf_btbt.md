@@ -102,6 +102,12 @@ For each missing month 2021-01 to 2023-10:
 3. Web search: `CleanSpark "[MONTH] [YEAR]" bitcoin production press release`
 4. GlobeNewswire: `site:globenewswire.com cleanspark [MONTH] [YEAR]`
 
+### BITF year-dropdown directive (must run before declaring IR exhausted)
+- Inspect `https://investor.bitfarms.com/news-events/press-releases` for a year selector key like `*_year[value]`.
+- Capture matching widget token `*_widget_id` and use `form_id=widget_form_base`, `op=Filter`.
+- Generate year-filter URLs (2018..current) by substituting year value only.
+- Parse filtered pages for production/operations update PR links before using wire-service fallback.
+
 ### BITF (Bitfarms) search strategies:
 Template URL pattern: `https://investor.bitfarms.com/news-releases/news-release-details/bitfarms-provides-[month]-[year]-production-and-operations-update`
 - [month] = lowercase month name (e.g., january, april)

@@ -36,6 +36,8 @@
 .acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
+.kw-chip { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; border:1px solid var(--theme-border); background:var(--theme-bg-tertiary); font-size:0.72rem; cursor:pointer; margin:2px 4px 2px 0; }
+.kw-chip:hover { border-color: var(--theme-accent); color: var(--theme-accent); }
 
 /* Explorer heatmap */
 .explorer-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
@@ -122,6 +124,14 @@
         <label style="font-size:0.75rem;display:block">IR URL</label>
         <input id="ac-ir-url" type="text" style="width:260px" placeholder="https://investor.example.com/news">
       </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">CIK (EDGAR)</label>
+        <input id="ac-cik" type="text" maxlength="20" style="width:140px" placeholder="1507605">
+      </div>
+      <div style="min-width:320px">
+        <label style="font-size:0.75rem;display:block">Description</label>
+        <input id="ac-description" type="text" maxlength="500" style="width:320px" placeholder="Optional analyst note">
+      </div>
       <div style="min-width:260px">
         <label style="font-size:0.75rem;display:block">RSS URL</label>
         <input id="ac-rss-url" type="text" style="width:260px" placeholder="https://investor.example.com/rss">
@@ -151,6 +161,21 @@
     </div>
     <div id="ac-mode-help" style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:0.45rem"></div>
     <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
+    <div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--theme-border)">
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.35rem">Bulk Paste (TSV/CSV)</div>
+      <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.35rem">
+        Paste spreadsheet rows with header columns such as:
+        <code>Ticker, Name, Investor Relations Base URL, CIK (EDGAR), Description, PR Newswire, GlobeNewswire</code>
+      </div>
+      <textarea id="ac-bulk-text" rows="7" style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem"
+        placeholder="Ticker\tName\tInvestor Relations Base URL\tCIK (EDGAR)\tDescription\tPR Newswire\tGlobeNewswire"></textarea>
+      <div style="display:flex;gap:0.45rem;align-items:center;flex-wrap:wrap;margin-top:0.45rem">
+        <button class="btn btn-sm btn-secondary" onclick="previewBulkCompanyPaste()">Preview Parse</button>
+        <button class="btn btn-sm btn-primary" onclick="submitBulkCompanies()">Import Rows</button>
+        <span id="ac-bulk-msg" style="font-size:0.76rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="ac-bulk-preview" style="margin-top:0.45rem;font-size:0.74rem;color:var(--theme-text-secondary)"></div>
+    </div>
   </div>
 
   <div class="card" data-spec-id="2.1.5a" style="margin-bottom:0.7rem">
@@ -236,6 +261,97 @@
         </tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:0.7rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
+      <h3 style="margin:0;font-size:0.9rem">Overnight Pipeline + Scout</h3>
+      <span id="overnight-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;align-items:end">
+      <div>
+        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=auto)</label>
+        <input id="ov-tickers" type="text" placeholder="RIOT,CLSK,WULF,ABTC">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Scout Mode</label>
+        <select id="ov-scout-mode">
+          <option value="auto" selected>auto</option>
+          <option value="always">always</option>
+          <option value="never">never</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Scout Max Age (hours)</label>
+        <input id="ov-scout-max-age" type="number" min="1" max="8760" step="1" value="168">
+      </div>
+      <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;padding-bottom:4px">
+        <label style="font-size:0.75rem"><input id="ov-apply-modes" type="checkbox"> apply mode changes</label>
+        <label style="font-size:0.75rem"><input id="ov-warm-model" type="checkbox" checked> warm model</label>
+        <label style="font-size:0.75rem"><input id="ov-require-scout-success" type="checkbox"> require scout success</label>
+      </div>
+    </div>
+    <div style="margin-top:0.5rem">
+      <label style="font-size:0.75rem;display:block">Scout Seed Keywords (comma or newline separated)</label>
+      <textarea id="ov-scout-keywords" rows="3" style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem" placeholder="miner, bitcoin, mining, production, hodl"></textarea>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.35rem">
+        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromPack()">Seed From Active Pack</button>
+        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromFrequencyTop()">Seed Top Frequency</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadScoutKeywordFrequency()">Refresh Frequency</button>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted)">click any keyword chip to append</span>
+      </div>
+      <div id="ov-keyword-freq" style="margin-top:0.35rem"></div>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
+      <button class="btn btn-sm btn-primary" onclick="startOvernightWithScout()">Start Overnight Run</button>
+      <button class="btn btn-sm btn-secondary" onclick="refreshOvernightStatus()">Refresh Status</button>
+      <button class="btn btn-sm btn-secondary" onclick="cancelOvernightRun()">Cancel Run</button>
+      <label style="font-size:0.75rem;color:var(--theme-text-muted)">run id</label>
+      <input id="ov-run-id" type="number" min="1" step="1" style="width:100px" placeholder="auto">
+    </div>
+    <div id="overnight-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
+  </div>
+
+  <div class="card" style="margin-top:0.7rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
+      <h3 style="margin:0;font-size:0.9rem">Observer Swarm (Source Discovery + Scrape)</h3>
+      <span id="observer-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem;align-items:end">
+      <div>
+        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=all)</label>
+        <input id="obs-tickers" type="text" placeholder="BITF,BTDR">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Scout Count</label>
+        <input id="obs-scout-count" type="number" min="1" max="16" step="1" value="4">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Max Attempts / Source</label>
+        <input id="obs-max-attempts" type="number" min="1" max="20" step="1" value="5">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Max No-Yield</label>
+        <input id="obs-max-no-yield" type="number" min="1" max="10" step="1" value="3">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Run ID (optional)</label>
+        <input id="obs-run-id" type="text" placeholder="observer_ui_...">
+      </div>
+      <div style="padding-bottom:4px">
+        <label style="font-size:0.75rem"><input id="obs-execute-scrape" type="checkbox" checked> execute scrape</label>
+        <label style="font-size:0.75rem;display:block"><input id="obs-feedback-loop" type="checkbox" checked> run feedback loop</label>
+        <label style="font-size:0.75rem;display:block"><input id="obs-apply-primitives" type="checkbox"> auto-apply validated primitives</label>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
+      <button class="btn btn-sm btn-primary" onclick="startObserverSwarm()">Run Observer Swarm</button>
+      <button class="btn btn-sm btn-secondary" onclick="refreshObserverSwarmStatus()">Refresh Status</button>
+      <label style="font-size:0.75rem;color:var(--theme-text-muted)">task id</label>
+      <input id="obs-task-id" type="text" style="width:300px" placeholder="auto">
+    </div>
+    <div id="observer-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
+    <div id="observer-artifacts" style="margin-top:0.35rem;font-size:0.74rem;color:var(--theme-text-muted)"></div>
   </div>
 
   <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
@@ -622,6 +738,11 @@ let _acqTaskId = null;
 let _acqTaskTimer = null;
 let _extractTaskId = null;
 let _extractTimer = null;
+let _overnightRunId = null;
+let _overnightPollTimer = null;
+let _observerTaskId = null;
+let _observerPollTimer = null;
+let _scoutKeywordFrequency = [];
 
 function _acqStateLabel(raw) {
   if (raw === 'complete') return 'complete';
@@ -907,6 +1028,319 @@ async function loadPipelineObservability() {
   }
 }
 
+function _parseCommaOrNewlineTerms(raw) {
+  const text = String(raw || '');
+  const parts = text.split(/[\n,]/g).map(function(p) { return p.trim().toLowerCase(); }).filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  parts.forEach(function(p) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      out.push(p);
+    }
+  });
+  return out;
+}
+
+function _setScoutKeywordTextarea(terms) {
+  const el = document.getElementById('ov-scout-keywords');
+  if (!el) return;
+  el.value = (terms || []).join(', ');
+}
+
+function _appendScoutKeywordTerm(term) {
+  const incoming = String(term || '').trim().toLowerCase();
+  if (!incoming) return;
+  const el = document.getElementById('ov-scout-keywords');
+  if (!el) return;
+  const cur = _parseCommaOrNewlineTerms(el.value);
+  if (!cur.includes(incoming)) cur.push(incoming);
+  el.value = cur.join(', ');
+}
+
+function _renderScoutKeywordFrequency(words) {
+  const root = document.getElementById('ov-keyword-freq');
+  if (!root) return;
+  if (!words || !words.length) {
+    root.innerHTML = '<span style="font-size:0.75rem;color:var(--theme-text-muted)">No keyword frequency data yet.</span>';
+    return;
+  }
+  root.innerHTML = words.map(function(w) {
+    const word = escapeHtml(w.word || '');
+    const count = escapeHtml(String(w.count || 0));
+    return '<button class="kw-chip" onclick="appendScoutKeywordFromChip(\'' + escapeAttr(w.word || '') + '\')" title="append keyword">' + word + ' (' + count + ')</button>';
+  }).join('');
+}
+
+function appendScoutKeywordFromChip(word) {
+  _appendScoutKeywordTerm(word);
+}
+
+async function loadScoutKeywordFrequency() {
+  const msgEl = document.getElementById('overnight-msg');
+  if (msgEl) msgEl.textContent = 'Loading keyword frequency…';
+  try {
+    const resp = await fetch('/api/diagnostics', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const words = ((data.data || {}).keywords || []).slice(0, 20);
+    _scoutKeywordFrequency = words;
+    _renderScoutKeywordFrequency(words);
+    if (msgEl) msgEl.textContent = 'Keyword frequency updated';
+  } catch (err) {
+    if (msgEl) msgEl.textContent = 'Keyword frequency unavailable';
+    _renderScoutKeywordFrequency([]);
+  }
+}
+
+function seedScoutKeywordsFromPack() {
+  const terms = _getKeywordTerms() || [];
+  if (!terms.length) {
+    showToast('No active keyword pack terms available', true);
+    return;
+  }
+  _setScoutKeywordTextarea(terms.slice(0, 40));
+  showToast('Seeded scout keywords from active pack');
+}
+
+function seedScoutKeywordsFromFrequencyTop() {
+  if (!_scoutKeywordFrequency || !_scoutKeywordFrequency.length) {
+    showToast('No frequency terms loaded yet', true);
+    return;
+  }
+  const terms = _scoutKeywordFrequency.slice(0, 12).map(function(r) { return (r.word || '').toLowerCase(); }).filter(Boolean);
+  _setScoutKeywordTextarea(terms);
+  showToast('Seeded scout keywords from frequency top terms');
+}
+
+function _parseTickerCsv(raw) {
+  return String(raw || '')
+    .split(',')
+    .map(function(t) { return t.trim().toUpperCase(); })
+    .filter(Boolean);
+}
+
+function _setOvernightStatus(text, isError) {
+  const el = document.getElementById('overnight-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
+}
+
+async function startOvernightWithScout() {
+  const tickers = _parseTickerCsv(document.getElementById('ov-tickers')?.value || '');
+  const scoutMode = (document.getElementById('ov-scout-mode')?.value || 'auto').trim();
+  const scoutMaxAgeHours = Math.max(1, Number(document.getElementById('ov-scout-max-age')?.value || 168));
+  const scoutKeywords = _parseCommaOrNewlineTerms(document.getElementById('ov-scout-keywords')?.value || '');
+  const applyModeChanges = !!document.getElementById('ov-apply-modes')?.checked;
+  const warmModel = !!document.getElementById('ov-warm-model')?.checked;
+  const requireScoutSuccess = !!document.getElementById('ov-require-scout-success')?.checked;
+
+  _setOvernightStatus('Starting overnight run…', false);
+  try {
+    const resp = await fetch('/api/pipeline/overnight/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        tickers,
+        apply_mode_changes: applyModeChanges,
+        warm_model: warmModel,
+        scout_mode: scoutMode,
+        scout_max_age_hours: scoutMaxAgeHours,
+        scout_keywords: scoutKeywords,
+        require_scout_success: requireScoutSuccess,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    _overnightRunId = Number(data.data?.run_id || 0) || null;
+    if (_overnightRunId) {
+      const runIdInput = document.getElementById('ov-run-id');
+      if (runIdInput) runIdInput.value = String(_overnightRunId);
+      _setOvernightStatus('Run #' + _overnightRunId + ' queued', false);
+      showToast('Overnight run started: #' + _overnightRunId);
+      refreshOvernightStatus();
+      if (_overnightPollTimer) clearInterval(_overnightPollTimer);
+      _overnightPollTimer = setInterval(refreshOvernightStatus, 3000);
+    }
+  } catch (err) {
+    _setOvernightStatus('Failed to start: ' + String(err), true);
+    showToast('Failed to start overnight run', true);
+  }
+}
+
+function _activeOvernightRunId() {
+  const explicit = Number(document.getElementById('ov-run-id')?.value || 0);
+  if (explicit > 0) return explicit;
+  return _overnightRunId;
+}
+
+async function refreshOvernightStatus() {
+  const runId = _activeOvernightRunId();
+  if (!runId) {
+    _setOvernightStatus('No run selected. Start a run or enter run id.', false);
+    return;
+  }
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const run = data.data?.run || {};
+    const summary = run.summary || {};
+    const scout = summary.scout || {};
+    const status = run.status || 'unknown';
+    const scoutText = scout.ran
+      ? ('scout=' + (scout.results ? scout.results.length : 0) + ' ok, ' + (scout.failures ? scout.failures.length : 0) + ' failed')
+      : ('scout=' + (scout.reason || 'skipped'));
+    _setOvernightStatus(
+      'Run #' + runId + ' status=' + status
+      + ' | targets=' + ((summary.scrape_targets || []).length || 0)
+      + ' | failures=' + ((summary.failures || []).length || 0)
+      + ' | ' + scoutText,
+      status === 'failed' || status === 'failed_preflight'
+    );
+    if (['complete', 'partial_complete', 'failed', 'failed_preflight', 'cancelled'].includes(status)) {
+      if (_overnightPollTimer) {
+        clearInterval(_overnightPollTimer);
+        _overnightPollTimer = null;
+      }
+      loadPipelineObservability();
+    }
+  } catch (err) {
+    _setOvernightStatus('Status check failed: ' + String(err), true);
+  }
+}
+
+async function cancelOvernightRun() {
+  const runId = _activeOvernightRunId();
+  if (!runId) {
+    showToast('No run id selected', true);
+    return;
+  }
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/cancel', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    _setOvernightStatus('Run #' + runId + ' cancel requested', false);
+    showToast('Cancel requested for run #' + runId);
+  } catch (err) {
+    _setOvernightStatus('Cancel failed: ' + String(err), true);
+    showToast('Cancel failed', true);
+  }
+}
+
+function _setObserverStatus(text, isError) {
+  const el = document.getElementById('observer-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
+}
+
+function _renderObserverArtifacts(summary) {
+  const el = document.getElementById('observer-artifacts');
+  if (!el) return;
+  if (!summary || typeof summary !== 'object') {
+    el.textContent = '';
+    return;
+  }
+  const promptIdx = summary.prompt_trace && summary.prompt_trace.index ? String(summary.prompt_trace.index) : '';
+  const decisionPath = summary.decision_trace && summary.decision_trace.path ? String(summary.decision_trace.path) : '';
+  const merged = summary.artifacts && summary.artifacts.merged_source_contracts ? String(summary.artifacts.merged_source_contracts) : '';
+  const parts = [];
+  if (merged) parts.push('merged=' + merged);
+  if (promptIdx) parts.push('prompt_trace=' + promptIdx);
+  if (decisionPath) parts.push('decision_trace=' + decisionPath);
+  el.textContent = parts.join(' | ');
+}
+
+async function startObserverSwarm() {
+  const tickers = _parseTickerCsv(document.getElementById('obs-tickers')?.value || '');
+  const scoutCount = Math.max(1, Number(document.getElementById('obs-scout-count')?.value || 4));
+  const maxAttempts = Math.max(1, Number(document.getElementById('obs-max-attempts')?.value || 5));
+  const maxNoYield = Math.max(1, Number(document.getElementById('obs-max-no-yield')?.value || 3));
+  const executeScrape = !!document.getElementById('obs-execute-scrape')?.checked;
+  const runFeedbackLoop = !!document.getElementById('obs-feedback-loop')?.checked;
+  const applyPrimitives = !!document.getElementById('obs-apply-primitives')?.checked;
+  const runIdRaw = (document.getElementById('obs-run-id')?.value || '').trim();
+
+  _setObserverStatus('Starting observer swarm…', false);
+  _renderObserverArtifacts(null);
+  try {
+    const resp = await fetch('/api/operations/observer_swarm/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        tickers,
+        scout_count: scoutCount,
+        max_attempts_source: maxAttempts,
+        max_no_yield: maxNoYield,
+        execute_scrape: executeScrape,
+        run_feedback_loop: runFeedbackLoop,
+        apply_validated_primitives: applyPrimitives,
+        run_id: runIdRaw || null,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+
+    _observerTaskId = String(data.data?.task_id || '');
+    const taskInput = document.getElementById('obs-task-id');
+    if (taskInput && _observerTaskId) taskInput.value = _observerTaskId;
+    _setObserverStatus('Observer swarm task queued: ' + _observerTaskId, false);
+    showToast('Observer swarm started');
+    refreshObserverSwarmStatus();
+    if (_observerPollTimer) clearInterval(_observerPollTimer);
+    _observerPollTimer = setInterval(refreshObserverSwarmStatus, 3000);
+  } catch (err) {
+    _setObserverStatus('Failed to start: ' + String(err), true);
+    showToast('Failed to start observer swarm', true);
+  }
+}
+
+function _activeObserverTaskId() {
+  const explicit = String(document.getElementById('obs-task-id')?.value || '').trim();
+  if (explicit) return explicit;
+  return _observerTaskId;
+}
+
+async function refreshObserverSwarmStatus() {
+  const taskId = _activeObserverTaskId();
+  if (!taskId) {
+    _setObserverStatus('No observer task selected. Start a run or enter task id.', false);
+    return;
+  }
+  try {
+    const resp = await fetch('/api/operations/observer_swarm/' + encodeURIComponent(taskId) + '/status', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const s = data.data || {};
+    const state = s.status || 'unknown';
+    const summary = s.summary || {};
+    const statusCounts = summary.status_counts || {};
+    const feedback = summary.feedback_loop || {};
+    _setObserverStatus(
+      'Task ' + taskId + ' status=' + state
+      + ' | tickers=' + ((s.tickers || []).length || 0)
+      + ' | ready=' + (statusCounts.ready_for_scrape || 0)
+      + ' | partial=' + (statusCounts.partially_covered || 0)
+      + ' | blocked=' + (statusCounts.blocked || 0)
+      + ' | gaps=' + (feedback.gap_count || 0)
+      + ' | candidates=' + (feedback.candidate_count || 0),
+      state === 'error'
+    );
+    _renderObserverArtifacts(summary);
+    if (['complete', 'error'].includes(state)) {
+      if (_observerPollTimer) {
+        clearInterval(_observerPollTimer);
+        _observerPollTimer = null;
+      }
+      loadPipelineObservability();
+    }
+  } catch (err) {
+    _setObserverStatus('Status check failed: ' + String(err), true);
+  }
+}
+
 async function loadCompanies() {
   const tbody = document.getElementById('companies-tbody');
   try {
@@ -926,6 +1360,7 @@ async function loadCompanies() {
     renderCompanies();
     loadScrapeQueue();
     loadPipelineObservability();
+    loadScoutKeywordFrequency();
   } catch (_err) {
     _companiesLoaded = false;
     if (tbody) {
@@ -1250,6 +1685,10 @@ async function syncCompanyConfig() {
 function openAddCompany() {
   document.getElementById('add-company-form').style.display = '';
   document.getElementById('ac-error').textContent = '';
+  const bulkMsg = document.getElementById('ac-bulk-msg');
+  const bulkPreview = document.getElementById('ac-bulk-preview');
+  if (bulkMsg) bulkMsg.textContent = '';
+  if (bulkPreview) bulkPreview.textContent = '';
   onAddCompanyModeChange();
   document.getElementById('ac-ticker').focus();
 }
@@ -1286,12 +1725,275 @@ function onAddCompanyModeChange() {
   }
 }
 
+function _parseDelimitedRecords(rawText, delimiter) {
+  const text = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === delimiter && !inQuotes) {
+      row.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    if (ch === '\n' && !inQuotes) {
+      row.push(cur.trim());
+      if (row.some(function(cell) { return String(cell || '').trim().length > 0; })) {
+        rows.push(row);
+      }
+      row = [];
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  if (inQuotes) {
+    return { error: 'CSV parse error: unmatched quote detected.' };
+  }
+  row.push(cur.trim());
+  if (row.some(function(cell) { return String(cell || '').trim().length > 0; })) {
+    rows.push(row);
+  }
+  return { rows: rows };
+}
+
+function _normalizeBulkHeader(label) {
+  return String(label || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function _parseBulkCompanyRows(rawText) {
+  const text = String(rawText || '');
+  if (!text.trim()) {
+    return { error: 'Paste header row plus at least one data row.' };
+  }
+
+  const firstLine = (text.match(/^[^\r\n]*/) || [''])[0];
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const delimiter = tabCount > commaCount ? '\t' : ',';
+  const parsed = _parseDelimitedRecords(text, delimiter);
+  if (parsed.error) return parsed;
+  const records = parsed.rows || [];
+  if (records.length < 2) {
+    return { error: 'Paste header row plus at least one data row.' };
+  }
+
+  const headers = records[0];
+  const normalizedHeaders = headers.map(_normalizeBulkHeader);
+
+  const aliases = {
+    ticker: ['ticker', 'symbol', 'tickersymbol'],
+    name: ['name', 'company', 'companyname'],
+    ir_url: ['investorrelationbaseurl', 'investorrelationsbaseurl', 'irurl', 'ir', 'investorrelationurl'],
+    cik: ['cik', 'cikedgar', 'edgarcik'],
+    description: ['description', 'desc', 'note', 'notes'],
+    prnewswire_url: ['prnewswire', 'prnewswireurl', 'prnews'],
+    globenewswire_url: ['globenewswire', 'globenewswireurl', 'globalnewswire', 'globalnewswireurl'],
+    scraper_mode: ['mode', 'scrapermode', 'scraper_mode', 'scrapemode'],
+  };
+
+  function findIndex(key) {
+    const variants = aliases[key] || [];
+    for (let i = 0; i < normalizedHeaders.length; i += 1) {
+      if (variants.includes(normalizedHeaders[i])) return i;
+    }
+    return -1;
+  }
+
+  const idxTicker = findIndex('ticker');
+  const idxName = findIndex('name');
+  if (idxTicker < 0 || idxName < 0) {
+    return { error: 'Header must include at least Ticker and Name columns.' };
+  }
+  const idxIr = findIndex('ir_url');
+  const idxCik = findIndex('cik');
+  const idxDesc = findIndex('description');
+  const idxPrn = findIndex('prnewswire_url');
+  const idxGnw = findIndex('globenewswire_url');
+  const idxMode = findIndex('scraper_mode');
+  const parse_warnings = [];
+  const validModes = new Set(['rss', 'index', 'template', 'skip']);
+
+  const rows = [];
+  for (let i = 1; i < records.length; i += 1) {
+    const cols = records[i];
+    if (cols.length !== headers.length) {
+      parse_warnings.push('row ' + (i + 1) + ': column count mismatch (' + cols.length + ' vs ' + headers.length + ')');
+      continue;
+    }
+    const ticker = String(cols[idxTicker] || '').trim().toUpperCase();
+    const name = String(cols[idxName] || '').trim();
+    if (!ticker || !name) {
+      parse_warnings.push('row ' + (i + 1) + ': ticker/name required');
+      continue;
+    }
+    let mode = idxMode >= 0 ? String(cols[idxMode] || '').trim().toLowerCase() : '';
+    if (mode && !validModes.has(mode)) {
+      parse_warnings.push('row ' + (i + 1) + ': invalid mode "' + mode + '"');
+      continue;
+    }
+    rows.push({
+      ticker: ticker,
+      name: name,
+      ir_url: idxIr >= 0 ? String(cols[idxIr] || '').trim() : '',
+      cik: idxCik >= 0 ? String(cols[idxCik] || '').trim() : '',
+      description: idxDesc >= 0 ? String(cols[idxDesc] || '').trim() : '',
+      prnewswire_url: idxPrn >= 0 ? String(cols[idxPrn] || '').trim() : '',
+      globenewswire_url: idxGnw >= 0 ? String(cols[idxGnw] || '').trim() : '',
+      scraper_mode: mode,
+    });
+  }
+  if (!rows.length) {
+    return { error: 'No valid rows found (Ticker + Name are required per row).' };
+  }
+  return { rows: rows, delimiter: delimiter, headers: headers, parse_warnings: parse_warnings };
+}
+
+function previewBulkCompanyPaste() {
+  const msgEl = document.getElementById('ac-bulk-msg');
+  const previewEl = document.getElementById('ac-bulk-preview');
+  const raw = document.getElementById('ac-bulk-text').value || '';
+  const parsed = _parseBulkCompanyRows(raw);
+  if (parsed.error) {
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-danger)';
+      msgEl.textContent = parsed.error;
+    }
+    if (previewEl) previewEl.textContent = '';
+    return;
+  }
+  const sample = parsed.rows.slice(0, 8).map(function(r) { return r.ticker; }).join(', ');
+  const warnCount = (parsed.parse_warnings || []).length;
+  if (msgEl) {
+    msgEl.style.color = warnCount ? 'var(--theme-warning)' : 'var(--theme-text-muted)';
+    msgEl.textContent = 'Parsed ' + parsed.rows.length + ' rows' + (warnCount ? (' (' + warnCount + ' warnings)') : '') + '.';
+  }
+  if (previewEl) {
+    previewEl.textContent = (warnCount
+      ? ('Warnings: ' + parsed.parse_warnings.slice(0, 3).join(' | ') + (warnCount > 3 ? ' ...' : '') + ' | ')
+      : '')
+      + 'Preview: ' + sample + (parsed.rows.length > 8 ? ', ...' : '');
+  }
+}
+
+async function submitBulkCompanies() {
+  const msgEl = document.getElementById('ac-bulk-msg');
+  const previewEl = document.getElementById('ac-bulk-preview');
+  const raw = document.getElementById('ac-bulk-text').value || '';
+  const parsed = _parseBulkCompanyRows(raw);
+  if (parsed.error) {
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-danger)';
+      msgEl.textContent = parsed.error;
+    }
+    return;
+  }
+
+  if (msgEl) {
+    msgEl.style.color = 'var(--theme-text-muted)';
+    msgEl.textContent = 'Importing ' + parsed.rows.length + ' rows...';
+  }
+
+  try {
+    const existingResp = await fetch('/api/companies', { cache: 'no-store' });
+    const existingJson = await existingResp.json();
+    if (!existingResp.ok || !existingJson.success) {
+      throw new Error(existingJson.error?.message || ('HTTP ' + existingResp.status));
+    }
+    const existing = new Set((existingJson.data || []).map(function(c) {
+      return String(c.ticker || '').toUpperCase();
+    }));
+
+    let created = 0;
+    let updated = 0;
+    const failures = (parsed.parse_warnings || []).slice();
+    for (let i = 0; i < parsed.rows.length; i += 1) {
+      const row = parsed.rows[i];
+      const rowMode = String(row.scraper_mode || '').trim().toLowerCase();
+      const basePayload = {
+        name: row.name,
+        sector: 'BTC-miners',
+      };
+      if (row.ir_url) basePayload.ir_url = row.ir_url;
+      if (row.cik) basePayload.cik = row.cik;
+      if (row.description) basePayload.sandbox_note = row.description;
+      if (row.prnewswire_url) basePayload.prnewswire_url = row.prnewswire_url;
+      if (row.globenewswire_url) basePayload.globenewswire_url = row.globenewswire_url;
+      if (rowMode) basePayload.scraper_mode = rowMode;
+
+      try {
+        if (existing.has(row.ticker)) {
+          const updateResp = await fetch('/api/companies/' + encodeURIComponent(row.ticker), {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(basePayload),
+          });
+          const updateJson = await updateResp.json();
+          if (!updateResp.ok || !updateJson.success) {
+            throw new Error(updateJson.error?.message || ('HTTP ' + updateResp.status));
+          }
+          updated += 1;
+        } else {
+          const createPayload = Object.assign({
+            ticker: row.ticker,
+            scraper_mode: rowMode || 'skip',
+          }, basePayload);
+          const createResp = await fetch('/api/companies', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(createPayload),
+          });
+          const createJson = await createResp.json();
+          if (!createResp.ok || !createJson.success) {
+            throw new Error(createJson.error?.message || ('HTTP ' + createResp.status));
+          }
+          created += 1;
+          existing.add(row.ticker);
+        }
+      } catch (rowErr) {
+        failures.push(row.ticker + ': ' + String(rowErr));
+      }
+    }
+
+    if (msgEl) {
+      msgEl.style.color = failures.length ? 'var(--theme-danger)' : 'var(--theme-success)';
+      msgEl.textContent =
+        'Import complete. created=' + created + ', updated=' + updated + ', failed=' + failures.length;
+    }
+    if (previewEl) {
+      previewEl.textContent = failures.length
+        ? ('Failures: ' + failures.slice(0, 5).join(' | ') + (failures.length > 5 ? ' ...' : ''))
+        : 'All rows imported successfully.';
+    }
+    _companiesLoaded = false;
+    await loadCompanies();
+  } catch (err) {
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-danger)';
+      msgEl.textContent = 'Import failed: ' + String(err);
+    }
+  }
+}
+
 async function submitAddCompany() {
   const ticker = document.getElementById('ac-ticker').value.trim().toUpperCase();
   const name   = document.getElementById('ac-name').value.trim();
   const sector = document.getElementById('ac-sector').value.trim() || 'BTC-miners';
   const mode   = document.getElementById('ac-mode').value;
   const irUrl = document.getElementById('ac-ir-url').value.trim();
+  const cik = document.getElementById('ac-cik').value.trim();
+  const description = document.getElementById('ac-description').value.trim();
   const rssUrl = document.getElementById('ac-rss-url').value.trim();
   const prnewswireUrl = document.getElementById('ac-prnewswire-url').value.trim();
   const globenewswireUrl = document.getElementById('ac-globenewswire-url').value.trim();
@@ -1301,6 +2003,8 @@ async function submitAddCompany() {
   document.getElementById('ac-error').textContent = '';
   const payload = { ticker, name, sector, scraper_mode: mode };
   if (irUrl) payload.ir_url = irUrl;
+  if (cik) payload.cik = cik;
+  if (description) payload.sandbox_note = description;
   if (rssUrl) payload.rss_url = rssUrl;
   if (prnewswireUrl) payload.prnewswire_url = prnewswireUrl;
   if (globenewswireUrl) payload.globenewswire_url = globenewswireUrl;

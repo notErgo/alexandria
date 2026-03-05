@@ -9,6 +9,7 @@ Infrastructure probe results (2026-03-01):
   RIOT CIK confirmed from EDGAR probe: 0001167419
 """
 from pathlib import Path
+import os as _os
 
 # --- Extraction thresholds ---
 # Extractions below this confidence route to review_queue for analyst approval.
@@ -16,7 +17,9 @@ CONFIDENCE_REVIEW_THRESHOLD: float = 0.75
 
 # --- Paths ---
 # Investigation data (sessions, results): backed up, not in project tree
-DATA_DIR: str = str(Path.home() / "Documents/Hermeneutic/data/miners")
+DATA_DIR: str = str(Path(
+    _os.environ.get("MINERS_DATA_DIR", str(Path.home() / "Documents/Hermeneutic/data/miners"))
+).expanduser())
 
 # Config files (companies.json, patterns/): relative to this file's parent
 CONFIG_DIR: str = str(Path(__file__).parent.parent / "config")
@@ -27,8 +30,16 @@ ARCHIVE_DIR: str = str(Path(__file__).parent.parent.parent / "Miner")
 # --- Flask ---
 # Port 5004 avoids collision: Skopos:5000, EVMlite:5001, polywatch-py:5002, polywatch:5003
 # Override with MINERS_PORT env var: MINERS_PORT=5010 ./launch.sh
-import os as _os
 FLASK_PORT: int = int(_os.environ.get("MINERS_PORT", 5004))
+FLASK_HOST: str = _os.environ.get("MINERS_HOST", "127.0.0.1")
+FLASK_DEBUG: bool = _os.environ.get("MINERS_DEBUG", "0").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+# Startup config sync gate. Can be overridden at runtime via
+# config_settings key: auto_sync_companies_on_startup = "1" | "0".
+AUTO_SYNC_COMPANIES_ON_STARTUP: bool = _os.environ.get("MINERS_AUTO_SYNC_COMPANIES", "1").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 # --- EDGAR ---
 # Full-text search API — requires User-Agent header, otherwise returns 403
@@ -111,6 +122,8 @@ SOURCE_TYPES: dict = {
     'archive_pdf':       'Archived PDF (OffChain/Miner/)',
     'archive_html':      'Archived HTML (OffChain/Miner/)',
     'ir_press_release':  'IR press release (live scrape)',
+    'prnewswire_press_release': 'PRNewswire press release (live scrape)',
+    'globenewswire_press_release': 'GlobeNewswire press release (live scrape)',
     'edgar_8k':          'SEC EDGAR 8-K filing',
     'edgar_10q':         'SEC EDGAR 10-Q filing',
     'edgar_10k':         'SEC EDGAR 10-K filing',

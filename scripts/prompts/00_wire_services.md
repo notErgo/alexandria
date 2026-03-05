@@ -42,6 +42,19 @@ Direct organization RSS (preferred — complete archive, no pagination):
 - Direct search: https://www.prnewswire.com/news-releases/news-releases-list.html (filter by company)
 - PRN archives are permanent and fully text-searchable
 
+### IR year-filter dropdowns (critical for BITF and similar Drupal IR pages)
+- Some IR pages expose a year selector where the query payload controls global pagination.
+- Detect `select` names like `*_year[value]` plus form fields (`form_id`, `form_build_id`, widget id).
+- Build per-year URLs by preserving existing form query params and replacing only the year value.
+- Iterate each year (2018..current), then parse each filtered listing for production links.
+- Do not hardcode stale `form_build_id`; always refresh from the current page before generating year URLs.
+- Treat this as first-class schema in scout output:
+  - `discovery_method=year_filter`
+  - `year_filter.select_name`
+  - `year_filter.years`
+  - `year_filter.url_template`
+  - `year_filter.year_urls` (sampled validated URLs)
+
 ### Accesswire / Access Newswire
 - ARBK primary: https://www.accessnewswire.com/newsroom/en/blockchain-and-cryptocurrency (filter "Argo")
 - Web search: `site:accessnewswire.com "Argo Blockchain" [month] [year]`
