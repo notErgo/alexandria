@@ -1,0 +1,93 @@
+{
+  "ticker": "CIFR",
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "sources": [
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Cipher+Mining+Inc.+(rebranded+as+Cipher+Digital)",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=Cipher+Mining+Inc.+(rebranded+as+Cipher+Digital)"
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=Cipher%20Mining%20Inc.%20(rebranded%20as%20Cipher%20Digital)",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "none",
+        "template": "",
+        "max_page": 0
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=Cipher%20Mining%20Inc.%20(rebranded%20as%20Cipher%20Digital)"
+      ]
+    }
+  ],
+  "status": "blocked",
+  "blockers": [
+    "exhausted:ir:timeout_or_network",
+    "coverage_gate:no_ir_and_no_wire_signal"
+  ],
+  "scout_id": "scout-3",
+  "attempts_by_family": {
+    "ir": 2,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "generated_at": "2026-03-05T19:58:53.940923+00:00"
+}

@@ -1,0 +1,16 @@
+{
+  "run_id": "observer_full_wire_finalize_20260305T000000Z",
+  "scout_id": "scout-4",
+  "tickers": [
+    "BITF",
+    "GRDI",
+    "MIGI"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 1,
+    "blocked": 1,
+    "partially_covered": 1
+  },
+  "contracts_written": 3,
+  "completed_at": "2026-03-05T21:24:15.630766+00:00"
+}

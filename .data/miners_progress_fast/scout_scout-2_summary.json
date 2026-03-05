@@ -1,0 +1,17 @@
+{
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "scout_id": "scout-2",
+  "tickers": [
+    "APLD",
+    "BTDR",
+    "GRDI",
+    "IREN",
+    "SDIG"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 3,
+    "blocked": 2
+  },
+  "contracts_written": 5,
+  "completed_at": "2026-03-05T19:56:14.575632+00:00"
+}

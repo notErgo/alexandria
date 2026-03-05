@@ -2,7 +2,7 @@
 import threading
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from infra.db import MinerDB
 
@@ -80,7 +80,7 @@ class ScrapeWorker(threading.Thread):
             self._db.update_company_scraper_fields(
                 ticker,
                 scraper_status='ok',
-                last_scrape_at=datetime.utcnow().isoformat(),
+                last_scrape_at=datetime.now(timezone.utc).isoformat(),
                 last_scrape_error=None,
             )
             log.info("Scrape completed for %s", ticker)

@@ -1,0 +1,154 @@
+{
+  "ticker": "BITF",
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "sources": [
+    {
+      "family": "ir",
+      "entry_url": "https://investor.bitfarms.com/news-events/press-releases",
+      "discovery_method": "year_filter",
+      "url_pattern": "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=%7Byear%7D",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 25
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 2
+      },
+      "confidence": 0.9,
+      "evidence_urls": [
+        "https://investor.bitfarms.com/news-events/press-releases",
+        "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026",
+        "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025",
+        "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024"
+      ],
+      "year_filter": {
+        "select_name": "aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year[value]",
+        "years": [
+          "2026",
+          "2025",
+          "2024",
+          "2023",
+          "2022",
+          "2021",
+          "2020",
+          "2019",
+          "2018"
+        ],
+        "year_urls": [
+          "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026",
+          "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025",
+          "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024",
+          "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2023"
+        ],
+        "url_template": "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=%7Byear%7D",
+        "sample_count": 2,
+        "heuristic_only": false
+      }
+    },
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitfarms+Ltd.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=Bitfarms+Ltd."
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitfarms%20Ltd.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 2
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=Bitfarms%20Ltd.",
+        "https://www.prnewswire.com/search/news/?keyword=Bitfarms+Ltd."
+      ]
+    }
+  ],
+  "status": "ready_for_scrape",
+  "blockers": [],
+  "scout_id": "scout-4",
+  "attempts_by_family": {
+    "ir": 1,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "generated_at": "2026-03-05T19:54:56.241543+00:00"
+}

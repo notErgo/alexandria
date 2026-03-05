@@ -1,0 +1,128 @@
+{
+  "ticker": "CORZ",
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "sources": [
+    {
+      "family": "ir",
+      "entry_url": "https://investors.corescientific.com/news-events/press-releases",
+      "discovery_method": "index",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://investors.corescientific.com/news-events/press-releases"
+      ]
+    },
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc."
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc."
+      ]
+    }
+  ],
+  "status": "ready_for_scrape",
+  "blockers": [],
+  "scout_id": "scout-3",
+  "attempts_by_family": {
+    "ir": 1,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "primitive_gaps": [],
+  "generated_at": "2026-03-05T22:36:30.296463+00:00"
+}

@@ -1,0 +1,156 @@
+{
+  "run_id": "observer_boundC_20260305T000000Z",
+  "generated_at": "2026-03-05T22:01:45.171425+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "GREE",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Greenidge+Generation+Holdings+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Greenidge%20Generation%20Holdings%20Inc."
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "HIVE",
+      "status": "partially_covered",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 27,
+          "entry_url": "https://www.hivedigitaltechnologies.com/news/"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=HIVE+Digital+Technologies+Ltd."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=HIVE%20Digital%20Technologies%20Ltd."
+        }
+      ],
+      "blockers": [
+        "scrape_error:ir:Failed to parse: 'www.hivedigitaltechnologies.comhive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase-in-bitcoin-production-and-phase-3-expansion', label empty or too long"
+      ]
+    },
+    {
+      "ticker": "HUT8",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.hut8.com/news-insights/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Hut+8+Corp."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 25,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Hut%208%20Corp."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "IREN",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "rss",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+        },
+        {
+          "family": "globenewswire",
+          "method": "rss",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=IREN%20Limited"
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "MARA",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 2,
+          "entry_url": "https://ir.mara.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 2,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 3,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc."
+        }
+      ],
+      "blockers": []
+    }
+  ]
+}

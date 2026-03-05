@@ -1,7 +1,7 @@
 """Company and metric schema API routes."""
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -62,7 +62,7 @@ def _expand_template_url(url_template: str) -> str:
 def _probe_candidate_url(source_type: str, url: str, timeout: int = 12) -> dict:
     """Probe a candidate URL and return deterministic evidence."""
     probe_url = _expand_template_url(url) if source_type == 'TEMPLATE' else url
-    checked_at = datetime.utcnow().isoformat()
+    checked_at = datetime.now(timezone.utc).isoformat()
     try:
         resp = requests.get(probe_url, timeout=timeout, allow_redirects=True, headers={
             'User-Agent': 'Hermeneutic Miner Probe/1.0'
@@ -161,6 +161,14 @@ def scraper_governance():
     except ValueError:
         return jsonify({'success': False, 'error': {'message': 'stale_days must be an integer'}}), 400
     snapshot = db.get_scraper_governance_snapshot(stale_days=stale_days)
+    log.info(
+        "event=scraper_governance_snapshot stale_days=%s total=%s needs_probe=%s stale_skip=%s conflicts=%s",
+        stale_days,
+        snapshot.get('total', 0),
+        snapshot.get('needs_probe', 0),
+        snapshot.get('stale_skip', 0),
+        snapshot.get('skip_conflict_active_source', 0),
+    )
     return jsonify({'success': True, 'data': snapshot})
 
 
@@ -219,8 +227,13 @@ def add_discovery_candidates(ticker):
         stored += 1
 
     if stored == 0:
+        log.warning("event=discovery_candidates_store ticker=%s proposed_by=%s stored=0", ticker, proposed_by)
         return jsonify({'success': False, 'error': {'message': 'No valid candidates to store'}}), 400
     rows = db.list_discovery_candidates(ticker, verified_only=False)
+    log.info(
+        "event=discovery_candidates_store ticker=%s proposed_by=%s stored=%s total_candidates=%s",
+        ticker, proposed_by, stored, len(rows)
+    )
     return jsonify({'success': True, 'data': {'stored': stored, 'candidates': rows}})
 
 
@@ -261,6 +274,11 @@ def _run_bootstrap_probe_for_ticker(db, ticker: str, apply_mode: bool, allow_app
             })
         candidates = db.list_discovery_candidates(ticker, verified_only=False)
 
+    log.info(
+        "event=bootstrap_probe_ticker_start ticker=%s apply_mode=%s allow_apply_skip=%s timeout=%s candidate_count=%s",
+        ticker, int(apply_mode), int(allow_apply_skip), timeout, len(candidates),
+    )
+
     probed = []
     for c in candidates:
         result = _probe_candidate_url(c['source_type'], c['url'], timeout=timeout)
@@ -286,6 +304,10 @@ def _run_bootstrap_probe_for_ticker(db, ticker: str, apply_mode: bool, allow_app
             'notes': result.get('evidence_title'),
         })
         probed.append({**c, **result, 'verified': verified})
+        log.debug(
+            "event=bootstrap_probe_candidate ticker=%s source_type=%s probe_status=%s http_status=%s verified=%s",
+            ticker, c['source_type'], result.get('probe_status'), result.get('http_status'), verified
+        )
 
     active = [p for p in probed if p.get('probe_status') == 'ACTIVE']
     recommended_mode = 'skip'
@@ -326,9 +348,14 @@ def _run_bootstrap_probe_for_ticker(db, ticker: str, apply_mode: bool, allow_app
 
     db.update_company_scraper_fields(
         ticker,
-        probe_completed_at=datetime.utcnow().isoformat(),
+        probe_completed_at=datetime.now(timezone.utc).isoformat(),
         scraper_status='probe_ok' if active else 'probe_failed',
         last_scrape_error=None if active else 'bootstrap probe found no ACTIVE sources',
+    )
+
+    log.info(
+        "event=bootstrap_probe_ticker_end ticker=%s active_candidates=%s recommended_mode=%s applied=%s",
+        ticker, len(active), recommended_mode, int(applied),
     )
 
     return {
@@ -357,6 +384,10 @@ def bootstrap_probe(ticker):
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': {'message': 'timeout_seconds must be an integer'}}), 400
     timeout = max(3, min(timeout, 60))
+    log.info(
+        "event=bootstrap_probe_request ticker=%s apply_mode=%s allow_apply_skip=%s timeout=%s",
+        ticker, int(apply_mode), int(allow_apply_skip), timeout
+    )
 
     try:
         result = _run_bootstrap_probe_for_ticker(
@@ -367,6 +398,7 @@ def bootstrap_probe(ticker):
             timeout=timeout,
         )
     except ValueError as e:
+        log.warning("event=bootstrap_probe_rejected ticker=%s reason=%s", ticker, str(e))
         return jsonify({'success': False, 'error': {'message': str(e)}}), 400
 
     return jsonify({'success': True, 'data': result})
@@ -409,6 +441,12 @@ def bootstrap_probe_all():
             continue
         targets.append(ticker)
 
+    log.info(
+        "event=bootstrap_probe_all_start target_count=%s apply_mode=%s allow_apply_skip=%s stale_days=%s timeout=%s statuses=%s ticker_filter_count=%s",
+        len(targets), int(apply_mode), int(allow_apply_skip), stale_days, timeout,
+        ','.join(sorted(target_statuses)), 0 if ticker_filter is None else len(ticker_filter),
+    )
+
     results = []
     failures = []
     for ticker in targets:
@@ -421,7 +459,13 @@ def bootstrap_probe_all():
                 timeout=timeout,
             ))
         except Exception as e:
+            log.warning("event=bootstrap_probe_all_ticker_failed ticker=%s error=%s", ticker, str(e))
             failures.append({'ticker': ticker, 'error': str(e)})
+
+    log.info(
+        "event=bootstrap_probe_all_end targeted=%s completed=%s failed=%s apply_mode=%s",
+        len(targets), len(results), len(failures), int(apply_mode),
+    )
 
     return jsonify({'success': True, 'data': {
         'target_statuses': sorted(target_statuses),

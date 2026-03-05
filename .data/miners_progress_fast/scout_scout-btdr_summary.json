@@ -1,0 +1,12 @@
+{
+  "run_id": "btdr_fix2_20260305T194207Z",
+  "scout_id": "scout-btdr",
+  "tickers": [
+    "BTDR"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 1
+  },
+  "contracts_written": 1,
+  "completed_at": "2026-03-05T19:42:12.753847+00:00"
+}

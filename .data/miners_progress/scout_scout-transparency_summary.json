@@ -1,0 +1,12 @@
+{
+  "run_id": "observer_prompttrace_20260305T000000Z",
+  "scout_id": "scout-transparency",
+  "tickers": [
+    "BITF"
+  ],
+  "status_counts": {
+    "blocked": 1
+  },
+  "contracts_written": 1,
+  "completed_at": "2026-03-05T20:07:59.123521+00:00"
+}

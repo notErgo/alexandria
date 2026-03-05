@@ -1,0 +1,94 @@
+{
+  "run_id": "observer_bounded_05_20260305T000000Z",
+  "generated_at": "2026-03-05T21:57:58.254487+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "RIOT",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.riotplatforms.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 3,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Riot+Platforms,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 5,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Riot%20Platforms,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "SDIG",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Stronghold+Digital+Mining,+Inc.+(acquired+by+Bitfarms)"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Stronghold%20Digital%20Mining,%20Inc.%20(acquired%20by%20Bitfarms)"
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "WULF",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://investors.terawulf.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=TeraWulf+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=TeraWulf%20Inc."
+        }
+      ],
+      "blockers": []
+    }
+  ]
+}

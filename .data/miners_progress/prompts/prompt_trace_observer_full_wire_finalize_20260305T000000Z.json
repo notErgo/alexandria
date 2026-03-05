@@ -1,0 +1,13 @@
+{
+  "run_id": "observer_full_wire_finalize_20260305T000000Z",
+  "observer_prompt": ".data/miners_progress/prompts/observer_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+  "scout_prompts": [
+    ".data/miners_progress/prompts/scout-4_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-3_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-5_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-2_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-1_prompt_observer_full_wire_finalize_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-6_prompt_observer_full_wire_finalize_20260305T000000Z.md"
+  ],
+  "generated_at": "2026-03-05T21:39:41.203665+00:00"
+}

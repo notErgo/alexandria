@@ -1,0 +1,2296 @@
+{
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "contracts": [
+    {
+      "ticker": "ABTC",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.abtc.com/news",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.abtc.com/news"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=American+Bitcoin+Corp.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 1
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=American+Bitcoin+Corp."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=American%20Bitcoin%20Corp.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 29
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=American%20Bitcoin%20Corp.",
+            "https://www.prnewswire.com/search/news/?keyword=American+Bitcoin+Corp."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:20:57.539696+00:00"
+    },
+    {
+      "ticker": "APLD",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://ir.applieddigital.com",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://ir.applieddigital.com"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Applied+Digital+Corporation",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Applied+Digital+Corporation"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Applied%20Digital%20Corporation",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Applied%20Digital%20Corporation"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:20:40.049771+00:00"
+    },
+    {
+      "ticker": "ARBK",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.accessnewswire.com/newsroom/en/blockchain-and-cryptocurrency",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.accessnewswire.com/newsroom/en/blockchain-and-cryptocurrency"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Argo+Blockchain+plc",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Argo+Blockchain+plc"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Argo%20Blockchain%20plc",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Argo%20Blockchain%20plc"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:20:38.654154+00:00"
+    },
+    {
+      "ticker": "BITF",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://investor.bitfarms.com/news-events/press-releases",
+          "discovery_method": "year_filter",
+          "url_pattern": "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=%7Byear%7D",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 25
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 2
+          },
+          "confidence": 0.9,
+          "evidence_urls": [
+            "https://investor.bitfarms.com/news-events/press-releases",
+            "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026",
+            "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025",
+            "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024"
+          ],
+          "year_filter": {
+            "select_name": "aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year[value]",
+            "years": [
+              "2026",
+              "2025",
+              "2024",
+              "2023",
+              "2022",
+              "2021",
+              "2020",
+              "2019",
+              "2018"
+            ],
+            "year_urls": [
+              "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026",
+              "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025",
+              "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024",
+              "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2023"
+            ],
+            "url_template": "https://investor.bitfarms.com/news-events/press-releases?op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_build_id=form-kn5e-PuBgYqbhTu_yQlui012f8aphFYWIB23Serp2V4&form_id=widget_form_base&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=%7Byear%7D",
+            "sample_count": 2,
+            "heuristic_only": false
+          }
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitfarms+Ltd.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Bitfarms+Ltd."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitfarms%20Ltd.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 2
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Bitfarms%20Ltd.",
+            "https://www.prnewswire.com/search/news/?keyword=Bitfarms+Ltd."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:21:16.256251+00:00"
+    },
+    {
+      "ticker": "BTBT",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bit+Digital,+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Bit+Digital,+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bit%20Digital,%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Bit%20Digital,%20Inc."
+          ]
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "exhausted:ir:http_404",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:20:50.414472+00:00"
+    },
+    {
+      "ticker": "BTDR",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://ir.bitdeer.com/news-events/news-releases",
+          "discovery_method": "year_filter",
+          "url_pattern": "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D={year}&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 25
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": false,
+            "sample_count": 0
+          },
+          "confidence": 0.65,
+          "evidence_urls": [
+            "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+            "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+            "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base"
+          ],
+          "year_filter": {
+            "select_name": "",
+            "years": [
+              "2026",
+              "2025",
+              "2024",
+              "2023",
+              "2021"
+            ],
+            "year_urls": [
+              "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+              "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+              "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+              "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2023&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+              "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2021&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base"
+            ],
+            "url_template": "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D={year}&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+            "sample_count": 0,
+            "heuristic_only": true,
+            "seeded": true
+          }
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitdeer+Technologies+Group",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 1
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Bitdeer+Technologies+Group"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitdeer%20Technologies%20Group",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 1
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Bitdeer%20Technologies%20Group",
+            "https://www.prnewswire.com/search/news/?keyword=Bitdeer+Technologies+Group"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:36:12.394003+00:00"
+    },
+    {
+      "ticker": "CIFR",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Cipher+Mining+Inc.+(rebranded+as+Cipher+Digital)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Cipher+Mining+Inc.+(rebranded+as+Cipher+Digital)"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Cipher%20Mining%20Inc.%20(rebranded%20as%20Cipher%20Digital)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Cipher%20Mining%20Inc.%20(rebranded%20as%20Cipher%20Digital)"
+          ]
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:24.041870+00:00"
+    },
+    {
+      "ticker": "CLSK",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://investors.cleanspark.com/news",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://investors.cleanspark.com/news"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=CleanSpark,+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=CleanSpark,+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=CleanSpark,%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 17
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=CleanSpark,%20Inc.",
+            "https://www.prnewswire.com/search/news/?keyword=CleanSpark%2C+Inc.",
+            "https://www.prnewswire.com/search/news/?keyword=CleanSpark%2C+Inc.&page=2"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:21:05.544428+00:00"
+    },
+    {
+      "ticker": "CORZ",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://investors.corescientific.com/news-events/press-releases",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://investors.corescientific.com/news-events/press-releases"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:36:30.296463+00:00"
+    },
+    {
+      "ticker": "GRDI",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=GRIID+Infrastructure+Inc.+(acquired+by+CleanSpark)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=GRIID+Infrastructure+Inc.+(acquired+by+CleanSpark)"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=GRIID%20Infrastructure%20Inc.%20(acquired%20by%20CleanSpark)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=GRIID%20Infrastructure%20Inc.%20(acquired%20by%20CleanSpark)"
+          ]
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:29.204729+00:00"
+    },
+    {
+      "ticker": "GREE",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Greenidge+Generation+Holdings+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Greenidge+Generation+Holdings+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Greenidge%20Generation%20Holdings%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Greenidge%20Generation%20Holdings%20Inc."
+          ]
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:22:08.282725+00:00"
+    },
+    {
+      "ticker": "HIVE",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.hivedigitaltechnologies.com/news/",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 27
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.hivedigitaltechnologies.com/news/"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=HIVE+Digital+Technologies+Ltd.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=HIVE+Digital+Technologies+Ltd."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=HIVE%20Digital%20Technologies%20Ltd.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=HIVE%20Digital%20Technologies%20Ltd."
+          ]
+        }
+      ],
+      "status": "partially_covered",
+      "blockers": [
+        "scrape_error:ir:Failed to parse: 'www.hivedigitaltechnologies.comhive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase-in-bitcoin-production-and-phase-3-expansion', label empty or too long"
+      ],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:36:43.781579+00:00"
+    },
+    {
+      "ticker": "HUT8",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.hut8.com/news-insights/press-releases",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.hut8.com/news-insights/press-releases"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Hut+8+Corp.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Hut+8+Corp."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Hut%208%20Corp.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 25
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Hut%208%20Corp.",
+            "https://www.prnewswire.com/search/news/?keyword=Hut+8+Corp.",
+            "https://www.prnewswire.com/search/news/?keyword=Hut+8+Corp.&page=2"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:45.219082+00:00"
+    },
+    {
+      "ticker": "IREN",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ==",
+          "discovery_method": "rss",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.75,
+          "evidence_urls": [
+            "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ==",
+          "discovery_method": "rss",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.75,
+          "evidence_urls": [
+            "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=IREN%20Limited",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=IREN%20Limited"
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:15.635327+00:00"
+    },
+    {
+      "ticker": "MARA",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://ir.mara.com/news-events/press-releases",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 2
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://ir.mara.com/news-events/press-releases",
+            "https://ir.mara.com/news-events/press-releases/detail/1410/mara-announces-bitcoin-production-and-mining-operation-updates-forseptember-2025",
+            "https://ir.mara.com/news-events/press-releases/detail/1409/mara-announces-bitcoin-production-and-mining-operation-updates-for-august-2025"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 2
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 3
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc.",
+            "https://www.prnewswire.com/search/news/?keyword=MARA+Holdings%2C+Inc."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:36:53.651168+00:00"
+    },
+    {
+      "ticker": "MIGI",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Mawson+Infrastructure+Group+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Mawson+Infrastructure+Group+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Mawson%20Infrastructure%20Group%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 2
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Mawson%20Infrastructure%20Group%20Inc.",
+            "https://www.prnewswire.com/search/news/?keyword=Mawson+Infrastructure+Group+Inc."
+          ]
+        }
+      ],
+      "status": "partially_covered",
+      "blockers": [
+        "exhausted:ir:http_404"
+      ],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:52.827961+00:00"
+    },
+    {
+      "ticker": "RIOT",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://www.riotplatforms.com/news-events/press-releases",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.riotplatforms.com/news-events/press-releases"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Riot+Platforms,+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 3
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Riot+Platforms,+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Riot%20Platforms,%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 5
+          },
+          "confidence": 0.8,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Riot%20Platforms,%20Inc.",
+            "https://www.prnewswire.com/search/news/?keyword=Riot+Platforms%2C+Inc."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-2",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:23:27.367470+00:00"
+    },
+    {
+      "ticker": "SDIG",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Stronghold+Digital+Mining,+Inc.+(acquired+by+Bitfarms)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=Stronghold+Digital+Mining,+Inc.+(acquired+by+Bitfarms)"
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Stronghold%20Digital%20Mining,%20Inc.%20(acquired%20by%20Bitfarms)",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=Stronghold%20Digital%20Mining,%20Inc.%20(acquired%20by%20Bitfarms)"
+          ]
+        }
+      ],
+      "status": "blocked",
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ],
+      "scout_id": "scout-3",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:36:56.681136+00:00"
+    },
+    {
+      "ticker": "WULF",
+      "run_id": "observer_full_fresh_20260305T000000Z",
+      "sources": [
+        {
+          "family": "ir",
+          "entry_url": "https://investors.terawulf.com/news-events/press-releases",
+          "discovery_method": "index",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://investors.terawulf.com/news-events/press-releases"
+          ]
+        },
+        {
+          "family": "globenewswire",
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=TeraWulf+Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "query",
+            "template": "?page={n}",
+            "max_page": 10
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.globenewswire.com/search/keyword?keyword=TeraWulf+Inc."
+          ]
+        },
+        {
+          "family": "prnewswire",
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=TeraWulf%20Inc.",
+          "discovery_method": "search",
+          "url_pattern": "",
+          "pagination": {
+            "type": "none",
+            "template": "",
+            "max_page": 0
+          },
+          "date_extraction": {
+            "strategy": "title_regex",
+            "pattern": "month year"
+          },
+          "filters": {
+            "include": [
+              "production",
+              "operations update",
+              "bitcoin production"
+            ],
+            "exclude": [
+              "earnings",
+              "10-q",
+              "10-k",
+              "financial results"
+            ]
+          },
+          "validation": {
+            "http_ok": true,
+            "parse_ok": true,
+            "sample_count": 0
+          },
+          "confidence": 0.55,
+          "evidence_urls": [
+            "https://www.prnewswire.com/search/news/?keyword=TeraWulf%20Inc."
+          ]
+        }
+      ],
+      "status": "ready_for_scrape",
+      "blockers": [],
+      "scout_id": "scout-1",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "reports_ingested": 0,
+      "primitive_gaps": [],
+      "generated_at": "2026-03-05T22:24:12.010087+00:00"
+    }
+  ],
+  "generated_at": "2026-03-05T22:36:56.685820+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "observer_prompt": ".data/miners_progress/prompts/observer_prompt_observer_full_fresh_20260305T000000Z.md",
+  "scout_prompts": [
+    ".data/miners_progress/prompts/scout-2_prompt_observer_full_fresh_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-1_prompt_observer_full_fresh_20260305T000000Z.md",
+    ".data/miners_progress/prompts/scout-3_prompt_observer_full_fresh_20260305T000000Z.md"
+  ],
+  "generated_at": "2026-03-05T22:36:56.687479+00:00"
+}

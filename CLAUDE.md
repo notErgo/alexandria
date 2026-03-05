@@ -102,13 +102,17 @@ OffChain/miners/
 | v6 | (see migration history) |
 | v7 | companies: sector, scraper_mode, scraper_issues_log, scraper_status, last_scrape_at, last_scrape_error, probe_completed_at; asset_manifest.mutation_log; regime_config; metric_schema; scrape_queue |
 
-## Data Flow (v3 — two-stage pipeline)
+## Data Flow (v3 — two-stage pipeline + optional ingest chain)
+
+Reference map: `docs/general_data_ui_llm_interaction_documentation.md`
 
 ```
 Stage 1 — Ingest (fetch + store raw text):
   Archive PDFs/HTMLs → ArchiveIngestor.ingest_all()  → reports table
-  IR press releases  → IRScraper.scrape_company()    → reports table (fetch+store only)
-  EDGAR 8-K filings  → EdgarConnector               → reports table
+                     ↳ for monthly files, extraction runs inline in ingest_all()
+  IR press releases  → IRScraper.scrape_company()    → reports table (fetch+store)
+  EDGAR filings      → EdgarConnector.fetch_all_filings()
+                     → reports table (8-K + 10-Q + 10-K; fetch+store)
 
 Stage 2 — Extract (LLM+regex+agreement on stored reports):
   db.get_unextracted_reports()  OR  cli.py extract
@@ -121,6 +125,12 @@ Stage 2 — Extract (LLM+regex+agreement on stored reports):
       → db.mark_report_extracted(report_id)
   Analyst protection: extraction_method IN ('analyst','analyst_approved',
       'review_approved','review_edited') → never overwritten by pipeline
+
+Optional ingest→extract chain:
+  POST /api/ingest/ir    { "auto_extract": true }
+  POST /api/ingest/edgar { "auto_extract": true }
+  These run acquisition first, then run extraction over unextracted reports
+  before the ingest task is marked complete.
 ```
 
 ## Key Patterns
@@ -157,9 +167,10 @@ because navigation markup pushes actual content past the raw byte sampling windo
 - `"index"` / `"template"` → `_scrape_index()` / `_scrape_template()` — parses HTML listing, stores raw text
 - `"skip"` → no-op (logs skip_reason)
 
-`IRScraper` no longer takes a `registry` argument — all extraction now goes through
-`extraction_pipeline.extract_report()`. After IR ingest, run `cli.py extract` (or the
-extraction pipeline) to extract data points from the stored reports.
+`IRScraper` no longer takes a `registry` argument — extraction goes through
+`extraction_pipeline.extract_report()`. Use either:
+- explicit stage 2 (`POST /api/operations/extract` or `cli.py extract`), or
+- ingest auto-chain (`POST /api/ingest/ir|edgar` with `auto_extract=true`).
 
 Active RSS companies: MARA (`ir.mara.com/.../rss`), WULF (`investors.terawulf.com/.../rss`).
 Unreachable companies (502 at 2026-03): CORZ, ARBK, IREN — set to `"skip"`.
@@ -174,6 +185,50 @@ For any mode-driven feature (scrapers, parsers, exporters), enforce one source o
 
 Apply this pattern to new mode families by default. It prevents "valid-looking UI state"
 that cannot execute at runtime.
+
+### Global design pattern: Pipeline Stage Counters
+For any ingestion pipeline, publish one shared observability contract:
+1. `discovered` (asset inventory discovered on disk/API),
+2. `ingested` (raw documents stored),
+3. `parsed` (parser completed),
+4. `extracted` (LLM/regex pass completed),
+5. `queued_for_review` (pending analyst decisions).
+
+Expose the same counters at global and per-entity scopes, plus config health
+checks for required mode fields. This prevents hidden backlog and misconfigured
+scrapers from appearing as "empty data".
+
+### Global design pattern: Structured Logging Contract
+For all long-running or state-changing routes/workers, emit structured logs with
+stable `event=` prefixes and core context fields:
+- `event` (machine-parseable action key),
+- entity scope (`ticker`, `task_id`, `route`),
+- control inputs (`apply_mode`, `stale_days`, `timeout`),
+- outcome fields (`status`, `recommended_mode`, `applied`, `error`),
+- counters (`targeted`, `completed`, `failed`).
+
+Rules:
+- Log `*_start` and `*_end` at `INFO`.
+- Log per-item failures at `WARNING`.
+- Keep debug details (`per-candidate`, parser internals) at `DEBUG`.
+- Never rely on UI status alone for operations monitoring; logs must independently
+  reconstruct execution flow.
+
+### Global design pattern: Agent Propose, Rules Verify
+Use agents for source discovery only (candidate URLs + rationale), then run
+deterministic probes before mode changes:
+- Store proposals in `scraper_discovery_candidates`.
+- Probe and write evidence to `source_audit`.
+- Recommend mode from verified evidence (`rss`, `template`, `index`, else `skip`).
+- Apply mode automatically only when policy permits; keep `skip` high-friction.
+
+### Startup company sync control
+Company config auto-sync is startup-gated:
+- Env default: `MINERS_AUTO_SYNC_COMPANIES=1|0`
+- Runtime override: `config_settings.auto_sync_companies_on_startup` (`'1'` or `'0'`)
+
+`hard_delete` purge can set the runtime flag to `'0'` so company rows do not repopulate
+after restart until an operator explicitly runs `Sync Config`.
 
 ### hodl_btc_4 pattern window
 `hodl_btc_4` uses `{0,50}` with `(?!\s+as\s+of)` negative lookahead.
@@ -252,7 +307,7 @@ Ops page (`/ops?tab=<tab>`) → `ops.html` — 4-tab unified interface.
 - `PUT /api/companies/<ticker>` — update company config
 
 **Background worker:**
-`ScrapeWorker` thread started in `run_web.py`. Polls scrape_queue every 5s. Claims job → runs `IRScraper` → auto-triggers extraction → completes/fails. Startup scrub resets orphaned `running` jobs.
+`ScrapeWorker` thread started in `run_web.py`. Polls scrape_queue every 5s. Claims job → runs `IRScraper` and EDGAR fetch (for companies with CIK) → completes/fails. It is ingest-only and does not trigger extraction. Startup scrub resets orphaned `running` jobs.
 
 **Shared components:**
 - `static/js/doc_panel.js` — `DocPanel.init/open/close/buildHighlightedSource`

@@ -1,0 +1,17 @@
+{
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "scout_id": "scout-1",
+  "tickers": [
+    "ABTC",
+    "BTBT",
+    "CORZ",
+    "HUT8",
+    "RIOT"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 4,
+    "blocked": 1
+  },
+  "contracts_written": 5,
+  "completed_at": "2026-03-05T19:55:56.320369+00:00"
+}

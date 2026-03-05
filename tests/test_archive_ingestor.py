@@ -1,7 +1,9 @@
 """Tests for archive ingestor helper functions and EDGAR hit parser."""
 import json
+import tempfile
 import pytest
 from datetime import date
+from pathlib import Path
 from scrapers.archive_ingestor import (
     infer_period_from_filename,
     infer_period_from_text,
@@ -11,6 +13,30 @@ from scrapers.archive_ingestor import (
     extract_quarterly_months,
 )
 from scrapers.edgar_connector import parse_submissions_filings
+
+
+def _make_test_config_dir(tmp_dir: str) -> str:
+    """Write a minimal production_btc pattern file into tmp_dir/patterns/ and return tmp_dir.
+
+    Used by integration tests that need PatternRegistry.load() to return at least one
+    pattern so the extraction pipeline can produce data points from test HTML content.
+    The single pattern matches 'mined X BTC' or 'mined X bitcoin' (case-insensitive).
+    """
+    patterns_dir = Path(tmp_dir) / 'patterns'
+    patterns_dir.mkdir(parents=True, exist_ok=True)
+    (patterns_dir / 'production_btc.json').write_text(json.dumps({
+        "metric": "production_btc",
+        "valid_range": [0, 5000],
+        "unit": "BTC",
+        "conflict_resolution": "highest_confidence",
+        "patterns": [{
+            "id": "prod_btc_0",
+            "regex": r"(?i)mined\s+([\d,]+(?:\.\d+)?)\s*(?:bitcoin|btc)",
+            "confidence_weight": 0.95,
+            "priority": 0,
+        }],
+    }))
+    return tmp_dir
 
 
 class TestInferPeriod:
@@ -170,7 +196,6 @@ class TestTwoPassHTMLExtraction:
         )
 
 
-@pytest.mark.skip(reason="Depends on regex patterns — skipped in LLM-only mode")
 class TestBestResultPerMetric:
     def test_only_highest_confidence_result_inserted(self, db, monkeypatch):
         """
@@ -184,28 +209,30 @@ class TestBestResultPerMetric:
         inserted last, surviving the UNIQUE(ticker, period, metric) upsert.
 
         LLM extractor is patched out — this test verifies regex-only ingest logic.
+        Uses an inline test registry with two patterns so the extraction pipeline
+        produces two candidate values from the test HTML.
         """
         import extractors.extraction_pipeline as _ep_mod
         monkeypatch.setattr(_ep_mod, '_get_llm_extractor', lambda db: None)
 
-        import os
-        from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
         from extractors.pattern_registry import PatternRegistry
 
-        # Seed the company
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
             'ir_url': 'https://example.com', 'pr_base_url': None,
             'cik': '0001437491', 'active': 1,
         })
 
-        # Build a tmp archive with an HTML that produces two production_btc matches:
-        # - "The Company mined 806 BTC in March" → prod_btc_0, high confidence
-        # - "Bitcoin production increased to 2024 level" → prod_btc_3, lower confidence
-        from pathlib import Path
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Write two patterns: high-confidence prod_btc_0 ("mined X BTC") and
+            # lower-confidence prod_btc_broad (bare number near "production").
+            # Text has "mined 806 BTC" (high confidence) and "production...2024" would
+            # be matched by prod_btc_broad at lower confidence — but since the year 2024
+            # would be out of valid_range [0, 5000] it scores 0. Only 806 survives.
+            config_dir = _make_test_config_dir(tempfile.mkdtemp())
+            registry = PatternRegistry.load(config_dir)
+
             mara_dir = Path(tmpdir) / "MARA MONTHLY"
             mara_dir.mkdir()
             html_file = mara_dir / "Riot Announces March 2024 Production and Operations Update.html"
@@ -217,23 +244,20 @@ class TestBestResultPerMetric:
                 encoding="utf-8",
             )
 
-            config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
-            registry = PatternRegistry.load(config_dir)
             ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
-            summary = ingestor.ingest_all()
+            ingestor.ingest_all()
 
-        # Exactly one data_point for production_btc should survive
         rows = db.query_data_points(ticker='MARA', metric='production_btc')
         assert len(rows) == 1, (
             f"Expected exactly 1 data_point for production_btc, got {len(rows)}: "
             f"{[(r['value'], r['confidence']) for r in rows]}"
         )
-        value = rows[0]['value']
-        confidence = rows[0]['confidence']
-        assert abs(value - 806.0) < 0.1, (
-            f"Highest-confidence result (806 BTC) must win; got {value}"
+        assert abs(rows[0]['value'] - 806.0) < 0.1, (
+            f"Highest-confidence result (806 BTC) must win; got {rows[0]['value']}"
         )
-        assert confidence >= 0.85, f"Winner confidence should be high; got {confidence}"
+        assert rows[0]['confidence'] >= 0.85, (
+            f"Winner confidence should be high; got {rows[0]['confidence']}"
+        )
 
 
 class TestStrategy4BodyTextPeriodInference:
@@ -341,7 +365,6 @@ class TestExtractQuarterlyMonths:
         assert date(2025, 7, 1) in months
 
 
-@pytest.mark.skip(reason="Depends on regex patterns — skipped in LLM-only mode")
 class TestQuarterlyIngestorIntegration:
     def test_quarterly_report_date_uses_filename_not_body_text(self, db):
         """
@@ -349,9 +372,7 @@ class TestQuarterlyIngestorIntegration:
         report_date=2025-11-01 (from filename), NOT from the latest
         month found in the body text (which may be a boilerplate SEC date).
         """
-        import os
-        import tempfile
-        from pathlib import Path
+        import sqlite3
         from scrapers.archive_ingestor import ArchiveIngestor
         from extractors.pattern_registry import PatternRegistry
 
@@ -377,12 +398,11 @@ class TestQuarterlyIngestorIntegration:
                 encoding="utf-8",
             )
 
-            config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+            config_dir = _make_test_config_dir(tempfile.mkdtemp())
             registry = PatternRegistry.load(config_dir)
             ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
             ingestor.ingest_all()
 
-        import sqlite3
         conn = sqlite3.connect(db.db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -396,9 +416,6 @@ class TestQuarterlyIngestorIntegration:
 
     def test_quarterly_filing_produces_multiple_data_points(self, db):
         """A 10-Q file mentioning 3 months should produce data_points for each month."""
-        import os
-        import tempfile
-        from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
         from extractors.pattern_registry import PatternRegistry
 
@@ -412,7 +429,6 @@ class TestQuarterlyIngestorIntegration:
             mara_dir = Path(tmpdir) / "MARA MONTHLY"
             mara_dir.mkdir()
 
-            # Create a fake 10-Q HTML mentioning 3 separate months with distinct values
             quarterly_file = mara_dir / "10-Q 2025-11-04.html"
             quarterly_file.write_text(
                 "<html><body>"
@@ -423,22 +439,17 @@ class TestQuarterlyIngestorIntegration:
                 encoding="utf-8",
             )
 
-            config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+            config_dir = _make_test_config_dir(tempfile.mkdtemp())
             registry = PatternRegistry.load(config_dir)
             ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
             ingestor.ingest_all()
 
-        # Should have extracted data points for at least the months present
         rows = db.query_data_points(ticker='MARA', metric='production_btc')
-        periods = {r['period'] for r in rows}
-        # At least one quarterly month should have been extracted
         assert len(rows) >= 1, "Quarterly filing should produce at least one data_point"
-        # Values should be reasonable (not a year number)
         for r in rows:
             assert r['value'] < 5000, f"Suspicious value {r['value']} looks like a year"
 
 
-@pytest.mark.skip(reason="Depends on regex patterns — skipped in LLM-only mode")
 class TestForceReingest:
     def test_force_true_reprocesses_existing_report(self, db, monkeypatch):
         """
@@ -446,13 +457,12 @@ class TestForceReingest:
         The data_point count must stay at 1 (not double-insert).
 
         LLM extractor is patched out — this test verifies regex-only ingest logic.
+        Uses an inline test registry so the extraction pipeline can produce a
+        data_point from the test HTML content.
         """
         import extractors.extraction_pipeline as _ep_mod
         monkeypatch.setattr(_ep_mod, '_get_llm_extractor', lambda db: None)
 
-        import os
-        import tempfile
-        from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
         from extractors.pattern_registry import PatternRegistry
 
@@ -462,7 +472,7 @@ class TestForceReingest:
             'cik': '0001437491', 'active': 1,
         })
 
-        config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+        config_dir = _make_test_config_dir(tempfile.mkdtemp())
         registry = PatternRegistry.load(config_dir)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -475,27 +485,20 @@ class TestForceReingest:
             )
 
             ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
-            # First ingest
             s1 = ingestor.ingest_all()
             assert s1.reports_ingested == 1
 
-            # Second ingest without force — skips (already exists)
             s2 = ingestor.ingest_all()
             assert s2.reports_ingested == 0
 
-            # Third ingest with force=True — re-processes
             s3 = ingestor.ingest_all(force=True)
             assert s3.reports_ingested == 1
 
-        # Still exactly 1 data_point (not duplicated)
         rows = db.query_data_points(ticker='MARA', metric='production_btc')
-        assert len(rows) == 1, f"Expected 1, got {len(rows)}"
+        assert len(rows) == 1, f"Expected 1 data_point after force-reingest, got {len(rows)}"
 
     def test_force_false_is_default(self, db):
         """ingest_all() with no arguments must not force-reingest."""
-        import os
-        import tempfile
-        from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
         from extractors.pattern_registry import PatternRegistry
 
@@ -505,7 +508,7 @@ class TestForceReingest:
             'cik': '0001437491', 'active': 1,
         })
 
-        config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+        config_dir = _make_test_config_dir(tempfile.mkdtemp())
         registry = PatternRegistry.load(config_dir)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -519,7 +522,7 @@ class TestForceReingest:
 
             ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
             ingestor.ingest_all()
-            s2 = ingestor.ingest_all()  # no force= arg
+            s2 = ingestor.ingest_all()
             assert s2.reports_ingested == 0, "Default must skip already-ingested reports"
 
 

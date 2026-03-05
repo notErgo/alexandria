@@ -1,0 +1,23 @@
+{
+  "run_id": "observer_prompttrace_20260305T000000Z",
+  "scout_id": "scout-transparency",
+  "generated_at": "2026-03-05T20:07:59.125373+00:00",
+  "tickers": [
+    {
+      "ticker": "BITF",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    }
+  ]
+}

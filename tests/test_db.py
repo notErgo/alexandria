@@ -1,7 +1,9 @@
 """Tests for MinerDB schema, constraints, and CRUD operations."""
+import json
 import pytest
 import sqlite3
 from helpers import make_report, make_data_point, make_review_item
+from infra.db import MinerDB
 
 
 class TestSchema:
@@ -52,6 +54,57 @@ class TestCompanyCRUD:
         db.insert_company(c)  # second insert is ignored
         companies = db.get_companies()
         assert len([x for x in companies if x['ticker'] == 'RIOT']) == 1
+
+    def test_sync_companies_prefers_scraper_mode_over_legacy_scrape_mode(self, tmp_path):
+        db = MinerDB(str(tmp_path / 'test.db'))
+        config_path = tmp_path / 'companies.json'
+        config_path.write_text(json.dumps([
+            {
+                'ticker': 'ZZZZ',
+                'name': 'Mode Priority Co',
+                'tier': 2,
+                'ir_url': 'https://example.com/investors',
+                'active': True,
+                'scrape_mode': 'skip',
+                'scraper_mode': 'rss',
+                'rss_url': 'https://example.com/feed.xml',
+            }
+        ]))
+        db.sync_companies_from_config(str(config_path))
+        company = db.get_company('ZZZZ')
+        assert company is not None
+        assert company['scraper_mode'] == 'rss'
+
+    def test_sync_companies_does_not_overwrite_existing_mode_from_legacy_key(self, tmp_path):
+        db = MinerDB(str(tmp_path / 'test.db'))
+        config_path = tmp_path / 'companies.json'
+        config_path.write_text(json.dumps([
+            {
+                'ticker': 'ZZZZ',
+                'name': 'Mode Sticky Co',
+                'tier': 2,
+                'ir_url': 'https://example.com/investors',
+                'active': True,
+                'scraper_mode': 'rss',
+                'rss_url': 'https://example.com/feed.xml',
+            }
+        ]))
+        db.sync_companies_from_config(str(config_path))
+        assert db.get_company('ZZZZ')['scraper_mode'] == 'rss'
+
+        # Legacy scrape_mode in old config should not clobber the existing mode.
+        config_path.write_text(json.dumps([
+            {
+                'ticker': 'ZZZZ',
+                'name': 'Mode Sticky Co',
+                'tier': 2,
+                'ir_url': 'https://example.com/investors',
+                'active': True,
+                'scrape_mode': 'skip',
+            }
+        ]))
+        db.sync_companies_from_config(str(config_path))
+        assert db.get_company('ZZZZ')['scraper_mode'] == 'rss'
 
 
 class TestReportCRUD:
@@ -390,6 +443,68 @@ class TestPurgeAll:
         company = db_with_company.get_company('MARA')
         assert company is None
 
+    def test_purge_all_reset_mode_keeps_company_rows(self, db_with_company):
+        """reset mode clears DATA but preserves companies/regime config."""
+        db_with_company.insert_report(make_report())
+        db_with_company.insert_data_point(make_data_point(period='2024-09-01'))
+        db_with_company.upsert_regime_window(
+            ticker='MARA', cadence='monthly', start_date='2024-01-01',
+            end_date=None, notes='baseline'
+        )
+
+        counts = db_with_company.purge_all(purge_mode='reset')
+
+        assert counts['reports'] == 1
+        assert counts['data_points'] == 1
+        assert 'companies' not in counts
+        assert db_with_company.get_company('MARA') is not None
+        assert len(db_with_company.get_regime_windows('MARA')) == 1
+
+    def test_purge_all_archive_mode_writes_archive_batch(self, db_with_company, tmp_path):
+        """archive mode stores deleted rows in purge_archive.db."""
+        db_with_company.insert_report(make_report())
+        db_with_company.insert_data_point(make_data_point(period='2024-09-01'))
+
+        counts = db_with_company.purge_all(purge_mode='archive', reason='test archive')
+
+        assert counts['reports'] == 1
+        assert counts['data_points'] == 1
+        assert 'archive_batch_id' in counts
+
+        import sqlite3
+        archive_path = tmp_path / 'purge_archive.db'
+        conn = sqlite3.connect(str(archive_path))
+        try:
+            batch = conn.execute(
+                "SELECT id, mode, ticker_scope, reason FROM purge_batches WHERE id = ?",
+                (counts['archive_batch_id'],)
+            ).fetchone()
+            assert batch is not None
+            assert batch[1] == 'archive'
+            rows = conn.execute(
+                "SELECT COUNT(*) FROM purge_rows WHERE batch_id = ?",
+                (counts['archive_batch_id'],)
+            ).fetchone()[0]
+            assert rows >= 2
+        finally:
+            conn.close()
+
+    def test_purge_all_hard_delete_can_disable_startup_auto_sync(self, db_with_company):
+        """Hard-delete can disable startup company auto-sync via config_settings."""
+        db_with_company.purge_all(purge_mode='hard_delete', suppress_auto_sync=True)
+        assert db_with_company.get_config('auto_sync_companies_on_startup') == '0'
+
+    def test_startup_sync_respects_config_override(self, tmp_path):
+        """If auto_sync_companies_on_startup=0, restart does not re-seed companies."""
+        from infra.db import MinerDB
+        db_path = str(tmp_path / 'restart_sync_test.db')
+        db = MinerDB(db_path)
+        db.purge_all(purge_mode='hard_delete', suppress_auto_sync=True)
+        assert db.get_company('MARA') is None
+
+        restarted = MinerDB(db_path)
+        assert restarted.get_company('MARA') is None
+
     def test_purge_all_by_ticker_scopes_deletion(self, db):
         """purge_all(ticker=X) deletes only X rows; other tickers survive."""
         db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -405,6 +520,53 @@ class TestPurgeAll:
         with db._get_connection() as conn:
             remaining = conn.execute("SELECT ticker FROM reports").fetchall()
         assert [r[0] for r in remaining] == ['RIOT']
+
+    def test_purge_all_invalid_mode_raises(self, db_with_company):
+        """purge_all() with an unrecognised purge_mode raises ValueError."""
+        with pytest.raises(ValueError, match="purge_mode must be one of"):
+            db_with_company.purge_all(purge_mode='obliterate')
+
+    def test_purge_all_reset_ticker_scope_keeps_company(self, db):
+        """reset mode scoped to a ticker deletes that ticker's data but keeps company row."""
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_company({'ticker': 'RIOT', 'name': 'Riot Platforms', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_report(make_report(ticker='MARA'))
+        db.insert_report(make_report(ticker='RIOT'))
+
+        counts = db.purge_all(ticker='MARA', purge_mode='reset')
+
+        assert counts['reports'] == 1
+        assert 'companies' not in counts
+        assert db.get_company('MARA') is not None
+        assert db.get_company('RIOT') is not None
+        with db._get_connection() as conn:
+            remaining = conn.execute("SELECT ticker FROM reports").fetchall()
+        assert [r[0] for r in remaining] == ['RIOT']
+
+    def test_purge_all_archive_ticker_scope_sets_ticker_scope_in_batch(self, db):
+        """archive mode scoped to a ticker records ticker_scope in the archive batch."""
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                           'ir_url': '', 'pr_base_url': None, 'cik': None, 'active': 1})
+        db.insert_report(make_report(ticker='MARA'))
+
+        counts = db.purge_all(ticker='MARA', purge_mode='archive', reason='ticker test')
+
+        assert 'archive_batch_id' in counts
+        import sqlite3
+        archive_path = db._archive_db_path()
+        conn = sqlite3.connect(archive_path)
+        try:
+            row = conn.execute(
+                "SELECT ticker_scope, reason FROM purge_batches WHERE id = ?",
+                (counts['archive_batch_id'],),
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 'MARA'
+            assert row[1] == 'ticker test'
+        finally:
+            conn.close()
 
     def test_purge_all_with_chunk_id_fk(self, db_with_company):
         """purge_all succeeds when data_points.chunk_id references document_chunks.

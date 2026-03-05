@@ -1,0 +1,12 @@
+2026-03-05 05:39:58 [INFO miners] File logging enabled at /Users/workstation/Documents/Hermeneutic/OffChain/miners/.data/miners/logs/miners.log
+2026-03-05 05:39:58 [INFO miners.app_globals] Initializing MinerDB at /Users/workstation/Documents/Hermeneutic/OffChain/miners/.data/miners/minerdata.db
+2026-03-05 05:39:58 [INFO miners.infra.db] sync_companies_from_config: 19 added, 0 updated from /Users/workstation/Documents/Hermeneutic/OffChain/miners/config/companies.json
+2026-03-05 05:39:58 [INFO miners.scrapers.scrape_worker] ScrapeWorker started
+2026-03-05 05:39:58 [INFO miners.web] ScrapeWorker started
+2026-03-05 05:39:58 [INFO miners.web] Starting Miner Data Platform on port 5004
+2026-03-05 05:41:14 [INFO miners] File logging enabled at /Users/workstation/Documents/Hermeneutic/OffChain/miners/.data/miners/logs/miners.log
+2026-03-05 05:41:14 [INFO miners.app_globals] Initializing MinerDB at /Users/workstation/Documents/Hermeneutic/OffChain/miners/.data/miners/minerdata.db
+2026-03-05 05:41:14 [INFO miners.infra.db] sync_companies_from_config: 0 added, 19 updated from /Users/workstation/Documents/Hermeneutic/OffChain/miners/config/companies.json
+2026-03-05 05:41:14 [INFO miners.scrapers.scrape_worker] ScrapeWorker started
+2026-03-05 05:41:14 [INFO miners.web] ScrapeWorker started
+2026-03-05 05:41:14 [INFO miners.web] Starting Miner Data Platform on port 5004

@@ -1,0 +1,127 @@
+{
+  "ticker": "APLD",
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "sources": [
+    {
+      "family": "ir",
+      "entry_url": "https://ir.applieddigital.com",
+      "discovery_method": "index",
+      "url_pattern": "",
+      "pagination": {
+        "type": "none",
+        "template": "",
+        "max_page": 0
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://ir.applieddigital.com"
+      ]
+    },
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Applied+Digital+Corporation",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=Applied+Digital+Corporation"
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=Applied%20Digital%20Corporation",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "none",
+        "template": "",
+        "max_page": 0
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 0
+      },
+      "confidence": 0.55,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=Applied%20Digital%20Corporation"
+      ]
+    }
+  ],
+  "status": "ready_for_scrape",
+  "blockers": [],
+  "scout_id": "scout-2",
+  "attempts_by_family": {
+    "ir": 1,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "generated_at": "2026-03-05T19:54:47.355564+00:00"
+}

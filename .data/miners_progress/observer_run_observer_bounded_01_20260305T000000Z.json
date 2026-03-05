@@ -1,0 +1,43 @@
+{
+  "run_id": "observer_bounded_01_20260305T000000Z",
+  "tickers": [
+    "ABTC",
+    "APLD",
+    "ARBK",
+    "BITF"
+  ],
+  "scout_count": 1,
+  "status_counts": {
+    "ready_for_scrape": 4
+  },
+  "scouts": [
+    {
+      "run_id": "observer_bounded_01_20260305T000000Z",
+      "scout_id": "scout-1",
+      "tickers": [
+        "ABTC",
+        "APLD",
+        "ARBK",
+        "BITF"
+      ],
+      "status_counts": {
+        "ready_for_scrape": 4
+      },
+      "contracts_written": 4,
+      "completed_at": "2026-03-05T21:51:18.762387+00:00"
+    }
+  ],
+  "artifacts": {
+    "merged_source_contracts": ".data/miners_progress/merged_source_contracts.json",
+    "ops_summary": ".data/miners_progress/observer_ops_summary.md",
+    "primitive_feedback": ".data/miners_progress/primitive_feedback_observer_bounded_01_20260305T000000Z.json"
+  },
+  "completed_at": "2026-03-05T21:51:18.766322+00:00",
+  "feedback_loop": {
+    "gap_count": 0,
+    "candidate_count": 0,
+    "apply_enabled": false,
+    "artifact": ".data/miners_progress/primitive_feedback_observer_bounded_01_20260305T000000Z.json",
+    "applied": []
+  }
+}

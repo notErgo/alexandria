@@ -110,3 +110,81 @@ class TestLineageEndpoint:
         assert resp.status_code == 200
         data = resp.get_json()['data']
         assert 'raw_text' not in data
+
+
+class TestPurgeEndpoint:
+    """Tests for POST /api/data/purge."""
+
+    def test_purge_requires_confirm_true(self, client, db_with_company, app):
+        import app_globals
+        app_globals._db = db_with_company
+        resp = client.post('/api/data/purge', json={'confirm': False})
+        assert resp.status_code == 400
+
+    def test_purge_missing_confirm_rejected(self, client, db_with_company, app):
+        import app_globals
+        app_globals._db = db_with_company
+        resp = client.post('/api/data/purge', json={})
+        assert resp.status_code == 400
+
+    def test_purge_invalid_mode_returns_400(self, client, db_with_company, app):
+        import app_globals
+        app_globals._db = db_with_company
+        resp = client.post('/api/data/purge', json={
+            'confirm': True,
+            'purge_mode': 'obliterate',
+        })
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body['error']['code'] == 'INVALID_PURGE_MODE'
+
+    def test_purge_reset_mode_returns_success(self, client, db_with_datapoint, app):
+        import app_globals
+        app_globals._db = db_with_datapoint
+        resp = client.post('/api/data/purge', json={
+            'confirm': True,
+            'purge_mode': 'reset',
+        })
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['data']['purge_mode'] == 'reset'
+        assert body['data']['counts']['reports'] == 1
+
+    def test_purge_response_includes_auto_sync_status(self, client, db_with_company, app):
+        import app_globals
+        app_globals._db = db_with_company
+        resp = client.post('/api/data/purge', json={
+            'confirm': True,
+            'purge_mode': 'reset',
+        })
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert 'auto_sync_companies_on_startup' in body['data']
+
+    def test_purge_ticker_scoped_leaves_other_data(self, client, db_with_datapoint, app):
+        """Ticker-scoped purge on a company with no data leaves MARA's data untouched."""
+        import app_globals
+        app_globals._db = db_with_datapoint
+        # Register a second company with no data so the route accepts the ticker
+        db_with_datapoint.insert_company({
+            'ticker': 'RIOT',
+            'name': 'Riot Platforms',
+            'tier': 1,
+            'ir_url': '',
+            'pr_base_url': None,
+            'cik': None,
+            'active': 1,
+        })
+        resp = client.post('/api/data/purge', json={
+            'confirm': True,
+            'purge_mode': 'reset',
+            'ticker': 'RIOT',
+        })
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['data']['ticker'] == 'RIOT'
+        assert body['data']['counts']['reports'] == 0
+        # MARA data must be untouched
+        mara_points = db_with_datapoint.query_data_points(ticker='MARA')
+        assert len(mara_points) >= 1

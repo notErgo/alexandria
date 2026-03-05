@@ -1,0 +1,560 @@
+{
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "generated_at": "2026-03-05T22:36:56.687819+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "ABTC",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.abtc.com/news"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 1,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=American+Bitcoin+Corp."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 29,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=American%20Bitcoin%20Corp."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "APLD",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://ir.applieddigital.com"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Applied+Digital+Corporation"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Applied%20Digital%20Corporation"
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "ARBK",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.accessnewswire.com/newsroom/en/blockchain-and-cryptocurrency"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Argo+Blockchain+plc"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Argo%20Blockchain%20plc"
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "BITF",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "year_filter",
+          "sample_count": 2,
+          "entry_url": "https://investor.bitfarms.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitfarms+Ltd."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 2,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitfarms%20Ltd."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "BTBT",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bit+Digital,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bit%20Digital,%20Inc."
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:http_404",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "BTDR",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "year_filter",
+          "sample_count": 0,
+          "entry_url": "https://ir.bitdeer.com/news-events/news-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 1,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitdeer+Technologies+Group"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 1,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitdeer%20Technologies%20Group"
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "CIFR",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Cipher+Mining+Inc.+(rebranded+as+Cipher+Digital)"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Cipher%20Mining%20Inc.%20(rebranded%20as%20Cipher%20Digital)"
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "CLSK",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://investors.cleanspark.com/news"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=CleanSpark,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 17,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=CleanSpark,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "CORZ",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://investors.corescientific.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "GRDI",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=GRIID+Infrastructure+Inc.+(acquired+by+CleanSpark)"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=GRIID%20Infrastructure%20Inc.%20(acquired%20by%20CleanSpark)"
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "GREE",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Greenidge+Generation+Holdings+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Greenidge%20Generation%20Holdings%20Inc."
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "HIVE",
+      "status": "partially_covered",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 27,
+          "entry_url": "https://www.hivedigitaltechnologies.com/news/"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=HIVE+Digital+Technologies+Ltd."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=HIVE%20Digital%20Technologies%20Ltd."
+        }
+      ],
+      "blockers": [
+        "scrape_error:ir:Failed to parse: 'www.hivedigitaltechnologies.comhive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase-in-bitcoin-production-and-phase-3-expansion', label empty or too long"
+      ]
+    },
+    {
+      "ticker": "HUT8",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.hut8.com/news-insights/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Hut+8+Corp."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 25,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Hut%208%20Corp."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "IREN",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "rss",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+        },
+        {
+          "family": "globenewswire",
+          "method": "rss",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/rssfeed/organization/82e8_jAApdE1qYPVHkynKQ=="
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=IREN%20Limited"
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "MARA",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 2,
+          "entry_url": "https://ir.mara.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 2,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 3,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "MIGI",
+      "status": "partially_covered",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Mawson+Infrastructure+Group+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 2,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Mawson%20Infrastructure%20Group%20Inc."
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:http_404"
+      ]
+    },
+    {
+      "ticker": "RIOT",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://www.riotplatforms.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 3,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Riot+Platforms,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 5,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Riot%20Platforms,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "SDIG",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Stronghold+Digital+Mining,+Inc.+(acquired+by+Bitfarms)"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Stronghold%20Digital%20Mining,%20Inc.%20(acquired%20by%20Bitfarms)"
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "WULF",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://investors.terawulf.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=TeraWulf+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=TeraWulf%20Inc."
+        }
+      ],
+      "blockers": []
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "scout_id": "scout-3",
+  "tickers": [
+    "ARBK",
+    "BTDR",
+    "CORZ",
+    "HIVE",
+    "MARA",
+    "SDIG"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 4,
+    "partially_covered": 1,
+    "blocked": 1
+  },
+  "contracts_written": 6,
+  "completed_at": "2026-03-05T22:36:56.681788+00:00"
+}

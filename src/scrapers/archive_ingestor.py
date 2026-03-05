@@ -8,7 +8,7 @@ runs the extraction pipeline, and writes results to MinerDB.
 import re
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -302,7 +302,6 @@ class ArchiveIngestor:
         from config import CONFIDENCE_REVIEW_THRESHOLD
         from extractors.extraction_pipeline import extract_report
         from scrapers.manifest_scanner import scan_archive_directory
-        from datetime import datetime
 
         summary = IngestSummary()
         archive_path = Path(self.archive_dir)
@@ -442,7 +441,7 @@ class ArchiveIngestor:
                 "source_type": source_type,
                 "source_url": str(file_path),
                 "raw_text": text[:50000],
-                "parsed_at": datetime.utcnow().isoformat(),
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
             }
             try:
                 report_id = self.db.insert_report(report)
@@ -549,5 +548,4 @@ def _create_chunks_from_result(report_id: int, result, db) -> int:
         except Exception as e:
             log.warning("Failed to upsert chunk %d for report %d: %s", i, report_id, e)
     return count
-
 

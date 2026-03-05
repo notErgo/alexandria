@@ -22,6 +22,32 @@ def _update_progress(task_id: str, state: dict) -> None:
         _ingest_progress[task_id] = state
 
 
+def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
+    """Run extraction over currently unextracted reports and return summary counts."""
+    from extractors.extraction_pipeline import extract_report
+    from app_globals import get_registry
+
+    registry = get_registry()
+    reports = db.get_unextracted_reports(ticker=ticker)
+    totals = {
+        'reports_processed': 0,
+        'data_points_extracted': 0,
+        'review_flagged': 0,
+        'errors': 0,
+    }
+    for report in reports:
+        try:
+            summary = extract_report(report, db, registry)
+            totals['reports_processed'] += summary.reports_processed
+            totals['data_points_extracted'] += summary.data_points_extracted
+            totals['review_flagged'] += summary.review_flagged
+            totals['errors'] += summary.errors
+        except Exception:
+            log.error("Extraction failed for report id=%s", report.get('id'), exc_info=True)
+            totals['errors'] += 1
+    return totals
+
+
 def _run_archive_ingest(task_id: str) -> None:
     from app_globals import get_db, get_registry
     from scrapers.archive_ingestor import ArchiveIngestor
@@ -49,12 +75,17 @@ def _run_archive_ingest(task_id: str) -> None:
             _running_tasks.discard('archive')
 
 
-def _run_ir_ingest(task_id: str) -> None:
+def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True) -> None:
     import requests as req_lib
     from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
 
-    _update_progress(task_id, {'status': 'running', 'source': 'ir'})
+    _update_progress(task_id, {
+        'status': 'running',
+        'source': 'ir',
+        'auto_extract': auto_extract,
+        'warm_model': warm_model,
+    })
     try:
         db = get_db()
         session = req_lib.Session()
@@ -66,7 +97,40 @@ def _run_ir_ingest(task_id: str) -> None:
             s = scraper.scrape_company(company)
             for k in totals:
                 totals[k] += getattr(s, k)
-        _update_progress(task_id, {'status': 'complete', 'source': 'ir', **totals})
+        extracted = {
+            'reports_processed': 0,
+            'data_points_extracted': 0,
+            'review_flagged': 0,
+            'errors': 0,
+        }
+        if auto_extract:
+            from infra.ollama_warmup import warm_ollama_for_extraction
+            _update_progress(task_id, {
+                'status': 'running',
+                'source': 'ir',
+                'auto_extract': True,
+                'phase': 'extracting',
+                **totals,
+            })
+            if warm_model:
+                warm_ollama_for_extraction(db=db, reason='ingest_ir_auto_extract')
+            extracted = _extract_pending_reports(db)
+            totals['data_points_extracted'] += extracted['data_points_extracted']
+            totals['review_flagged'] += extracted['review_flagged']
+            totals['errors'] += extracted['errors']
+        if auto_extract:
+            _update_progress(task_id, {
+                'status': 'complete',
+                'source': 'ir',
+                'auto_extract': True,
+                **totals,
+                'reports_extracted': extracted['reports_processed'],
+                'extraction_data_points': extracted['data_points_extracted'],
+                'extraction_review_flagged': extracted['review_flagged'],
+                'extraction_errors': extracted['errors'],
+            })
+        else:
+            _update_progress(task_id, {'status': 'complete', 'source': 'ir', **totals})
     except Exception as e:
         log.error("IR ingest failed: %s", e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
@@ -75,13 +139,18 @@ def _run_ir_ingest(task_id: str) -> None:
             _running_tasks.discard('ir')
 
 
-def _run_edgar_ingest(task_id: str) -> None:
+def _run_edgar_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True) -> None:
     import requests as req_lib
     from datetime import date
     from app_globals import get_db
     from scrapers.edgar_connector import EdgarConnector
 
-    _update_progress(task_id, {'status': 'running', 'source': 'edgar'})
+    _update_progress(task_id, {
+        'status': 'running',
+        'source': 'edgar',
+        'auto_extract': auto_extract,
+        'warm_model': warm_model,
+    })
     try:
         db = get_db()
         session = req_lib.Session()
@@ -96,7 +165,38 @@ def _run_edgar_ingest(task_id: str) -> None:
                 )
                 totals['reports_ingested'] += s.reports_ingested
                 totals['errors'] += s.errors
-        _update_progress(task_id, {'status': 'complete', 'source': 'edgar', **totals})
+        extracted = {
+            'reports_processed': 0,
+            'data_points_extracted': 0,
+            'review_flagged': 0,
+            'errors': 0,
+        }
+        if auto_extract:
+            from infra.ollama_warmup import warm_ollama_for_extraction
+            _update_progress(task_id, {
+                'status': 'running',
+                'source': 'edgar',
+                'auto_extract': True,
+                'phase': 'extracting',
+                **totals,
+            })
+            if warm_model:
+                warm_ollama_for_extraction(db=db, reason='ingest_edgar_auto_extract')
+            extracted = _extract_pending_reports(db)
+            totals['errors'] += extracted['errors']
+        if auto_extract:
+            _update_progress(task_id, {
+                'status': 'complete',
+                'source': 'edgar',
+                'auto_extract': True,
+                **totals,
+                'reports_extracted': extracted['reports_processed'],
+                'extraction_data_points': extracted['data_points_extracted'],
+                'extraction_review_flagged': extracted['review_flagged'],
+                'extraction_errors': extracted['errors'],
+            })
+        else:
+            _update_progress(task_id, {'status': 'complete', 'source': 'edgar', **totals})
     except Exception as e:
         log.error("EDGAR ingest failed: %s", e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
@@ -148,6 +248,9 @@ def ingest_archive():
 
 @bp.route('/api/ingest/ir', methods=['POST'])
 def ingest_ir():
+    body = request.get_json(silent=True) or {}
+    auto_extract = bool(body.get('auto_extract', False))
+    warm_model = bool(body.get('warm_model', True))
     with _tasks_lock:
         if 'ir' in _running_tasks:
             return jsonify({'success': False, 'error': {
@@ -156,14 +259,22 @@ def ingest_ir():
         _running_tasks.add('ir')
 
     task_id = str(uuid.uuid4())
-    _update_progress(task_id, {'status': 'queued', 'source': 'ir'})
-    t = threading.Thread(target=_run_ir_ingest, args=(task_id,), daemon=True)
+    _update_progress(task_id, {
+        'status': 'queued',
+        'source': 'ir',
+        'auto_extract': auto_extract,
+        'warm_model': warm_model,
+    })
+    t = threading.Thread(target=_run_ir_ingest, args=(task_id, auto_extract, warm_model), daemon=True)
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 
 
 @bp.route('/api/ingest/edgar', methods=['POST'])
 def ingest_edgar():
+    body = request.get_json(silent=True) or {}
+    auto_extract = bool(body.get('auto_extract', False))
+    warm_model = bool(body.get('warm_model', True))
     with _tasks_lock:
         if 'edgar' in _running_tasks:
             return jsonify({'success': False, 'error': {
@@ -172,8 +283,13 @@ def ingest_edgar():
         _running_tasks.add('edgar')
 
     task_id = str(uuid.uuid4())
-    _update_progress(task_id, {'status': 'queued', 'source': 'edgar'})
-    t = threading.Thread(target=_run_edgar_ingest, args=(task_id,), daemon=True)
+    _update_progress(task_id, {
+        'status': 'queued',
+        'source': 'edgar',
+        'auto_extract': auto_extract,
+        'warm_model': warm_model,
+    })
+    t = threading.Thread(target=_run_edgar_ingest, args=(task_id, auto_extract, warm_model), daemon=True)
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 
@@ -336,31 +452,6 @@ def ingest_html_download():
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 
 
-def _prewarm_llm() -> bool:
-    """
-    Send a minimal request to Ollama to force the model into VRAM before the
-    first real extraction call. Returns True if the model responded, False if
-    Ollama is unreachable or times out.
-
-    Without pre-warming, the first /api/generate call in a re-audit bears the
-    full model-load latency (~60-120s for qwen3.5:35b on Apple Silicon), which
-    can push it over LLM_TIMEOUT_SECONDS and cause the first report to fall
-    back to regex-only silently.
-    """
-    import requests as _req
-    from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
-    try:
-        resp = _req.post(
-            f"{LLM_BASE_URL}/api/generate",
-            json={"model": LLM_MODEL_ID, "prompt": "hi", "stream": False, "keep_alive": "2h"},
-            timeout=LLM_TIMEOUT_SECONDS,
-        )
-        return resp.status_code == 200
-    except Exception as e:
-        log.warning("LLM pre-warm failed: %s", e)
-        return False
-
-
 def _run_reaudit(task_id: str, ticker: Optional[str] = None) -> None:
     """Re-run ingest_all(force=True) on the archive to re-audit all data points."""
     from app_globals import get_db, get_registry
@@ -368,10 +459,12 @@ def _run_reaudit(task_id: str, ticker: Optional[str] = None) -> None:
     from config import ARCHIVE_DIR
 
     scope = f'ticker={ticker}' if ticker else 'all'
+    from infra.ollama_warmup import warm_ollama_for_extraction
+
     _update_progress(task_id, {'status': 'running', 'source': 'reaudit', 'scope': scope,
                                'phase': 'warming up LLM…'})
-    warmed = _prewarm_llm()
-    if warmed:
+    warmed = warm_ollama_for_extraction(db=get_db(), reason='reaudit')
+    if warmed.get('warmed'):
         log.info("LLM pre-warm complete — model loaded into VRAM")
     else:
         log.warning("LLM pre-warm failed — first extraction call will bear cold-start latency")

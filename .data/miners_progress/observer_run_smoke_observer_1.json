@@ -1,0 +1,29 @@
+{
+  "run_id": "smoke_observer_1",
+  "tickers": [
+    "MARA"
+  ],
+  "scout_count": 1,
+  "status_counts": {
+    "ready_for_scrape": 1
+  },
+  "scouts": [
+    {
+      "run_id": "smoke_observer_1",
+      "scout_id": "scout-1",
+      "tickers": [
+        "MARA"
+      ],
+      "status_counts": {
+        "ready_for_scrape": 1
+      },
+      "contracts_written": 1,
+      "completed_at": "2026-03-05T16:15:53.953448+00:00"
+    }
+  ],
+  "artifacts": {
+    "merged_source_contracts": ".data/miners_progress/merged_source_contracts.json",
+    "ops_summary": ".data/miners_progress/observer_ops_summary.md"
+  },
+  "completed_at": "2026-03-05T16:15:53.956007+00:00"
+}

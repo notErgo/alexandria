@@ -1,0 +1,28 @@
+{
+  "run_id": "observer_feedback_smoke_20260305T000000Z",
+  "generated_at": "2026-03-05T20:43:04.364226+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "BTDR",
+      "status": "partially_covered",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "year_filter",
+          "sample_count": 0,
+          "entry_url": "https://ir.bitdeer.com/news-events/news-releases"
+        }
+      ],
+      "blockers": [
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network"
+      ]
+    }
+  ]
+}

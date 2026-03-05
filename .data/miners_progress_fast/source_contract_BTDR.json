@@ -1,0 +1,151 @@
+{
+  "ticker": "BTDR",
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "sources": [
+    {
+      "family": "ir",
+      "entry_url": "https://ir.bitdeer.com/news-events/news-releases",
+      "discovery_method": "year_filter",
+      "url_pattern": "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D={year}&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 25
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": false,
+        "sample_count": 0
+      },
+      "confidence": 0.65,
+      "evidence_urls": [
+        "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+        "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+        "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base"
+      ],
+      "year_filter": {
+        "select_name": "",
+        "years": [
+          "2026",
+          "2025",
+          "2024",
+          "2023",
+          "2021"
+        ],
+        "year_urls": [
+          "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2026&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+          "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2025&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+          "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2024&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+          "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2023&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+          "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D=2021&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base"
+        ],
+        "url_template": "https://ir.bitdeer.com/news-events/news-releases?aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_year%5Bvalue%5D={year}&op=Filter&aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b_widget_id=aac2c52233ec9ed03e44a98dd9028c83ac2c52a24dacec95b3c1757c0d59015b&form_id=widget_form_base",
+        "sample_count": 0,
+        "heuristic_only": true,
+        "seeded": true
+      }
+    },
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Bitdeer+Technologies+Group",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 1
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=Bitdeer+Technologies+Group"
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=Bitdeer%20Technologies%20Group",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 1
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=Bitdeer%20Technologies%20Group",
+        "https://www.prnewswire.com/search/news/?keyword=Bitdeer+Technologies+Group"
+      ]
+    }
+  ],
+  "status": "ready_for_scrape",
+  "blockers": [],
+  "scout_id": "scout-2",
+  "attempts_by_family": {
+    "ir": 1,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "generated_at": "2026-03-05T19:54:58.279354+00:00"
+}

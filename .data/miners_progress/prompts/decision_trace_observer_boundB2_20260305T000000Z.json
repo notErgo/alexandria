@@ -1,0 +1,64 @@
+{
+  "run_id": "observer_boundB2_20260305T000000Z",
+  "generated_at": "2026-03-05T22:15:11.910778+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "CORZ",
+      "status": "ready_for_scrape",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "index",
+          "sample_count": 0,
+          "entry_url": "https://investors.corescientific.com/news-events/press-releases"
+        },
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=Core+Scientific,+Inc."
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=Core%20Scientific,%20Inc."
+        }
+      ],
+      "blockers": []
+    },
+    {
+      "ticker": "GRDI",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "globenewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.globenewswire.com/search/keyword?keyword=GRIID+Infrastructure+Inc.+(acquired+by+CleanSpark)"
+        },
+        {
+          "family": "prnewswire",
+          "method": "search",
+          "sample_count": 0,
+          "entry_url": "https://www.prnewswire.com/search/news/?keyword=GRIID%20Infrastructure%20Inc.%20(acquired%20by%20CleanSpark)"
+        }
+      ],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    }
+  ]
+}

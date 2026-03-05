@@ -1,0 +1,102 @@
+{
+  "run_id": "observer_full_20260305T162001Z",
+  "tickers": [
+    "ABTC",
+    "APLD",
+    "ARBK",
+    "BITF",
+    "BTBT",
+    "BTDR",
+    "CIFR",
+    "CLSK",
+    "CORZ",
+    "GRDI",
+    "GREE",
+    "HIVE",
+    "HUT8",
+    "IREN",
+    "MARA",
+    "MIGI",
+    "RIOT",
+    "SDIG",
+    "WULF"
+  ],
+  "scout_count": 4,
+  "status_counts": {
+    "ready_for_scrape": 10,
+    "partially_covered": 9
+  },
+  "scouts": [
+    {
+      "run_id": "observer_full_20260305T162001Z",
+      "scout_id": "scout-4",
+      "tickers": [
+        "BITF",
+        "CLSK",
+        "HIVE",
+        "MIGI"
+      ],
+      "status_counts": {
+        "partially_covered": 4
+      },
+      "contracts_written": 4,
+      "completed_at": "2026-03-05T16:20:24.065307+00:00"
+    },
+    {
+      "run_id": "observer_full_20260305T162001Z",
+      "scout_id": "scout-2",
+      "tickers": [
+        "APLD",
+        "BTDR",
+        "GRDI",
+        "IREN",
+        "SDIG"
+      ],
+      "status_counts": {
+        "ready_for_scrape": 3,
+        "partially_covered": 2
+      },
+      "contracts_written": 5,
+      "completed_at": "2026-03-05T16:20:56.365046+00:00"
+    },
+    {
+      "run_id": "observer_full_20260305T162001Z",
+      "scout_id": "scout-3",
+      "tickers": [
+        "ARBK",
+        "CIFR",
+        "GREE",
+        "MARA",
+        "WULF"
+      ],
+      "status_counts": {
+        "partially_covered": 2,
+        "ready_for_scrape": 3
+      },
+      "contracts_written": 5,
+      "completed_at": "2026-03-05T16:22:35.981739+00:00"
+    },
+    {
+      "run_id": "observer_full_20260305T162001Z",
+      "scout_id": "scout-1",
+      "tickers": [
+        "ABTC",
+        "BTBT",
+        "CORZ",
+        "HUT8",
+        "RIOT"
+      ],
+      "status_counts": {
+        "ready_for_scrape": 4,
+        "partially_covered": 1
+      },
+      "contracts_written": 5,
+      "completed_at": "2026-03-05T16:22:36.801639+00:00"
+    }
+  ],
+  "artifacts": {
+    "merged_source_contracts": ".data/miners_progress/merged_source_contracts.json",
+    "ops_summary": ".data/miners_progress/observer_ops_summary.md"
+  },
+  "completed_at": "2026-03-05T16:22:36.806938+00:00"
+}

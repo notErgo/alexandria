@@ -1,0 +1,316 @@
+{
+  "run_id": "observer_firstpass_20260305T000000Z",
+  "generated_at": "2026-03-05T20:53:04.972761+00:00",
+  "merged_contracts_path": ".data/miners_progress/merged_source_contracts.json",
+  "tickers": [
+    {
+      "ticker": "ABTC",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "APLD",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "ARBK",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "BITF",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "BTBT",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "BTDR",
+      "status": "partially_covered",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [
+        {
+          "family": "ir",
+          "method": "year_filter",
+          "sample_count": 0,
+          "entry_url": "https://ir.bitdeer.com/news-events/news-releases"
+        }
+      ],
+      "blockers": [
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network"
+      ]
+    },
+    {
+      "ticker": "CIFR",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "CLSK",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "CORZ",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "GRDI",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "GREE",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "HIVE",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "HUT8",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "IREN",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "MARA",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "MIGI",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "RIOT",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "SDIG",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:no_candidates",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    },
+    {
+      "ticker": "WULF",
+      "status": "blocked",
+      "attempts_by_family": {
+        "ir": 1,
+        "globenewswire": 1,
+        "prnewswire": 1
+      },
+      "sources": [],
+      "blockers": [
+        "exhausted:ir:timeout_or_network",
+        "exhausted:globenewswire:timeout_or_network",
+        "exhausted:prnewswire:timeout_or_network",
+        "coverage_gate:no_ir_and_no_wire_signal"
+      ]
+    }
+  ]
+}

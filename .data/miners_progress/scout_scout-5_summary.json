@@ -1,0 +1,15 @@
+{
+  "run_id": "observer_full_wire_finalize_20260305T000000Z",
+  "scout_id": "scout-5",
+  "tickers": [
+    "BTBT",
+    "GREE",
+    "RIOT"
+  ],
+  "status_counts": {
+    "blocked": 2,
+    "ready_for_scrape": 1
+  },
+  "contracts_written": 3,
+  "completed_at": "2026-03-05T21:25:19.007963+00:00"
+}

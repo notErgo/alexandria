@@ -232,20 +232,23 @@ def scorecard():
 
 @bp.route('/api/data/purge', methods=['POST'])
 def purge_data():
-    """Delete all operational data (full reset to null state).
+    """Run explicit purge/reset modes for operational data.
 
-    Clears reports, data_points, review_queue, scrape_queue, asset_manifest,
-    document_chunks, raw_extractions, btc_loans, facilities, source_audit, and
-    llm_benchmark_runs. For FULL purge (no ticker), also clears companies and
-    regime_config so Ops company table is empty until config sync/restart.
-    For ticker-scoped purge, company config rows are preserved.
+    purge_mode:
+      - reset: clear data tables; keep company/regime config.
+      - archive: same as reset, but copy deleted rows to purge_archive.db.
+      - hard_delete: full destructive delete. If full-scope and suppress_auto_sync
+        is true, startup company auto-sync is disabled until manually re-enabled.
 
     Body (JSON):
         confirm (bool, required): must be true to proceed
-        ticker  (str, optional): limit purge to one ticker
+        ticker (str, optional): limit purge to one ticker
+        purge_mode (str, optional): reset|archive|hard_delete (default archive)
+        reason (str, optional): operator reason for audit/archive metadata
+        suppress_auto_sync (bool, optional): full hard_delete only
 
     Returns:
-        {"success": true, "data": {"counts": {...}, "ticker": "ALL"}}
+        {"success": true, "data": {"counts": {...}, "ticker": "ALL", "purge_mode": "archive"}}
     """
     from app_globals import get_db
     body = request.get_json(silent=True) or {}
@@ -261,6 +264,14 @@ def purge_data():
         ticker = str(ticker).strip().upper()
         if not ticker:
             ticker = None
+    purge_mode = str(body.get('purge_mode') or 'archive').strip().lower()
+    reason = str(body.get('reason') or '').strip() or None
+    suppress_auto_sync = bool(body.get('suppress_auto_sync', False))
+    if purge_mode not in {'reset', 'archive', 'hard_delete'}:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_PURGE_MODE',
+            'message': "purge_mode must be one of ['archive', 'hard_delete', 'reset']",
+        }}), 400
 
     db = get_db()
 
@@ -271,7 +282,12 @@ def purge_data():
         }}), 400
 
     try:
-        counts = db.purge_all(ticker=ticker)
+        counts = db.purge_all(
+            ticker=ticker,
+            purge_mode=purge_mode,
+            reason=reason,
+            suppress_auto_sync=(suppress_auto_sync and purge_mode == 'hard_delete' and not ticker),
+        )
     except Exception as e:
         log.error("Purge failed: %s", e, exc_info=True)
         return jsonify({'success': False, 'error': {
@@ -281,4 +297,6 @@ def purge_data():
     return jsonify({'success': True, 'data': {
         'counts': counts,
         'ticker': ticker or 'ALL',
+        'purge_mode': purge_mode,
+        'auto_sync_companies_on_startup': db.get_config('auto_sync_companies_on_startup', default='1'),
     }})

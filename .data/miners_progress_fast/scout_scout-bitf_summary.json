@@ -1,0 +1,12 @@
+{
+  "run_id": "bitf_post_update_20260305T174309Z",
+  "scout_id": "scout-bitf",
+  "tickers": [
+    "BITF"
+  ],
+  "status_counts": {
+    "partially_covered": 1
+  },
+  "contracts_written": 1,
+  "completed_at": "2026-03-05T17:43:13.664773+00:00"
+}

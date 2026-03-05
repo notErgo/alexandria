@@ -1,0 +1,8 @@
+{
+  "run_id": "observer_bounded_01_20260305T000000Z",
+  "observer_prompt": ".data/miners_progress/prompts/observer_prompt_observer_bounded_01_20260305T000000Z.md",
+  "scout_prompts": [
+    ".data/miners_progress/prompts/scout-1_prompt_observer_bounded_01_20260305T000000Z.md"
+  ],
+  "generated_at": "2026-03-05T21:51:18.766958+00:00"
+}

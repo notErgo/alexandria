@@ -1,0 +1,131 @@
+{
+  "ticker": "MARA",
+  "run_id": "observer_full_fresh_20260305T000000Z",
+  "sources": [
+    {
+      "family": "ir",
+      "entry_url": "https://ir.mara.com/news-events/press-releases",
+      "discovery_method": "index",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 2
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://ir.mara.com/news-events/press-releases",
+        "https://ir.mara.com/news-events/press-releases/detail/1410/mara-announces-bitcoin-production-and-mining-operation-updates-forseptember-2025",
+        "https://ir.mara.com/news-events/press-releases/detail/1409/mara-announces-bitcoin-production-and-mining-operation-updates-for-august-2025"
+      ]
+    },
+    {
+      "family": "globenewswire",
+      "entry_url": "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "query",
+        "template": "?page={n}",
+        "max_page": 10
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 2
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://www.globenewswire.com/search/keyword?keyword=MARA+Holdings,+Inc."
+      ]
+    },
+    {
+      "family": "prnewswire",
+      "entry_url": "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc.",
+      "discovery_method": "search",
+      "url_pattern": "",
+      "pagination": {
+        "type": "none",
+        "template": "",
+        "max_page": 0
+      },
+      "date_extraction": {
+        "strategy": "title_regex",
+        "pattern": "month year"
+      },
+      "filters": {
+        "include": [
+          "production",
+          "operations update",
+          "bitcoin production"
+        ],
+        "exclude": [
+          "earnings",
+          "10-q",
+          "10-k",
+          "financial results"
+        ]
+      },
+      "validation": {
+        "http_ok": true,
+        "parse_ok": true,
+        "sample_count": 3
+      },
+      "confidence": 0.8,
+      "evidence_urls": [
+        "https://www.prnewswire.com/search/news/?keyword=MARA%20Holdings,%20Inc.",
+        "https://www.prnewswire.com/search/news/?keyword=MARA+Holdings%2C+Inc."
+      ]
+    }
+  ],
+  "status": "ready_for_scrape",
+  "blockers": [],
+  "scout_id": "scout-3",
+  "attempts_by_family": {
+    "ir": 1,
+    "globenewswire": 1,
+    "prnewswire": 1
+  },
+  "reports_ingested": 0,
+  "primitive_gaps": [],
+  "generated_at": "2026-03-05T22:36:53.651168+00:00"
+}

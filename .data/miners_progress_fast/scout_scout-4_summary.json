@@ -1,0 +1,16 @@
+{
+  "run_id": "observer_full_finish_20260305T195441Z",
+  "scout_id": "scout-4",
+  "tickers": [
+    "BITF",
+    "CLSK",
+    "HIVE",
+    "MIGI"
+  ],
+  "status_counts": {
+    "ready_for_scrape": 3,
+    "partially_covered": 1
+  },
+  "contracts_written": 4,
+  "completed_at": "2026-03-05T19:55:37.324551+00:00"
+}

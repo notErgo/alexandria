@@ -71,6 +71,27 @@ class TestSubmissionsParsing:
         assert len(result) == 1
         assert result[0]["covering_period"] == "2024-FY"
 
+    def test_parse_submissions_falls_back_to_report_date_when_period_missing(self):
+        from scrapers.edgar_connector import parse_submissions_filings
+        mock_submissions = {
+            "filings": {
+                "recent": {
+                    "form": ["10-Q", "10-K"],
+                    "filingDate": ["2025-05-01", "2025-03-01"],
+                    "reportDate": ["2025-03-31", "2024-12-31"],
+                    "accessionNumber": ["0001-25-001", "0001-25-002"],
+                    "primaryDocument": ["doc1.htm", "doc2.htm"],
+                    "periodOfReport": [],
+                }
+            }
+        }
+        q = parse_submissions_filings(mock_submissions, form_type="10-Q")
+        k = parse_submissions_filings(mock_submissions, form_type="10-K")
+        assert len(q) == 1
+        assert q[0]["covering_period"] == "2025-Q1"
+        assert len(k) == 1
+        assert k[0]["covering_period"] == "2024-FY"
+
 
 class TestFilingIndexParsing:
     def test_parse_filing_index_finds_primary_doc(self):
@@ -171,10 +192,16 @@ class TestFetch8kExhibitResolution:
 
     def _make_session(self, search_id, exhibit_text):
         session = MagicMock()
+        accession = search_id.split(':', 1)[0]
+        filer = accession.split('-', 1)[0]
 
         search_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
         search_resp.json.return_value = {
-            "hits": {"hits": [{"_id": search_id, "_source": {"file_date": "2024-06-01"}}]}
+            "hits": {"hits": [{"_id": search_id, "_source": {
+                "file_date": "2024-06-01",
+                "adsh": accession,
+                "ciks": [filer],
+            }}]}
         }
 
         exhibit_resp = MagicMock(
@@ -265,3 +292,17 @@ class TestFetch8kNoExtraction:
             connector.fetch_8k_filings(cik="0001437491", ticker="MARA",
                                         since_date=__import__('datetime').date(2024, 1, 1))
             mock_extract.assert_not_called()
+
+
+class TestEdgarHitEntityFiltering:
+    def test_hit_matches_target_entity_with_ciks(self):
+        from scrapers.edgar_connector import _hit_matches_target_entity
+        source = {'ciks': ['0001167419'], 'adsh': '0001167419-24-000001'}
+        assert _hit_matches_target_entity(source, '0001167419') is True
+        assert _hit_matches_target_entity(source, '0001437491') is False
+
+    def test_hit_matches_target_entity_with_adsh_fallback(self):
+        from scrapers.edgar_connector import _hit_matches_target_entity
+        source = {'ciks': [], 'adsh': '0001839341-22-111309'}
+        assert _hit_matches_target_entity(source, '1839341') is True
+        assert _hit_matches_target_entity(source, '1167419') is False

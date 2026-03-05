@@ -20,7 +20,7 @@ import time
 import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -196,7 +196,6 @@ class IRScraper:
         Returns IngestSummary.
         """
         from miner_types import IngestSummary
-        from datetime import datetime
 
         summary = IngestSummary()
         ticker = company["ticker"]
@@ -242,7 +241,7 @@ class IRScraper:
                 "source_type": "ir_press_release",
                 "source_url": item["link"],
                 "raw_text": text[:50000],
-                "parsed_at": datetime.utcnow().isoformat(),
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
             }
             try:
                 self.db.insert_report(report)
@@ -266,7 +265,6 @@ class IRScraper:
           {year}   → 4-digit year          (e.g. "2025")
         """
         from miner_types import IngestSummary
-        from datetime import datetime
 
         summary = IngestSummary()
         ticker = company["ticker"]
@@ -327,7 +325,7 @@ class IRScraper:
                 "source_type": "ir_press_release",
                 "source_url": url,
                 "raw_text": text[:50000],
-                "parsed_at": datetime.utcnow().isoformat(),
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
             }
             try:
                 self.db.insert_report(report)
@@ -348,7 +346,6 @@ class IRScraper:
         Returns IngestSummary.
         """
         from miner_types import IngestSummary
-        from datetime import datetime
 
         summary = IngestSummary()
         ir_url = company.get('ir_url', '')
@@ -407,7 +404,7 @@ class IRScraper:
                     "source_type": "ir_press_release",
                     "source_url": full_url,
                     "raw_text": text[:50000],
-                    "parsed_at": datetime.utcnow().isoformat(),
+                    "parsed_at": datetime.now(timezone.utc).isoformat(),
                 }
                 try:
                     self.db.insert_report(report)

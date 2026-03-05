@@ -1,0 +1,15 @@
+{
+  "run_id": "observer_boundC_20260305T000000Z",
+  "generated_at": "2026-03-05T22:01:45.170605+00:00",
+  "gap_count": 0,
+  "candidate_count": 0,
+  "gaps": [],
+  "candidates": [],
+  "validations": {},
+  "apply_enabled": false,
+  "apply_summary": {
+    "applied": [],
+    "skipped": [],
+    "registry_path": "/Users/workstation/Documents/Hermeneutic/OffChain/miners/config/scraper_primitives.json"
+  }
+}

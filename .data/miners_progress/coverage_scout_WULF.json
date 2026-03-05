@@ -1,0 +1,401 @@
+{
+  "ticker": "WULF",
+  "run_id": "coverage_scout_2026-03-05",
+  "as_of_date": "2026-03-05",
+  "cadence_windows": [
+    {
+      "ticker": "WULF",
+      "cadence": "quarterly",
+      "start_date": "2022-01-01",
+      "end_date": null,
+      "confidence": 0.85,
+      "evidence": [
+        "median_interval_days=108.0"
+      ]
+    }
+  ],
+  "expected_periods": [
+    "2022-01-01",
+    "2022-04-01",
+    "2022-07-01",
+    "2022-10-01",
+    "2023-01-01",
+    "2023-04-01",
+    "2023-07-01",
+    "2023-10-01",
+    "2024-01-01",
+    "2024-04-01",
+    "2024-07-01",
+    "2024-10-01",
+    "2025-01-01",
+    "2025-04-01",
+    "2025-07-01",
+    "2025-10-01",
+    "2026-01-01"
+  ],
+  "missing_periods": [
+    {
+      "period": "2022-01-01",
+      "state": "no_document",
+      "priority": "medium",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2022-04-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2022-07-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2022-10-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2023-01-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2023-04-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2023-07-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2023-10-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2024-01-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2024-04-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2024-07-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2024-10-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2025-01-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2025-04-01",
+      "state": "no_document",
+      "priority": "medium",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2025-07-01",
+      "state": "no_document",
+      "priority": "medium",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2025-10-01",
+      "state": "no_document",
+      "priority": "high",
+      "reason": "expected_period_missing_source"
+    },
+    {
+      "period": "2026-01-01",
+      "state": "no_document",
+      "priority": "medium",
+      "reason": "expected_period_missing_source"
+    }
+  ],
+  "directives": [
+    {
+      "period": "2022-04-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2022-04-01&enddt=2022-04-30",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2022-04\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2022-04\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2022-07-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2022-07-01&enddt=2022-07-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2022-07\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2022-07\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2022-10-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2022-10-01&enddt=2022-10-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2022-10\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2022-10\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2023-01-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2023-01-01&enddt=2023-01-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2023-01\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2023-01\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2023-04-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2023-04-01&enddt=2023-04-30",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2023-04\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2023-04\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2023-07-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2023-07-01&enddt=2023-07-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2023-07\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2023-07\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2023-10-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2023-10-01&enddt=2023-10-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2023-10\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2023-10\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2024-01-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2024-01-01&enddt=2024-01-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2024-01\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2024-01\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2024-04-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2024-04-01&enddt=2024-04-30",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2024-04\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2024-04\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2024-07-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2024-07-01&enddt=2024-07-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2024-07\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2024-07\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2024-10-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2024-10-01&enddt=2024-10-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2024-10\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2024-10\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2025-01-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2025-01-01&enddt=2025-01-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2025-01\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2025-01\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2025-10-01",
+      "priority": "high",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2025-10-01&enddt=2025-10-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2025-10\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2025-10\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2022-01-01",
+      "priority": "medium",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2022-01-01&enddt=2022-01-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2022-01\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2022-01\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2025-04-01",
+      "priority": "medium",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2025-04-01&enddt=2025-04-30",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2025-04\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2025-04\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2025-07-01",
+      "priority": "medium",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2025-07-01&enddt=2025-07-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2025-07\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2025-07\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    },
+    {
+      "period": "2026-01-01",
+      "priority": "medium",
+      "state": "no_document",
+      "strategy": "edgar_then_wire_then_ir",
+      "source_hints": [
+        "https://efts.sec.gov/LATEST/search-index?q=%22WULF%22%20%22bitcoin%22&forms=8-K&dateRange=custom&startdt=2026-01-01&enddt=2026-01-31",
+        "site:globenewswire.com \"TeraWulf Inc.\" \"2026-01\" bitcoin production",
+        "site:prnewswire.com \"TeraWulf Inc.\" \"2026-01\" bitcoin",
+        "https://investors.terawulf.com/news-events/press-releases"
+      ],
+      "timeout_seconds": 30,
+      "max_retries": 3
+    }
+  ],
+  "finish_gate": {
+    "target_coverage_ratio": 0.9,
+    "max_high_priority_gaps": 2
+  },
+  "summary": {
+    "expected_period_count": 17,
+    "covered_count": 0,
+    "unresolved_count": 17,
+    "high_priority_gaps": 13,
+    "coverage_ratio": 0.0,
+    "needs_analyst_confirm": false,
+    "edgar_filings_considered": 284,
+    "sec_candidate_period_count": 138,
+    "edgar_error": null,
+    "keywords": [],
+    "resolved_states": [
+      "analyst_gap",
+      "data",
+      "data_quarterly"
+    ]
+  }
+}

@@ -11,7 +11,7 @@ import re
 import time
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import requests
@@ -72,12 +72,20 @@ def parse_submissions_filings(submissions: dict, form_type: str) -> list:
     accession_numbers = recent.get('accessionNumber', [])
     primary_docs = recent.get('primaryDocument', [])
     periods = recent.get('periodOfReport', [])
+    report_dates = recent.get('reportDate', [])
 
     results = []
     for i, form in enumerate(forms):
         if form != form_type:
             continue
-        period = periods[i] if i < len(periods) else ''
+        # SEC submissions payload no longer reliably includes periodOfReport in
+        # recent filings. Fall back to reportDate (and finally filingDate) to
+        # preserve periodic filing coverage.
+        period = (
+            (periods[i] if i < len(periods) else '')
+            or (report_dates[i] if i < len(report_dates) else '')
+            or (filing_dates[i] if i < len(filing_dates) else '')
+        )
         if not period:
             continue
         try:
@@ -202,6 +210,32 @@ def parse_filing_index_for_primary_doc(index_html: str) -> Optional[str]:
             return href
 
     return None
+
+
+def _hit_matches_target_entity(source: dict, cik: str) -> bool:
+    """Return True when an EDGAR search hit belongs to the target filer CIK.
+
+    efts search may return noisy cross-entity hits even when entity filters are
+    present. We enforce filer matching using _source.ciks first, then _source.adsh.
+    """
+    target_10 = str(cik).zfill(10)
+    target_n = str(int(cik)) if str(cik).strip('0') else '0'
+
+    ciks = source.get('ciks') or []
+    for c in ciks:
+        try:
+            if str(c).zfill(10) == target_10:
+                return True
+        except Exception:
+            continue
+
+    adsh = str(source.get('adsh') or '')
+    if adsh:
+        filer = adsh.split('-', 1)[0]
+        if filer == target_n or filer.zfill(10) == target_10:
+            return True
+
+    return False
 
 
 # ── EdgarConnector class ──────────────────────────────────────────────────────
@@ -331,7 +365,7 @@ class EdgarConnector:
             'source_type':     source_type,
             'source_url':      primary_url,
             'raw_text':        text,
-            'parsed_at':       datetime.utcnow().isoformat(),
+            'parsed_at':       datetime.now(timezone.utc).isoformat(),
             'covering_period': filing.get('covering_period'),
         }
         try:
@@ -361,12 +395,13 @@ class EdgarConnector:
         """
         from miner_types import IngestSummary
         summary = IngestSummary()
+        cik_entity = str(cik).lstrip('0') or '0'
         params = {
             'q': '"bitcoin production"',
             'forms': '8-K',
             'dateRange': 'custom',
             'startdt': since_date.isoformat(),
-            'entity': ticker,
+            'entity': cik_entity,
         }
         data = self._edgar_request(EDGAR_BASE_URL, params)
         if data is None:
@@ -377,9 +412,13 @@ class EdgarConnector:
         log.info("EDGAR returned %d 8-K hits for %s since %s", len(hits), ticker, since_date)
 
         cik_numeric = cik.lstrip('0') or '0'
+        skipped_non_target = 0
 
         for hit in hits:
             source = hit.get('_source', {})
+            if not _hit_matches_target_entity(source, cik):
+                skipped_non_target += 1
+                continue
             file_date_str = source.get('file_date', '')
             m = _DATE_PATTERN.match(file_date_str)
             if not m:
@@ -451,7 +490,7 @@ class EdgarConnector:
                 'source_type':     'edgar_8k',
                 'source_url':      exhibit_url,
                 'raw_text':        text,
-                'parsed_at':       datetime.utcnow().isoformat(),
+                'parsed_at':       datetime.now(timezone.utc).isoformat(),
                 'covering_period': None,
             }
             try:
@@ -462,6 +501,12 @@ class EdgarConnector:
                     "Failed to insert 8-K report %s %s: %s", ticker, period_str, e, exc_info=True
                 )
                 summary.errors += 1
+
+        if skipped_non_target:
+            log.info(
+                "Filtered %d non-target 8-K hits for %s (CIK=%s)",
+                skipped_non_target, ticker, cik,
+            )
 
         return summary
 

@@ -199,6 +199,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 13")
                     version = 13
 
+                if version < 14:
+                    self._migrate_v14(conn)
+                    conn.execute("PRAGMA user_version = 14")
+                    version = 14
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -663,6 +668,59 @@ class MinerDB:
             if col not in existing:
                 conn.execute(f"ALTER TABLE companies ADD COLUMN {col} TEXT")
 
+    def _migrate_v14(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 13 to version 14.
+
+        Adds run/event tracking for overnight pipeline orchestration.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                ended_at     TEXT,
+                status       TEXT NOT NULL DEFAULT 'queued',
+                triggered_by TEXT,
+                scope_json   TEXT,
+                config_json  TEXT,
+                summary_json TEXT,
+                error        TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pipeline_run_events (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id       INTEGER NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+                ts           TEXT NOT NULL DEFAULT (datetime('now')),
+                stage        TEXT NOT NULL,
+                event        TEXT NOT NULL,
+                ticker       TEXT,
+                level        TEXT NOT NULL DEFAULT 'INFO',
+                details_json TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pipeline_run_tickers (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id       INTEGER NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+                ticker       TEXT NOT NULL,
+                targeted     INTEGER NOT NULL DEFAULT 1,
+                probed       INTEGER NOT NULL DEFAULT 0,
+                mode_applied INTEGER NOT NULL DEFAULT 0,
+                scraped      INTEGER NOT NULL DEFAULT 0,
+                ingested     INTEGER NOT NULL DEFAULT 0,
+                extracted    INTEGER NOT NULL DEFAULT 0,
+                failed_reason TEXT,
+                UNIQUE(run_id, ticker)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status
+                ON pipeline_runs(status);
+
+            CREATE INDEX IF NOT EXISTS idx_pipeline_run_events_run
+                ON pipeline_run_events(run_id, id);
+
+            CREATE INDEX IF NOT EXISTS idx_pipeline_run_tickers_run
+                ON pipeline_run_tickers(run_id, ticker);
+        """)
+
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
 
@@ -706,8 +764,12 @@ class MinerDB:
                 if not ticker:
                     continue
                 existing = conn.execute(
-                    "SELECT ticker FROM companies WHERE ticker = ?", (ticker,)
+                    "SELECT ticker, scraper_mode FROM companies WHERE ticker = ?",
+                    (ticker,),
                 ).fetchone()
+
+                canonical_mode = c.get('scraper_mode')
+                legacy_mode = c.get('scrape_mode')
 
                 if existing is None:
                     # New company — insert with all fields
@@ -735,7 +797,7 @@ class MinerDB:
                             'pr_start_year': c.get('pr_start_year'),
                             'skip_reason':   c.get('skip_reason'),
                             'sandbox_note':  c.get('sandbox_note'),
-                            'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
+                            'scraper_mode':  canonical_mode or legacy_mode or 'skip',
                             'sector':        c.get('sector', 'BTC-miners'),
                             'prnewswire_url': c.get('prnewswire_url'),
                             'globenewswire_url': c.get('globenewswire_url'),
@@ -767,7 +829,10 @@ class MinerDB:
                             'pr_start_year': c.get('pr_start_year'),
                             'skip_reason':   c.get('skip_reason'),
                             'sandbox_note':  c.get('sandbox_note'),
-                            'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
+                            # For existing rows, only canonical "scraper_mode" may overwrite.
+                            # Legacy "scrape_mode" is treated as seed-only to avoid reverting
+                            # analyst-updated modes from old config files.
+                            'scraper_mode':  (canonical_mode if canonical_mode is not None else existing['scraper_mode']) or 'skip',
                             'sector':        c.get('sector', 'BTC-miners'),
                             'prnewswire_url': c.get('prnewswire_url'),
                             'globenewswire_url': c.get('globenewswire_url'),
@@ -872,7 +937,7 @@ class MinerDB:
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE reports SET extracted_at = ? WHERE id = ?",
-                (datetime.utcnow().isoformat(), report_id),
+                (datetime.now(timezone.utc).isoformat(), report_id),
             )
 
     def get_unextracted_reports(
@@ -965,7 +1030,7 @@ class MinerDB:
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE companies SET last_edgar_at = ? WHERE ticker = ?",
-                (datetime.utcnow().isoformat(), ticker),
+                (datetime.now(timezone.utc).isoformat(), ticker),
             )
 
     def get_data_point_value(self, ticker: str, period: str, metric: str) -> Optional[float]:
@@ -1064,12 +1129,12 @@ class MinerDB:
             if source_url is not None:
                 conn.execute(
                     "UPDATE reports SET raw_text=?, source_url=?, parsed_at=? WHERE id=?",
-                    (raw_text, source_url, datetime.utcnow().isoformat(), report_id),
+                    (raw_text, source_url, datetime.now(timezone.utc).isoformat(), report_id),
                 )
             else:
                 conn.execute(
                     "UPDATE reports SET raw_text=?, parsed_at=? WHERE id=?",
-                    (raw_text, datetime.utcnow().isoformat(), report_id),
+                    (raw_text, datetime.now(timezone.utc).isoformat(), report_id),
                 )
 
     def get_stale_8k_reports(self, ticker: str = None) -> list:
@@ -2389,7 +2454,7 @@ class MinerDB:
             })
 
         return {
-            'generated_at': datetime.utcnow().isoformat(),
+            'generated_at': datetime.now(timezone.utc).isoformat(),
             'totals': {
                 'companies_total': companies_total,
                 'companies_active': companies_active,
@@ -2597,7 +2662,7 @@ class MinerDB:
                            :metrics_requested, :metrics_extracted,
                            :hits_90, :hits_80, :hits_75)""",
                 {
-                    'created_at': data.get('created_at', datetime.utcnow().isoformat()),
+                    'created_at': data.get('created_at', datetime.now(timezone.utc).isoformat()),
                     'model': data.get('model', ''),
                     'call_type': data.get('call_type', 'batch'),
                     'ticker': data.get('ticker'),
@@ -2778,6 +2843,167 @@ class MinerDB:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Phase IV: overnight pipeline run tracking ────────────────────────────
+
+    def create_pipeline_run(
+        self,
+        triggered_by: str = 'ops_ui',
+        scope: Optional[dict] = None,
+        config: Optional[dict] = None,
+    ) -> dict:
+        """Create a pipeline run row and return it."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO pipeline_runs (triggered_by, status, scope_json, config_json)
+                   VALUES (?, 'queued', ?, ?)""",
+                (
+                    triggered_by,
+                    json.dumps(scope or {}, ensure_ascii=False),
+                    json.dumps(config or {}, ensure_ascii=False),
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM pipeline_runs WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+            return self._deserialize_pipeline_run_row(dict(row))
+
+    def update_pipeline_run(
+        self,
+        run_id: int,
+        *,
+        status: Optional[str] = None,
+        ended_at: Optional[str] = None,
+        summary: Optional[dict] = None,
+        error: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Update pipeline_runs fields and return the latest row."""
+        updates = []
+        values = []
+        if status is not None:
+            updates.append("status = ?")
+            values.append(status)
+        if ended_at is not None:
+            updates.append("ended_at = ?")
+            values.append(ended_at)
+        if summary is not None:
+            updates.append("summary_json = ?")
+            values.append(json.dumps(summary, ensure_ascii=False))
+        if error is not None:
+            updates.append("error = ?")
+            values.append(error)
+        if updates:
+            values.append(run_id)
+            with self._get_connection() as conn:
+                conn.execute(
+                    f"UPDATE pipeline_runs SET {', '.join(updates)} WHERE id = ?",
+                    values,
+                )
+        return self.get_pipeline_run(run_id)
+
+    def get_pipeline_run(self, run_id: int) -> Optional[dict]:
+        """Return one pipeline run row with decoded JSON payloads."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM pipeline_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._deserialize_pipeline_run_row(dict(row))
+
+    def add_pipeline_run_event(
+        self,
+        run_id: int,
+        stage: str,
+        event: str,
+        *,
+        ticker: Optional[str] = None,
+        level: str = 'INFO',
+        details: Optional[dict] = None,
+    ) -> int:
+        """Append one structured event row and return event id."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO pipeline_run_events
+                   (run_id, stage, event, ticker, level, details_json)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    stage,
+                    event,
+                    ticker,
+                    level,
+                    json.dumps(details or {}, ensure_ascii=False),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def list_pipeline_run_events(self, run_id: int, limit: int = 500) -> list:
+        """Return run events in ascending insertion order."""
+        limit = max(1, min(int(limit), 5000))
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM pipeline_run_events
+                   WHERE run_id = ?
+                   ORDER BY id ASC
+                   LIMIT ?""",
+                (run_id, limit),
+            ).fetchall()
+            events = []
+            for row in rows:
+                d = dict(row)
+                try:
+                    d['details'] = json.loads(d.get('details_json') or '{}')
+                except Exception:
+                    d['details'] = {}
+                events.append(d)
+            return events
+
+    def upsert_pipeline_run_ticker(self, run_id: int, ticker: str, **fields) -> None:
+        """Insert or update per-ticker run status fields."""
+        allowed = {
+            'targeted', 'probed', 'mode_applied', 'scraped',
+            'ingested', 'extracted', 'failed_reason',
+        }
+        clean = {k: v for k, v in fields.items() if k in allowed}
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO pipeline_run_tickers (run_id, ticker) VALUES (?, ?)",
+                (run_id, ticker),
+            )
+            if clean:
+                set_clause = ", ".join(f"{k}=?" for k in clean.keys())
+                values = list(clean.values()) + [run_id, ticker]
+                conn.execute(
+                    f"UPDATE pipeline_run_tickers SET {set_clause} WHERE run_id=? AND ticker=?",
+                    values,
+                )
+
+    def list_pipeline_run_tickers(self, run_id: int) -> list:
+        """Return per-ticker run records."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_run_tickers WHERE run_id = ? ORDER BY ticker",
+                (run_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    @staticmethod
+    def _deserialize_pipeline_run_row(row: dict) -> dict:
+        """Decode JSON columns on a pipeline_runs row."""
+        for col, key in (
+            ('scope_json', 'scope'),
+            ('config_json', 'config'),
+            ('summary_json', 'summary'),
+        ):
+            raw = row.get(col)
+            try:
+                row[key] = json.loads(raw) if raw else {}
+            except Exception:
+                row[key] = {}
+        return row
+
     # ── Phase III: metric_schema CRUD ─────────────────────────────────────────
 
     def get_metric_schema(self, sector: str) -> list:
@@ -2885,7 +3111,7 @@ class MinerDB:
             if not last_checked:
                 return True
             # Accept ISO strings; lexical compare works for YYYY-MM-DDTHH:MM:SS.
-            cutoff = datetime.utcnow().timestamp() - (stale_days * 86400)
+            cutoff = datetime.now(timezone.utc).timestamp() - (stale_days * 86400)
             try:
                 ts = datetime.fromisoformat(str(last_checked).replace('Z', '+00:00')).timestamp()
                 return ts < cutoff

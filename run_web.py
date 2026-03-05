@@ -19,7 +19,7 @@ setup_logging()
 import logging
 from flask import Flask, render_template, jsonify, request
 
-from config import FLASK_PORT
+from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG
 from routes.data_points import bp as data_points_bp
 from routes.companies import bp as companies_bp
 from routes.reports import bp as reports_bp
@@ -40,6 +40,7 @@ from routes.scrape import bp as scrape_bp
 from routes.regime import bp as regime_bp
 from routes.explorer import bp as explorer_bp
 from routes.metric_rules import bp as metric_rules_bp
+from routes.pipeline import bp as pipeline_bp
 
 log = logging.getLogger('miners.web')
 
@@ -97,6 +98,7 @@ def create_app() -> Flask:
     app.register_blueprint(regime_bp)
     app.register_blueprint(explorer_bp)
     app.register_blueprint(metric_rules_bp)
+    app.register_blueprint(pipeline_bp)
 
     @app.errorhandler(404)
     def not_found(e):
@@ -209,4 +211,4 @@ if __name__ == '__main__':
     log.info("ScrapeWorker started")
     app = create_app()
     log.info("Starting Miner Data Platform on port %d", FLASK_PORT)
-    app.run(host='0.0.0.0', port=FLASK_PORT, debug=True, threaded=True)
+    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG, threaded=True)
