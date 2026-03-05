@@ -11,6 +11,40 @@ bp = Blueprint('companies', __name__)
 _VALID_SCRAPER_MODES = {'rss', 'index', 'template', 'skip'}
 
 
+def _normalize_optional_text(body: dict, key: str) -> str | None:
+    val = body.get(key)
+    if val is None:
+        return None
+    txt = str(val).strip()
+    return txt or None
+
+
+def _parse_optional_start_year(body: dict) -> tuple[int | None, str | None]:
+    raw = body.get('pr_start_year')
+    if raw in (None, ''):
+        return None, None
+    try:
+        year = int(raw)
+    except (TypeError, ValueError):
+        return None, 'pr_start_year must be an integer'
+    if year < 2009 or year > 2100:
+        return None, 'pr_start_year must be between 2009 and 2100'
+    return year, None
+
+
+def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
+    if mode == 'rss' and not fields.get('rss_url'):
+        return "rss mode requires non-empty rss_url"
+    if mode == 'template':
+        if not fields.get('url_template'):
+            return "template mode requires non-empty url_template"
+        if not fields.get('pr_start_year'):
+            return "template mode requires pr_start_year"
+    if mode == 'index' and not fields.get('ir_url'):
+        return "index mode requires non-empty ir_url"
+    return None
+
+
 @bp.route('/api/companies')
 def list_companies():
     from app_globals import get_db
@@ -27,7 +61,13 @@ def create_company():
     ticker = body.get('ticker', '').strip().upper()
     name = body.get('name', '').strip()
     sector = body.get('sector', 'BTC-miners').strip()
-    scraper_mode = body.get('scraper_mode', 'skip').strip()
+    scraper_mode = body.get('scraper_mode', 'skip').strip().lower()
+    ir_url = _normalize_optional_text(body, 'ir_url') or ''
+    rss_url = _normalize_optional_text(body, 'rss_url')
+    url_template = _normalize_optional_text(body, 'url_template')
+    skip_reason = _normalize_optional_text(body, 'skip_reason')
+    sandbox_note = _normalize_optional_text(body, 'sandbox_note')
+    pr_start_year, year_err = _parse_optional_start_year(body)
 
     if not ticker or len(ticker) > 10:
         return jsonify({'success': False, 'error': {'message': 'ticker required (max 10 chars)'}}), 400
@@ -35,14 +75,33 @@ def create_company():
         return jsonify({'success': False, 'error': {'message': 'name required (max 100 chars)'}}), 400
     if scraper_mode not in _VALID_SCRAPER_MODES:
         return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
+    if year_err:
+        return jsonify({'success': False, 'error': {'message': year_err}}), 400
+
+    field_map = {
+        'ir_url': ir_url,
+        'rss_url': rss_url,
+        'url_template': url_template,
+        'pr_start_year': pr_start_year,
+        'skip_reason': skip_reason,
+    }
+    mode_err = _validate_mode_requirements(scraper_mode, field_map)
+    if mode_err:
+        return jsonify({'success': False, 'error': {'message': mode_err}}), 400
 
     try:
         company = db.add_company(
             ticker=ticker, name=name, sector=sector,
             scraper_mode=scraper_mode,
+            ir_url=ir_url,
             pr_base_url=body.get('pr_base_url'),
             cik=body.get('cik'),
             scraper_issues_log=body.get('scraper_issues_log', ''),
+            rss_url=rss_url,
+            url_template=url_template,
+            pr_start_year=pr_start_year,
+            skip_reason=skip_reason,
+            sandbox_note=sandbox_note,
         )
     except Exception:
         log.error("Failed to create company %s", ticker, exc_info=True)
@@ -91,10 +150,38 @@ def update_company(ticker):
     if db.get_company(ticker) is None:
         return jsonify({'success': False, 'error': {'message': f'Company {ticker!r} not found'}}), 404
     body = request.get_json(silent=True) or {}
-    allowed = {'name', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector'}
+    allowed = {
+        'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
+        'rss_url', 'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
+    }
     kwargs = {k: v for k, v in body.items() if k in allowed}
+    for key in ('name', 'ir_url', 'pr_base_url', 'scraper_issues_log', 'cik', 'sector',
+                'rss_url', 'url_template', 'skip_reason', 'sandbox_note'):
+        if key in kwargs:
+            kwargs[key] = _normalize_optional_text(kwargs, key)
+    if 'scraper_mode' in kwargs:
+        kwargs['scraper_mode'] = str(kwargs['scraper_mode']).strip().lower()
     if 'scraper_mode' in kwargs and kwargs['scraper_mode'] not in _VALID_SCRAPER_MODES:
         return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
+    if 'pr_start_year' in kwargs:
+        year, year_err = _parse_optional_start_year(kwargs)
+        if year_err:
+            return jsonify({'success': False, 'error': {'message': year_err}}), 400
+        kwargs['pr_start_year'] = year
+
+    existing = db.get_company(ticker) or {}
+    effective_mode = (kwargs.get('scraper_mode') or existing.get('scraper_mode') or 'skip').strip().lower()
+    mode_fields = {
+        'ir_url': kwargs.get('ir_url', existing.get('ir_url')),
+        'rss_url': kwargs.get('rss_url', existing.get('rss_url')),
+        'url_template': kwargs.get('url_template', existing.get('url_template')),
+        'pr_start_year': kwargs.get('pr_start_year', existing.get('pr_start_year')),
+        'skip_reason': kwargs.get('skip_reason', existing.get('skip_reason')),
+    }
+    mode_err = _validate_mode_requirements(effective_mode, mode_fields)
+    if mode_err:
+        return jsonify({'success': False, 'error': {'message': mode_err}}), 400
+
     try:
         company = db.update_company_config(ticker, **kwargs)
     except Exception:

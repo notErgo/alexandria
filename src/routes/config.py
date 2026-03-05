@@ -9,6 +9,7 @@ Config settings and ticker hint routes.
   POST /api/config/hints/<ticker>     — upsert hint for a ticker
   GET  /api/ollama/models             — list models available in Ollama (live or disk)
 """
+import json
 import logging
 import os
 from pathlib import Path
@@ -20,7 +21,25 @@ log = logging.getLogger('miners.routes.config')
 bp = Blueprint('config', __name__)
 
 # Keys with hardcoded defaults
-_KNOWN_CONFIG_KEYS = {'llm_batch_preamble', 'ollama_model'}
+_KNOWN_CONFIG_KEYS = {'llm_batch_preamble', 'ollama_model', 'keyword_dictionary'}
+
+_DEFAULT_KEYWORD_DICTIONARY = {
+    'active_pack': 'btc_activity',
+    'packs': {
+        'btc_activity': [
+            'bitcoin', 'btc', 'mined', 'production', 'hodl', 'holdings',
+            'sold', 'treasury', 'encumbered', 'hashrate'
+        ],
+        'miners_deployed': [
+            'miners', 'deployed', 'fleet', 'machines', 'rigs',
+            'energized', 'installed', 'asic', 'efficiency', 'j/th'
+        ],
+        'ai_hpc_compute': [
+            'ai', 'hpc', 'gpu', 'compute', 'cluster', 'hosting',
+            'capacity', 'data center', 'megawatt', 'mw'
+        ],
+    },
+}
 
 # Standard Ollama manifest directory (model weights live here regardless of
 # how the binary was installed — Homebrew puts the binary at
@@ -35,6 +54,8 @@ def _get_default_for_key(key: str):
     if key == 'ollama_model':
         from config import LLM_MODEL_ID
         return LLM_MODEL_ID
+    if key == 'keyword_dictionary':
+        return json.dumps(_DEFAULT_KEYWORD_DICTIONARY)
     return None
 
 
@@ -193,4 +214,84 @@ def upsert_hint(ticker):
         return jsonify({'success': True})
     except Exception:
         log.error('Error upserting hint for %s', ticker, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/config/keyword_dictionary')
+def get_keyword_dictionary():
+    """Return global keyword highlight dictionary used across review/explorer panels."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+        raw = db.get_config('keyword_dictionary')
+        if not raw:
+            return jsonify({'success': True, 'data': {'dictionary': _DEFAULT_KEYWORD_DICTIONARY}})
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise ValueError("dictionary must be object")
+            return jsonify({'success': True, 'data': {'dictionary': parsed}})
+        except Exception:
+            log.warning("Invalid keyword_dictionary config; falling back to default")
+            return jsonify({'success': True, 'data': {'dictionary': _DEFAULT_KEYWORD_DICTIONARY}})
+    except Exception:
+        log.error('Error fetching keyword dictionary', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/config/keyword_dictionary', methods=['POST'])
+def set_keyword_dictionary():
+    """Upsert keyword dictionary config with normalized lowercase term lists."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        body = request.get_json(silent=True) or {}
+        dictionary = body.get('dictionary')
+        if not isinstance(dictionary, dict):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'dictionary' must be an object"
+            }}), 400
+
+        packs = dictionary.get('packs')
+        if not isinstance(packs, dict) or not packs:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'packs' must be a non-empty object"
+            }}), 400
+
+        normalized_packs = {}
+        for pack_name, terms in packs.items():
+            if not isinstance(pack_name, str) or not pack_name.strip():
+                return jsonify({'success': False, 'error': {
+                    'code': 'INVALID_INPUT',
+                    'message': 'pack names must be non-empty strings'
+                }}), 400
+            if not isinstance(terms, list):
+                return jsonify({'success': False, 'error': {
+                    'code': 'INVALID_INPUT',
+                    'message': f"pack '{pack_name}' must be an array of terms"
+                }}), 400
+            clean = []
+            for t in terms:
+                if not isinstance(t, str):
+                    continue
+                term = t.strip().lower()
+                if term and term not in clean:
+                    clean.append(term)
+            normalized_packs[pack_name.strip()] = clean
+
+        active_pack = dictionary.get('active_pack')
+        if not isinstance(active_pack, str) or active_pack not in normalized_packs:
+            active_pack = next(iter(normalized_packs.keys()))
+
+        payload = {
+            'active_pack': active_pack,
+            'packs': normalized_packs,
+        }
+        db.set_config('keyword_dictionary', json.dumps(payload))
+        return jsonify({'success': True, 'data': {'dictionary': payload}})
+    except Exception:
+        log.error('Error setting keyword dictionary', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

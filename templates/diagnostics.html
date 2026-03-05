@@ -35,68 +35,17 @@
   color: var(--theme-text-muted);
   font-size: 0.9rem;
 }
-/* Company status table */
-.company-status-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-.company-status-table th {
-  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.4px;
-  color: var(--theme-text-muted); font-weight: 600; padding: 4px 8px;
-  border-bottom: 1px solid var(--theme-border); text-align: left;
-  cursor: pointer; user-select: none; white-space: nowrap;
-}
-.company-status-table th:hover { color: var(--theme-accent); }
-.company-status-table th.sort-active { color: var(--theme-accent); }
-.company-status-table th.sort-active.sort-asc::after  { content: ' ↑'; opacity: 0.8; font-size: 0.7em; }
-.company-status-table th.sort-active.sort-desc::after { content: ' ↓'; opacity: 0.8; font-size: 0.7em; }
-.company-status-table td {
-  padding: 5px 8px; border-bottom: 1px solid var(--theme-border);
-  color: var(--theme-text-primary); vertical-align: middle;
-}
-.company-status-table tr:last-child td { border-bottom: none; }
-.company-status-table tr:hover td { background: rgba(255,255,255,0.03); }
-.state-badge {
-  display: inline-block; padding: 1px 7px; border-radius: 10px;
-  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
-}
-.state-ok              { background: rgba(34,197,94,0.15);  color: #22c55e; }
-.state-skip            { background: rgba(107,114,128,0.15); color: #9ca3af; }
-.state-index-no-data   { background: rgba(249,115,22,0.15); color: #f97316; }
-.state-ingested-no-extraction { background: rgba(239,68,68,0.15); color: #ef4444; }
-.state-no-data         { background: rgba(107,114,128,0.15); color: #9ca3af; }
-.tier-badge {
-  display: inline-block; padding: 1px 6px; border-radius: 4px;
-  font-size: 0.70rem; background: rgba(59,130,246,0.12); color: #60a5fa;
-}
 </style>
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title">Extraction Diagnostics</h1>
+<h1 class="page-title" data-spec-id="8.0"><span class="spec-id">8.0</span>Extraction Diagnostics</h1>
 
 <div id="loading">Loading diagnostics…</div>
 
-<div id="diag-content" hidden>
-
-  <!-- Row 0: Company status table — full width -->
-  <div class="chart-panel" style="margin-top:1.25rem">
-    <h2>Company Status</h2>
-    <p class="subtitle">Coverage state for all 13 companies. Shows why companies have no data.</p>
-    <table class="company-status-table" id="company-status-table">
-      <thead>
-        <tr>
-          <th data-sort="ticker">Ticker</th>
-          <th data-sort="name">Company</th>
-          <th data-sort="tier" data-sort-type="num">Tier</th>
-          <th data-sort="data_state">Status</th>
-          <th data-sort="prod_months" data-sort-type="num">Prod Months</th>
-          <th data-sort="report_count" data-sort-type="num">Reports</th>
-          <th data-sort="first_period">First Period</th>
-          <th data-sort="last_period">Last Period</th>
-          <th data-sort="avg_confidence" data-sort-type="num">Avg Conf</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody id="company-status-tbody"></tbody>
-    </table>
+<div id="diag-content" hidden data-spec-id="8.1">
+  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+    <span class="spec-id">8.1</span>Diagnostic Output <span class="source-badge source-badge-data">DATA</span>
   </div>
 
   <!-- Row 1: Coverage heatmap — full width -->
@@ -146,77 +95,6 @@ function escapeHtml(str) {
   const d = document.createElement('div');
   d.textContent = str == null ? '' : String(str);
   return d.innerHTML;
-}
-
-const STATE_LABEL = {
-  ok:                     'Has Data',
-  skip:                   'Skipped',
-  index_no_data:          'JS SPA — No Scraper',
-  ingested_no_extraction: 'Ingested, No Extractions',
-  no_data:                'No Data',
-};
-const STATE_CLASS = {
-  ok:                     'state-ok',
-  skip:                   'state-skip',
-  index_no_data:          'state-index-no-data',
-  ingested_no_extraction: 'state-ingested-no-extraction',
-  no_data:                'state-no-data',
-};
-
-function renderCompanyStatus(data) {
-  const tbody = document.getElementById('company-status-tbody');
-  const rows = data.company_status || [];
-  tbody.innerHTML = rows.map(c => {
-    const stateLabel = STATE_LABEL[c.data_state] || c.data_state;
-    const stateClass = STATE_CLASS[c.data_state] || 'state-no-data';
-    const conf = c.avg_confidence != null ? c.avg_confidence.toFixed(3) : '—';
-    const first = c.first_period ? c.first_period.slice(0, 7) : '—';
-    const last  = c.last_period  ? c.last_period.slice(0, 7)  : '—';
-    const note  = c.skip_reason
-      ? escapeHtml(c.skip_reason)
-      : (c.scrape_mode === 'index' ? 'IR page requires JS — no HTML scraper yet' : '');
-    return `<tr>
-      <td><strong>${escapeHtml(c.ticker)}</strong></td>
-      <td>${escapeHtml(c.name)}</td>
-      <td><span class="tier-badge">T${escapeHtml(String(c.tier))}</span></td>
-      <td><span class="state-badge ${stateClass}">${escapeHtml(stateLabel)}</span></td>
-      <td>${c.prod_months > 0 ? c.prod_months : '—'}</td>
-      <td>${c.report_count > 0 ? c.report_count : '—'}</td>
-      <td>${escapeHtml(first)}</td>
-      <td>${escapeHtml(last)}</td>
-      <td>${escapeHtml(conf)}</td>
-      <td style="color:var(--theme-text-muted);font-size:0.78rem">${note}</td>
-    </tr>`;
-  }).join('');
-  // Wire sortable headers
-  _makeTableSortable('company-status-table');
-}
-
-function _makeTableSortable(tableId) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
-  const tbody = table.querySelector('tbody');
-  const state = { key: null, dir: 1 };
-  table.querySelectorAll('thead th[data-sort]').forEach(function(th) {
-    th.addEventListener('click', function() {
-      const key = th.getAttribute('data-sort');
-      const isNum = th.getAttribute('data-sort-type') === 'num';
-      state.dir = (state.key === key) ? state.dir * -1 : (isNum ? -1 : 1);
-      state.key = key;
-      table.querySelectorAll('thead th[data-sort]').forEach(h =>
-        h.classList.remove('sort-active', 'sort-asc', 'sort-desc'));
-      th.classList.add('sort-active', state.dir === 1 ? 'sort-asc' : 'sort-desc');
-      const colIdx = Array.from(th.parentElement.children).indexOf(th);
-      Array.from(tbody.querySelectorAll('tr'))
-        .sort(function(a, b) {
-          const av = a.cells[colIdx] ? a.cells[colIdx].textContent.trim() : '';
-          const bv = b.cells[colIdx] ? b.cells[colIdx].textContent.trim() : '';
-          if (isNum) return ((parseFloat(av.replace(/,/g,''))||0) - (parseFloat(bv.replace(/,/g,''))||0)) * state.dir;
-          return av.localeCompare(bv) * state.dir;
-        })
-        .forEach(r => tbody.appendChild(r));
-    });
-  });
 }
 
 // Metric label → color band for pattern chart
@@ -425,7 +303,6 @@ async function loadDiagnostics() {
     document.getElementById('loading').hidden = true;
     document.getElementById('diag-content').hidden = false;
 
-    renderCompanyStatus(data);
     _charts.push(renderCoverage(data));
     _charts.push(renderPatterns(data));
     _charts.push(renderConfidence(data));

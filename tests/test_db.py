@@ -368,8 +368,8 @@ class TestPurgeAll:
             assert conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0] == 0
             assert conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0] == 0
 
-    def test_purge_all_resets_company_scraper_fields(self, db_with_company):
-        """purge_all resets operational scraper fields on companies to initial state."""
+    def test_purge_all_by_ticker_resets_company_scraper_fields(self, db_with_company):
+        """Ticker-scoped purge keeps company row and resets its operational fields."""
         db_with_company.update_company_scraper_fields(
             'MARA', scraper_status='ok', last_scrape_at='2025-01-01T00:00:00'
         )
@@ -377,19 +377,18 @@ class TestPurgeAll:
         assert company_before['scraper_status'] == 'ok'
         assert company_before['last_scrape_at'] == '2025-01-01T00:00:00'
 
-        db_with_company.purge_all()
+        db_with_company.purge_all(ticker='MARA')
 
         company_after = db_with_company.get_company('MARA')
         assert company_after['scraper_status'] == 'never_run'
         assert company_after['last_scrape_at'] is None
         assert company_after['last_scrape_error'] is None
 
-    def test_purge_all_preserves_company_rows(self, db_with_company):
-        """purge_all keeps company config rows — only operational fields are reset."""
+    def test_purge_all_clears_company_rows(self, db_with_company):
+        """Full purge clears company catalog rows for a truly empty Ops table."""
         db_with_company.purge_all()
         company = db_with_company.get_company('MARA')
-        assert company is not None
-        assert company['ticker'] == 'MARA'
+        assert company is None
 
     def test_purge_all_by_ticker_scopes_deletion(self, db):
         """purge_all(ticker=X) deletes only X rows; other tickers survive."""

@@ -122,7 +122,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title">Pattern Rules</h1>
+<h1 class="page-title" data-spec-id="7.0"><span class="spec-id">7.0</span>Pattern Rules</h1>
 
 <!-- Live test panel -->
 <div class="card test-panel">
@@ -162,7 +162,11 @@
   </div>
 
   <!-- Per-metric pattern tables -->
-  <div id="metric-sections"></div>
+  <div id="metric-sections" data-spec-id="7.1">
+    <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+      <span class="spec-id">7.1</span>Patterns Table <span class="source-badge source-badge-config">CONFIG</span>
+    </div>
+  </div>
 
 </div>
 
@@ -298,8 +302,8 @@ function renderGaps(gaps) {
   const grid = document.getElementById('gap-grid');
   grid.innerHTML = gaps.map(g => {
     const cls = g.covered ? 'covered' : 'uncovered';
-    const onclick = g.covered ? '' : `onclick="prefillTest('${escapeHtml(g.word)}')"`;
-    return `<span class="gap-chip ${cls}" title="${g.count} occurrences" ${onclick}>
+    const attrs = g.covered ? '' : ` data-gap-word="${escapeAttr(g.word)}"`;
+    return `<span class="gap-chip ${cls}" title="${g.count} occurrences"${attrs}>
       ${escapeHtml(g.word)}<span class="chip-count">${g.count}</span>
     </span>`;
   }).join('');
@@ -500,6 +504,11 @@ async function reload() {
 }
 
 reload();
+document.getElementById('gap-grid').addEventListener('click', function(e) {
+  const chip = e.target.closest('.gap-chip.uncovered[data-gap-word]');
+  if (!chip) return;
+  prefillTest(chip.getAttribute('data-gap-word') || '');
+});
 
 // ── Per-metric prompt editor ───────────────────────────────────────────────
 let _defaultPromptCache = {};  // metric → default prompt text

@@ -34,6 +34,7 @@ const ReviewPanel = (function () {
     hashrate_eh:      '#10b981',
     realization_rate: '#f97316',
   };
+  const _KEYWORD_COLOR = '#fde047';
 
   // ── Module state ────────────────────────────────────────────────────────────
   let _container   = null;
@@ -44,6 +45,10 @@ const ReviewPanel = (function () {
   let _onApproved  = null;
   let _onRejected  = null;
   let _onFilled    = null;
+  let _keywordDictionary = {
+    active_pack: 'btc_activity',
+    packs: { btc_activity: ['bitcoin', 'btc'] },
+  };
 
   // ── HTML skeleton ───────────────────────────────────────────────────────────
   const _HTML = `
@@ -56,7 +61,7 @@ const ReviewPanel = (function () {
     <pre class="rp-doc-text" style="display:none"></pre>
     <div class="rp-reprompt-bar" style="display:none">
       <span class="rp-hint">Select text above, then:</span>
-      <button class="rp-btn rp-btn-reprompt" disabled>Re-extract / LLM Reprompt</button>
+      <button class="rp-btn rp-btn-reprompt" data-spec-id="3.6" disabled>Re-extract / LLM Reprompt</button>
     </div>
   </div>
   <div class="rp-sidebar">
@@ -65,8 +70,8 @@ const ReviewPanel = (function () {
     <div class="rp-actions" style="display:none">
       <input type="number" class="rp-corrected" placeholder="Override value (optional)" step="any">
       <input type="text" class="rp-reject-note" placeholder="Rejection note (required)">
-      <button class="rp-btn rp-btn-approve">Approve</button>
-      <button class="rp-btn rp-btn-reject">Reject</button>
+      <button class="rp-btn rp-btn-approve" data-spec-id="3.4">Approve</button>
+      <button class="rp-btn rp-btn-reject" data-spec-id="3.5">Reject</button>
     </div>
     <div class="rp-fill-form" style="display:none">
       <label class="rp-fill-label">Metric</label>
@@ -98,6 +103,38 @@ const ReviewPanel = (function () {
 
   function _el(cls) {
     return _container ? _container.querySelector('.' + cls) : null;
+  }
+
+  function _getSelectedPackKey() {
+    try {
+      var k = localStorage.getItem('keyword_pack');
+      return k || (_keywordDictionary && _keywordDictionary.active_pack) || 'btc_activity';
+    } catch (_e) {
+      return (_keywordDictionary && _keywordDictionary.active_pack) || 'btc_activity';
+    }
+  }
+
+  function _getActiveTerms() {
+    var pack = _getSelectedPackKey();
+    var packs = (_keywordDictionary && _keywordDictionary.packs) || {};
+    var terms = packs[pack] || [];
+    return Array.isArray(terms) ? terms : [];
+  }
+
+  function _escapeRegExp(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  async function _loadKeywordDictionary() {
+    try {
+      var resp = await fetch('/api/config/keyword_dictionary');
+      if (!resp.ok) return;
+      var data = await resp.json();
+      if (!data.success || !data.data || !data.data.dictionary) return;
+      _keywordDictionary = data.data.dictionary;
+    } catch (_e) {
+      // Non-fatal: retain fallback dictionary
+    }
   }
 
   function _setStatus(msg, isError) {
@@ -132,7 +169,36 @@ const ReviewPanel = (function () {
         label: label + patternId,
       });
     }
-    regions.sort(function (a, b) { return a.start - b.start; });
+
+    // Add global keyword regions from selected pack
+    var terms = _getActiveTerms();
+    for (var t = 0; t < terms.length; t++) {
+      var term = String(terms[t] || '').trim();
+      if (term.length < 2) continue;
+      var rx = new RegExp('\\b' + _escapeRegExp(term) + '\\b', 'gi');
+      var mrx;
+      while ((mrx = rx.exec(rawText)) !== null) {
+        regions.push({
+          start: mrx.index,
+          end: mrx.index + mrx[0].length,
+          color: _KEYWORD_COLOR,
+          label: 'keyword: ' + term,
+        });
+        if (mrx.index === rx.lastIndex) rx.lastIndex++; // guard zero-length loops
+      }
+    }
+
+    // Deterministic region order:
+    // 1) earlier start index first
+    // 2) for same start, longer region first (keeps full snippet over tiny keyword)
+    // 3) for same start/length, lexicographic label
+    regions.sort(function (a, b) {
+      if (a.start !== b.start) return a.start - b.start;
+      var alen = a.end - a.start;
+      var blen = b.end - b.start;
+      if (alen !== blen) return blen - alen;
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
 
     var html = '';
     var pos  = 0;
@@ -443,6 +509,7 @@ const ReviewPanel = (function () {
     _container = document.getElementById(containerId);
     if (!_container) return;
     _container.innerHTML = _HTML;
+    _loadKeywordDictionary();
     _wireHandlers();
   }
 

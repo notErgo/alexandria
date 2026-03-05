@@ -174,7 +174,8 @@ class IRScraper:
         Returns IngestSummary.
         """
         from miner_types import IngestSummary
-        mode = company.get("scrape_mode", "index")
+        # Support both legacy config key (scrape_mode) and DB/API key (scraper_mode).
+        mode = (company.get("scraper_mode") or company.get("scrape_mode") or "skip").strip().lower()
         if mode == "rss":
             return self._scrape_rss(company)
         elif mode == "template":

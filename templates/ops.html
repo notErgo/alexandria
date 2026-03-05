@@ -26,6 +26,11 @@
 .regime-form input, .regime-form select { font-size: 0.8rem; padding: 3px 6px; }
 .regime-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--theme-bg-tertiary); border: 1px solid var(--theme-border); border-radius: 12px; padding: 2px 8px 2px 10px; font-size: 0.75rem; margin: 2px; }
 .regime-tag-del { background: none; border: none; color: var(--theme-text-muted); cursor: pointer; font-size: 0.8rem; padding: 0; }
+.acq-panel { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--theme-border); border-radius: 8px; background: var(--theme-bg-secondary); }
+.acq-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
+.acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
+.acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
 
 /* Explorer heatmap */
 .explorer-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
@@ -72,7 +77,7 @@
   <button class="ops-tab" data-pane="registry" data-ui-id="2.2">Registry</button>
   <button class="ops-tab" data-pane="explorer" data-ui-id="2.3">Explorer</button>
   <button class="ops-tab" data-pane="rules" data-ui-id="2.4">Metric Rules</button>
-  <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
+  <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5" data-spec-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
 </div>
 
 <!-- ── Companies tab ──────────────────────────────────────────────────── -->
@@ -80,7 +85,7 @@
   <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
     <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
-    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
+    <button class="btn btn-sm btn-secondary" data-spec-id="2.1.6" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
@@ -101,17 +106,65 @@
       </div>
       <div>
         <label style="font-size:0.75rem;display:block">Scraper Mode</label>
-        <select id="ac-mode">
+        <select id="ac-mode" onchange="onAddCompanyModeChange()">
           <option value="skip">skip</option>
           <option value="rss">rss</option>
           <option value="index">index</option>
           <option value="template">template</option>
         </select>
       </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">IR URL</label>
+        <input id="ac-ir-url" type="text" style="width:260px" placeholder="https://investor.example.com/news">
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">RSS URL</label>
+        <input id="ac-rss-url" type="text" style="width:260px" placeholder="https://investor.example.com/rss">
+      </div>
+      <div style="min-width:310px">
+        <label style="font-size:0.75rem;display:block">Template URL</label>
+        <input id="ac-url-template" type="text" style="width:310px" placeholder="https://site/{month}-{year}-production-update">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">PR Start Year</label>
+        <input id="ac-pr-start-year" type="number" min="2009" max="2100" step="1" style="width:100px" placeholder="2023">
+      </div>
+      <div style="min-width:320px">
+        <label style="font-size:0.75rem;display:block">Skip Reason</label>
+        <input id="ac-skip-reason" type="text" style="width:320px" placeholder="Quarterly-only reporting since 2025">
+      </div>
       <button class="btn btn-sm btn-primary" onclick="submitAddCompany()">Save</button>
       <button class="btn btn-sm btn-secondary" onclick="document.getElementById('add-company-form').style.display='none'">Cancel</button>
     </div>
+    <div id="ac-mode-help" style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:0.45rem"></div>
     <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
+  </div>
+
+  <div class="acq-panel" data-ui-id="2.1.7" data-spec-id="2.1.7">
+    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
+      <span class="spec-id">2.1.7</span>Data Acquisition Controls <span class="source-badge source-badge-na">n/a</span>
+    </div>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-primary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
+      <button class="btn btn-sm btn-primary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
+      <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadRegistry()">Refresh Registry</button>
+    </div>
+    <div id="acq-status" class="acq-status">Idle</div>
+    <div id="acq-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <div class="acq-panel" data-ui-id="2.1.8" data-spec-id="2.1.8">
+    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
+      <span class="spec-id">2.1.8</span>LLM Extraction Run Monitor <span class="source-badge source-badge-data">DATA</span>
+    </div>
+    <div class="acq-actions">
+      <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+      <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
+    </div>
+    <div id="extract-status" class="acq-status">Idle</div>
+    <div id="extract-log" class="acq-log" style="display:none"></div>
   </div>
 
   <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
@@ -190,24 +243,29 @@
 
   <!-- Danger Zone ──────────────────────────────────────────────────────── -->
   <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="2.1.4" data-spec-id="2.1.4">
-    <h3 style="font-size:0.85rem;margin:0 0 0.6rem;color:var(--theme-danger)"><span class="spec-id">2.1.4</span>Danger Zone</h3>
-    <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
-      Purge deletes all operational data: reports, data_points, review_queue,
-      scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans,
-      facilities, and source_audit. Company scraper state is reset to never_run.
-      Config is preserved (regime windows, LLM prompts, metric rules, patterns).
-    </p>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-      <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
-      <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
-             style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">2.1.4</span>Danger Zone</h3>
+      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
     </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-      <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">PURGE</code>&nbsp;to confirm:</label>
-      <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
-             style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-      <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
-      <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
+      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+        Purge deletes all operational data: reports, data_points, review_queue,
+        scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans,
+        facilities, and source_audit. Company scraper state is reset to never_run.
+        Config is preserved (regime windows, LLM prompts, metric rules, patterns).
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
+        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
+               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">PURGE</code>&nbsp;to confirm:</label>
+        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
+               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
+        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
     </div>
   </div>
 </div>
@@ -215,7 +273,7 @@
 <!-- ── Registry tab ───────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-registry" data-ui-id="2.2" data-spec-id="2.2">
   <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.2</span>Registry</h2>
-  <div class="registry-filters" data-ui-id="2.2.1">
+  <div class="registry-filters" data-ui-id="2.2.1" data-spec-id="2.2.1">
     <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <input id="reg-period" type="month" placeholder="Period">
     <select id="reg-doc-type">
@@ -281,6 +339,9 @@
       <option value="36" selected>36 months</option>
       <option value="60">60 months</option>
     </select>
+    <select id="ex-keyword-pack" title="Global keyword highlight pack">
+      <option value="">keywords: default</option>
+    </select>
     <button class="btn btn-sm btn-primary" onclick="loadExplorer()">Search</button>
     <span id="ex-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
@@ -310,10 +371,10 @@
     <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.3.3" data-spec-id="2.3.3">
       <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.3.3</span><span id="cell-detail-header-text">Cell Detail</span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
-      <div class="cell-actions" id="cell-actions"></div>
+      <div class="cell-actions" id="cell-actions" data-spec-id="2.3.5"></div>
 
       <!-- Save value form -->
-      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.3.4">
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.3.4" data-spec-id="2.3.4">
         <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
@@ -325,7 +386,7 @@
       </div>
 
       <!-- Re-extract panel -->
-      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem" data-ui-id="2.3.6">
+      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem" data-ui-id="2.3.6" data-spec-id="2.3.6">
         <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
         <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
         <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
@@ -381,6 +442,26 @@
     Min History: minimum prior months required to run outlier check.
     Changes take effect on the next extraction run (no restart needed).
   </p>
+
+  <div class="card" style="margin-top:1rem" data-spec-id="2.4.2">
+    <h3 style="margin:0 0 0.6rem;font-size:0.9rem"><span class="spec-id">2.4.2</span>Keyword Dictionary <span class="source-badge source-badge-config">CONFIG</span></h3>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)">Pack</label>
+      <select id="kw-pack-select" style="min-width:170px"></select>
+      <button class="btn btn-sm btn-secondary" onclick="addKeywordPack()">+ Add Pack</button>
+      <button class="btn btn-sm btn-secondary" onclick="deleteKeywordPack()">Delete Pack</button>
+      <span id="kw-dict-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <textarea id="kw-pack-terms" rows="5" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="one term per line"></textarea>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+      <button class="btn btn-sm btn-primary" onclick="saveKeywordDictionary()">Save Dictionary</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadKeywordDictionaryOptions()">Reload</button>
+    </div>
+    <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.5rem">
+      Terms are stored globally and used for source highlighting in Explorer and Review panels.
+      Use one term per line.
+    </p>
+  </div>
 </div>
 {% endblock %}
 
@@ -410,6 +491,7 @@ function activateTab(name) {
   if (name === 'registry' && !_registryLoaded) loadRegistry();
   if (name === 'explorer') {
     if (!_metricsLoaded) loadExplorerMetrics();
+    if (!_keywordDictionary) loadKeywordDictionaryOptions();
     if (!_explorerLoaded) loadExplorer();
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
@@ -439,21 +521,242 @@ document.addEventListener('DOMContentLoaded', function() {
   makeSortable('scrape-table');
   makeSortable('registry-table');
   makeSortable('review-table');
+  loadKeywordDictionaryOptions();
 });
 
 // ── Companies tab ───────────────────────────────────────────────────────────
 let _companiesLoaded = false;
 let _companies = [];
 let _regimeTicker = null;
+let _acqTaskId = null;
+let _acqTaskTimer = null;
+let _extractTaskId = null;
+let _extractTimer = null;
+
+function _acqStateLabel(raw) {
+  if (raw === 'complete') return 'complete';
+  if (raw === 'error') return 'failed';
+  if (raw === 'running') return 'running';
+  return 'queued';
+}
+
+function _appendAcqLog(line) {
+  const el = document.getElementById('acq-log');
+  if (!el) return;
+  const row = document.createElement('div');
+  row.className = 'acq-log-row';
+  row.textContent = line;
+  el.prepend(row);
+  el.style.display = '';
+  while (el.children.length > 20) {
+    el.removeChild(el.lastChild);
+  }
+}
+
+function _setAcqStatus(text, isError) {
+  const el = document.getElementById('acq-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-muted)';
+}
+
+function _setAcquireButtonsEnabled(enabled) {
+  document.querySelectorAll('[data-acq-source]').forEach(function(btn) {
+    btn.disabled = !enabled;
+  });
+}
+
+async function _pollAcquireTask(taskId, source) {
+  if (_acqTaskTimer) clearInterval(_acqTaskTimer);
+  _acqTaskTimer = setInterval(async function() {
+    try {
+      const resp = await fetch('/api/ingest/' + encodeURIComponent(taskId) + '/progress');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const p = data.data || {};
+      const state = _acqStateLabel(p.status || '');
+      _setAcqStatus('Acquire ' + source.toUpperCase() + ': ' + state, state === 'failed');
+      if (state === 'running') {
+        return;
+      }
+      _acqTaskId = null;
+      clearInterval(_acqTaskTimer);
+      _acqTaskTimer = null;
+      _setAcquireButtonsEnabled(true);
+      if (state === 'complete') {
+        const detail = [];
+        if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
+        if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
+        if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
+        if (typeof p.errors === 'number') detail.push('errors=' + p.errors);
+        _appendAcqLog(new Date().toISOString().slice(11, 19) + ' complete ' + source + (detail.length ? ' (' + detail.join(', ') + ')' : ''));
+        showToast('Acquire ' + source.toUpperCase() + ' complete');
+        if (_registryLoaded) loadRegistry();
+        if (_explorerLoaded) loadExplorer();
+        if (_reviewLoaded) loadReview();
+      } else {
+        const msg = p.message || 'Task failed';
+        _appendAcqLog(new Date().toISOString().slice(11, 19) + ' failed ' + source + ' (' + msg + ')');
+        showToast('Acquire ' + source.toUpperCase() + ' failed: ' + msg, true);
+      }
+    } catch (err) {
+      _acqTaskId = null;
+      clearInterval(_acqTaskTimer);
+      _acqTaskTimer = null;
+      _setAcquireButtonsEnabled(true);
+      _setAcqStatus('Acquire ' + source.toUpperCase() + ': failed', true);
+      _appendAcqLog(new Date().toISOString().slice(11, 19) + ' failed ' + source + ' (' + String(err) + ')');
+    }
+  }, 1000);
+}
+
+async function triggerAcquire(source) {
+  if (!source || _acqTaskId) return;
+  _setAcquireButtonsEnabled(false);
+  _acqTaskId = 'starting';
+  _setAcqStatus('Acquire ' + source.toUpperCase() + ': queued', false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source);
+  try {
+    const resp = await fetch('/api/ingest/' + encodeURIComponent(source), { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    }
+    _acqTaskId = data.data.task_id;
+    _setAcqStatus('Acquire ' + source.toUpperCase() + ': running', false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + ' (task ' + _acqTaskId + ')');
+    _pollAcquireTask(_acqTaskId, source);
+  } catch (err) {
+    _acqTaskId = null;
+    _setAcquireButtonsEnabled(true);
+    _setAcqStatus('Acquire ' + source.toUpperCase() + ': failed', true);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' failed ' + source + ' (' + String(err) + ')');
+    showToast('Failed to start Acquire ' + source.toUpperCase(), true);
+  }
+}
+
+function _appendExtractLog(line) {
+  const el = document.getElementById('extract-log');
+  if (!el) return;
+  const row = document.createElement('div');
+  row.className = 'acq-log-row';
+  row.textContent = line;
+  el.prepend(row);
+  el.style.display = '';
+  while (el.children.length > 30) {
+    el.removeChild(el.lastChild);
+  }
+}
+
+function _setExtractStatus(text, isError) {
+  const el = document.getElementById('extract-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-muted)';
+}
+
+function _setExtractEnabled(enabled) {
+  const btn = document.getElementById('extract-start-btn');
+  if (btn) btn.disabled = !enabled;
+}
+
+async function _pollExtractionRun(taskId, ticker) {
+  if (_extractTimer) clearInterval(_extractTimer);
+  _extractTimer = setInterval(async function() {
+    try {
+      const resp = await fetch('/api/operations/extract/' + encodeURIComponent(taskId) + '/progress');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'progress failed');
+      const p = data.data || {};
+      const state = p.status || 'running';
+      const processed = p.reports_processed || 0;
+      const total = p.reports_total || 0;
+      const points = p.data_points || 0;
+      const errors = p.errors || 0;
+      _setExtractStatus(
+        'Extraction ' + (ticker || 'ALL') + ': ' + state + ' (' + processed + '/' + total + ', points=' + points + ', errors=' + errors + ')',
+        state === 'error'
+      );
+      if (state === 'running') return;
+      _extractTaskId = null;
+      clearInterval(_extractTimer);
+      _extractTimer = null;
+      _setExtractEnabled(true);
+      if (state === 'complete') {
+        _appendExtractLog(new Date().toISOString().slice(11, 19) + ' complete ' + (ticker || 'ALL')
+          + ' reports=' + processed + ' data_points=' + points + ' errors=' + errors);
+        showToast('Extraction complete (' + (ticker || 'ALL') + ')');
+        if (_explorerLoaded) loadExplorer();
+        if (_reviewLoaded) loadReview();
+      } else {
+        _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed ' + (ticker || 'ALL'));
+        showToast('Extraction failed (' + (ticker || 'ALL') + ')', true);
+      }
+    } catch (err) {
+      _extractTaskId = null;
+      clearInterval(_extractTimer);
+      _extractTimer = null;
+      _setExtractEnabled(true);
+      _setExtractStatus('Extraction failed: ' + String(err), true);
+      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed (' + String(err) + ')');
+    }
+  }, 1000);
+}
+
+async function startExtractionRun() {
+  if (_extractTaskId) return;
+  const ticker = (document.getElementById('extract-ticker').value || '').trim().toUpperCase();
+  const force = !!document.getElementById('extract-force').checked;
+  _setExtractEnabled(false);
+  _extractTaskId = 'starting';
+  _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': queued', false);
+  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : ''));
+  try {
+    const resp = await fetch('/api/operations/extract', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ ticker: ticker || null, force }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    _extractTaskId = data.data.task_id;
+    _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': running', false);
+    _appendExtractLog(new Date().toISOString().slice(11, 19) + ' running task ' + _extractTaskId);
+    _pollExtractionRun(_extractTaskId, ticker || 'ALL');
+  } catch (err) {
+    _extractTaskId = null;
+    _setExtractEnabled(true);
+    _setExtractStatus('Extraction failed: ' + String(err), true);
+    _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed to start (' + String(err) + ')');
+    showToast('Failed to start extraction', true);
+  }
+}
 
 async function loadCompanies() {
-  _companiesLoaded = true;
-  const resp = await fetch('/api/companies');
-  if (!resp.ok) { showToast('Failed to load companies', true); return; }
-  const data = await resp.json();
-  _companies = data.data || [];
-  renderCompanies();
-  loadScrapeQueue();
+  const tbody = document.getElementById('companies-tbody');
+  try {
+    const resp = await fetch('/api/companies', { cache: 'no-store' });
+    if (!resp.ok) {
+      _companiesLoaded = false;
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--theme-danger)">Failed to load companies.</td></tr>';
+      }
+      showToast('Failed to load companies', true);
+      return;
+    }
+    const data = await resp.json();
+    _companies = data.data || [];
+    _companiesLoaded = true;
+    renderCompanies();
+    loadScrapeQueue();
+  } catch (_err) {
+    _companiesLoaded = false;
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--theme-danger)">Failed to load companies.</td></tr>';
+    }
+    showToast('Failed to load companies', true);
+  }
 }
 
 function renderCompanies() {
@@ -547,12 +850,23 @@ function toggleCompanyDetail(ticker) {
   row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
+function toggleDangerZone() {
+  const body = document.getElementById('danger-zone-body');
+  const btn = document.getElementById('toggle-danger-zone');
+  if (!body || !btn) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  btn.textContent = open ? 'Show Destructive Tools' : 'Hide Destructive Tools';
+}
+
 function onPurgeInput() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
   const confirmWord = ticker || 'PURGE';
   document.getElementById('purge-confirm-hint').textContent = confirmWord;
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
-  document.getElementById('purge-btn').disabled = (typed !== confirmWord);
+  const purgeBtn = document.getElementById('purge-btn');
+  purgeBtn.disabled = (typed !== confirmWord);
+  purgeBtn.textContent = ticker ? ('Purge ' + ticker + ' Data') : 'Purge All Data';
 }
 
 async function executePurge() {
@@ -579,15 +893,44 @@ async function executePurge() {
     const d = json.data || {};
     const c = d.counts || {};
     const total = Object.values(c).reduce(function(s, v) { return s + v; }, 0);
+    const purgedTicker = String(d.ticker || 'ALL').toUpperCase();
     msgEl.style.color = 'var(--theme-success)';
-    msgEl.textContent = 'Purged ' + total + ' rows (' + (d.ticker || 'ALL') + '). Reload to see null state.';
+    msgEl.textContent = purgedTicker === 'ALL'
+      ? ('Purged ' + total + ' rows (ALL), including company catalog rows.')
+      : ('Purged ' + total + ' DATA rows (' + purgedTicker + '), company catalog rows kept.');
+    _applyPurgeToCompanyState(purgedTicker);
     _companiesLoaded = false;
-    loadCompanies();
-    loadScrapeQueue();
+    await loadCompanies();
+    await loadScrapeQueue();
+    if (_registryLoaded) await loadRegistry();
+    if (_explorerLoaded) await loadExplorer();
+    if (_reviewLoaded) await loadReview();
   } catch(err) {
     msgEl.style.color = 'var(--theme-danger)';
     msgEl.textContent = 'Error: ' + escapeHtml(String(err));
   }
+}
+
+function _applyPurgeToCompanyState(purgedTicker) {
+  if (!_companies || !_companies.length) return;
+  const resetCompanyOps = function(company) {
+    return {
+      ...company,
+      scraper_status: 'never_run',
+      last_scrape_at: null,
+      last_scrape_error: null,
+      probe_completed_at: null,
+      scraper_issues_log: '',
+    };
+  };
+  if (purgedTicker === 'ALL') {
+    _companies = [];
+  } else {
+    _companies = _companies.map(function(company) {
+      return company.ticker === purgedTicker ? resetCompanyOps(company) : company;
+    });
+  }
+  renderCompanies();
 }
 
 async function syncCompanyConfig() {
@@ -605,7 +948,40 @@ async function syncCompanyConfig() {
 function openAddCompany() {
   document.getElementById('add-company-form').style.display = '';
   document.getElementById('ac-error').textContent = '';
+  onAddCompanyModeChange();
   document.getElementById('ac-ticker').focus();
+}
+
+function onAddCompanyModeChange() {
+  const mode = (document.getElementById('ac-mode').value || 'skip').trim();
+  const help = document.getElementById('ac-mode-help');
+  const ir = document.getElementById('ac-ir-url');
+  const rss = document.getElementById('ac-rss-url');
+  const tmpl = document.getElementById('ac-url-template');
+  const yr = document.getElementById('ac-pr-start-year');
+  const skipReason = document.getElementById('ac-skip-reason');
+  if (!help || !ir || !rss || !tmpl || !yr || !skipReason) return;
+
+  // Reset mode-specific required flags before enabling current mode constraints.
+  ir.required = false;
+  rss.required = false;
+  tmpl.required = false;
+  yr.required = false;
+  skipReason.required = false;
+
+  if (mode === 'rss') {
+    rss.required = true;
+    help.textContent = 'rss: reads production PRs from RSS feed. Required: RSS URL.';
+  } else if (mode === 'index') {
+    ir.required = true;
+    help.textContent = 'index: crawls IR index/listing page for PR links. Required: IR URL.';
+  } else if (mode === 'template') {
+    tmpl.required = true;
+    yr.required = true;
+    help.textContent = 'template: builds monthly PR URLs from a pattern. Required: Template URL and PR Start Year.';
+  } else {
+    help.textContent = 'skip: no scraping for this company. Optional: Skip Reason.';
+  }
 }
 
 async function submitAddCompany() {
@@ -613,11 +989,23 @@ async function submitAddCompany() {
   const name   = document.getElementById('ac-name').value.trim();
   const sector = document.getElementById('ac-sector').value.trim() || 'BTC-miners';
   const mode   = document.getElementById('ac-mode').value;
+  const irUrl = document.getElementById('ac-ir-url').value.trim();
+  const rssUrl = document.getElementById('ac-rss-url').value.trim();
+  const urlTemplate = document.getElementById('ac-url-template').value.trim();
+  const prStartYearRaw = document.getElementById('ac-pr-start-year').value.trim();
+  const skipReason = document.getElementById('ac-skip-reason').value.trim();
   document.getElementById('ac-error').textContent = '';
+  const payload = { ticker, name, sector, scraper_mode: mode };
+  if (irUrl) payload.ir_url = irUrl;
+  if (rssUrl) payload.rss_url = rssUrl;
+  if (urlTemplate) payload.url_template = urlTemplate;
+  if (prStartYearRaw) payload.pr_start_year = Number(prStartYearRaw);
+  if (skipReason) payload.skip_reason = skipReason;
+
   const resp = await fetch('/api/companies', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ ticker, name, sector, scraper_mode: mode }),
+    body: JSON.stringify(payload),
   });
   const data = await resp.json();
   if (!data.success) {
@@ -638,7 +1026,7 @@ async function triggerScrape(ticker) {
 }
 
 async function loadScrapeQueue() {
-  const resp = await fetch('/api/scrape/queue');
+  const resp = await fetch('/api/scrape/queue', { cache: 'no-store' });
   if (!resp.ok) return;
   const data = await resp.json();
   const jobs = data.data || [];
@@ -764,6 +1152,218 @@ let _explorerLoaded = false;
 let _metricsLoaded = false;
 let _explorerGrid = [];
 let _selectedCell = null;
+let _keywordDictionary = null;
+
+function _escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function _getSelectedKeywordPack() {
+  const sel = document.getElementById('ex-keyword-pack');
+  const selected = sel ? sel.value : '';
+  if (selected) return selected;
+  try {
+    return localStorage.getItem('keyword_pack') || '';
+  } catch (_e) {
+    return '';
+  }
+}
+
+function _getKeywordTerms() {
+  const dict = _keywordDictionary || { packs: {} };
+  const selected = _getSelectedKeywordPack() || dict.active_pack;
+  const packTerms = (dict.packs && dict.packs[selected]) || [];
+  return Array.isArray(packTerms) ? packTerms : [];
+}
+
+function _buildExplorerHighlightedSource(rawText, matches) {
+  if (!rawText) return '';
+  const regions = [];
+  (matches || []).forEach(function(m) {
+    const needleRaw = (m.source_snippet || m.text || '').replace(/\s+/g, ' ').trim();
+    const needle = needleRaw.slice(0, 80);
+    if (needle.length < 6) return;
+    const idx = rawText.toLowerCase().indexOf(needle.toLowerCase());
+    if (idx < 0) return;
+    regions.push({
+      start: idx,
+      end: idx + needle.length,
+      color: '#60a5fa',
+      label: m.metric || 'match',
+    });
+  });
+
+  const terms = _getKeywordTerms();
+  terms.forEach(function(termRaw) {
+    const term = String(termRaw || '').trim();
+    if (term.length < 2) return;
+    const rx = new RegExp('\\b' + _escapeRegExp(term) + '\\b', 'gi');
+    let mrx;
+    while ((mrx = rx.exec(rawText)) !== null) {
+      regions.push({
+        start: mrx.index,
+        end: mrx.index + mrx[0].length,
+        color: '#fde047',
+        label: 'keyword: ' + term,
+      });
+      if (mrx.index === rx.lastIndex) rx.lastIndex++;
+    }
+  });
+
+  regions.sort(function(a, b) {
+    if (a.start !== b.start) return a.start - b.start;
+    const alen = a.end - a.start;
+    const blen = b.end - b.start;
+    if (alen !== blen) return blen - alen;
+    return String(a.label || '').localeCompare(String(b.label || ''));
+  });
+
+  let html = '';
+  let pos = 0;
+  for (let i = 0; i < regions.length; i++) {
+    const r = regions[i];
+    if (r.start < pos) continue;
+    html += escapeHtml(rawText.slice(pos, r.start));
+    html += '<span class="doc-hl" style="background:' + r.color + '28;border-bottom:2px solid ' + r.color
+      + '" title="' + escapeHtml(r.label) + '">' + escapeHtml(rawText.slice(r.start, r.end)) + '</span>';
+    pos = r.end;
+  }
+  html += escapeHtml(rawText.slice(pos));
+  return html;
+}
+
+async function loadKeywordDictionaryOptions() {
+  const sel = document.getElementById('ex-keyword-pack');
+  if (!sel) return;
+  try {
+    const resp = await fetch('/api/config/keyword_dictionary');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.success || !data.data || !data.data.dictionary) return;
+    _keywordDictionary = data.data.dictionary;
+    const packs = _keywordDictionary.packs || {};
+    const remembered = _getSelectedKeywordPack();
+    sel.innerHTML = '';
+    Object.keys(packs).forEach(function(k) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = 'keywords: ' + k;
+      if ((remembered && remembered === k) || (!remembered && _keywordDictionary.active_pack === k)) {
+        opt.selected = true;
+      }
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function() {
+      try { localStorage.setItem('keyword_pack', sel.value); } catch (_e) {}
+      renderKeywordEditor();
+      if (_selectedCell) {
+        loadCellDetail(_selectedCell.ticker, _selectedCell.period, _selectedCell.metric);
+      }
+    }, { once: true });
+    renderKeywordEditor();
+  } catch (_e) {
+    // non-fatal
+  }
+}
+
+function renderKeywordEditor() {
+  const dict = _keywordDictionary || { packs: {} };
+  const editorSelect = document.getElementById('kw-pack-select');
+  const editorTerms = document.getElementById('kw-pack-terms');
+  if (!editorSelect || !editorTerms) return;
+  const current = _getSelectedKeywordPack() || dict.active_pack || '';
+  editorSelect.innerHTML = '';
+  Object.keys(dict.packs || {}).forEach(function(k) {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    if (k === current) opt.selected = true;
+    editorSelect.appendChild(opt);
+  });
+  const selected = editorSelect.value || current;
+  const terms = (dict.packs && dict.packs[selected]) || [];
+  editorTerms.value = terms.join('\n');
+
+  if (!editorSelect.dataset.bound) {
+    editorSelect.dataset.bound = '1';
+    editorSelect.addEventListener('change', function() {
+      const exSel = document.getElementById('ex-keyword-pack');
+      if (exSel) exSel.value = editorSelect.value;
+      try { localStorage.setItem('keyword_pack', editorSelect.value); } catch (_e) {}
+      renderKeywordEditor();
+      if (_selectedCell) {
+        loadCellDetail(_selectedCell.ticker, _selectedCell.period, _selectedCell.metric);
+      }
+    });
+  }
+}
+
+function addKeywordPack() {
+  if (!_keywordDictionary) return;
+  const name = prompt('New pack name (snake_case recommended):', 'custom_pack');
+  if (!name) return;
+  const key = name.trim();
+  if (!key) return;
+  _keywordDictionary.packs = _keywordDictionary.packs || {};
+  if (!_keywordDictionary.packs[key]) {
+    _keywordDictionary.packs[key] = [];
+  }
+  _keywordDictionary.active_pack = key;
+  try { localStorage.setItem('keyword_pack', key); } catch (_e) {}
+  const exSel = document.getElementById('ex-keyword-pack');
+  if (exSel) exSel.value = key;
+  renderKeywordEditor();
+}
+
+function deleteKeywordPack() {
+  if (!_keywordDictionary) return;
+  const current = _getSelectedKeywordPack();
+  if (!current) return;
+  if (!confirm('Delete pack "' + current + '"?')) return;
+  const packs = _keywordDictionary.packs || {};
+  delete packs[current];
+  const keys = Object.keys(packs);
+  if (!keys.length) {
+    packs.btc_activity = ['bitcoin', 'btc'];
+  }
+  _keywordDictionary.active_pack = Object.keys(packs)[0];
+  try { localStorage.setItem('keyword_pack', _keywordDictionary.active_pack); } catch (_e) {}
+  loadKeywordDictionaryOptions();
+}
+
+async function saveKeywordDictionary() {
+  const msg = document.getElementById('kw-dict-msg');
+  if (!_keywordDictionary) return;
+  const pack = document.getElementById('kw-pack-select')?.value;
+  const raw = document.getElementById('kw-pack-terms')?.value || '';
+  if (!pack) return;
+  _keywordDictionary.packs = _keywordDictionary.packs || {};
+  _keywordDictionary.packs[pack] = raw
+    .split('\n')
+    .map(function(x) { return x.trim().toLowerCase(); })
+    .filter(function(x, i, arr) { return x && arr.indexOf(x) === i; });
+  _keywordDictionary.active_pack = pack;
+
+  msg.style.color = 'var(--theme-text-muted)';
+  msg.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/config/keyword_dictionary', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dictionary: _keywordDictionary }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Save failed');
+    _keywordDictionary = data.data.dictionary;
+    try { localStorage.setItem('keyword_pack', _keywordDictionary.active_pack); } catch (_e) {}
+    msg.style.color = 'var(--theme-success)';
+    msg.textContent = 'Saved';
+    loadKeywordDictionaryOptions();
+  } catch (err) {
+    msg.style.color = 'var(--theme-danger)';
+    msg.textContent = String(err);
+  }
+}
 
 async function loadExplorerMetrics() {
   _metricsLoaded = true;
@@ -914,11 +1514,16 @@ async function loadCellDetail(ticker, period, metric) {
   reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
   actEl.appendChild(reexBtn);
 
-  // Source snippet
-  if (d.source_snippet) {
-    const snippetEl = document.getElementById('cell-snippet');
-    snippetEl.textContent = d.source_snippet;
+  // Source view with extraction + keyword highlighting
+  const snippetEl = document.getElementById('cell-snippet');
+  if (d.raw_text) {
+    snippetEl.innerHTML = _buildExplorerHighlightedSource(d.raw_text, d.matches || []);
     snippetEl.style.display = '';
+  } else if (d.source_snippet) {
+    snippetEl.innerHTML = _buildExplorerHighlightedSource(d.source_snippet, d.matches || []);
+    snippetEl.style.display = '';
+  } else {
+    snippetEl.style.display = 'none';
   }
 }
 

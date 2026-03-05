@@ -236,8 +236,9 @@ def purge_data():
 
     Clears reports, data_points, review_queue, scrape_queue, asset_manifest,
     document_chunks, raw_extractions, btc_loans, facilities, source_audit, and
-    llm_benchmark_runs. Resets company scraper operational fields to never_run.
-    Config tables (regime_config, llm_prompts, metric_rules, etc.) are preserved.
+    llm_benchmark_runs. For FULL purge (no ticker), also clears companies and
+    regime_config so Ops company table is empty until config sync/restart.
+    For ticker-scoped purge, company config rows are preserved.
 
     Body (JSON):
         confirm (bool, required): must be true to proceed

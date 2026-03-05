@@ -1142,10 +1142,10 @@ class MinerDB:
         Then resets companies operational fields back to their initial state
         so the companies list reflects a never-scraped baseline.
 
-        Config tables are NOT touched:
-          companies (rows kept, operational fields reset), regime_config,
-          llm_prompts, llm_ticker_hints, metric_schema, config_settings,
-          patterns, metric_rules.
+        Config tables are NOT touched for ticker-scoped purge.
+        For full purge (ticker=None), company catalog rows and regime windows
+        are also cleared so the Ops companies table is visibly empty.
+        After a server restart, companies may be re-seeded from companies.json.
 
         Args:
             ticker: if given, scope the purge to that ticker only.
@@ -1218,15 +1218,10 @@ class MinerDB:
                 counts['facilities'] = _del('facilities')
                 counts['source_audit'] = _del('source_audit')
                 counts['llm_benchmark_runs'] = _del('llm_benchmark_runs')
-                # Reset operational fields on all companies
-                conn.execute(
-                    """UPDATE companies
-                       SET scraper_status = 'never_run',
-                           last_scrape_at = NULL,
-                           last_scrape_error = NULL,
-                           probe_completed_at = NULL,
-                           scraper_issues_log = ''"""
-                )
+                # For FULL purge, clear regime windows and company catalog rows.
+                # regime_config before companies (FK: regime_config.ticker → companies.ticker)
+                counts['regime_config'] = _del('regime_config')
+                counts['companies'] = _del('companies')
 
         log.info("purge_all: %s (ticker=%s)", counts, ticker or 'ALL')
         return counts
@@ -2375,9 +2370,11 @@ class MinerDB:
             )
 
     def update_company_config(self, ticker: str, **kwargs) -> dict:
-        """Update editable company fields. Allowed: name, pr_base_url, scraper_mode,
-        scraper_issues_log, cik, sector. Returns updated company dict."""
-        allowed = {'name', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector'}
+        """Update editable company fields. Returns updated company dict."""
+        allowed = {
+            'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
+            'rss_url', 'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
+        }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if updates:
             set_clause = ', '.join(f"{k} = ?" for k in updates)
@@ -2393,15 +2390,20 @@ class MinerDB:
         sector: str = 'BTC-miners', scraper_mode: str = 'skip',
         pr_base_url: str = None, cik: str = None,
         scraper_issues_log: str = '', active: int = 1,
+        rss_url: str = None, url_template: str = None,
+        pr_start_year: int = None, skip_reason: str = None,
+        sandbox_note: str = None,
     ) -> dict:
         """Add a new company. Returns the new company row as a dict."""
         with self._get_connection() as conn:
             conn.execute(
                 """INSERT INTO companies
-                   (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log,
+                    rss_url, url_template, pr_start_year, skip_reason, sandbox_note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ticker, name, tier, ir_url, pr_base_url, cik, active,
-                 sector, scraper_mode, scraper_issues_log),
+                 sector, scraper_mode, scraper_issues_log,
+                 rss_url, url_template, pr_start_year, skip_reason, sandbox_note),
             )
         return self.get_company(ticker)
 

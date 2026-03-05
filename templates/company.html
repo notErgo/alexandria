@@ -2,16 +2,27 @@
 {% block title %}{{ company.ticker }}{% endblock %}
 
 {% block content %}
-<h1 class="page-title">{{ company.ticker }} — {{ company.name }}</h1>
-<p style="color:var(--theme-text-muted);margin-bottom:1rem">
+<h1 class="page-title" data-spec-id="9.0"><span class="spec-id">9.0</span>{{ company.ticker }} — {{ company.name }}</h1>
+<p style="color:var(--theme-text-muted);margin-bottom:1rem" data-spec-id="9.1">
+  <span class="spec-id">9.1</span><span class="source-badge source-badge-config">CONFIG</span>
   CIK: {{ company.cik or 'N/A' }} &nbsp;·&nbsp;
   Tier {{ company.tier }} &nbsp;·&nbsp;
   <a href="{{ company.ir_url }}" target="_blank" rel="noopener">IR Page</a>
 </p>
 
-<div class="card">
+<div class="card" data-spec-id="9.2">
+  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+    <span class="spec-id">9.2</span>Metric History Charts <span class="source-badge source-badge-data">DATA</span>
+  </div>
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem" id="metric-toggles"></div>
   <div id="chart"></div>
+</div>
+
+<div class="card" data-spec-id="9.3" style="margin-top:1rem">
+  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+    <span class="spec-id">9.3</span>Reports List <span class="source-badge source-badge-data">DATA</span>
+  </div>
+  <p style="color:var(--theme-text-muted);margin:0">Company-level report browsing is available on the Miner Data page.</p>
 </div>
 
 <div id="error-banner" class="error-banner" hidden></div>

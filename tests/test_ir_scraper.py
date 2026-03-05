@@ -1,6 +1,8 @@
 """Tests for IR press release scraper helper functions."""
 from datetime import date
+from unittest.mock import MagicMock, patch
 from scrapers.ir_scraper import (
+    IRScraper,
     is_production_pr,
     infer_period_from_pr_title,
     parse_rss_feed,
@@ -154,3 +156,19 @@ class TestExpandUrlTemplate:
         for i, name in enumerate(expected_title, start=1):
             url = expand_url_template(tmpl, date(2024, i, 1))
             assert url == f"/{name}/2024", f"month {i} titlecase failed: {url!r}"
+
+
+class TestScrapeModeDispatch:
+    def test_dispatch_uses_scraper_mode_key(self):
+        scraper = IRScraper(db=MagicMock(), session=MagicMock())
+        company = {"ticker": "MARA", "scraper_mode": "rss"}
+        with patch.object(scraper, "_scrape_rss", return_value="ok") as rss:
+            assert scraper.scrape_company(company) == "ok"
+            rss.assert_called_once_with(company)
+
+    def test_dispatch_falls_back_to_legacy_scrape_mode_key(self):
+        scraper = IRScraper(db=MagicMock(), session=MagicMock())
+        company = {"ticker": "MARA", "scrape_mode": "index"}
+        with patch.object(scraper, "_scrape_index", return_value="ok") as idx:
+            assert scraper.scrape_company(company) == "ok"
+            idx.assert_called_once_with(company)

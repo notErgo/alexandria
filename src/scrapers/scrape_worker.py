@@ -73,8 +73,9 @@ class ScrapeWorker(threading.Thread):
 
         self._db.update_company_scraper_fields(ticker, scraper_status='running')
         try:
+            import requests as _req
             from scrapers.ir_scraper import IRScraper
-            scraper = IRScraper(self._db)
+            scraper = IRScraper(db=self._db, session=_req.Session())
             scraper.scrape_company(company)
             self._db.update_company_scraper_fields(
                 ticker,

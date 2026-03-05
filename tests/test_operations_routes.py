@@ -52,13 +52,15 @@ def test_operations_queue_returns_200(client):
 
 # ── Operations extract ────────────────────────────────────────────────────────
 
-def test_extract_missing_ticker_returns_400(client):
-    """POST /api/operations/extract with no ticker returns 400."""
+def test_extract_missing_ticker_runs_all(client):
+    """POST /api/operations/extract with no ticker starts ALL extraction run."""
     resp = client.post('/api/operations/extract', json={})
-    assert resp.status_code == 400
-    data = resp.get_json()
-    assert data['success'] is False
-    assert 'ticker' in data['error']['message']
+    assert resp.status_code in (200, 409)
+    if resp.status_code == 200:
+        data = resp.get_json()
+        assert data['success'] is True
+        assert data['data']['ticker'] == 'ALL'
+        assert 'task_id' in data['data']
 
 
 def test_extract_returns_task_id(client, monkeypatch):

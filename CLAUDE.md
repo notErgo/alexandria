@@ -151,7 +151,8 @@ because navigation markup pushes actual content past the raw byte sampling windo
 (see Anti-pattern #29 in global CLAUDE.md).
 
 ### IR scrape_mode dispatch
-`IRScraper.scrape_company()` dispatches on `company["scrape_mode"]`:
+`IRScraper.scrape_company()` dispatches on normalized mode:
+`company["scraper_mode"]` (preferred) with fallback to `company["scrape_mode"]` (legacy).
 - `"rss"` → `_scrape_rss()` — fetches Equisolve RSS feed, filters production PRs, stores raw text
 - `"index"` / `"template"` → `_scrape_index()` / `_scrape_template()` — parses HTML listing, stores raw text
 - `"skip"` → no-op (logs skip_reason)
@@ -162,6 +163,17 @@ extraction pipeline) to extract data points from the stored reports.
 
 Active RSS companies: MARA (`ir.mara.com/.../rss`), WULF (`investors.terawulf.com/.../rss`).
 Unreachable companies (502 at 2026-03): CORZ, ARBK, IREN — set to `"skip"`.
+
+### Global design pattern: Mode Contract pattern
+For any mode-driven feature (scrapers, parsers, exporters), enforce one source of truth:
+1. UI labels each mode with intent and required fields.
+2. API validates mode-specific required fields before DB writes.
+3. DB stores one canonical mode key (`*_mode`) and all required companion fields.
+4. Runtime dispatch reads the same canonical key with explicit legacy fallback only.
+5. Tests cover create/update validation plus runtime dispatch wiring.
+
+Apply this pattern to new mode families by default. It prevents "valid-looking UI state"
+that cannot execute at runtime.
 
 ### hodl_btc_4 pattern window
 `hodl_btc_4` uses `{0,50}` with `(?!\s+as\s+of)` negative lookahead.

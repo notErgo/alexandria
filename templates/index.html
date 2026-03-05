@@ -4,7 +4,7 @@
 {% block styles %}{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Bitcoin Miner Data Explorer</h1>
+<h1 class="page-title" data-spec-id="4.0"><span class="spec-id">4.0</span>Bitcoin Miner Data Explorer</h1>
 
 <!-- ── Pipeline status bar ─────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
@@ -14,7 +14,8 @@
 </div>
 
 <div class="card">
-  <form class="filter-form" id="filter-form" onsubmit="return false">
+  <form class="filter-form" id="filter-form" onsubmit="return false" data-spec-id="4.1">
+    <span class="spec-id">4.1</span>
     <div class="form-group">
       <label>Company</label>
       <select id="f-ticker" multiple size="4">
@@ -45,14 +46,17 @@
     <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
       <span id="results-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       <button class="btn btn-primary" onclick="fetchData()">Search</button>
-      <button class="btn btn-secondary" onclick="exportCsv()">Export CSV</button>
+      <button class="btn btn-secondary" data-spec-id="4.3" onclick="exportCsv()">Export CSV</button>
     </div>
   </form>
 </div>
 
 <div id="error-banner" class="error-banner" hidden></div>
 
-<div class="card">
+<div class="card" data-spec-id="4.2">
+  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+    <span class="spec-id">4.2</span>Data Points <span class="source-badge source-badge-data">DATA</span>
+  </div>
   <table id="results-table">
     <thead>
       <tr>
@@ -70,6 +74,13 @@
       <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
     </tbody>
   </table>
+</div>
+
+<div class="card" data-spec-id="4.4" style="margin-top:1rem">
+  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+    <span class="spec-id">4.4</span>Lineage <span class="source-badge source-badge-data">DATA</span>
+  </div>
+  <div id="lineage-panel" style="font-size:0.82rem;color:var(--theme-text-muted)">Click a row to load provenance details.</div>
 </div>
 {% endblock %}
 
@@ -121,7 +132,7 @@ function renderTable(rows) {
     return;
   }
   if (countEl) countEl.textContent = rows.length + ' row' + (rows.length === 1 ? '' : 's') + (rows.length === 1000 ? ' (limit)' : '');
-  tbody.innerHTML = rows.map(r => `<tr>
+  tbody.innerHTML = rows.map(r => `<tr data-ticker="${escapeAttr(r.ticker)}" data-metric="${escapeAttr(r.metric)}" data-period="${escapeAttr((r.period || '').slice(0, 7))}">
     <td>${escapeHtml(r.ticker)}</td>
     <td>${escapeHtml(r.period ? r.period.slice(0,7) : '')}</td>
     <td>${escapeHtml(r.metric)}</td>
@@ -131,6 +142,38 @@ function renderTable(rows) {
     <td>${escapeHtml(r.extraction_method)}</td>
     <td title="${escapeHtml(r.source_snippet)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.source_snippet || '').slice(0, 80))}</td>
   </tr>`).join('');
+}
+
+async function loadLineageForRow(ticker, metric, period) {
+  const panel = document.getElementById('lineage-panel');
+  if (!panel) return;
+  if (!ticker || !metric || !period) {
+    panel.textContent = 'Lineage unavailable for this row.';
+    return;
+  }
+  panel.textContent = 'Loading lineage...';
+  try {
+    const qs = new URLSearchParams({ticker, metric, period});
+    const resp = await fetch('/api/data/lineage?' + qs.toString());
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || !body.success) {
+      throw new Error(body?.error?.message || `HTTP ${resp.status}`);
+    }
+    const d = body.data || {};
+    panel.innerHTML = `
+      <div><strong>Ticker:</strong> ${escapeHtml(d.ticker || '')}</div>
+      <div><strong>Metric:</strong> ${escapeHtml(d.metric || '')}</div>
+      <div><strong>Period:</strong> ${escapeHtml(d.period || '')}</div>
+      <div><strong>Method:</strong> ${escapeHtml(d.extraction_method || '')}</div>
+      <div><strong>Confidence:</strong> ${escapeHtml(d.confidence != null ? Number(d.confidence).toFixed(3) : '—')}</div>
+      <div><strong>Report Date:</strong> ${escapeHtml(d.report_date || '—')}</div>
+      <div><strong>Source Type:</strong> ${escapeHtml(d.source_type || '—')}</div>
+      <div><strong>Source URL:</strong> ${d.source_url ? `<a href="${escapeAttr(d.source_url)}" target="_blank" rel="noopener">${escapeHtml(d.source_url)}</a>` : '—'}</div>
+      <div><strong>Snippet:</strong> ${escapeHtml(d.source_snippet || '—')}</div>
+    `;
+  } catch (e) {
+    panel.textContent = 'Lineage error: ' + e.message;
+  }
 }
 
 function exportCsv() {
@@ -143,6 +186,15 @@ document.addEventListener('DOMContentLoaded', function() {
   fetchData();
   loadPipelineStatus();
   loadMetricOptions();
+  document.getElementById('results-body').addEventListener('click', function(e) {
+    const row = e.target.closest('tr[data-ticker][data-metric][data-period]');
+    if (!row) return;
+    loadLineageForRow(
+      row.getAttribute('data-ticker'),
+      row.getAttribute('data-metric'),
+      row.getAttribute('data-period'),
+    );
+  });
 });
 
 // ── Pipeline status bar ────────────────────────────────────────────────────

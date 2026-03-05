@@ -43,37 +43,34 @@ def operations_queue():
 
 @bp.route('/api/operations/extract', methods=['POST'])
 def operations_extract():
-    """Trigger background extraction for a ticker. Returns task_id."""
+    """Trigger background extraction for a ticker (or all tickers). Returns task_id."""
     try:
         body = request.get_json(silent=True) or {}
-        ticker = (body.get('ticker') or '').strip().upper()
-        if not ticker:
-            return jsonify({'success': False, 'error': {
-                'code': 'INVALID_INPUT', 'message': "'ticker' is required",
-            }}), 400
+        ticker = (body.get('ticker') or '').strip().upper() or None
         force = bool(body.get('force', False))
+        run_key = ticker or '__ALL__'
 
         # 409 guard — prevent duplicate extraction runs
         with _active_tickers_lock:
-            if ticker in _active_tickers:
+            if run_key in _active_tickers:
                 return jsonify({'success': False, 'error': {
                     'code': 'ALREADY_RUNNING',
-                    'message': f"Extraction already running for {ticker}",
+                    'message': f"Extraction already running for {ticker or 'ALL'}",
                 }}), 409
-            _active_tickers.add(ticker)
+            _active_tickers.add(run_key)
 
         task_id = str(uuid.uuid4())
         with _progress_lock:
             _extraction_progress[task_id] = {
                 'status': 'running',
-                'ticker': ticker,
+                'ticker': ticker or 'ALL',
                 'reports_processed': 0,
                 'reports_total': 0,
                 'data_points': 0,
                 'errors': 0,
             }
 
-        log.info("Starting extraction task %s for ticker %s (force=%s)", task_id, ticker, force)
+        log.info("Starting extraction task %s for ticker %s (force=%s)", task_id, ticker or 'ALL', force)
 
         def _run():
             try:
@@ -98,7 +95,7 @@ def operations_extract():
                             _extraction_progress[task_id]['reports_processed'] = i + 1
                             _extraction_progress[task_id]['data_points'] += summary.data_points_extracted
                             _extraction_progress[task_id]['errors'] += summary.errors
-                        log.info("Task %s: processed report %d/%d for %s", task_id, i + 1, len(reports), ticker)
+                        log.info("Task %s: processed report %d/%d for %s", task_id, i + 1, len(reports), ticker or 'ALL')
                     except Exception as e:
                         log.error("Task %s: error on report %d: %s", task_id, report.get('id'), e, exc_info=True)
                         with _progress_lock:
@@ -106,7 +103,7 @@ def operations_extract():
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'
-                log.info("Task %s complete for %s", task_id, ticker)
+                log.info("Task %s complete for %s", task_id, ticker or 'ALL')
             except Exception as e:
                 log.error("Task %s failed: %s", task_id, e, exc_info=True)
                 with _progress_lock:
@@ -114,12 +111,12 @@ def operations_extract():
                     _extraction_progress[task_id]['error_message'] = 'Internal error'
             finally:
                 with _active_tickers_lock:
-                    _active_tickers.discard(ticker)
+                    _active_tickers.discard(run_key)
 
-        t = threading.Thread(target=_run, daemon=True, name=f"extract-{ticker}")
+        t = threading.Thread(target=_run, daemon=True, name=f"extract-{run_key}")
         t.start()
 
-        return jsonify({'success': True, 'data': {'task_id': task_id, 'ticker': ticker}})
+        return jsonify({'success': True, 'data': {'task_id': task_id, 'ticker': ticker or 'ALL'}})
     except Exception:
         log.error('Error in operations_extract', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
