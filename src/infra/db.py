@@ -31,6 +31,35 @@ class MinerDB:
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
+    def _archive_db_path(self) -> str:
+        return str(Path(self.db_path).with_name('purge_archive.db'))
+
+    def _get_archive_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._archive_db_path(), timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS purge_batches (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at     TEXT    DEFAULT (datetime('now')),
+                mode           TEXT    NOT NULL,
+                ticker_scope   TEXT,
+                reason         TEXT,
+                source_db_path TEXT    NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS purge_rows (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id    INTEGER NOT NULL REFERENCES purge_batches(id) ON DELETE CASCADE,
+                table_name  TEXT    NOT NULL,
+                row_data    TEXT    NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_purge_rows_batch
+                ON purge_rows(batch_id);
+        """)
+        return conn
+
     def _init_db(self) -> None:
         with self._init_lock:
             with self._get_connection() as conn:
@@ -160,12 +189,28 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 11")
                     version = 11
 
-        # Sync company config from companies.json on every startup.
-        # This is idempotent — it updates stale rows and inserts new ones without
-        # touching operational fields (scraper_status, last_scrape_at, etc.).
-        config_path = Path(__file__).parent.parent.parent / 'config' / 'companies.json'
-        if config_path.exists():
-            self.sync_companies_from_config(str(config_path))
+                if version < 12:
+                    self._migrate_v12(conn)
+                    conn.execute("PRAGMA user_version = 12")
+                    version = 12
+
+                if version < 13:
+                    self._migrate_v13(conn)
+                    conn.execute("PRAGMA user_version = 13")
+                    version = 13
+
+        # Sync company config from companies.json on startup only if enabled.
+        # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
+        # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
+        from config import AUTO_SYNC_COMPANIES_ON_STARTUP
+        auto_sync_enabled = bool(AUTO_SYNC_COMPANIES_ON_STARTUP)
+        cfg_override = self.get_config('auto_sync_companies_on_startup', default=None)
+        if cfg_override is not None:
+            auto_sync_enabled = str(cfg_override).strip().lower() in {'1', 'true', 'yes', 'on'}
+        if auto_sync_enabled:
+            config_path = Path(__file__).parent.parent.parent / 'config' / 'companies.json'
+            if config_path.exists():
+                self.sync_companies_from_config(str(config_path))
 
     def _migrate_v2(self, conn: sqlite3.Connection) -> None:
         """Schema migration from version 1 to version 2.
@@ -576,6 +621,48 @@ class MinerDB:
         """)
         self._seed_metric_rules(conn)
 
+    def _migrate_v12(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 11 to version 12.
+
+        Adds scraper_discovery_candidates for agent-proposed source discovery.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS scraper_discovery_candidates (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker          TEXT NOT NULL REFERENCES companies(ticker),
+                source_type     TEXT NOT NULL,
+                url             TEXT NOT NULL,
+                pr_start_year   INTEGER,
+                confidence      REAL,
+                rationale       TEXT,
+                proposed_by     TEXT NOT NULL DEFAULT 'agent',
+                proposed_at     TEXT DEFAULT (datetime('now')),
+                last_checked    TEXT,
+                http_status     INTEGER,
+                probe_status    TEXT,
+                evidence_title  TEXT,
+                evidence_date   TEXT,
+                verified        INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(ticker, source_type, url)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_sdc_ticker
+                ON scraper_discovery_candidates(ticker);
+
+            CREATE INDEX IF NOT EXISTS idx_sdc_verified
+                ON scraper_discovery_candidates(verified);
+        """)
+
+    def _migrate_v13(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 12 to version 13.
+
+        Adds explicit aggregator placeholders on companies.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        for col in ('prnewswire_url', 'globenewswire_url'):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE companies ADD COLUMN {col} TEXT")
+
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
 
@@ -628,11 +715,13 @@ class MinerDB:
                         """INSERT INTO companies
                            (ticker, name, tier, ir_url, pr_base_url, cik, active,
                             rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
-                            scraper_mode, sector, scraper_issues_log, scraper_status)
+                            scraper_mode, sector, scraper_issues_log, scraper_status,
+                            prnewswire_url, globenewswire_url)
                            VALUES
                            (:ticker,:name,:tier,:ir_url,:pr_base_url,:cik,:active,
                             :rss_url,:url_template,:pr_start_year,:skip_reason,:sandbox_note,
-                            :scraper_mode,:sector,'','never_run')""",
+                            :scraper_mode,:sector,'','never_run',
+                            :prnewswire_url,:globenewswire_url)""",
                         {
                             'ticker':        ticker,
                             'name':          c.get('name', ticker),
@@ -648,6 +737,8 @@ class MinerDB:
                             'sandbox_note':  c.get('sandbox_note'),
                             'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
                             'sector':        c.get('sector', 'BTC-miners'),
+                            'prnewswire_url': c.get('prnewswire_url'),
+                            'globenewswire_url': c.get('globenewswire_url'),
                         },
                     )
                     added += 1
@@ -660,7 +751,8 @@ class MinerDB:
                            rss_url=:rss_url, url_template=:url_template,
                            pr_start_year=:pr_start_year, skip_reason=:skip_reason,
                            sandbox_note=:sandbox_note,
-                           scraper_mode=:scraper_mode, sector=:sector
+                           scraper_mode=:scraper_mode, sector=:sector,
+                           prnewswire_url=:prnewswire_url, globenewswire_url=:globenewswire_url
                            WHERE ticker=:ticker""",
                         {
                             'ticker':        ticker,
@@ -677,6 +769,8 @@ class MinerDB:
                             'sandbox_note':  c.get('sandbox_note'),
                             'scraper_mode':  c.get('scrape_mode') or c.get('scraper_mode') or 'skip',
                             'sector':        c.get('sector', 'BTC-miners'),
+                            'prnewswire_url': c.get('prnewswire_url'),
+                            'globenewswire_url': c.get('globenewswire_url'),
                         },
                     )
                     updated += 1
@@ -1125,8 +1219,44 @@ class MinerDB:
         log.info("purge_review_queue: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
         return count
 
-    def purge_all(self, ticker: Optional[str] = None) -> dict:
-        """Delete all operational data and reset company scraper state.
+    def _create_purge_archive_batch(self, mode: str, ticker_scope: Optional[str], reason: Optional[str]) -> int:
+        with self._get_archive_connection() as conn:
+            cur = conn.execute(
+                """INSERT INTO purge_batches (mode, ticker_scope, reason, source_db_path)
+                   VALUES (?, ?, ?, ?)""",
+                (mode, ticker_scope, reason, self.db_path),
+            )
+            return int(cur.lastrowid)
+
+    def _archive_table_rows(
+        self,
+        archive_conn: sqlite3.Connection,
+        batch_id: int,
+        data_conn: sqlite3.Connection,
+        table: str,
+        where: str = '',
+        params: tuple = (),
+    ) -> int:
+        sql = f"SELECT * FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        rows = data_conn.execute(sql, params).fetchall()
+        if not rows:
+            return 0
+        archive_conn.executemany(
+            "INSERT INTO purge_rows (batch_id, table_name, row_data) VALUES (?, ?, ?)",
+            [(batch_id, table, json.dumps(dict(r), default=str)) for r in rows],
+        )
+        return len(rows)
+
+    def purge_all(
+        self,
+        ticker: Optional[str] = None,
+        purge_mode: str = 'hard_delete',
+        reason: Optional[str] = None,
+        suppress_auto_sync: bool = False,
+    ) -> dict:
+        """Delete operational data with explicit purge semantics.
 
         FK-safe deletion order (enforced because PRAGMA foreign_keys = ON):
           review_queue      — child of data_points (must precede data_points)
@@ -1139,91 +1269,181 @@ class MinerDB:
           scrape_queue      — child of companies
           btc_loans, facilities, source_audit, llm_benchmark_runs — no FK deps
 
-        Then resets companies operational fields back to their initial state
-        so the companies list reflects a never-scraped baseline.
-
-        Config tables are NOT touched for ticker-scoped purge.
-        For full purge (ticker=None), company catalog rows and regime windows
-        are also cleared so the Ops companies table is visibly empty.
-        After a server restart, companies may be re-seeded from companies.json.
+        Modes:
+          - reset: delete data tables only; keep companies + regime_config.
+          - archive: same as reset, but first writes deleted rows to purge_archive.db.
+          - hard_delete: delete data tables; full-scope also deletes companies + regime_config.
 
         Args:
             ticker: if given, scope the purge to that ticker only.
+            purge_mode: one of reset|archive|hard_delete.
+            reason: optional operator-provided reason for archival metadata.
+            suppress_auto_sync: if True on full hard_delete, writes
+                config_settings.auto_sync_companies_on_startup='0'.
 
         Returns:
-            dict with row counts deleted per table.
+            dict with row counts deleted per table and optional archive_batch_id.
         """
+        valid_modes = {'reset', 'archive', 'hard_delete'}
+        mode = str(purge_mode or '').strip().lower()
+        if mode not in valid_modes:
+            raise ValueError(f"purge_mode must be one of {sorted(valid_modes)}")
+
         counts: dict = {}
-        with self._get_connection() as conn:
-            def _del(table: str, where: str = '', params: tuple = ()) -> int:
-                sql = f"SELECT COUNT(*) FROM {table}"
-                if where:
-                    sql += f" WHERE {where}"
-                n = conn.execute(sql, params).fetchone()[0]
-                sql = f"DELETE FROM {table}"
-                if where:
-                    sql += f" WHERE {where}"
-                conn.execute(sql, params)
-                return n
+        archive_batch_id = None
+        archive_conn = None
+        if mode == 'archive':
+            archive_batch_id = self._create_purge_archive_batch(mode=mode, ticker_scope=ticker or 'ALL', reason=reason)
+            archive_conn = self._get_archive_connection()
 
-            if ticker:
-                t = ticker
-                # review_queue before data_points (FK: review_queue.data_point_id → data_points)
-                counts['review_queue'] = _del('review_queue', 'ticker = ?', (t,))
-                # raw_extractions before reports
-                counts['raw_extractions'] = _del('raw_extractions', 'ticker = ?', (t,))
-                # data_points before document_chunks (FK: data_points.chunk_id → document_chunks)
-                counts['data_points'] = _del('data_points', 'ticker = ?', (t,))
-                # document_chunks after data_points, before reports
-                counts['document_chunks'] = conn.execute(
-                    "SELECT COUNT(*) FROM document_chunks WHERE report_id IN "
-                    "(SELECT id FROM reports WHERE ticker = ?)", (t,)
-                ).fetchone()[0]
-                conn.execute(
-                    "DELETE FROM document_chunks WHERE report_id IN "
-                    "(SELECT id FROM reports WHERE ticker = ?)", (t,)
-                )
-                # asset_manifest before reports
-                counts['asset_manifest'] = _del('asset_manifest', 'ticker = ?', (t,))
-                counts['reports'] = _del('reports', 'ticker = ?', (t,))
-                counts['scrape_queue'] = _del('scrape_queue', 'ticker = ?', (t,))
-                counts['btc_loans'] = _del('btc_loans', 'ticker = ?', (t,))
-                counts['facilities'] = _del('facilities', 'ticker = ?', (t,))
-                counts['source_audit'] = _del('source_audit', 'ticker = ?', (t,))
-                counts['llm_benchmark_runs'] = _del('llm_benchmark_runs', 'ticker = ?', (t,))
-                # Reset operational fields on the company row
-                conn.execute(
-                    """UPDATE companies
-                       SET scraper_status = 'never_run',
-                           last_scrape_at = NULL,
-                           last_scrape_error = NULL,
-                           probe_completed_at = NULL,
-                           scraper_issues_log = ''
-                       WHERE ticker = ?""",
-                    (t,),
-                )
-            else:
-                # review_queue before data_points
-                counts['review_queue'] = _del('review_queue')
-                # raw_extractions before reports
-                counts['raw_extractions'] = _del('raw_extractions')
-                # data_points before document_chunks
-                counts['data_points'] = _del('data_points')
-                # document_chunks after data_points, before reports
-                counts['document_chunks'] = _del('document_chunks')
-                counts['asset_manifest'] = _del('asset_manifest')
-                counts['reports'] = _del('reports')
-                counts['scrape_queue'] = _del('scrape_queue')
-                counts['btc_loans'] = _del('btc_loans')
-                counts['facilities'] = _del('facilities')
-                counts['source_audit'] = _del('source_audit')
-                counts['llm_benchmark_runs'] = _del('llm_benchmark_runs')
-                # For FULL purge, clear regime windows and company catalog rows.
-                # regime_config before companies (FK: regime_config.ticker → companies.ticker)
-                counts['regime_config'] = _del('regime_config')
-                counts['companies'] = _del('companies')
+        try:
+            with self._get_connection() as conn:
+                if archive_conn is not None:
+                    archive_conn.execute('BEGIN')
+                def _archive(table: str, where: str = '', params: tuple = ()) -> int:
+                    if archive_conn is None or archive_batch_id is None:
+                        return 0
+                    return self._archive_table_rows(
+                        archive_conn=archive_conn,
+                        batch_id=archive_batch_id,
+                        data_conn=conn,
+                        table=table,
+                        where=where,
+                        params=params,
+                    )
 
-        log.info("purge_all: %s (ticker=%s)", counts, ticker or 'ALL')
+                def _del(table: str, where: str = '', params: tuple = ()) -> int:
+                    sql = f"SELECT COUNT(*) FROM {table}"
+                    if where:
+                        sql += f" WHERE {where}"
+                    n = conn.execute(sql, params).fetchone()[0]
+                    sql = f"DELETE FROM {table}"
+                    if where:
+                        sql += f" WHERE {where}"
+                    conn.execute(sql, params)
+                    return n
+
+                if ticker:
+                    t = ticker
+                    # review_queue before data_points (FK: review_queue.data_point_id → data_points)
+                    _archive('review_queue', 'ticker = ?', (t,))
+                    counts['review_queue'] = _del('review_queue', 'ticker = ?', (t,))
+                    # raw_extractions before reports
+                    _archive('raw_extractions', 'ticker = ?', (t,))
+                    counts['raw_extractions'] = _del('raw_extractions', 'ticker = ?', (t,))
+                    # data_points before document_chunks (FK: data_points.chunk_id → document_chunks)
+                    _archive('data_points', 'ticker = ?', (t,))
+                    counts['data_points'] = _del('data_points', 'ticker = ?', (t,))
+                    # document_chunks after data_points, before reports
+                    _archive(
+                        'document_chunks',
+                        "report_id IN (SELECT id FROM reports WHERE ticker = ?)",
+                        (t,),
+                    )
+                    counts['document_chunks'] = conn.execute(
+                        "SELECT COUNT(*) FROM document_chunks WHERE report_id IN "
+                        "(SELECT id FROM reports WHERE ticker = ?)", (t,)
+                    ).fetchone()[0]
+                    conn.execute(
+                        "DELETE FROM document_chunks WHERE report_id IN "
+                        "(SELECT id FROM reports WHERE ticker = ?)", (t,)
+                    )
+                    # asset_manifest before reports
+                    _archive('asset_manifest', 'ticker = ?', (t,))
+                    counts['asset_manifest'] = _del('asset_manifest', 'ticker = ?', (t,))
+                    _archive('reports', 'ticker = ?', (t,))
+                    counts['reports'] = _del('reports', 'ticker = ?', (t,))
+                    _archive('scrape_queue', 'ticker = ?', (t,))
+                    counts['scrape_queue'] = _del('scrape_queue', 'ticker = ?', (t,))
+                    _archive('btc_loans', 'ticker = ?', (t,))
+                    counts['btc_loans'] = _del('btc_loans', 'ticker = ?', (t,))
+                    _archive('facilities', 'ticker = ?', (t,))
+                    counts['facilities'] = _del('facilities', 'ticker = ?', (t,))
+                    _archive('source_audit', 'ticker = ?', (t,))
+                    counts['source_audit'] = _del('source_audit', 'ticker = ?', (t,))
+                    _archive('llm_benchmark_runs', 'ticker = ?', (t,))
+                    counts['llm_benchmark_runs'] = _del('llm_benchmark_runs', 'ticker = ?', (t,))
+                    # Reset operational fields on the company row
+                    conn.execute(
+                        """UPDATE companies
+                           SET scraper_status = 'never_run',
+                               last_scrape_at = NULL,
+                               last_scrape_error = NULL,
+                               probe_completed_at = NULL,
+                               scraper_issues_log = ''
+                           WHERE ticker = ?""",
+                        (t,),
+                    )
+                else:
+                    # review_queue before data_points
+                    _archive('review_queue')
+                    counts['review_queue'] = _del('review_queue')
+                    # raw_extractions before reports
+                    _archive('raw_extractions')
+                    counts['raw_extractions'] = _del('raw_extractions')
+                    # data_points before document_chunks
+                    _archive('data_points')
+                    counts['data_points'] = _del('data_points')
+                    # document_chunks after data_points, before reports
+                    _archive('document_chunks')
+                    counts['document_chunks'] = _del('document_chunks')
+                    _archive('asset_manifest')
+                    counts['asset_manifest'] = _del('asset_manifest')
+                    _archive('reports')
+                    counts['reports'] = _del('reports')
+                    _archive('scrape_queue')
+                    counts['scrape_queue'] = _del('scrape_queue')
+                    _archive('btc_loans')
+                    counts['btc_loans'] = _del('btc_loans')
+                    _archive('facilities')
+                    counts['facilities'] = _del('facilities')
+                    _archive('source_audit')
+                    counts['source_audit'] = _del('source_audit')
+                    _archive('llm_benchmark_runs')
+                    counts['llm_benchmark_runs'] = _del('llm_benchmark_runs')
+                    if mode in {'reset', 'archive'}:
+                        # Full reset keeps config rows and only resets company operational fields.
+                        conn.execute(
+                            """UPDATE companies
+                               SET scraper_status = 'never_run',
+                                   last_scrape_at = NULL,
+                                   last_scrape_error = NULL,
+                                   probe_completed_at = NULL,
+                                   scraper_issues_log = ''"""
+                        )
+                    else:
+                        # For FULL hard-delete, clear regime windows and company catalog rows.
+                        # regime_config before companies (FK: regime_config.ticker → companies.ticker)
+                        _archive('regime_config')
+                        counts['regime_config'] = _del('regime_config')
+                        _archive('companies')
+                        counts['companies'] = _del('companies')
+                        if suppress_auto_sync:
+                            conn.execute(
+                                """INSERT OR REPLACE INTO config_settings (key, value, updated_at)
+                                   VALUES ('auto_sync_companies_on_startup', '0', datetime('now'))"""
+                            )
+
+                if archive_conn is not None:
+                    archive_conn.commit()
+        except Exception:
+            if archive_conn is not None:
+                archive_conn.rollback()
+            raise
+        finally:
+            if archive_conn is not None:
+                archive_conn.close()
+
+        if archive_batch_id is not None:
+            counts['archive_batch_id'] = archive_batch_id
+
+        log.info(
+            "purge_all: mode=%s counts=%s (ticker=%s suppress_auto_sync=%s)",
+            mode,
+            counts,
+            ticker or 'ALL',
+            suppress_auto_sync,
+        )
         return counts
 
     def get_trailing_data_points(
@@ -1789,6 +2009,56 @@ class MinerDB:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Scraper Discovery Candidates ────────────────────────────────────────
+
+    def upsert_discovery_candidate(self, candidate: dict) -> int:
+        """Insert or replace a scraper_discovery_candidates row."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT OR REPLACE INTO scraper_discovery_candidates
+                   (ticker, source_type, url, pr_start_year, confidence, rationale,
+                    proposed_by, last_checked, http_status, probe_status,
+                    evidence_title, evidence_date, verified)
+                   VALUES (:ticker, :source_type, :url, :pr_start_year, :confidence, :rationale,
+                           :proposed_by, :last_checked, :http_status, :probe_status,
+                           :evidence_title, :evidence_date, :verified)""",
+                {
+                    'ticker': candidate['ticker'],
+                    'source_type': candidate['source_type'],
+                    'url': candidate['url'],
+                    'pr_start_year': candidate.get('pr_start_year'),
+                    'confidence': candidate.get('confidence'),
+                    'rationale': candidate.get('rationale'),
+                    'proposed_by': candidate.get('proposed_by', 'agent'),
+                    'last_checked': candidate.get('last_checked'),
+                    'http_status': candidate.get('http_status'),
+                    'probe_status': candidate.get('probe_status'),
+                    'evidence_title': candidate.get('evidence_title'),
+                    'evidence_date': candidate.get('evidence_date'),
+                    'verified': candidate.get('verified', 0),
+                },
+            )
+            return cursor.lastrowid
+
+    def list_discovery_candidates(self, ticker: str, verified_only: bool = False) -> list:
+        """Return discovery candidates for a ticker."""
+        with self._get_connection() as conn:
+            if verified_only:
+                rows = conn.execute(
+                    """SELECT * FROM scraper_discovery_candidates
+                       WHERE ticker = ? AND verified = 1
+                       ORDER BY source_type, confidence DESC, id DESC""",
+                    (ticker,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT * FROM scraper_discovery_candidates
+                       WHERE ticker = ?
+                       ORDER BY source_type, confidence DESC, id DESC""",
+                    (ticker,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
     # ── Config Settings ───────────────────────────────────────────────────────
 
     def get_config(self, key: str, default=None) -> Optional[str]:
@@ -1948,6 +2218,201 @@ class MinerDB:
         return {
             'pending_extraction': pending_extraction,
             'legacy_files': legacy_files,
+        }
+
+    def get_pipeline_observability(self) -> dict:
+        """Return end-to-end pipeline counts and scraper config health.
+
+        Tracks how much data is discovered (asset_manifest), ingested (reports),
+        parsed (reports.parsed_at), extracted (reports.extracted_at), and routed
+        to output tables (data_points/review_queue), both globally and per ticker.
+        """
+        with self._get_connection() as conn:
+            companies_total = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+            companies_active = conn.execute(
+                "SELECT COUNT(*) FROM companies WHERE active = 1"
+            ).fetchone()[0]
+
+            manifest_total = conn.execute(
+                "SELECT COUNT(*) FROM asset_manifest"
+            ).fetchone()[0]
+            reports_total = conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+            reports_with_text = conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE raw_text IS NOT NULL AND raw_text != ''"
+            ).fetchone()[0]
+            reports_parsed = conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE parsed_at IS NOT NULL"
+            ).fetchone()[0]
+            reports_extracted = conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE extracted_at IS NOT NULL"
+            ).fetchone()[0]
+            reports_unextracted = conn.execute(
+                """SELECT COUNT(*) FROM reports
+                   WHERE raw_text IS NOT NULL AND raw_text != '' AND extracted_at IS NULL"""
+            ).fetchone()[0]
+            data_points_total = conn.execute(
+                "SELECT COUNT(*) FROM data_points"
+            ).fetchone()[0]
+            review_total = conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+            review_pending = conn.execute(
+                "SELECT COUNT(*) FROM review_queue WHERE status='PENDING'"
+            ).fetchone()[0]
+
+            manifest_state_rows = conn.execute(
+                """SELECT ingest_state, COUNT(*) AS count
+                   FROM asset_manifest
+                   GROUP BY ingest_state
+                   ORDER BY ingest_state"""
+            ).fetchall()
+            reports_source_rows = conn.execute(
+                """SELECT source_type, COUNT(*) AS count
+                   FROM reports
+                   GROUP BY source_type
+                   ORDER BY source_type"""
+            ).fetchall()
+
+            ticker_rows = conn.execute(
+                """
+                WITH
+                  m AS (
+                    SELECT
+                      ticker,
+                      COUNT(*) AS manifest_total,
+                      SUM(CASE WHEN ingest_state='pending' THEN 1 ELSE 0 END) AS manifest_pending,
+                      SUM(CASE WHEN ingest_state='legacy_undated' THEN 1 ELSE 0 END) AS manifest_legacy_undated,
+                      SUM(CASE WHEN ingest_state='ingested' THEN 1 ELSE 0 END) AS manifest_ingested
+                    FROM asset_manifest
+                    GROUP BY ticker
+                  ),
+                  r AS (
+                    SELECT
+                      ticker,
+                      COUNT(*) AS reports_total,
+                      SUM(CASE WHEN raw_text IS NOT NULL AND raw_text != '' THEN 1 ELSE 0 END) AS reports_with_text,
+                      SUM(CASE WHEN parsed_at IS NOT NULL THEN 1 ELSE 0 END) AS reports_parsed,
+                      SUM(CASE WHEN extracted_at IS NOT NULL THEN 1 ELSE 0 END) AS reports_extracted,
+                      SUM(
+                        CASE
+                          WHEN raw_text IS NOT NULL AND raw_text != '' AND extracted_at IS NULL THEN 1
+                          ELSE 0
+                        END
+                      ) AS reports_unextracted
+                    FROM reports
+                    GROUP BY ticker
+                  ),
+                  dp AS (
+                    SELECT ticker, COUNT(*) AS data_points_total
+                    FROM data_points
+                    GROUP BY ticker
+                  ),
+                  rq AS (
+                    SELECT
+                      ticker,
+                      COUNT(*) AS review_total,
+                      SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END) AS review_pending
+                    FROM review_queue
+                    GROUP BY ticker
+                  )
+                SELECT
+                  c.ticker,
+                  c.active,
+                  c.scraper_mode,
+                  c.ir_url,
+                  c.rss_url,
+                  c.url_template,
+                  c.pr_start_year,
+                  COALESCE(m.manifest_total, 0) AS manifest_total,
+                  COALESCE(m.manifest_pending, 0) AS manifest_pending,
+                  COALESCE(m.manifest_legacy_undated, 0) AS manifest_legacy_undated,
+                  COALESCE(m.manifest_ingested, 0) AS manifest_ingested,
+                  COALESCE(r.reports_total, 0) AS reports_total,
+                  COALESCE(r.reports_with_text, 0) AS reports_with_text,
+                  COALESCE(r.reports_parsed, 0) AS reports_parsed,
+                  COALESCE(r.reports_extracted, 0) AS reports_extracted,
+                  COALESCE(r.reports_unextracted, 0) AS reports_unextracted,
+                  COALESCE(dp.data_points_total, 0) AS data_points_total,
+                  COALESCE(rq.review_total, 0) AS review_total,
+                  COALESCE(rq.review_pending, 0) AS review_pending
+                FROM companies c
+                LEFT JOIN m  ON m.ticker = c.ticker
+                LEFT JOIN r  ON r.ticker = c.ticker
+                LEFT JOIN dp ON dp.ticker = c.ticker
+                LEFT JOIN rq ON rq.ticker = c.ticker
+                ORDER BY c.ticker
+                """
+            ).fetchall()
+
+        def _scraper_mode_issue(row: dict) -> str | None:
+            mode = (row.get('scraper_mode') or 'skip').strip().lower()
+            if mode == 'rss':
+                if not (row.get('rss_url') or '').strip():
+                    return 'rss mode missing rss_url'
+            elif mode == 'index':
+                if not (row.get('ir_url') or '').strip():
+                    return 'index mode missing ir_url'
+            elif mode == 'template':
+                if not (row.get('url_template') or '').strip():
+                    return 'template mode missing url_template'
+                if not row.get('pr_start_year'):
+                    return 'template mode missing pr_start_year'
+            elif mode == 'skip':
+                return None
+            else:
+                return f"unknown scraper_mode '{mode}'"
+            return None
+
+        ticker_summaries = []
+        invalid_tickers = []
+        for raw in ticker_rows:
+            row = dict(raw)
+            issue = _scraper_mode_issue(row)
+            if issue:
+                invalid_tickers.append({'ticker': row['ticker'], 'issue': issue})
+            ticker_summaries.append({
+                'ticker': row['ticker'],
+                'active': bool(row['active']),
+                'scraper_mode': row.get('scraper_mode') or 'skip',
+                'scraper_config_valid': issue is None,
+                'scraper_config_issue': issue,
+                'manifest_total': row['manifest_total'],
+                'manifest_pending': row['manifest_pending'],
+                'manifest_legacy_undated': row['manifest_legacy_undated'],
+                'manifest_ingested': row['manifest_ingested'],
+                'reports_total': row['reports_total'],
+                'reports_with_text': row['reports_with_text'],
+                'reports_parsed': row['reports_parsed'],
+                'reports_extracted': row['reports_extracted'],
+                'reports_unextracted': row['reports_unextracted'],
+                'data_points_total': row['data_points_total'],
+                'review_total': row['review_total'],
+                'review_pending': row['review_pending'],
+            })
+
+        return {
+            'generated_at': datetime.utcnow().isoformat(),
+            'totals': {
+                'companies_total': companies_total,
+                'companies_active': companies_active,
+                'manifest_total': manifest_total,
+                'reports_total': reports_total,
+                'reports_with_text': reports_with_text,
+                'reports_parsed': reports_parsed,
+                'reports_extracted': reports_extracted,
+                'reports_unextracted': reports_unextracted,
+                'data_points_total': data_points_total,
+                'review_total': review_total,
+                'review_pending': review_pending,
+            },
+            'by_state': {
+                'manifest_ingest_state': {r['ingest_state']: r['count'] for r in manifest_state_rows},
+                'reports_source_type': {r['source_type']: r['count'] for r in reports_source_rows},
+            },
+            'scraper_config': {
+                'valid_count': len(ticker_summaries) - len(invalid_tickers),
+                'invalid_count': len(invalid_tickers),
+                'invalid_tickers': invalid_tickers,
+            },
+            'tickers': ticker_summaries,
         }
 
     def get_coverage_grid(self, months: int = 36) -> dict:
@@ -2374,6 +2839,7 @@ class MinerDB:
         allowed = {
             'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
             'rss_url', 'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
+            'prnewswire_url', 'globenewswire_url',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if updates:
@@ -2385,6 +2851,86 @@ class MinerDB:
                 )
         return self.get_company(ticker)
 
+    def get_scraper_governance_snapshot(self, stale_days: int = 30) -> dict:
+        """Return scraper governance status by ticker.
+
+        A ticker is considered stale when no source_audit check has been recorded
+        in the last `stale_days`.
+        """
+        stale_days = max(1, int(stale_days))
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  c.ticker,
+                  c.active,
+                  c.scraper_mode,
+                  c.skip_reason,
+                  c.ir_url,
+                  c.rss_url,
+                  c.url_template,
+                  c.pr_start_year,
+                  c.probe_completed_at,
+                  MAX(sa.last_checked) AS last_audit_checked,
+                  COUNT(sa.id) AS source_audit_rows,
+                  SUM(CASE WHEN sa.status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_source_rows
+                FROM companies c
+                LEFT JOIN source_audit sa ON sa.ticker = c.ticker
+                GROUP BY c.ticker
+                ORDER BY c.ticker
+                """
+            ).fetchall()
+
+        def _is_stale(last_checked: Optional[str]) -> bool:
+            if not last_checked:
+                return True
+            # Accept ISO strings; lexical compare works for YYYY-MM-DDTHH:MM:SS.
+            cutoff = datetime.utcnow().timestamp() - (stale_days * 86400)
+            try:
+                ts = datetime.fromisoformat(str(last_checked).replace('Z', '+00:00')).timestamp()
+                return ts < cutoff
+            except Exception:
+                return True
+
+        items = []
+        for raw in rows:
+            r = dict(raw)
+            mode = (r.get('scraper_mode') or 'skip').strip().lower()
+            active_sources = int(r.get('active_source_rows') or 0)
+            stale = _is_stale(r.get('last_audit_checked'))
+            is_active = bool(r.get('active'))
+
+            if mode == 'skip':
+                if active_sources > 0:
+                    governance = 'skip_conflict_active_source'
+                elif stale:
+                    governance = 'stale_skip'
+                else:
+                    governance = 'skip_verified'
+            else:
+                governance = 'needs_probe' if stale else 'configured'
+
+            items.append({
+                'ticker': r['ticker'],
+                'active': is_active,
+                'scraper_mode': mode,
+                'skip_reason': r.get('skip_reason'),
+                'last_audit_checked': r.get('last_audit_checked'),
+                'source_audit_rows': int(r.get('source_audit_rows') or 0),
+                'active_source_rows': active_sources,
+                'stale': stale,
+                'governance_status': governance,
+            })
+
+        return {
+            'stale_days': stale_days,
+            'total': len(items),
+            'needs_probe': sum(1 for x in items if x['governance_status'] == 'needs_probe'),
+            'stale_skip': sum(1 for x in items if x['governance_status'] == 'stale_skip'),
+            'skip_conflict_active_source': sum(1 for x in items if x['governance_status'] == 'skip_conflict_active_source'),
+            'items': items,
+        }
+
     def add_company(
         self, ticker: str, name: str, tier: int = 2, ir_url: str = '',
         sector: str = 'BTC-miners', scraper_mode: str = 'skip',
@@ -2393,17 +2939,20 @@ class MinerDB:
         rss_url: str = None, url_template: str = None,
         pr_start_year: int = None, skip_reason: str = None,
         sandbox_note: str = None,
+        prnewswire_url: str = None, globenewswire_url: str = None,
     ) -> dict:
         """Add a new company. Returns the new company row as a dict."""
         with self._get_connection() as conn:
             conn.execute(
                 """INSERT INTO companies
                    (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log,
-                    rss_url, url_template, pr_start_year, skip_reason, sandbox_note)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
+                    prnewswire_url, globenewswire_url)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ticker, name, tier, ir_url, pr_base_url, cik, active,
                  sector, scraper_mode, scraper_issues_log,
-                 rss_url, url_template, pr_start_year, skip_reason, sandbox_note),
+                 rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
+                 prnewswire_url, globenewswire_url),
             )
         return self.get_company(ticker)
 

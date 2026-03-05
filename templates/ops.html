@@ -20,6 +20,11 @@
 .scraper-badge-running  { background: #f9731620; color: #f97316; }
 .scraper-badge-ok       { background: #22c55e20; color: #22c55e; }
 .scraper-badge-error    { background: #ef444420; color: #ef4444; }
+.scraper-badge-governance-needs_probe { background: #f59e0b22; color: #f59e0b; }
+.scraper-badge-governance-stale_skip { background: #f9731622; color: #f97316; }
+.scraper-badge-governance-skip_conflict_active_source { background: #ef444422; color: #ef4444; }
+.scraper-badge-governance-skip_verified { background: #10b98122; color: #10b981; }
+.scraper-badge-governance-configured { background: #3b82f622; color: #3b82f6; }
 
 /* Regime windows inline form */
 .regime-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; margin-top: 0.5rem; }
@@ -121,6 +126,14 @@
         <label style="font-size:0.75rem;display:block">RSS URL</label>
         <input id="ac-rss-url" type="text" style="width:260px" placeholder="https://investor.example.com/rss">
       </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">PRNewswire URL</label>
+        <input id="ac-prnewswire-url" type="text" style="width:260px" placeholder="https://www.prnewswire.com/...">
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">GlobeNewswire URL</label>
+        <input id="ac-globenewswire-url" type="text" style="width:260px" placeholder="https://www.globenewswire.com/rssfeed/...">
+      </div>
       <div style="min-width:310px">
         <label style="font-size:0.75rem;display:block">Template URL</label>
         <input id="ac-url-template" type="text" style="width:310px" placeholder="https://site/{month}-{year}-production-update">
@@ -140,6 +153,25 @@
     <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
   </div>
 
+  <div class="card" data-spec-id="2.1.5a" style="margin-bottom:0.7rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:0.9rem">
+        <span class="spec-id">2.1.5a</span>Scraper Governance Probe
+      </h3>
+      <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
+        stale days
+        <input id="gov-stale-days" type="number" min="1" max="365" value="30" style="width:64px">
+      </label>
+      <button class="btn btn-sm btn-secondary" onclick="loadScraperGovernance()">Refresh Governance</button>
+      <button class="btn btn-sm btn-secondary" onclick="runGovernanceBootstrapAll(false)">Probe Targets</button>
+      <button class="btn btn-sm btn-primary" onclick="runGovernanceBootstrapAll(true)">Probe + Apply Modes</button>
+      <span id="gov-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="gov-summary" style="font-size:0.78rem;color:var(--theme-text-secondary)">
+      Governance not loaded yet.
+    </div>
+  </div>
+
   <div class="acq-panel" data-ui-id="2.1.7" data-spec-id="2.1.7">
     <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
       <span class="spec-id">2.1.7</span>Data Acquisition Controls <span class="source-badge source-badge-na">n/a</span>
@@ -149,6 +181,12 @@
       <button class="btn btn-sm btn-primary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
       <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
       <button class="btn btn-sm btn-secondary" onclick="loadRegistry()">Refresh Registry</button>
+    </div>
+    <div style="margin-top:0.45rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+        <input id="acq-auto-extract" type="checkbox" checked>
+        Auto-run extraction after IR/EDGAR acquisition
+      </label>
     </div>
     <div id="acq-status" class="acq-status">Idle</div>
     <div id="acq-log" class="acq-log" style="display:none"></div>
@@ -165,6 +203,39 @@
     </div>
     <div id="extract-status" class="acq-status">Idle</div>
     <div id="extract-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <div class="card" data-ui-id="2.1.9" data-spec-id="2.1.9" style="margin-top:0.7rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
+      <h3 style="margin:0;font-size:0.9rem">
+        <span class="spec-id">2.1.9</span>Pipeline Observability <span class="source-badge source-badge-data">DATA</span>
+      </h3>
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
+      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">
+      Loading pipeline state…
+    </div>
+    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
+    <div style="overflow-x:auto">
+      <table id="pipeline-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Mode</th>
+            <th>Manifest</th>
+            <th>Reports</th>
+            <th>Unextracted</th>
+            <th>Data Points</th>
+            <th>Review Pending</th>
+            <th>Config</th>
+          </tr>
+        </thead>
+        <tbody id="pipeline-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
@@ -249,18 +320,35 @@
     </div>
     <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
       <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
-        Purge deletes all operational data: reports, data_points, review_queue,
-        scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans,
-        facilities, and source_audit. Company scraper state is reset to never_run.
-        Config is preserved (regime windows, LLM prompts, metric rules, patterns).
+        Purge modes:
+        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
+        <strong>Reset Only</strong> clears DATA only, and
+        <strong>Hard Delete</strong> performs a destructive wipe.
       </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Mode:</label>
+        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
+          <option value="archive">archive + reset (recommended)</option>
+          <option value="reset">reset only</option>
+          <option value="hard_delete">hard delete</option>
+        </select>
+        <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
+          <input id="purge-disable-autosync" type="checkbox">
+          disable company auto-sync on startup
+        </label>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Reason:</label>
+        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
+               style="width:360px;font-size:0.82rem;padding:3px 7px">
+      </div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
         <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
         <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
                style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">PURGE</code>&nbsp;to confirm:</label>
+        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
         <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
                style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
         <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
@@ -522,11 +610,13 @@ document.addEventListener('DOMContentLoaded', function() {
   makeSortable('registry-table');
   makeSortable('review-table');
   loadKeywordDictionaryOptions();
+  onPurgeInput();
 });
 
 // ── Companies tab ───────────────────────────────────────────────────────────
 let _companiesLoaded = false;
 let _companies = [];
+let _governanceByTicker = {};
 let _regimeTicker = null;
 let _acqTaskId = null;
 let _acqTaskTimer = null;
@@ -575,7 +665,8 @@ async function _pollAcquireTask(taskId, source) {
       const data = await resp.json();
       const p = data.data || {};
       const state = _acqStateLabel(p.status || '');
-      _setAcqStatus('Acquire ' + source.toUpperCase() + ': ' + state, state === 'failed');
+      const phase = p.phase ? (' (' + p.phase + ')') : '';
+      _setAcqStatus('Acquire ' + source.toUpperCase() + ': ' + state + phase, state === 'failed');
       if (state === 'running') {
         return;
       }
@@ -588,9 +679,14 @@ async function _pollAcquireTask(taskId, source) {
         if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
         if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
         if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
+        if (typeof p.reports_extracted === 'number') detail.push('extracted_reports=' + p.reports_extracted);
+        if (typeof p.extraction_data_points === 'number') detail.push('extract_points=' + p.extraction_data_points);
+        if (typeof p.extraction_review_flagged === 'number') detail.push('extract_review=' + p.extraction_review_flagged);
+        if (typeof p.extraction_errors === 'number') detail.push('extract_errors=' + p.extraction_errors);
         if (typeof p.errors === 'number') detail.push('errors=' + p.errors);
         _appendAcqLog(new Date().toISOString().slice(11, 19) + ' complete ' + source + (detail.length ? ' (' + detail.join(', ') + ')' : ''));
         showToast('Acquire ' + source.toUpperCase() + ' complete');
+        loadPipelineObservability();
         if (_registryLoaded) loadRegistry();
         if (_explorerLoaded) loadExplorer();
         if (_reviewLoaded) loadReview();
@@ -612,19 +708,25 @@ async function _pollAcquireTask(taskId, source) {
 
 async function triggerAcquire(source) {
   if (!source || _acqTaskId) return;
+  const autoExtractEnabled = !!document.getElementById('acq-auto-extract')?.checked;
+  const autoExtract = autoExtractEnabled && (source === 'ir' || source === 'edgar');
   _setAcquireButtonsEnabled(false);
   _acqTaskId = 'starting';
-  _setAcqStatus('Acquire ' + source.toUpperCase() + ': queued', false);
-  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source);
+  _setAcqStatus('Acquire ' + source.toUpperCase() + ': queued' + (autoExtract ? ' (with extraction)' : ''), false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source + (autoExtract ? ' + extract' : ''));
   try {
-    const resp = await fetch('/api/ingest/' + encodeURIComponent(source), { method: 'POST' });
+    const resp = await fetch('/api/ingest/' + encodeURIComponent(source), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ auto_extract: autoExtract }),
+    });
     const data = await resp.json();
     if (!resp.ok || !data.success) {
       throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
     }
     _acqTaskId = data.data.task_id;
-    _setAcqStatus('Acquire ' + source.toUpperCase() + ': running', false);
-    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + ' (task ' + _acqTaskId + ')');
+    _setAcqStatus('Acquire ' + source.toUpperCase() + ': running' + (autoExtract ? ' (with extraction)' : ''), false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + ' (task ' + _acqTaskId + ')' + (autoExtract ? ' + extract' : ''));
     _pollAcquireTask(_acqTaskId, source);
   } catch (err) {
     _acqTaskId = null;
@@ -687,6 +789,7 @@ async function _pollExtractionRun(taskId, ticker) {
         _appendExtractLog(new Date().toISOString().slice(11, 19) + ' complete ' + (ticker || 'ALL')
           + ' reports=' + processed + ' data_points=' + points + ' errors=' + errors);
         showToast('Extraction complete (' + (ticker || 'ALL') + ')');
+        loadPipelineObservability();
         if (_explorerLoaded) loadExplorer();
         if (_reviewLoaded) loadReview();
       } else {
@@ -733,6 +836,77 @@ async function startExtractionRun() {
   }
 }
 
+async function loadPipelineObservability() {
+  const summaryEl = document.getElementById('pipe-summary');
+  const healthEl = document.getElementById('pipe-scraper-health');
+  const msgEl = document.getElementById('pipe-msg');
+  const tbody = document.getElementById('pipeline-tbody');
+  if (!summaryEl || !healthEl || !msgEl || !tbody) return;
+  msgEl.textContent = 'Loading…';
+  try {
+    const resp = await fetch('/api/operations/pipeline_observability', { cache: 'no-store' });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error(data?.error?.message || ('HTTP ' + resp.status));
+    }
+
+    const snap = data.data || {};
+    const t = snap.totals || {};
+    const sc = snap.scraper_config || {};
+    summaryEl.textContent =
+      'Companies ' + (t.companies_active ?? 0) + '/' + (t.companies_total ?? 0)
+      + ' | Manifest ' + (t.manifest_total ?? 0)
+      + ' | Reports ' + (t.reports_total ?? 0)
+      + ' | Parsed ' + (t.reports_parsed ?? 0)
+      + ' | Extracted ' + (t.reports_extracted ?? 0)
+      + ' | Unextracted ' + (t.reports_unextracted ?? 0)
+      + ' | Data Points ' + (t.data_points_total ?? 0)
+      + ' | Review Pending ' + (t.review_pending ?? 0);
+
+    const invalidCount = sc.invalid_count || 0;
+    const invalidList = (sc.invalid_tickers || []).map(function(i) {
+      return i.ticker + ': ' + i.issue;
+    });
+    if (invalidCount > 0) {
+      healthEl.style.color = 'var(--theme-danger)';
+      healthEl.textContent = 'Scraper config issues (' + invalidCount + '): ' + invalidList.join(' | ');
+    } else {
+      healthEl.style.color = 'var(--theme-success)';
+      healthEl.textContent = 'Scraper config health: all ticker modes have required fields.';
+    }
+
+    const rows = snap.tickers || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No ticker rows.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(function(r) {
+        const cfg = r.scraper_config_valid
+          ? '<span class="scraper-badge scraper-badge-ok">ok</span>'
+          : '<span class="scraper-badge scraper-badge-error" title="' + escapeAttr(r.scraper_config_issue || '') + '">invalid</span>';
+        return '<tr>'
+          + '<td>' + escapeHtml(r.ticker) + '</td>'
+          + '<td>' + escapeHtml(r.scraper_mode || 'skip') + '</td>'
+          + '<td>' + escapeHtml(String(r.manifest_total || 0)) + '</td>'
+          + '<td>' + escapeHtml(String(r.reports_total || 0)) + '</td>'
+          + '<td>' + escapeHtml(String(r.reports_unextracted || 0)) + '</td>'
+          + '<td>' + escapeHtml(String(r.data_points_total || 0)) + '</td>'
+          + '<td>' + escapeHtml(String(r.review_pending || 0)) + '</td>'
+          + '<td>' + cfg + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    const ts = (snap.generated_at || '').slice(11, 19);
+    msgEl.textContent = ts ? ('updated ' + ts) : 'updated';
+  } catch (err) {
+    msgEl.textContent = 'failed';
+    summaryEl.textContent = 'Failed to load pipeline observability.';
+    healthEl.textContent = String(err);
+    healthEl.style.color = 'var(--theme-danger)';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-danger)">Failed to load.</td></tr>';
+  }
+}
+
 async function loadCompanies() {
   const tbody = document.getElementById('companies-tbody');
   try {
@@ -747,9 +921,11 @@ async function loadCompanies() {
     }
     const data = await resp.json();
     _companies = data.data || [];
+    await loadScraperGovernance();
     _companiesLoaded = true;
     renderCompanies();
     loadScrapeQueue();
+    loadPipelineObservability();
   } catch (_err) {
     _companiesLoaded = false;
     if (tbody) {
@@ -785,6 +961,12 @@ function renderCompanies() {
     if (c.rss_url) {
       urlParts.push('<a href="' + escapeAttr(c.rss_url) + '" target="_blank" rel="noopener" style="font-size:0.75rem;color:var(--theme-highlight)" title="' + escapeAttr(c.rss_url) + '">RSS</a>');
     }
+    if (c.prnewswire_url) {
+      urlParts.push('<a href="' + escapeAttr(c.prnewswire_url) + '" target="_blank" rel="noopener" style="font-size:0.75rem;color:#64748b" title="' + escapeAttr(c.prnewswire_url) + '">PRN</a>');
+    }
+    if (c.globenewswire_url) {
+      urlParts.push('<a href="' + escapeAttr(c.globenewswire_url) + '" target="_blank" rel="noopener" style="font-size:0.75rem;color:#2563eb" title="' + escapeAttr(c.globenewswire_url) + '">GNW</a>');
+    }
     if (c.url_template) {
       urlParts.push('<span style="font-size:0.7rem;color:var(--theme-text-muted)" title="' + escapeAttr(c.url_template) + '">template</span>');
     }
@@ -812,11 +994,13 @@ function renderCompanies() {
       + '<td>' + escapeHtml(c.name) + nameExtra + '</td>'
       + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px">from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
       + '<td style="font-size:0.8rem">' + urlCell + '</td>'
-      + '<td>' + statusBadge + '</td>'
+      + '<td>' + statusBadge + governanceBadge + '</td>'
       + '<td style="font-size:0.78rem;color:var(--theme-text-muted)">' + escapeHtml(lastScrape) + '</td>'
       + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
           + expandBtn
           + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="editRegime(this.getAttribute(\'data-ticker\'))">Regime</button>'
+          + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), false)">Probe</button>'
+          + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), true)">Probe+Apply</button>'
           + (mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
         + '</td>'
       + '</tr>'
@@ -844,6 +1028,94 @@ function renderCompanies() {
   tbody.innerHTML = rows.join('');
 }
 
+async function loadScraperGovernance() {
+  const msgEl = document.getElementById('gov-msg');
+  const summaryEl = document.getElementById('gov-summary');
+  const staleInput = document.getElementById('gov-stale-days');
+  const staleDays = Math.max(1, Number(staleInput?.value || 30));
+  if (msgEl) msgEl.textContent = 'Loading…';
+  try {
+    const resp = await fetch('/api/companies/scraper_governance?stale_days=' + encodeURIComponent(String(staleDays)), {
+      cache: 'no-store',
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const snap = data.data || {};
+    const counts = snap.counts || {};
+    const items = snap.items || [];
+    _governanceByTicker = {};
+    items.forEach(function(item) {
+      _governanceByTicker[item.ticker] = item.governance_status;
+    });
+    if (summaryEl) {
+      summaryEl.textContent =
+        'Total ' + (counts.total ?? 0)
+        + ' | needs_probe ' + (counts.needs_probe ?? 0)
+        + ' | stale_skip ' + (counts.stale_skip ?? 0)
+        + ' | skip_conflict_active_source ' + (counts.skip_conflict_active_source ?? 0);
+    }
+    if (msgEl) msgEl.textContent = 'updated';
+    if (_companiesLoaded) renderCompanies();
+  } catch (err) {
+    if (msgEl) msgEl.textContent = 'failed';
+    if (summaryEl) summaryEl.textContent = 'Failed to load governance: ' + String(err);
+  }
+}
+
+async function runTickerBootstrapProbe(ticker, applyMode) {
+  const msgEl = document.getElementById('gov-msg');
+  if (msgEl) msgEl.textContent = 'Probing ' + ticker + '…';
+  try {
+    const resp = await fetch('/api/companies/' + encodeURIComponent(ticker) + '/bootstrap_probe', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ apply_mode: !!applyMode }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const d = data.data || {};
+    showToast(
+      ticker + ': recommended=' + (d.recommended_mode || 'skip')
+      + ', active=' + String(d.active_candidates || 0)
+      + (d.applied ? ' (applied)' : ''),
+    );
+    await loadCompanies();
+  } catch (err) {
+    showToast('Probe failed for ' + ticker + ': ' + String(err), true);
+    if (msgEl) msgEl.textContent = 'probe failed';
+  }
+}
+
+async function runGovernanceBootstrapAll(applyMode) {
+  const msgEl = document.getElementById('gov-msg');
+  const staleInput = document.getElementById('gov-stale-days');
+  const staleDays = Math.max(1, Number(staleInput?.value || 30));
+  if (msgEl) msgEl.textContent = 'Running batch probe…';
+  try {
+    const resp = await fetch('/api/companies/bootstrap_probe_all', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        stale_days: staleDays,
+        apply_mode: !!applyMode,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const d = data.data || {};
+    showToast(
+      'Batch probe complete: '
+      + String(d.completed || 0) + '/' + String(d.targeted || 0)
+      + (d.failed ? (', failed=' + String(d.failed)) : ''),
+      !!d.failed
+    );
+    await loadCompanies();
+  } catch (err) {
+    showToast('Batch probe failed: ' + String(err), true);
+    if (msgEl) msgEl.textContent = 'batch failed';
+  }
+}
+
 function toggleCompanyDetail(ticker) {
   const row = document.getElementById('cdetail-' + ticker);
   if (!row) return;
@@ -861,28 +1133,49 @@ function toggleDangerZone() {
 
 function onPurgeInput() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
-  const confirmWord = ticker || 'PURGE';
+  const mode = (document.getElementById('purge-mode').value || 'archive').trim();
+  const disableSyncCb = document.getElementById('purge-disable-autosync');
+  let base = 'ARCHIVE';
+  if (mode === 'reset') base = 'RESET';
+  if (mode === 'hard_delete') base = 'HARD_DELETE';
+  const confirmWord = ticker ? (base + '_' + ticker) : (base + '_ALL');
   document.getElementById('purge-confirm-hint').textContent = confirmWord;
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
   const purgeBtn = document.getElementById('purge-btn');
   purgeBtn.disabled = (typed !== confirmWord);
-  purgeBtn.textContent = ticker ? ('Purge ' + ticker + ' Data') : 'Purge All Data';
+  const labelPrefix = mode === 'archive' ? 'Archive+Reset' : (mode === 'reset' ? 'Reset' : 'Hard Delete');
+  purgeBtn.textContent = ticker ? (labelPrefix + ' ' + ticker) : (labelPrefix + ' ALL');
+  if (disableSyncCb) {
+    const allowed = (mode === 'hard_delete' && !ticker);
+    if (!allowed) disableSyncCb.checked = false;
+    disableSyncCb.disabled = !allowed;
+  }
 }
 
 async function executePurge() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
+  const mode = (document.getElementById('purge-mode').value || 'archive').trim();
+  const reason = (document.getElementById('purge-reason').value || '').trim();
+  const disableAutoSync = !!document.getElementById('purge-disable-autosync').checked;
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
-  const confirmWord = ticker || 'PURGE';
+  let base = 'ARCHIVE';
+  if (mode === 'reset') base = 'RESET';
+  if (mode === 'hard_delete') base = 'HARD_DELETE';
+  const confirmWord = ticker ? (base + '_' + ticker) : (base + '_ALL');
   if (typed !== confirmWord) return;   // safety guard — button should already be disabled
   const msgEl = document.getElementById('purge-msg');
   msgEl.style.color = 'var(--theme-text-muted)';
-  msgEl.textContent = 'Purging…';
+  msgEl.textContent = 'Running ' + mode + '…';
   document.getElementById('purge-btn').disabled = true;
   document.getElementById('purge-confirm-input').value = '';
   onPurgeInput();
   try {
-    const body = { confirm: true };
+    const body = { confirm: true, purge_mode: mode };
     if (ticker) body.ticker = ticker;
+    if (reason) body.reason = reason;
+    if (!ticker && mode === 'hard_delete' && disableAutoSync) {
+      body.suppress_auto_sync = true;
+    }
     const resp = await fetch('/api/data/purge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -894,11 +1187,18 @@ async function executePurge() {
     const c = d.counts || {};
     const total = Object.values(c).reduce(function(s, v) { return s + v; }, 0);
     const purgedTicker = String(d.ticker || 'ALL').toUpperCase();
+    const archivedBatch = c.archive_batch_id || null;
     msgEl.style.color = 'var(--theme-success)';
-    msgEl.textContent = purgedTicker === 'ALL'
-      ? ('Purged ' + total + ' rows (ALL), including company catalog rows.')
-      : ('Purged ' + total + ' DATA rows (' + purgedTicker + '), company catalog rows kept.');
-    _applyPurgeToCompanyState(purgedTicker);
+    if (mode === 'archive') {
+      msgEl.textContent = 'Archived+reset ' + total + ' rows (' + purgedTicker + ')'
+        + (archivedBatch ? (' batch #' + archivedBatch) : '') + '.';
+    } else if (mode === 'reset') {
+      msgEl.textContent = 'Reset ' + total + ' DATA rows (' + purgedTicker + ').';
+    } else {
+      msgEl.textContent = 'Hard-deleted ' + total + ' rows (' + purgedTicker + ').'
+        + ((!ticker && disableAutoSync) ? ' Company auto-sync disabled.' : '');
+    }
+    _applyPurgeToCompanyState(purgedTicker, mode);
     _companiesLoaded = false;
     await loadCompanies();
     await loadScrapeQueue();
@@ -911,7 +1211,7 @@ async function executePurge() {
   }
 }
 
-function _applyPurgeToCompanyState(purgedTicker) {
+function _applyPurgeToCompanyState(purgedTicker, mode) {
   if (!_companies || !_companies.length) return;
   const resetCompanyOps = function(company) {
     return {
@@ -923,8 +1223,10 @@ function _applyPurgeToCompanyState(purgedTicker) {
       scraper_issues_log: '',
     };
   };
-  if (purgedTicker === 'ALL') {
+  if (mode === 'hard_delete' && purgedTicker === 'ALL') {
     _companies = [];
+  } else if (purgedTicker === 'ALL') {
+    _companies = _companies.map(function(company) { return resetCompanyOps(company); });
   } else {
     _companies = _companies.map(function(company) {
       return company.ticker === purgedTicker ? resetCompanyOps(company) : company;
@@ -970,8 +1272,8 @@ function onAddCompanyModeChange() {
   skipReason.required = false;
 
   if (mode === 'rss') {
-    rss.required = true;
-    help.textContent = 'rss: reads production PRs from RSS feed. Required: RSS URL.';
+    rss.required = false;
+    help.textContent = 'rss: reads production PRs from RSS/feed endpoints. Required: RSS URL (or PRNewswire/GlobeNewswire URL).';
   } else if (mode === 'index') {
     ir.required = true;
     help.textContent = 'index: crawls IR index/listing page for PR links. Required: IR URL.';
@@ -991,6 +1293,8 @@ async function submitAddCompany() {
   const mode   = document.getElementById('ac-mode').value;
   const irUrl = document.getElementById('ac-ir-url').value.trim();
   const rssUrl = document.getElementById('ac-rss-url').value.trim();
+  const prnewswireUrl = document.getElementById('ac-prnewswire-url').value.trim();
+  const globenewswireUrl = document.getElementById('ac-globenewswire-url').value.trim();
   const urlTemplate = document.getElementById('ac-url-template').value.trim();
   const prStartYearRaw = document.getElementById('ac-pr-start-year').value.trim();
   const skipReason = document.getElementById('ac-skip-reason').value.trim();
@@ -998,6 +1302,8 @@ async function submitAddCompany() {
   const payload = { ticker, name, sector, scraper_mode: mode };
   if (irUrl) payload.ir_url = irUrl;
   if (rssUrl) payload.rss_url = rssUrl;
+  if (prnewswireUrl) payload.prnewswire_url = prnewswireUrl;
+  if (globenewswireUrl) payload.globenewswire_url = globenewswireUrl;
   if (urlTemplate) payload.url_template = urlTemplate;
   if (prStartYearRaw) payload.pr_start_year = Number(prStartYearRaw);
   if (skipReason) payload.skip_reason = skipReason;
@@ -1779,3 +2085,9 @@ async function saveMetricRule(metric) {
 }
 </script>
 {% endblock %}
+    const governance = _governanceByTicker[c.ticker];
+    const governanceBadge = governance
+      ? '<span class="scraper-badge scraper-badge-governance-' + escapeHtml(governance) + '"'
+        + ' title="scraper governance: ' + escapeAttr(governance) + '" style="margin-left:4px">'
+        + escapeHtml(governance) + '</span>'
+      : '';

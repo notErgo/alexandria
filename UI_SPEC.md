@@ -39,11 +39,13 @@ Template: `ops.html`
 | 2.1.1 | Companies table        | **CONFIG** | `GET /api/companies` | `sync_companies_from_config()` in `db.py`; auto-runs at boot from `companies.json`. Full purge clears rows; restart or Sync Config re-seeds them. |
 | 2.1.2 | Regime editor panel    | CONFIG  | `GET /api/regime/<ticker>` · `POST /api/regime/<ticker>` · `DELETE /api/regime/<ticker>/<id>` | — |
 | 2.1.3 | Scrape Queue table     | DATA    | `GET /api/scrape/queue` | `ScrapeWorker` thread (`run_web.py`); `IRScraper` (`scrapers/ir_scraper.py`) |
-| 2.1.4 | Danger Zone purge form | n/a     | `POST /api/data/purge` | Hidden by default; expands only after explicit click. Uses `db.purge_all()` in `db.py` |
-| 2.1.5 | Add Company form       | n/a     | `POST /api/companies` | Mode contract enforced at API boundary: `rss -> rss_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
+| 2.1.4 | Danger Zone purge form | n/a     | `POST /api/data/purge` | Hidden by default; expands only after explicit click. Mode-based purge contract: `reset` (DATA only), `archive` (archive+reset), `hard_delete` (destructive full wipe) |
+| 2.1.5 | Add Company form       | n/a     | `POST /api/companies` | Mode contract enforced at API boundary: `rss -> rss_url OR prnewswire_url OR globenewswire_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
+| 2.1.5a | Scraper governance + discovery probes | n/a | `GET /api/companies/scraper_governance` · `POST /api/companies/bootstrap_probe_all` (optional `tickers[]`) · `POST /api/companies/<ticker>/discovery_candidates` · `GET /api/companies/<ticker>/discovery_candidates` · `POST /api/companies/<ticker>/bootstrap_probe` | Agent-proposed source candidates are probed deterministically, written to `source_audit`, and produce governed mode recommendations per ticker or batch |
 | 2.1.6 | Sync Config button     | n/a     | `POST /api/companies/sync` | `db.sync_companies_from_config()` |
-| 2.1.7 | Data acquisition controls | n/a  | `POST /api/ingest/archive` · `POST /api/ingest/ir` · `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | Unified manual acquisition controls in `/ops`; refresh-free status updates |
+| 2.1.7 | Data acquisition controls | n/a  | `POST /api/ingest/archive` · `POST /api/ingest/ir` · `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | Unified manual acquisition controls in `/ops`; optional `auto_extract` chains IR/EDGAR ingest into extraction in the same background task |
 | 2.1.8 | LLM extraction run monitor | DATA | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress and log feed without manual refresh |
+| 2.1.9 | Pipeline observability panel | DATA | `GET /api/operations/pipeline_observability` | Global and per-ticker discovered/ingested/parsed/extracted counts + scraper mode configuration health |
 
 **Note on 2.1.1:** Full purge now clears the companies table for an immediate empty UI baseline. Companies rows reappear after server restart because `_init_db()` calls `sync_companies_from_config()`, or immediately via Sync Config.
 
@@ -154,29 +156,20 @@ Template: `index.html`
 
 | ID   | Name             | Trigger | What it does | Writes to |
 |------|------------------|---------|--------------|-----------|
-| S.1  | `ScrapeWorker`   | Startup (daemon thread); `POST /api/scrape/trigger/<ticker>` | Polls `scrape_queue`, runs `IRScraper` per job, auto-triggers extraction | `reports`, `scrape_queue` |
-| S.2  | `IRScraper`      | Called by S.1 | Fetches IR press releases (RSS/index/template mode) | `reports` |
-| S.3  | `ArchiveIngestor` | `POST /api/ingest/archive`; `cli.py ingest --source archive` | Walks `OffChain/Miner/` archive, parses PDFs/HTMLs | `reports`, `asset_manifest` |
-| S.4  | `EdgarConnector` | `POST /api/ingest/edgar` | Fetches EDGAR 8-K filings | `reports` |
+| S.1  | `ScrapeWorker`   | Startup (daemon thread); `POST /api/scrape/trigger/<ticker>` | Polls `scrape_queue`, runs `IRScraper`, then EDGAR fetch for tickers with CIK; ingest-only queue worker (no extraction trigger) | `reports`, `scrape_queue`, `companies.last_scrape_*` |
+| S.2  | `IRScraper`      | Called by S.1 or `POST /api/ingest/ir` | Fetches IR press releases (RSS/index/template mode), stores raw text | `reports` |
+| S.3  | `ArchiveIngestor` | `POST /api/ingest/archive`; `cli.py ingest --source archive` | Walks archive, stores reports, then runs extraction inline for monthly docs | `reports`, `asset_manifest`, `data_points`, `review_queue` |
+| S.4  | `EdgarConnector` | `POST /api/ingest/edgar`; S.1 EDGAR follow-up | Fetches EDGAR 8-K/10-Q/10-K filings, stores raw text only | `reports` |
 | S.5  | `ManifestScanner` | `POST /api/manifest/scan` | Walks archive directory, upserts manifest entries | `asset_manifest` |
 | S.6  | Extraction pipeline | `POST /api/operations/extract`; `cli.py extract` | Runs LLM+regex+agreement on stored reports | `data_points`, `review_queue` |
+| S.7  | Ingest auto-extract chain | `POST /api/ingest/ir` or `/api/ingest/edgar` with body `{ "auto_extract": true }` | Runs extraction stage over newly unextracted reports immediately after ingest | `data_points`, `review_queue`, `reports.extracted_at` |
 
 ---
 
 ## Purge scope summary
 
-| Cleared by Purge All (2.1.4) | NOT cleared |
+| Mode | Cleared | Not Cleared |
 |------------------------------|-------------|
-| `reports` | `llm_prompts` |
-| `data_points` | `llm_ticker_hints` |
-| `review_queue` | `metric_schema` |
-| `scrape_queue` (2.1.3) | `config_settings` |
-| `asset_manifest` (2.2.2) | `patterns` |
-| `document_chunks` | `metric_rules` |
-| `raw_extractions` | |
-| `btc_loans` | |
-| `facilities` | |
-| `source_audit` | |
-| `llm_benchmark_runs` | |
-| `companies` (full purge only) | |
-| `regime_config` (full purge only) | |
+| `reset` | reports, data_points, review_queue, scrape_queue, asset_manifest, document_chunks, raw_extractions, btc_loans, facilities, source_audit, llm_benchmark_runs | companies, regime_config, llm_prompts, llm_ticker_hints, metric_schema, config_settings, patterns, metric_rules |
+| `archive` | same as `reset`, plus writes deleted rows to `purge_archive.db` | same as `reset` |
+| `hard_delete` (full scope) | all `reset` tables plus companies + regime_config | llm_prompts, llm_ticker_hints, metric_schema, config_settings, patterns, metric_rules |

@@ -200,9 +200,13 @@ class IRScraper:
 
         summary = IngestSummary()
         ticker = company["ticker"]
-        rss_url = company.get("rss_url")
+        rss_url = (
+            company.get("rss_url")
+            or company.get("globenewswire_url")
+            or company.get("prnewswire_url")
+        )
         if not rss_url:
-            log.error("%s: rss_url not set in companies.json", ticker)
+            log.error("%s: rss_url/globenewswire_url/prnewswire_url not set", ticker)
             summary.errors += 1
             return summary
 
