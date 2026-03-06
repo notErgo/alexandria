@@ -177,5 +177,75 @@ class TestTemplatePathURLDedup(unittest.TestCase):
         db.insert_report.assert_not_called()
 
 
+class TestURLHashDedupScopedToTicker(unittest.TestCase):
+    """Fix 6: report_exists_by_url_hash(hash, ticker=...) scopes check to one ticker."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db_path = self.tmp.name
+
+    def tearDown(self):
+        import os
+        os.unlink(self.db_path)
+
+    def _make_db(self):
+        import sqlite3
+        from infra.db import MinerDB
+        db = MinerDB(self.db_path)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO companies (ticker, name, tier, ir_url) "
+                "VALUES ('MARA', 'MARA Holdings', 1, 'https://ir.mara.com')"
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO companies (ticker, name, tier, ir_url) "
+                "VALUES ('RIOT', 'Riot Platforms', 1, 'https://riot.com')"
+            )
+        return db
+
+    def _insert_report_with_hash(self, db_path, ticker, url_hash):
+        import sqlite3
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, source_url_hash) "
+                "VALUES (?, '2024-01-31', 'ir_press_release', ?)",
+                (ticker, url_hash),
+            )
+
+    def test_scoped_returns_true_for_matching_ticker(self):
+        import hashlib
+        db = self._make_db()
+        url_hash = hashlib.sha256(b'https://example.com/mara-pr1').hexdigest()
+        self._insert_report_with_hash(self.db_path, 'MARA', url_hash)
+        self.assertTrue(db.report_exists_by_url_hash(url_hash, 'MARA'))
+
+    def test_scoped_returns_false_for_different_ticker(self):
+        """Same URL hash exists for MARA but checking for RIOT returns False."""
+        import hashlib
+        db = self._make_db()
+        url_hash = hashlib.sha256(b'https://example.com/shared-url').hexdigest()
+        self._insert_report_with_hash(self.db_path, 'MARA', url_hash)
+        # RIOT does not have this URL — cross-ticker dedup must not fire
+        self.assertFalse(db.report_exists_by_url_hash(url_hash, 'RIOT'))
+
+    def test_unscoped_returns_true_for_any_ticker(self):
+        """report_exists_by_url_hash(hash) without ticker returns True for any match."""
+        import hashlib
+        db = self._make_db()
+        url_hash = hashlib.sha256(b'https://example.com/global-url').hexdigest()
+        self._insert_report_with_hash(self.db_path, 'MARA', url_hash)
+        # Global check (no ticker arg) must find the MARA report
+        self.assertTrue(db.report_exists_by_url_hash(url_hash))
+
+    def test_scoped_returns_false_when_no_reports(self):
+        import hashlib
+        db = self._make_db()
+        url_hash = hashlib.sha256(b'https://example.com/nonexistent').hexdigest()
+        self.assertFalse(db.report_exists_by_url_hash(url_hash, 'MARA'))
+        self.assertFalse(db.report_exists_by_url_hash(url_hash))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -829,6 +829,10 @@ class MinerDB:
         ]:
             if col not in existing:
                 conn.execute(f"ALTER TABLE companies ADD COLUMN {col} {typedef}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reports_url_hash "
+            "ON reports(source_url_hash) WHERE source_url_hash IS NOT NULL"
+        )
 
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
@@ -1351,13 +1355,23 @@ class MinerDB:
             ).fetchone()
             return row is not None
 
-    def report_exists_by_url_hash(self, url_hash: str) -> bool:
-        """Return True if any report with this source_url_hash already exists."""
+    def report_exists_by_url_hash(self, url_hash: str, ticker: str = None) -> bool:
+        """Return True if a report with this source_url_hash already exists.
+
+        When ticker is provided, the check is scoped to that ticker only,
+        preventing cross-ticker URL collision from suppressing legitimate ingestion.
+        """
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM reports WHERE source_url_hash=?",
-                (url_hash,),
-            ).fetchone()
+            if ticker:
+                row = conn.execute(
+                    "SELECT 1 FROM reports WHERE source_url_hash=? AND ticker=?",
+                    (url_hash, ticker),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT 1 FROM reports WHERE source_url_hash=?",
+                    (url_hash,),
+                ).fetchone()
             return row is not None
 
     def update_report_raw_text(
@@ -2192,6 +2206,43 @@ class MinerDB:
         """Delete a metric_rules row by metric key. No-op if it does not exist."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM metric_rules WHERE metric = ?", (metric,))
+
+    def upsert_qc_snapshot(self, snapshot: dict) -> None:
+        """Insert a QC precision snapshot. snapshot_at is set from snapshot['run_date']."""
+        import json
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO qc_snapshots (snapshot_at, ticker, summary_json)
+                   VALUES (?, ?, ?)""",
+                (
+                    snapshot.get('run_date'),
+                    snapshot.get('ticker'),
+                    json.dumps(snapshot),
+                ),
+            )
+
+    def get_qc_snapshots(self, ticker: str = None) -> list:
+        """Return QC snapshots ordered by snapshot_at DESC."""
+        import json
+        with self._get_connection() as conn:
+            if ticker:
+                rows = conn.execute(
+                    "SELECT * FROM qc_snapshots WHERE ticker=? ORDER BY snapshot_at DESC",
+                    (ticker,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM qc_snapshots ORDER BY snapshot_at DESC"
+                ).fetchall()
+            result = []
+            for row in rows:
+                d = dict(row)
+                try:
+                    d.update(json.loads(d.get('summary_json') or '{}'))
+                except Exception:
+                    pass
+                result.append(d)
+            return result
 
     def get_snippets(self, limit: int = 2000) -> list:
         """Return source snippets from data_points and review_queue for keyword analysis."""

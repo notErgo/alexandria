@@ -16,7 +16,7 @@ _METRIC_KEYWORDS = {
 
 _DEFAULT_KEYWORDS = ['produced', 'mined', 'btc', 'bitcoin']
 
-_QUARTERLY_SOURCES = {'edgar_10q', 'edgar_10k'}
+_QUARTERLY_SOURCES = {'edgar_10q', 'edgar_10k', 'edgar_6k', 'edgar_20f', 'edgar_40f'}
 
 _MAX_WINDOWS = 3
 

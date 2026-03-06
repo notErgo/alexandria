@@ -200,5 +200,110 @@ class TestReviewDocumentUsesReportId(unittest.TestCase):
         mock_db.find_report_for_period.assert_called_once_with('MARA', '2024-01-31')
 
 
+class TestReviewItemHasReportId(unittest.TestCase):
+    """Fix 4: all three review-routing branches must write report_id to review_queue."""
+
+    def _make_report(self, report_id=77):
+        return {
+            'id': report_id,
+            'ticker': 'MARA',
+            'report_date': '2024-01-31',
+            'source_type': 'ir_press_release',
+        }
+
+    def _make_result(self, value=750.0, confidence=0.9, method='llm'):
+        from miner_types import ExtractionResult
+        return ExtractionResult(
+            value=value, unit='BTC', confidence=confidence,
+            extraction_method=method, source_snippet='produced 750 BTC',
+            metric='production_btc', pattern_id=None,
+        )
+
+    def _make_db(self):
+        from unittest.mock import MagicMock
+        db = MagicMock()
+        db.data_point_exists.return_value = False
+        db.get_trailing_data_points.return_value = []
+        db.insert_review_item.return_value = 1
+        return db
+
+    def _make_summary(self):
+        from miner_types import ExtractionSummary
+        return ExtractionSummary()
+
+    def test_llm_only_low_confidence_includes_report_id(self):
+        """LLM_ONLY low-confidence branch must include report_id in insert_review_item."""
+        from extractors.extraction_pipeline import _apply_agreement
+        report = self._make_report(report_id=77)
+        db = self._make_db()
+        llm_result = self._make_result(value=750.0, confidence=0.5, method='llm')
+
+        _apply_agreement(
+            metric='production_btc',
+            regex_best=None,
+            llm_result=llm_result,
+            db=db,
+            report=report,
+            llm_available=True,
+            confidence_threshold=0.75,
+            summary=self._make_summary(),
+            llm_extractor=None,
+        )
+
+        db.insert_review_item.assert_called_once()
+        call_args = db.insert_review_item.call_args[0][0]
+        self.assertIn('report_id', call_args)
+        self.assertEqual(call_args['report_id'], 77)
+
+    def test_review_queue_branch_includes_report_id(self):
+        """REVIEW_QUEUE branch (regex/LLM disagree) must include report_id in insert_review_item."""
+        from extractors.extraction_pipeline import _apply_agreement
+        report = self._make_report(report_id=88)
+        db = self._make_db()
+        # production_btc threshold=1%; 1000 vs 1020 = 2% diff → REVIEW_QUEUE
+        regex_result = self._make_result(value=1000.0, confidence=0.9, method='regex')
+        llm_result = self._make_result(value=1020.0, confidence=0.9, method='llm')
+
+        _apply_agreement(
+            metric='production_btc',
+            regex_best=regex_result,
+            llm_result=llm_result,
+            db=db,
+            report=report,
+            llm_available=True,
+            confidence_threshold=0.75,
+            summary=self._make_summary(),
+            llm_extractor=None,
+        )
+
+        db.insert_review_item.assert_called_once()
+        call_args = db.insert_review_item.call_args[0][0]
+        self.assertIn('report_id', call_args)
+        self.assertEqual(call_args['report_id'], 88)
+
+    def test_legacy_regex_only_low_confidence_includes_report_id(self):
+        """Legacy regex-only low-confidence branch must include report_id in insert_review_item."""
+        from extractors.extraction_pipeline import _apply_agreement
+        report = self._make_report(report_id=99)
+        db = self._make_db()
+        regex_result = self._make_result(value=750.0, confidence=0.5, method='regex')
+
+        _apply_agreement(
+            metric='production_btc',
+            regex_best=regex_result,
+            llm_result=None,
+            db=db,
+            report=report,
+            llm_available=False,
+            confidence_threshold=0.75,
+            summary=self._make_summary(),
+        )
+
+        db.insert_review_item.assert_called_once()
+        call_args = db.insert_review_item.call_args[0][0]
+        self.assertIn('report_id', call_args)
+        self.assertEqual(call_args['report_id'], 99)
+
+
 if __name__ == '__main__':
     unittest.main()

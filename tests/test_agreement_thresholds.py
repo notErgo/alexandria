@@ -158,6 +158,106 @@ class TestExplicitThresholdParam:
         assert d.decision == 'AUTO_ACCEPT'
 
 
+class TestOutlierMinHistoryFromRule:
+    """Fix 7: outlier_min_history must be read from metric_rule when present."""
+
+    def test_outlier_min_history_from_rule_overrides_default(self):
+        """get_trailing_data_points must be called with limit from metric_rule, not config."""
+        from extractors.extraction_pipeline import _apply_agreement
+        from miner_types import ExtractionResult, ExtractionSummary
+        from unittest.mock import MagicMock
+
+        report = {
+            'id': 1, 'ticker': 'MARA', 'report_date': '2024-01-31',
+            'source_type': 'ir_press_release',
+        }
+        db = MagicMock()
+        db.data_point_exists.return_value = False
+        db.get_trailing_data_points.return_value = []
+
+        # Regex and LLM agree exactly → AUTO_ACCEPT → outlier check runs
+        regex_result = ExtractionResult(
+            value=750.0, unit='BTC', confidence=0.9,
+            extraction_method='regex', source_snippet='produced 750 BTC',
+            metric='production_btc', pattern_id='btc_1',
+        )
+        llm_result = ExtractionResult(
+            value=750.0, unit='BTC', confidence=0.9,
+            extraction_method='llm', source_snippet='produced 750 BTC',
+            metric='production_btc', pattern_id=None,
+        )
+
+        rule = {
+            'metric': 'production_btc',
+            'agreement_threshold': 0.01,
+            'outlier_threshold': 0.5,
+            'outlier_min_history': 7,  # non-default — must override config
+            'enabled': 1,
+        }
+
+        _apply_agreement(
+            metric='production_btc',
+            regex_best=regex_result,
+            llm_result=llm_result,
+            db=db,
+            report=report,
+            llm_available=True,
+            confidence_threshold=0.75,
+            summary=ExtractionSummary(),
+            metric_rule=rule,
+        )
+
+        db.get_trailing_data_points.assert_called()
+        call_kwargs = db.get_trailing_data_points.call_args
+        actual_limit = (call_kwargs.args[3] if len(call_kwargs.args) > 3
+                        else call_kwargs.kwargs.get('limit'))
+        assert actual_limit == 7, f"Expected limit=7 from rule, got {actual_limit}"
+
+    def test_outlier_min_history_uses_default_when_no_rule(self):
+        """get_trailing_data_points uses OUTLIER_MIN_HISTORY constant when no metric_rule."""
+        from extractors.extraction_pipeline import _apply_agreement
+        from miner_types import ExtractionResult, ExtractionSummary
+        from config import OUTLIER_MIN_HISTORY
+        from unittest.mock import MagicMock
+
+        report = {
+            'id': 2, 'ticker': 'MARA', 'report_date': '2024-02-29',
+            'source_type': 'ir_press_release',
+        }
+        db = MagicMock()
+        db.data_point_exists.return_value = False
+        db.get_trailing_data_points.return_value = []
+
+        regex_result = ExtractionResult(
+            value=800.0, unit='BTC', confidence=0.9,
+            extraction_method='regex', source_snippet='produced 800 BTC',
+            metric='production_btc', pattern_id='btc_1',
+        )
+        llm_result = ExtractionResult(
+            value=800.0, unit='BTC', confidence=0.9,
+            extraction_method='llm', source_snippet='produced 800 BTC',
+            metric='production_btc', pattern_id=None,
+        )
+
+        _apply_agreement(
+            metric='production_btc',
+            regex_best=regex_result,
+            llm_result=llm_result,
+            db=db,
+            report=report,
+            llm_available=True,
+            confidence_threshold=0.75,
+            summary=ExtractionSummary(),
+            metric_rule=None,
+        )
+
+        db.get_trailing_data_points.assert_called()
+        call_kwargs = db.get_trailing_data_points.call_args
+        actual_limit = (call_kwargs.args[3] if len(call_kwargs.args) > 3
+                        else call_kwargs.kwargs.get('limit'))
+        assert actual_limit == OUTLIER_MIN_HISTORY
+
+
 class TestMetricRuleEnabledFlag:
     """Issue #4: disabled metric_rule (enabled=0) must fall back to config defaults."""
 

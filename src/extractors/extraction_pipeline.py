@@ -53,8 +53,8 @@ _LLM_TEXT_MAX_CHARS = 8000
 _LLM_QUARTERLY_TEXT_MAX_CHARS = 40_000
 
 # Source types that follow the quarterly/annual extraction path
-_QUARTERLY_SOURCES = frozenset({'edgar_10q'})
-_ANNUAL_SOURCES    = frozenset({'edgar_10k'})
+_QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
+_ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
 
 # Sentinel phrases that mark the start of boilerplate sections.
 # Only stripped when the match falls at or after the 40% mark of the document,
@@ -373,9 +373,13 @@ def _apply_agreement(
                 outlier_threshold = active_rule['outlier_threshold']
             else:
                 outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
+            history_limit = (
+                active_rule.get('outlier_min_history', OUTLIER_MIN_HISTORY)
+                if active_rule else OUTLIER_MIN_HISTORY
+            )
             try:
                 trailing_rows = db.get_trailing_data_points(
-                    ticker, period_str, metric, limit=OUTLIER_MIN_HISTORY
+                    ticker, period_str, metric, limit=history_limit
                 )
                 trailing_vals = [r['value'] for r in trailing_rows]
                 is_outlier, trailing_avg = detect_outlier(
@@ -481,6 +485,7 @@ def _apply_agreement(
                 summary.data_points_extracted += 1
             else:
                 db.insert_review_item({
+                    "report_id": report_id,
                     "data_point_id": None,
                     "ticker": ticker,
                     "period": period_str,
@@ -511,6 +516,7 @@ def _apply_agreement(
                 else decision.decision
             )
             db.insert_review_item({
+                "report_id": report_id,
                 "data_point_id": None,
                 "ticker": ticker,
                 "period": period_str,
@@ -546,6 +552,7 @@ def _apply_agreement(
             summary.data_points_extracted += 1
         else:
             db.insert_review_item({
+                "report_id": report_id,
                 "data_point_id": None,
                 "ticker": ticker,
                 "period": period_str,
@@ -779,6 +786,14 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             except Exception as _bench_err:
                 log.debug("Benchmark write failed (non-fatal): %s", _bench_err)
 
+        # Load per-metric rules from DB (keyed by metric name)
+        metric_rules_by_name = {}
+        try:
+            for row in db.get_metric_rules():
+                metric_rules_by_name[row['metric']] = row
+        except Exception as _mre:
+            log.debug("Could not load metric_rules (non-fatal): %s", _mre)
+
         for metric in all_metrics:
             regex_best = regex_by_metric.get(metric)
             # Skip metrics with no data from either source when LLM not available
@@ -786,9 +801,12 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 continue
 
             llm_result_for_metric = llm_by_metric.get(metric)
-            # Fallback: retry with subsequent context windows if primary result is absent/low-confidence
+            # Fallback: retry with per-metric context windows if primary result is absent/low-confidence
             if llm_available and llm_extractor is not None:
-                for _fb_window in _ctx_windows[1:]:
+                _metric_windows = _ctx_selector.select_windows(
+                    report['id'], _clean_for_llm(text), metric, db
+                )
+                for _fb_window in _metric_windows[1:]:
                     if not _ctx_selector.needs_fallback(llm_result_for_metric):
                         break
                     llm_result_for_metric = llm_extractor.extract(_fb_window['text'], metric)
@@ -804,6 +822,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 summary=summary,
                 attribution=attribution,
                 llm_extractor=llm_extractor,
+                metric_rule=metric_rules_by_name.get(metric),
             )
 
         # Second-pass: try to fill prior-period gaps if LLM found figures for last month

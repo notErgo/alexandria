@@ -180,3 +180,106 @@ class TestContextWindowSelector:
 
         for i, w in enumerate(windows):
             assert w['window_index'] == i
+
+
+class TestPerMetricFallbackWindows:
+    """Fix 5: fallback retry loop must call select_windows per-metric, not reuse production_btc windows."""
+
+    def test_fallback_calls_select_windows_with_each_metric(self):
+        """select_windows must be called with hashrate_eh when that metric needs fallback."""
+        from unittest.mock import patch, MagicMock
+        from extractors.extraction_pipeline import extract_report
+
+        db = MagicMock()
+        db.get_metric_rules.return_value = []
+        db.mark_report_extraction_running.return_value = None
+        db.get_chunks_for_report.return_value = []
+
+        report = {
+            'id': 1, 'ticker': 'MARA', 'report_date': '2024-01-31',
+            'source_type': 'ir_press_release',
+            'raw_text': 'produced 750 BTC, hashrate 35.0 EH/s',
+        }
+        registry = MagicMock()
+        registry.metrics = {'production_btc': [], 'hashrate_eh': []}
+
+        # LLM available, batch returns empty (triggers per-metric fallback)
+        mock_llm = MagicMock()
+        mock_llm.extract_batch.return_value = {}
+        mock_llm.extract.return_value = None
+        mock_llm._last_call_meta = {}
+
+        two_windows = [
+            {'text': 'window0 produced 750', 'source': 'sliding', 'window_index': 0},
+            {'text': 'window1 hashrate 35', 'source': 'sliding', 'window_index': 1},
+        ]
+
+        with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}), \
+             patch('extractors.extraction_pipeline._check_llm_available', return_value=True), \
+             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=mock_llm), \
+             patch('extractors.extraction_pipeline._apply_agreement'), \
+             patch('extractors.extraction_pipeline._try_gap_fill'), \
+             patch('extractors.context_window.ContextWindowSelector.select_windows',
+                   return_value=two_windows) as mock_select:
+            extract_report(report, db, registry)
+
+        # After fix, select_windows must be called with 'hashrate_eh' (not just 'production_btc')
+        call_metrics = []
+        for c in mock_select.call_args_list:
+            # select_windows(self, report_id, raw_text, metric, db)
+            args = c.args
+            metric_arg = args[2] if len(args) > 2 else c.kwargs.get('metric')
+            call_metrics.append(metric_arg)
+
+        assert 'hashrate_eh' in call_metrics, (
+            f"Expected 'hashrate_eh' in select_windows calls, got: {call_metrics}"
+        )
+
+    def test_fallback_does_not_use_production_btc_windows_for_hashrate(self):
+        """Before fix, fallback reused production_btc windows; after fix, per-metric windows used."""
+        from unittest.mock import patch, MagicMock, call
+        from extractors.extraction_pipeline import extract_report
+
+        db = MagicMock()
+        db.get_metric_rules.return_value = []
+        db.mark_report_extraction_running.return_value = None
+        db.get_chunks_for_report.return_value = []
+
+        report = {
+            'id': 2, 'ticker': 'MARA', 'report_date': '2024-02-29',
+            'source_type': 'ir_press_release',
+            'raw_text': 'produced 800 BTC, hashrate 40.0 EH/s',
+        }
+        registry = MagicMock()
+        registry.metrics = {'hashrate_eh': []}
+
+        mock_llm = MagicMock()
+        mock_llm.extract_batch.return_value = {}
+        mock_llm.extract.return_value = None
+        mock_llm._last_call_meta = {}
+
+        two_windows = [
+            {'text': 'window0', 'source': 'sliding', 'window_index': 0},
+            {'text': 'window1', 'source': 'sliding', 'window_index': 1},
+        ]
+
+        with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}), \
+             patch('extractors.extraction_pipeline._check_llm_available', return_value=True), \
+             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=mock_llm), \
+             patch('extractors.extraction_pipeline._apply_agreement'), \
+             patch('extractors.extraction_pipeline._try_gap_fill'), \
+             patch('extractors.context_window.ContextWindowSelector.select_windows',
+                   return_value=two_windows) as mock_select:
+            extract_report(report, db, registry)
+
+        # For a hashrate_eh-only registry, the per-metric fallback should call select_windows
+        # with 'hashrate_eh', not just the initial 'production_btc' proxy call.
+        call_metrics = []
+        for c in mock_select.call_args_list:
+            args = c.args
+            metric_arg = args[2] if len(args) > 2 else c.kwargs.get('metric')
+            call_metrics.append(metric_arg)
+
+        assert 'hashrate_eh' in call_metrics, (
+            f"select_windows not called with 'hashrate_eh'. Calls: {call_metrics}"
+        )

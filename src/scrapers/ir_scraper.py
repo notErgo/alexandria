@@ -239,7 +239,7 @@ class IRScraper:
 
             pr_url = canonical_url(item["link"])
             url_hash = hashlib.sha256(pr_url.encode()).hexdigest()
-            if self.db.report_exists_by_url_hash(url_hash):
+            if self.db.report_exists_by_url_hash(url_hash, ticker):
                 log.debug("Already ingested RSS PR by URL: %s %s", ticker, pr_url)
                 continue
 
@@ -333,7 +333,7 @@ class IRScraper:
 
             url = canonical_url(url)
             url_hash = hashlib.sha256(url.encode()).hexdigest()
-            if self.db.report_exists_by_url_hash(url_hash):
+            if self.db.report_exists_by_url_hash(url_hash, ticker):
                 log.debug("Already ingested template PR by URL: %s %s", ticker, url)
                 current = _next_month(current)
                 continue
@@ -432,7 +432,7 @@ class IRScraper:
 
                 full_url = canonical_url(full_url)
                 url_hash = hashlib.sha256(full_url.encode()).hexdigest()
-                if self.db.report_exists_by_url_hash(url_hash):
+                if self.db.report_exists_by_url_hash(url_hash, ticker):
                     log.debug("Already ingested IR PR by URL: %s %s", ticker, full_url)
                     continue
 
@@ -541,7 +541,7 @@ class IRScraper:
                         full_url = canonical_url(href)
 
                     url_hash = hashlib.sha256(full_url.encode()).hexdigest()
-                    if self.db.report_exists_by_url_hash(url_hash):
+                    if self.db.report_exists_by_url_hash(url_hash, ticker):
                         log.debug("Already ingested playwright PR by URL: %s %s", ticker, full_url)
                         continue
 
