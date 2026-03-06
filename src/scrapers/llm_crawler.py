@@ -107,6 +107,8 @@ _FETCH_URL_TOOL = {
     },
 }
 
+_ERROR_PHRASES = ('404 not found', 'page not found', 'access denied', 'not found')
+
 _STORE_DOCUMENT_TOOL = {
     'name': 'store_document',
     'description': (
@@ -146,6 +148,32 @@ _STORE_DOCUMENT_TOOL = {
 }
 
 
+_WEB_SEARCH_TOOL = {
+    'name': 'web_search',
+    'description': (
+        'Search the web for press releases on GlobeNewswire, PRNewswire, '
+        'and other wire services. Returns up to 10 results as title + URL pairs. '
+        'Follow up with fetch_url to retrieve individual pages.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'query': {'type': 'string', 'description': 'Search query string'},
+        },
+        'required': ['query'],
+    },
+}
+
+_WEB_SEARCH_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'web_search',
+        'description': _WEB_SEARCH_TOOL['description'],
+        'parameters': _WEB_SEARCH_TOOL['input_schema'],
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # LLMCrawler
 # ---------------------------------------------------------------------------
@@ -170,6 +198,7 @@ class LLMCrawler:
         self._max_iterations = max_iterations
         self._max_fetch_chars = max_fetch_chars
         self._session = _requests.Session()
+        self._seen_urls: set = set()
         self._session.headers.update({
             'User-Agent': (
                 'Hermeneutic Research Platform/1.0 '
@@ -192,6 +221,20 @@ class LLMCrawler:
             with self._progress._lock:
                 self._progress.pages_fetched += 1
             self._progress.add_log(f'fetch_url OK ({len(text)} chars): {url}')
+            # Extract all hrefs before truncation so pagination links survive the char budget.
+            all_hrefs = []
+            seen_hrefs: set = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href'].strip()
+                if h and h not in seen_hrefs:
+                    seen_hrefs.add(h)
+                    all_hrefs.append(h)
+            if all_hrefs:
+                links_section = 'LINKS ON PAGE:\n' + '\n'.join(all_hrefs)
+                budget = self._max_fetch_chars - len(links_section) - 1
+                if budget > 0:
+                    return text[:budget] + '\n' + links_section
+                return links_section[:self._max_fetch_chars]
             return text[:self._max_fetch_chars]
         except Exception as exc:
             self._progress.add_log(f'fetch_url ERROR {url}: {exc}')
@@ -200,6 +243,25 @@ class LLMCrawler:
     def _tool_store_document(
         self, ticker: str, url: str, text: str, source_type: str
     ) -> dict:
+        text_lower = text.lower()
+        if any(p in text_lower for p in _ERROR_PHRASES):
+            with self._progress._lock:
+                self._progress.docs_skipped += 1
+            self._progress.add_log(f'store_document skipped (error page): {url}')
+            return {'status': 'skipped', 'reason': 'error_page'}
+        if len(text.split()) < 50:
+            with self._progress._lock:
+                self._progress.docs_skipped += 1
+            self._progress.add_log(
+                f'store_document skipped (insufficient_content, {len(text.split())} words): {url}'
+            )
+            return {'status': 'skipped', 'reason': 'insufficient_content'}
+        if url in self._seen_urls:
+            with self._progress._lock:
+                self._progress.docs_skipped += 1
+            self._progress.add_log(f'store_document skipped (intra-crawl duplicate): {url}')
+            return {'status': 'skipped'}
+        self._seen_urls.add(url)
         try:
             payload = {
                 'documents': [{
@@ -228,6 +290,29 @@ class LLMCrawler:
         except Exception as exc:
             self._progress.add_log(f'store_document ERROR {url}: {exc}')
             return {'status': 'error', 'error': str(exc)[:200]}
+
+    def _tool_web_search(self, query: str) -> str:
+        try:
+            resp = self._session.get(
+                'https://html.duckduckgo.com/html/',
+                params={'q': query},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'lxml')
+            results = []
+            for a in soup.select('a.result__a')[:10]:
+                title = a.get_text(strip=True)
+                href = a.get('href', '')
+                if href:
+                    results.append(f'{title}\n{href}')
+            if not results:
+                return 'No results found for query.'
+            self._progress.add_log(f'web_search OK ({len(results)} results): {query}')
+            return '\n\n'.join(results)
+        except Exception as exc:
+            self._progress.add_log(f'web_search ERROR: {exc}')
+            return f'ERROR: {exc}'
 
     # ------------------------------------------------------------------
     # Main loop
@@ -267,7 +352,7 @@ class LLMCrawler:
                 ),
             }
         ]
-        tools = [_FETCH_URL_TOOL, _STORE_DOCUMENT_TOOL]
+        tools = [_FETCH_URL_TOOL, _STORE_DOCUMENT_TOOL, _WEB_SEARCH_TOOL]
         return messages, tools
 
     def _run_anthropic(self, ticker: str, system_prompt: str) -> None:
@@ -309,6 +394,8 @@ class LLMCrawler:
                             inp.get('source_type', 'ir_press_release'),
                         )
                         result_content = json.dumps(result)
+                    elif name == 'web_search':
+                        result_content = self._tool_web_search(inp.get('query', ''))
                     else:
                         result_content = f'Unknown tool: {name}'
                     tool_results.append({
@@ -363,7 +450,7 @@ class LLMCrawler:
                 'parameters': _STORE_DOCUMENT_TOOL['input_schema'],
             },
         }
-        tools = [_FETCH_TOOL_OAI, _STORE_TOOL_OAI]
+        tools = [_FETCH_TOOL_OAI, _STORE_TOOL_OAI, _WEB_SEARCH_TOOL_OAI]
 
         messages = [
             {'role': 'system', 'content': system_prompt},
@@ -410,6 +497,8 @@ class LLMCrawler:
                             inp.get('source_type', 'ir_press_release'),
                         )
                         result_content = json.dumps(result)
+                    elif name == 'web_search':
+                        result_content = self._tool_web_search(inp.get('query', ''))
                     else:
                         result_content = f'Unknown tool: {name}'
                     tool_results.append({
