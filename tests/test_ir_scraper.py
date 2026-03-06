@@ -196,6 +196,7 @@ class TestPlaywrightScraper:
     def _make_scraper(self):
         db = MagicMock()
         db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
         return IRScraper(db=db, session=MagicMock())
 
     def test_missing_ir_url_returns_error(self):

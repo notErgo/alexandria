@@ -679,6 +679,7 @@ def _extract_quarterly_report(
                 'llm_value':      result.value,
                 'regex_value':    None,
                 'agreement_status': 'LLM_ONLY',
+                'report_id':      report_id,
             })
             summary.review_flagged += 1
 

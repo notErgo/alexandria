@@ -220,6 +220,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 17")
                     version = 17
 
+                if version < 18:
+                    self._migrate_v18(conn)
+                    conn.execute("PRAGMA user_version = 18")
+                    version = 18
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -834,6 +839,47 @@ class MinerDB:
             "ON reports(source_url_hash) WHERE source_url_hash IS NOT NULL"
         )
 
+    def _migrate_v18(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 17 to version 18.
+
+        Upgrades the non-unique idx_reports_url_hash to a UNIQUE partial index
+        on (ticker, source_url_hash) WHERE source_url_hash IS NOT NULL.
+
+        Before creating the index, deduplicates any existing rows that share
+        the same (ticker, source_url_hash) by keeping the highest-id row and
+        deleting all dependent data for the discarded duplicates.
+        """
+        # Deduplicate existing rows grouped by (ticker, source_url_hash)
+        dup_rows = conn.execute(
+            """SELECT ticker, source_url_hash, MAX(id) AS keep_id
+               FROM reports
+               WHERE source_url_hash IS NOT NULL
+               GROUP BY ticker, source_url_hash
+               HAVING COUNT(*) > 1"""
+        ).fetchall()
+        for ticker, url_hash, keep_id in dup_rows:
+            victims = conn.execute(
+                """SELECT id FROM reports
+                   WHERE ticker=? AND source_url_hash=? AND id != ?""",
+                (ticker, url_hash, keep_id),
+            ).fetchall()
+            for (victim_id,) in victims:
+                conn.execute("DELETE FROM review_queue WHERE report_id=?", (victim_id,))
+                conn.execute("DELETE FROM raw_extractions WHERE report_id=?", (victim_id,))
+                conn.execute("DELETE FROM data_points WHERE report_id=?", (victim_id,))
+                conn.execute("DELETE FROM document_chunks WHERE report_id=?", (victim_id,))
+                conn.execute("UPDATE asset_manifest SET report_id=NULL WHERE report_id=?", (victim_id,))
+                conn.execute("DELETE FROM reports WHERE id=?", (victim_id,))
+
+        # Drop the old non-unique index (may have been created under different name or scope)
+        conn.execute("DROP INDEX IF EXISTS idx_reports_url_hash")
+
+        # Create a UNIQUE partial index scoped to (ticker, source_url_hash)
+        conn.execute(
+            "CREATE UNIQUE INDEX idx_reports_url_hash "
+            "ON reports(ticker, source_url_hash) WHERE source_url_hash IS NOT NULL"
+        )
+
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
 
@@ -1422,15 +1468,20 @@ class MinerDB:
             if row is None:
                 return 0
             report_id = row[0]
-            # Collect all periods covered by this report's data_points BEFORE deleting them.
-            # review_queue has no report_id column; items are linked by ticker+period.
+            # Primary scoped delete: remove review_queue rows that reference this report directly.
+            conn.execute(
+                "DELETE FROM review_queue WHERE report_id=?", (report_id,)
+            )
+            # Fallback for pre-migration orphans with NULL report_id: clean up by ticker+period
+            # but only where report_id IS NULL to avoid touching other reports' rows.
             period_rows = conn.execute(
                 "SELECT DISTINCT period FROM data_points WHERE report_id=?", (report_id,)
             ).fetchall()
             periods = [r[0] for r in period_rows] or [report_date]
             for p in periods:
                 conn.execute(
-                    "DELETE FROM review_queue WHERE ticker=? AND period=?", (ticker, p)
+                    "DELETE FROM review_queue WHERE report_id IS NULL AND ticker=? AND period=?",
+                    (ticker, p),
                 )
             conn.execute("UPDATE asset_manifest SET report_id=NULL WHERE report_id=?", (report_id,))
             conn.execute("DELETE FROM raw_extractions WHERE report_id=?", (report_id,))
@@ -1977,7 +2028,7 @@ class MinerDB:
                 raise ValueError(f"Review item {id} not found")
             item = dict(row)
             dp = {
-                "report_id": None,
+                "report_id": item.get("report_id"),
                 "ticker": item["ticker"],
                 "period": item["period"],
                 "metric": item["metric"],
@@ -2021,7 +2072,7 @@ class MinerDB:
                 raise ValueError(f"Review item {id} not found")
             item = dict(row)
             dp = {
-                "report_id": None,
+                "report_id": item.get("report_id"),
                 "ticker": item["ticker"],
                 "period": item["period"],
                 "metric": item["metric"],

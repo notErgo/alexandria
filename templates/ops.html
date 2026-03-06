@@ -111,6 +111,8 @@
   <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5" data-spec-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
   <button class="ops-tab" data-pane="guide" data-ui-id="2.6">Pipeline Guide</button>
   <button class="ops-tab" data-pane="research" data-ui-id="2.7">Research</button>
+  <button class="ops-tab" data-pane="settings" data-ui-id="2.8">Settings</button>
+  <button class="ops-tab" data-pane="qc" data-ui-id="2.9">QC / Pipeline</button>
 </div>
 
 <!-- ── Companies tab ──────────────────────────────────────────────────── -->
@@ -832,7 +834,7 @@
         </tr>
         <tr>
           <td><code>scraper_mode</code></td>
-          <td>Controls how the IR scraper fetches live press releases for a company. One of: <code>rss</code> (parse RSS feed), <code>index</code> (scrape HTML listing page), <code>template</code> (generate URLs from a pattern), <code>skip</code> (do not scrape). EDGAR is a separate, always-on channel if a CIK is configured.</td>
+          <td>Controls how the IR scraper fetches live press releases for a company. One of: <code>rss</code> (parse RSS feed), <code>index</code> (scrape HTML listing page), <code>template</code> (generate URLs from a pattern), <code>playwright</code> (headless browser for JS-rendered pages), <code>skip</code> (do not scrape). EDGAR is a separate, always-on channel if a CIK is configured.</td>
         </tr>
         <tr>
           <td><code>filing_regime</code></td>
@@ -840,7 +842,7 @@
         </tr>
         <tr>
           <td>Agreement engine</td>
-          <td>After extraction, compares the LLM value and regex value for each metric. If they agree within 2%, the regex value goes directly to <code>data_points</code>. If they disagree or only LLM found a value, the item goes to <code>review_queue</code>.</td>
+          <td>After extraction, compares the LLM value and regex value for each metric. If they agree within a configurable per-metric threshold (set in Metric Schema), the regex value goes directly to <code>data_points</code>. If they disagree or only LLM found a value, the item goes to <code>review_queue</code>.</td>
         </tr>
         <tr>
           <td>Analyst protection</td>
@@ -866,8 +868,30 @@
   </div>
 
   <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-    Triggers an Anthropic-powered agentic crawl for each company. The model navigates IR sites and wire services, fetches press releases, and stores them via <code>/api/ingest/raw</code>. Progress updates every 2 seconds while running.
+    LLM-driven agentic crawl for each company. The model navigates IR sites and wire services, fetches press releases, and stores them via <code>/api/ingest/raw</code>. Progress updates every 2 seconds while running.
   </p>
+
+  <!-- Model selector -->
+  <div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:0.75rem;flex-wrap:wrap">
+    <div>
+      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model provider</label>
+      <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem">
+        <option value="ollama" selected>Local Qwen (Ollama)</option>
+        <option value="anthropic">Anthropic API</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Prompt editor -->
+  <div style="margin-bottom:0.75rem">
+    <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
+      Crawl prompt (editable before launch)
+      <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
+    </label>
+    <textarea id="crawl-prompt-editor" rows="8"
+      style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
+      placeholder="Select a ticker below or click Crawl All to load the prompt..."></textarea>
+  </div>
 
   <!-- Per-ticker selector -->
   <div id="research-ticker-bar" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
@@ -884,13 +908,71 @@
     <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:320px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
   </div>
 </div>
+
+<!-- ── Settings tab ────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-settings" data-ui-id="2.8">
+  <h2 style="font-size:1rem;margin:0 0 0.75rem">Settings</h2>
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
+    Runtime overrides for extraction thresholds, LLM parameters, crawl limits, and pipeline paths.
+    Unset keys use hardcoded defaults. Changes take effect on the next pipeline run.
+  </p>
+  <div id="settings-groups"></div>
+</div>
+
+<!-- ── QC / Pipeline tab ───────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-qc" data-ui-id="2.9">
+  <h2 style="font-size:1rem;margin:0 0 0.75rem">QC / Pipeline</h2>
+
+  <!-- QC Snapshot -->
+  <div style="margin-bottom:1.5rem">
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+      <h3 style="font-size:0.9rem;margin:0">QC Snapshots</h3>
+      <button class="btn btn-sm btn-secondary" onclick="captureQCSnapshot()">Capture Snapshot</button>
+      <span id="qc-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.5rem">
+      Captures precision/recall metrics for the current extraction state.
+    </p>
+    <div id="qc-table-wrap" style="overflow-x:auto">
+      <table style="width:100%;font-size:0.8rem;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--theme-border)">
+            <th style="text-align:left;padding:0.2rem 0.5rem">Date</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Auto-accepted</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Approved</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Rejected</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Edited</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Precision est.</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Recall est.</th>
+          </tr>
+        </thead>
+        <tbody id="qc-table-body">
+          <tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Pipeline controls -->
+  <div>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+      <h3 style="font-size:0.9rem;margin:0">Pipeline Controls</h3>
+      <span id="pipeline-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+      <button class="btn btn-sm btn-secondary" onclick="runOvernightScout()">Run Overnight Scout</button>
+      <button class="btn btn-sm btn-secondary" onclick="runFullPipeline()">Run Full Pipeline</button>
+    </div>
+    <div id="pipeline-status" style="font-size:0.8rem;color:var(--theme-text-muted)"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/js/doc_panel.js"></script>
 <script>
 // ── Tab routing ─────────────────────────────────────────────────────────────
-const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review', 'guide', 'research'];
+const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review', 'guide', 'research', 'settings', 'qc'];
 let _activeTab = null;
 
 function activateTab(name) {
@@ -918,6 +1000,8 @@ function activateTab(name) {
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
   if (name === 'research') loadResearch();
+  if (name === 'settings') loadSettings();
+  if (name === 'qc') _loadQCTable();
 }
 
 // Tab button click — event delegation wired once (Anti-pattern #25)
@@ -2793,7 +2877,7 @@ function _buildResearchTickerBar() {
     btn.className = 'btn btn-sm btn-secondary';
     btn.textContent = t;
     btn.title = 'Crawl ' + t + ' only';
-    btn.onclick = function() { startCrawlTickers([t]); };
+    btn.onclick = async function() { await loadCrawlPrompt(t); startCrawlTickers([t]); };
     bar.appendChild(btn);
   });
 }
@@ -2805,17 +2889,38 @@ async function startCrawlAll() {
   await startCrawlTickers(tickers);
 }
 
+async function loadCrawlPrompt(ticker) {
+  const sourceEl = document.getElementById('crawl-prompt-source');
+  try {
+    const resp = await fetch('/api/crawl/prompt/' + ticker);
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      document.getElementById('crawl-prompt-editor').value = data.data.prompt;
+      if (sourceEl) sourceEl.textContent = '(' + (data.data.source === 'ticker_file' ? ticker + '_crawl.md' : 'master template') + ')';
+    } else {
+      document.getElementById('crawl-prompt-editor').value = '';
+      if (sourceEl) sourceEl.textContent = '(no prompt file found)';
+    }
+  } catch (err) {
+    if (sourceEl) sourceEl.textContent = '';
+  }
+}
+
 async function startCrawlTickers(tickers) {
   if (!tickers.length) {
     setResearchMsg('No active companies to crawl', true);
     return;
   }
-  setResearchMsg('Starting crawl for ' + tickers.join(', ') + '…');
+  const provider = document.getElementById('crawl-provider')?.value || 'ollama';
+  const prompt = document.getElementById('crawl-prompt-editor')?.value || null;
+  setResearchMsg('Starting crawl for ' + tickers.join(', ') + ' via ' + provider + '…');
   try {
+    const body = {tickers: tickers, provider: provider};
+    if (prompt && prompt.trim()) body.prompt = prompt.trim();
     const resp = await fetch('/api/crawl/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({tickers: tickers}),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Start failed');
@@ -2916,6 +3021,243 @@ function setResearchMsg(text, isError) {
   if (!el) return;
   el.textContent = text;
   el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-muted)';
+}
+
+// ── Settings tab ─────────────────────────────────────────────────────────────
+const _SETTINGS_GROUPS = [
+  {
+    label: 'Extraction',
+    keys: [
+      {key: 'confidence_review_threshold', label: 'Confidence review threshold', type: 'number'},
+      {key: 'agreement_threshold_default', label: 'Agreement threshold (default)', type: 'number'},
+      {key: 'outlier_min_history', label: 'Outlier min history', type: 'number'},
+      {key: 'context_char_budget', label: 'Context char budget (monthly)', type: 'number'},
+      {key: 'context_char_budget_quarterly', label: 'Context char budget (quarterly)', type: 'number'},
+      {key: 'context_max_windows', label: 'Context max windows', type: 'number'},
+      {key: 'context_fallback_confidence', label: 'Context fallback confidence', type: 'number'},
+    ],
+  },
+  {
+    label: 'LLM',
+    keys: [
+      {key: 'ollama_model', label: 'Ollama model', type: 'text'},
+      {key: 'llm_timeout_seconds', label: 'LLM timeout (seconds)', type: 'number'},
+      {key: 'llm_batch_preamble', label: 'Monthly batch preamble', type: 'textarea'},
+      {key: 'llm_quarterly_batch_preamble', label: 'Quarterly batch preamble', type: 'textarea'},
+      {key: 'llm_annual_batch_preamble', label: 'Annual batch preamble', type: 'textarea'},
+      {key: 'keyword_dictionary', label: 'Keyword dictionary (JSON)', type: 'textarea'},
+    ],
+  },
+  {
+    label: 'Crawl',
+    keys: [
+      {key: 'crawl_max_iterations', label: 'Max iterations per ticker', type: 'number'},
+      {key: 'crawl_max_fetch_chars', label: 'Max fetch chars per page', type: 'number'},
+    ],
+  },
+  {
+    label: 'Pipeline',
+    keys: [
+      {key: 'pipeline_output_dir', label: 'Scout output directory', type: 'text'},
+    ],
+  },
+];
+
+let _settingsLoaded = false;
+let _settingsDefaults = {};
+let _settingsValues = {};
+
+async function loadSettings() {
+  if (_settingsLoaded) return;
+  _settingsLoaded = true;
+  // Fetch current values
+  try {
+    const resp = await fetch('/api/config');
+    if (resp.ok) {
+      const data = await resp.json();
+      (data.data || []).forEach(function(row) { _settingsValues[row.key] = row.value; });
+    }
+  } catch (_e) {}
+  _renderSettingsGroups();
+}
+
+async function _settingsSaveGroup(groupLabel) {
+  const group = _SETTINGS_GROUPS.find(function(g) { return g.label === groupLabel; });
+  if (!group) return;
+  const saves = [];
+  for (const {key} of group.keys) {
+    const el = document.getElementById('setting-' + key);
+    if (!el) continue;
+    const val = el.value.trim();
+    if (val === '') continue;
+    saves.push(fetch('/api/config/' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: val}),
+    }));
+  }
+  try {
+    await Promise.all(saves);
+    document.getElementById('settings-msg-' + groupLabel).textContent = 'Saved.';
+    setTimeout(function() {
+      const el = document.getElementById('settings-msg-' + groupLabel);
+      if (el) el.textContent = '';
+    }, 2000);
+  } catch (err) {
+    document.getElementById('settings-msg-' + groupLabel).textContent = 'Error: ' + String(err);
+  }
+}
+
+function _renderSettingsGroups() {
+  const container = document.getElementById('settings-groups');
+  if (!container) return;
+  container.innerHTML = '';
+  _SETTINGS_GROUPS.forEach(function(group) {
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:1.5rem';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem';
+    const title = document.createElement('h3');
+    title.style.cssText = 'font-size:0.85rem;margin:0';
+    title.textContent = group.label;
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-sm btn-primary';
+    saveBtn.textContent = 'Save ' + group.label;
+    saveBtn.onclick = function() { _settingsSaveGroup(group.label); };
+    const msg = document.createElement('span');
+    msg.id = 'settings-msg-' + group.label;
+    msg.style.cssText = 'font-size:0.8rem;color:var(--theme-text-muted)';
+    header.appendChild(title);
+    header.appendChild(saveBtn);
+    header.appendChild(msg);
+    section.appendChild(header);
+
+    group.keys.forEach(function(item) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:0.5rem;align-items:flex-start;margin-bottom:0.4rem';
+      const lbl = document.createElement('label');
+      lbl.htmlFor = 'setting-' + item.key;
+      lbl.style.cssText = 'width:240px;font-size:0.8rem;flex-shrink:0;padding-top:0.2rem';
+      lbl.textContent = item.label;
+      let input;
+      if (item.type === 'textarea') {
+        input = document.createElement('textarea');
+        input.rows = 4;
+        input.style.cssText = 'flex:1;font-family:monospace;font-size:0.72rem;padding:0.2rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+      } else {
+        input = document.createElement('input');
+        input.type = item.type;
+        input.style.cssText = 'width:160px;font-size:0.8rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+      }
+      input.id = 'setting-' + item.key;
+      input.value = _settingsValues[item.key] || '';
+      input.placeholder = 'default';
+      row.appendChild(lbl);
+      row.appendChild(input);
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  });
+}
+
+// ── QC / Pipeline tab ─────────────────────────────────────────────────────────
+let _pipelinePollTimer = null;
+
+async function captureQCSnapshot() {
+  document.getElementById('qc-msg').textContent = 'Capturing…';
+  try {
+    const resp = await fetch('/api/qc/snapshot', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    document.getElementById('qc-msg').textContent = 'Snapshot captured.';
+    await _loadQCTable();
+  } catch (err) {
+    document.getElementById('qc-msg').textContent = 'Error: ' + String(err);
+  }
+}
+
+async function _loadQCTable() {
+  try {
+    const resp = await fetch('/api/qc/summary');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const rows = data.data || [];
+    const tbody = document.getElementById('qc-table-body');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">No snapshots yet. Click "Capture Snapshot" to create the first one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(r) {
+      return '<tr>' +
+        '<td style="padding:0.2rem 0.5rem">' + escapeHtml(r.run_date || '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.auto_accepted ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_approved ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_rejected ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_edited ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.precision_est != null ? (r.precision_est * 100).toFixed(1) + '%' : '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.recall_est != null ? (r.recall_est * 100).toFixed(1) + '%' : '') + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch (_e) {}
+}
+
+let _pipelineRunId = null;
+
+async function runOvernightScout() {
+  document.getElementById('pipeline-msg').textContent = 'Starting scout…';
+  try {
+    const resp = await fetch('/api/pipeline/overnight/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scout_mode: 'force'}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    _pipelineRunId = data.data?.run_id;
+    document.getElementById('pipeline-msg').textContent = 'Scout started (run ' + _pipelineRunId + ').';
+    _startPipelinePoll();
+  } catch (err) {
+    document.getElementById('pipeline-msg').textContent = 'Error: ' + String(err);
+  }
+}
+
+async function runFullPipeline() {
+  document.getElementById('pipeline-msg').textContent = 'Starting pipeline…';
+  try {
+    const resp = await fetch('/api/pipeline/overnight/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    _pipelineRunId = data.data?.run_id;
+    document.getElementById('pipeline-msg').textContent = 'Pipeline started (run ' + _pipelineRunId + ').';
+    _startPipelinePoll();
+  } catch (err) {
+    document.getElementById('pipeline-msg').textContent = 'Error: ' + String(err);
+  }
+}
+
+function _startPipelinePoll() {
+  if (_pipelinePollTimer) clearInterval(_pipelinePollTimer);
+  _pipelinePollTimer = setInterval(_pollPipelineStatus, 3000);
+}
+
+async function _pollPipelineStatus() {
+  if (!_pipelineRunId) return;
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const status = data.data?.status || '';
+    document.getElementById('pipeline-status').textContent = status ? ('Status: ' + status) : '';
+    if (status && status !== 'running') {
+      clearInterval(_pipelinePollTimer);
+      _pipelinePollTimer = null;
+    }
+  } catch (_e) {}
 }
 </script>
 {% endblock %}

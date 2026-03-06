@@ -554,7 +554,7 @@ def start_overnight_pipeline():
         'scout_mode': str(body.get('scout_mode', 'auto')),
         'scout_metric': str(body.get('scout_metric', 'production_btc')),
         'scout_keywords': _normalize_keywords(body.get('scout_keywords')),
-        'scout_output_dir': str(body.get('scout_output_dir', '/private/tmp/claude-501/miners_progress')),
+        'scout_output_dir': str(body.get('scout_output_dir') or db.get_config('pipeline_output_dir') or '/private/tmp/claude-501/miners_progress'),
         'scout_max_age_hours': int(body.get('scout_max_age_hours', 168)),
         'require_scout_success': bool(body.get('require_scout_success', False)),
         'scout_as_of_date': body.get('scout_as_of_date'),

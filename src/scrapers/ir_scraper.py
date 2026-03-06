@@ -550,6 +550,14 @@ class IRScraper:
                     text = BeautifulSoup(pr_html, "lxml").get_text(separator=" ", strip=True)
                     period_str = period.strftime("%Y-%m-%d")
                     content_hash = simhash_text(text[:5000])
+                    dupes = self.db.find_near_duplicates(content_hash, ticker)
+                    if dupes:
+                        log.debug(
+                            "Near-duplicate content detected for %s, skipping playwright insert "
+                            "(matched report id=%s)",
+                            ticker, dupes[0]["id"],
+                        )
+                        continue
                     report = {
                         "ticker": ticker,
                         "report_date": period_str,

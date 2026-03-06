@@ -19,6 +19,29 @@ _DEFAULT_KEYWORDS = ['produced', 'mined', 'btc', 'bitcoin']
 _QUARTERLY_SOURCES = {'edgar_10q', 'edgar_10k', 'edgar_6k', 'edgar_20f', 'edgar_40f'}
 
 _MAX_WINDOWS = 3
+_FALLBACK_CONFIDENCE = 0.5
+
+
+def _get_max_windows(db=None) -> int:
+    if db is not None:
+        try:
+            val = db.get_config('context_max_windows')
+            if val:
+                return int(val)
+        except Exception:
+            pass
+    return _MAX_WINDOWS
+
+
+def _get_fallback_confidence(db=None) -> float:
+    if db is not None:
+        try:
+            val = db.get_config('context_fallback_confidence')
+            if val:
+                return float(val)
+        except Exception:
+            pass
+    return _FALLBACK_CONFIDENCE
 
 
 def _score_chunk(text_lower: str, keywords: list) -> int:
@@ -47,11 +70,12 @@ class ContextWindowSelector:
         except Exception:
             chunks = []
 
+        max_windows = _get_max_windows(db)
         if chunks:
-            return self._chunk_windows(chunks, metric)
-        return self._sliding_windows(raw_text)
+            return self._chunk_windows(chunks, metric, max_windows)
+        return self._sliding_windows(raw_text, max_windows)
 
-    def _chunk_windows(self, chunks: list, metric: str) -> list:
+    def _chunk_windows(self, chunks: list, metric: str, max_windows: int = _MAX_WINDOWS) -> list:
         """Build windows from document chunks, scored by keyword density."""
         keywords = _METRIC_KEYWORDS.get(metric, _DEFAULT_KEYWORDS)
         budget = self.char_budget
@@ -95,7 +119,7 @@ class ContextWindowSelector:
         fallback_parts = []
         fallback_len = 0
         for chunk in remaining_chunks:
-            if len(windows) >= _MAX_WINDOWS:
+            if len(windows) >= max_windows:
                 break
             chunk_text = chunk.get('text', '')
             if fallback_len + len(chunk_text) <= budget:
@@ -115,7 +139,7 @@ class ContextWindowSelector:
                 fallback_parts = []
                 fallback_len = 0
 
-        if fallback_parts and len(windows) < _MAX_WINDOWS:
+        if fallback_parts and len(windows) < max_windows:
             fb_text = '\n\n'.join(fallback_parts)[:budget]
             windows.append({
                 'text': fb_text,
@@ -125,7 +149,7 @@ class ContextWindowSelector:
 
         return windows
 
-    def _sliding_windows(self, raw_text: str) -> list:
+    def _sliding_windows(self, raw_text: str, max_windows: int = _MAX_WINDOWS) -> list:
         """Build overlapping sliding character windows over raw_text."""
         budget = self.char_budget
         text_len = len(raw_text)
@@ -154,7 +178,7 @@ class ContextWindowSelector:
                 'window_index': 1,
             })
 
-        if len(windows) >= _MAX_WINDOWS:
+        if len(windows) >= max_windows:
             return windows
 
         # Window 2: next non-overlapping segment after window 1
@@ -169,8 +193,9 @@ class ContextWindowSelector:
 
         return windows
 
-    def needs_fallback(self, llm_result) -> bool:
+    def needs_fallback(self, llm_result, db=None) -> bool:
         """Return True if the LLM result is absent or low-confidence."""
         if llm_result is None:
             return True
-        return llm_result.confidence < 0.5
+        threshold = _get_fallback_confidence(db)
+        return llm_result.confidence < threshold

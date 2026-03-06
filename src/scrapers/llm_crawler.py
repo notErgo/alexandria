@@ -35,7 +35,7 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 _CRAWL_PROMPTS_DIR = _REPO_ROOT / 'scripts' / 'crawl_prompts'
 _INGEST_RAW_URL = 'http://127.0.0.1:5004/api/ingest/raw'
 
-_MAX_FETCH_CHARS = 12_000   # chars returned to Claude per page fetch
+_MAX_FETCH_CHARS = 12_000   # chars returned to model per page fetch
 _MAX_ITERATIONS  = 80       # safety ceiling per ticker
 
 # ---------------------------------------------------------------------------
@@ -152,10 +152,23 @@ _STORE_DOCUMENT_TOOL = {
 class LLMCrawler:
     """Executes an agentic crawl for a single ticker."""
 
-    def __init__(self, progress: CrawlProgress, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        progress: CrawlProgress,
+        api_key: str,
+        model: str,
+        provider: str = 'ollama',
+        prompt_override: Optional[str] = None,
+        max_iterations: int = _MAX_ITERATIONS,
+        max_fetch_chars: int = _MAX_FETCH_CHARS,
+    ) -> None:
         self._progress = progress
         self._api_key = api_key
         self._model = model
+        self._provider = provider
+        self._prompt_override = prompt_override
+        self._max_iterations = max_iterations
+        self._max_fetch_chars = max_fetch_chars
         self._session = _requests.Session()
         self._session.headers.update({
             'User-Agent': (
@@ -179,7 +192,7 @@ class LLMCrawler:
             with self._progress._lock:
                 self._progress.pages_fetched += 1
             self._progress.add_log(f'fetch_url OK ({len(text)} chars): {url}')
-            return text[:_MAX_FETCH_CHARS]
+            return text[:self._max_fetch_chars]
         except Exception as exc:
             self._progress.add_log(f'fetch_url ERROR {url}: {exc}')
             return f'ERROR: {exc}'
@@ -220,22 +233,30 @@ class LLMCrawler:
     # Main loop
     # ------------------------------------------------------------------
     def run(self) -> None:
-        import anthropic
-
         ticker = self._progress.ticker
-        prompt_path = _CRAWL_PROMPTS_DIR / f'{ticker}_crawl.md'
-        if not prompt_path.exists():
-            self._progress.status = 'failed'
-            self._progress.error = f'No crawl prompt found at {prompt_path}'
-            self._progress.add_log(f'ERROR: missing crawl prompt {prompt_path}')
-            return
 
-        system_prompt = prompt_path.read_text()
+        # Resolve system prompt: override takes precedence over per-ticker file.
+        if self._prompt_override:
+            system_prompt = self._prompt_override
+        else:
+            prompt_path = _CRAWL_PROMPTS_DIR / f'{ticker}_crawl.md'
+            if not prompt_path.exists():
+                self._progress.status = 'failed'
+                self._progress.error = f'No crawl prompt found at {prompt_path}'
+                self._progress.add_log(f'ERROR: missing crawl prompt {prompt_path}')
+                return
+            system_prompt = prompt_path.read_text()
+
         self._progress.status = 'running'
         self._progress.started_at = datetime.now(timezone.utc).isoformat()
-        self._progress.add_log(f'Starting crawl for {ticker}')
+        self._progress.add_log(f'Starting crawl for {ticker} via {self._provider}')
 
-        client = anthropic.Anthropic(api_key=self._api_key)
+        if self._provider == 'ollama':
+            self._run_ollama(ticker, system_prompt)
+        else:
+            self._run_anthropic(ticker, system_prompt)
+
+    def _build_messages_and_tools(self, ticker: str, system_prompt: str):
         messages = [
             {
                 'role': 'user',
@@ -247,9 +268,16 @@ class LLMCrawler:
             }
         ]
         tools = [_FETCH_URL_TOOL, _STORE_DOCUMENT_TOOL]
+        return messages, tools
+
+    def _run_anthropic(self, ticker: str, system_prompt: str) -> None:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self._api_key)
+        messages, tools = self._build_messages_and_tools(ticker, system_prompt)
 
         try:
-            for iteration in range(_MAX_ITERATIONS):
+            for iteration in range(self._max_iterations):
                 self._progress.add_log(f'API call #{iteration + 1}')
                 response = client.messages.create(
                     model=self._model,
@@ -259,14 +287,12 @@ class LLMCrawler:
                     tools=tools,
                 )
 
-                # Append assistant turn
                 messages.append({'role': 'assistant', 'content': response.content})
 
                 if response.stop_reason == 'end_turn':
                     self._progress.add_log('Model signaled end_turn — crawl complete')
                     break
 
-                # Collect tool_use blocks and handle them
                 tool_results = []
                 for block in response.content:
                     if block.type != 'tool_use':
@@ -292,14 +318,13 @@ class LLMCrawler:
                     })
 
                 if not tool_results:
-                    # No tool calls but not end_turn — treat as done
                     self._progress.add_log('No tool calls in response — stopping')
                     break
 
                 messages.append({'role': 'user', 'content': tool_results})
 
             else:
-                self._progress.add_log(f'Reached iteration limit ({_MAX_ITERATIONS})')
+                self._progress.add_log(f'Reached iteration limit ({self._max_iterations})')
 
             self._progress.status = 'complete'
 
@@ -311,15 +336,126 @@ class LLMCrawler:
         finally:
             self._progress.finished_at = datetime.now(timezone.utc).isoformat()
 
+    def _run_ollama(self, ticker: str, system_prompt: str) -> None:
+        """Run the agentic loop using Ollama's OpenAI-compatible tool-use endpoint."""
+        from openai import OpenAI
+
+        from config import LLM_BASE_URL
+
+        client = OpenAI(
+            api_key='ollama',
+            base_url=f'{LLM_BASE_URL}/v1',
+        )
+
+        _FETCH_TOOL_OAI = {
+            'type': 'function',
+            'function': {
+                'name': 'fetch_url',
+                'description': _FETCH_URL_TOOL['description'],
+                'parameters': _FETCH_URL_TOOL['input_schema'],
+            },
+        }
+        _STORE_TOOL_OAI = {
+            'type': 'function',
+            'function': {
+                'name': 'store_document',
+                'description': _STORE_DOCUMENT_TOOL['description'],
+                'parameters': _STORE_DOCUMENT_TOOL['input_schema'],
+            },
+        }
+        tools = [_FETCH_TOOL_OAI, _STORE_TOOL_OAI]
+
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {
+                'role': 'user',
+                'content': (
+                    f'Execute the crawl plan for {ticker}. '
+                    'Use fetch_url to navigate pages, then store_document for each press release you find. '
+                    'When you have collected all available documents, stop.'
+                ),
+            },
+        ]
+
+        try:
+            for iteration in range(self._max_iterations):
+                self._progress.add_log(f'Ollama API call #{iteration + 1}')
+                response = client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice='auto',
+                )
+                msg = response.choices[0].message
+                messages.append(msg)
+
+                if response.choices[0].finish_reason == 'stop' or not msg.tool_calls:
+                    self._progress.add_log('Model signaled stop — crawl complete')
+                    break
+
+                tool_results = []
+                for tc in msg.tool_calls:
+                    name = tc.function.name
+                    try:
+                        inp = json.loads(tc.function.arguments)
+                    except Exception:
+                        inp = {}
+                    if name == 'fetch_url':
+                        result_content = self._tool_fetch_url(inp.get('url', ''))
+                    elif name == 'store_document':
+                        result = self._tool_store_document(
+                            inp.get('ticker', ticker),
+                            inp.get('url', ''),
+                            inp.get('text', ''),
+                            inp.get('source_type', 'ir_press_release'),
+                        )
+                        result_content = json.dumps(result)
+                    else:
+                        result_content = f'Unknown tool: {name}'
+                    tool_results.append({
+                        'role': 'tool',
+                        'tool_call_id': tc.id,
+                        'content': result_content,
+                    })
+
+                messages.extend(tool_results)
+
+            else:
+                self._progress.add_log(f'Reached iteration limit ({self._max_iterations})')
+
+            self._progress.status = 'complete'
+
+        except Exception as exc:
+            log.error('Ollama crawl failed for %s: %s', ticker, exc, exc_info=True)
+            self._progress.status = 'failed'
+            self._progress.error = str(exc)[:300]
+            self._progress.add_log(f'FATAL: {exc}')
+        finally:
+            self._progress.finished_at = datetime.now(timezone.utc).isoformat()
+
 
 # ---------------------------------------------------------------------------
 # Module-level API
 # ---------------------------------------------------------------------------
-def _spawn_crawl_thread(progress: CrawlProgress, api_key: str, model: str) -> None:
+def _spawn_crawl_thread(
+    progress: CrawlProgress,
+    api_key: str,
+    model: str,
+    provider: str = 'ollama',
+    prompt_override: Optional[str] = None,
+    max_iterations: int = _MAX_ITERATIONS,
+    max_fetch_chars: int = _MAX_FETCH_CHARS,
+) -> None:
     """Spawn a daemon thread that acquires the semaphore and runs the crawl."""
     def _worker():
         with _SEMAPHORE:
-            crawler = LLMCrawler(progress, api_key, model)
+            crawler = LLMCrawler(
+                progress, api_key, model,
+                provider=provider,
+                prompt_override=prompt_override,
+                max_iterations=max_iterations,
+                max_fetch_chars=max_fetch_chars,
+            )
             crawler.run()
 
     t = threading.Thread(target=_worker, daemon=True, name=f'crawl-{progress.ticker}')
@@ -329,12 +465,54 @@ def _spawn_crawl_thread(progress: CrawlProgress, api_key: str, model: str) -> No
 def start_crawl(
     tickers: list,
     task_id: Optional[str] = None,
+    provider: Optional[str] = None,
+    prompt: Optional[str] = None,
+    db=None,
 ) -> dict:
     """Create CrawlProgress entries, register the task, and spawn worker threads.
 
     Returns dict[ticker -> CrawlProgress].
+
+    provider: 'ollama' (default) or 'anthropic'.
+    prompt: optional system prompt override; overrides per-ticker file.
+    db: optional MinerDB instance for reading config_settings (crawl_max_iterations, etc.).
     """
-    from config import ANTHROPIC_API_KEY, CRAWL_MODEL
+    from config import ANTHROPIC_API_KEY, CRAWL_MODEL, CRAWL_PROVIDER, LLM_MODEL_ID
+
+    if provider is None:
+        provider = CRAWL_PROVIDER
+
+    # Read configurable limits from DB if available, fall back to module constants.
+    max_iterations = _MAX_ITERATIONS
+    max_fetch_chars = _MAX_FETCH_CHARS
+    if db is not None:
+        try:
+            v = db.get_config('crawl_max_iterations')
+            if v:
+                max_iterations = int(v)
+        except Exception:
+            pass
+        try:
+            v = db.get_config('crawl_max_fetch_chars')
+            if v:
+                max_fetch_chars = int(v)
+        except Exception:
+            pass
+
+    # Model selection: Ollama uses the local LLM; Anthropic uses CRAWL_MODEL.
+    if provider == 'ollama':
+        api_key = ''
+        model = LLM_MODEL_ID
+        if db is not None:
+            try:
+                m = db.get_config('ollama_model')
+                if m:
+                    model = m
+            except Exception:
+                pass
+    else:
+        api_key = ANTHROPIC_API_KEY
+        model = CRAWL_MODEL
 
     if task_id is None:
         task_id = str(uuid.uuid4())
@@ -344,14 +522,20 @@ def start_crawl(
         ticker = ticker.upper()
         progress = CrawlProgress(ticker)
         per_ticker[ticker] = progress
-        _spawn_crawl_thread(progress, ANTHROPIC_API_KEY, CRAWL_MODEL)
+        _spawn_crawl_thread(
+            progress, api_key, model,
+            provider=provider,
+            prompt_override=prompt,
+            max_iterations=max_iterations,
+            max_fetch_chars=max_fetch_chars,
+        )
 
     with _TASKS_LOCK:
         _TASKS[task_id] = per_ticker
 
     log.info(
-        'event=crawl_started task_id=%s tickers=%s',
-        task_id, ','.join(per_ticker),
+        'event=crawl_started task_id=%s tickers=%s provider=%s',
+        task_id, ','.join(per_ticker), provider,
     )
     return per_ticker
 

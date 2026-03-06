@@ -83,6 +83,7 @@ LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s;
 # Set ANTHROPIC_API_KEY env var before running crawl jobs.
 ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
 CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
+CRAWL_PROVIDER: str = _os.environ.get("CRAWL_PROVIDER", "ollama")
 
 # Context window budgets for ContextWindowSelector
 CONTEXT_CHAR_BUDGET = 8_000          # monthly press releases

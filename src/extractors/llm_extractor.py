@@ -848,6 +848,14 @@ class LLMExtractor:
         _QUARTERLY_PROMPTS instructions (which omit 'REJECT: quarterly' language).
         """
         preamble = _ANNUAL_BATCH_PREAMBLE if period_type == 'annual' else _QUARTERLY_BATCH_PREAMBLE
+        if self._db is not None:
+            db_key = 'llm_annual_batch_preamble' if period_type == 'annual' else 'llm_quarterly_batch_preamble'
+            try:
+                db_preamble = self._db.get_config(db_key)
+                if db_preamble:
+                    preamble = db_preamble
+            except Exception as e:
+                log.warning("Could not fetch %s from DB: %s", db_key, e)
 
         lines = [preamble]
 
