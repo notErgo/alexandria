@@ -358,6 +358,9 @@ class EdgarConnector:
             log.warning("No text extracted for %s %s %s", ticker, form_type, acc_no)
             return False
 
+        text_len = len(text.strip())
+        parse_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
+
         report = {
             'ticker':          ticker,
             'report_date':     period,
@@ -369,10 +372,11 @@ class EdgarConnector:
             'covering_period': filing.get('covering_period'),
         }
         try:
-            self.db.insert_report(report)
+            report_id = self.db.insert_report(report)
+            self.db.set_report_parse_quality(report_id, parse_quality)
             log.info(
-                "Stored %s filing: %s %s (covering %s)",
-                source_type, ticker, period, filing.get('covering_period'),
+                "Stored %s filing: %s %s (covering %s, quality=%s)",
+                source_type, ticker, period, filing.get('covering_period'), parse_quality,
             )
             return True
         except Exception as e:

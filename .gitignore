@@ -18,3 +18,7 @@ historic_parsing/
 # Spreadsheets
 *.xlsx
 *.csv
+# Generated LLM crawl prompts (derived from scripts/prompts/llm_crawl_prompt.md)
+scripts/crawl_prompts/
+# LLM crawl result payloads (written by agents, ingested into DB)
+.data/crawl_results/

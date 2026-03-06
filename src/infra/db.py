@@ -1121,6 +1121,15 @@ class MinerDB:
             ).fetchone()
             return row is not None
 
+    def report_exists_by_url(self, ticker: str, source_url: str) -> bool:
+        """Return True if a report with this (ticker, source_url) already exists."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM reports WHERE ticker=? AND source_url=?",
+                (ticker, source_url),
+            ).fetchone()
+            return row is not None
+
     def update_report_raw_text(
         self, report_id: int, raw_text: str, source_url: str = None
     ) -> None:

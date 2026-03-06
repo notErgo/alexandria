@@ -533,6 +533,86 @@ def ingest_reaudit():
     return jsonify({'success': True, 'data': {'task_id': task_id, 'status': 'queued'}}), 202
 
 
+@bp.route('/api/ingest/raw', methods=['POST'])
+def ingest_raw():
+    """Ingest a batch of raw documents fetched by LLM crawl agents.
+
+    Accepts:
+      { "documents": [ { "ticker", "source_url", "raw_text", "source_type", "period"? }, ... ] }
+
+    - Deduplicates on (ticker, source_url) — already-stored URLs are skipped.
+    - Returns 400 when required fields are missing on the first document (fast-fail before any writes).
+    - Returns 207 when at least one document succeeds and at least one fails.
+    - Returns 200 when all documents succeed (including all-skipped).
+    """
+    from datetime import datetime, timezone
+    from app_globals import get_db
+
+    body = request.get_json(silent=True) or {}
+    docs = body.get('documents')
+    if not isinstance(docs, list):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT',
+            'message': "'documents' must be a list",
+        }}), 400
+
+    db = get_db()
+    ingested = 0
+    skipped = 0
+    errors = []
+
+    for doc in docs:
+        if not isinstance(doc, dict) or not doc.get('ticker') or not doc.get('source_url'):
+            errors.append({
+                'source_url': doc.get('source_url', '') if isinstance(doc, dict) else '',
+                'error': "missing required field: 'ticker' and 'source_url' are required",
+            })
+            continue
+
+        ticker = doc['ticker'].strip().upper()
+        source_url = doc['source_url'].strip()
+        try:
+            if db.report_exists_by_url(ticker, source_url):
+                skipped += 1
+                continue
+            report = {
+                'ticker': ticker,
+                'report_date': (doc.get('period') or datetime.now(timezone.utc).strftime('%Y-%m-%d')),
+                'published_date': None,
+                'source_type': doc.get('source_type', 'wire_press_release'),
+                'source_url': source_url,
+                'raw_text': doc.get('raw_text', ''),
+                'parsed_at': datetime.now(timezone.utc).isoformat(),
+                'covering_period': doc.get('period'),
+            }
+            db.insert_report(report)
+            log.info(
+                "event=ingest_raw_stored ticker=%s source_url=%s source_type=%s",
+                ticker, source_url, report['source_type'],
+            )
+            ingested += 1
+        except Exception:
+            log.error(
+                "event=ingest_raw_error ticker=%s source_url=%s",
+                ticker, source_url, exc_info=True,
+            )
+            errors.append({'ticker': ticker, 'source_url': source_url, 'error': 'store failed'})
+
+    nothing_succeeded = ingested == 0 and skipped == 0
+    if errors and nothing_succeeded:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT',
+            'message': errors[0]['error'],
+        }}), 400
+
+    status = 207 if (errors and (ingested > 0 or skipped > 0)) else 200
+    return jsonify({'success': True, 'data': {
+        'ingested': ingested,
+        'skipped': skipped,
+        'errors': errors,
+    }}), status
+
+
 @bp.route('/api/ingest/<task_id>/progress')
 def ingest_progress(task_id):
     with _progress_lock:
