@@ -464,7 +464,7 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
       type: 'bar',
       stack: 'total',
       data: s.values.map(function(v) { return v === null ? 0 : v; }),
-      barCategoryGap: '-2%',
+      barCategoryGap: '-1%',
       barGap: '0%',
       itemStyle: { color: color, borderRadius: 0 },
     };
@@ -938,7 +938,7 @@ async function loadStackedBar() {
       stack: 'total',
       emphasis: { focus: 'series' },
       data: s.values,
-      barCategoryGap: '-2%',
+      barCategoryGap: '-1%',
       barGap: '0%',
       itemStyle: { color: tickerColor(s.ticker, allTickers), borderRadius: 0 },
     };
