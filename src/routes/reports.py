@@ -79,6 +79,7 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
     import requests as req_lib
     from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
+    from orchestration import check_edgar_complete
 
     _update_progress(task_id, {
         'status': 'running',
@@ -86,6 +87,19 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
         'auto_extract': auto_extract,
         'warm_model': warm_model,
     })
+
+    # EDGAR-first guardrail: warn if EDGAR has not been fetched yet
+    try:
+        edgar_check = check_edgar_complete(get_db(), ticker=None)
+        if not edgar_check.complete:
+            log.warning("event=ir_ingest_edgar_prereq_missing warning=%s", edgar_check.warning)
+            _update_progress(task_id, {
+                'status': 'running',
+                'source': 'ir',
+                'edgar_prereq_warning': edgar_check.warning,
+            })
+    except Exception:
+        log.debug("EDGAR prereq check failed (non-fatal)", exc_info=True)
     try:
         db = get_db()
         session = req_lib.Session()
@@ -161,7 +175,10 @@ def _run_edgar_ingest(task_id: str, auto_extract: bool = False, warm_model: bool
         for company in companies:
             if company.get('cik'):
                 s = connector.fetch_all_filings(
-                    cik=company['cik'], ticker=company['ticker'], since_date=since
+                    cik=company['cik'],
+                    ticker=company['ticker'],
+                    since_date=since,
+                    filing_regime=company.get('filing_regime', 'domestic'),
                 )
                 totals['reports_ingested'] += s.reports_ingested
                 totals['errors'] += s.errors

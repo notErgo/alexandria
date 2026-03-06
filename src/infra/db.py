@@ -5,6 +5,7 @@ Uses WAL mode for concurrent reads during Flask operation.
 Schema version tracked via PRAGMA user_version (current: 1).
 All writes go through context managers (auto-commit on __exit__).
 """
+import hashlib
 import sqlite3
 import threading
 import logging
@@ -203,6 +204,21 @@ class MinerDB:
                     self._migrate_v14(conn)
                     conn.execute("PRAGMA user_version = 14")
                     version = 14
+
+                if version < 15:
+                    self._migrate_v15(conn)
+                    conn.execute("PRAGMA user_version = 15")
+                    version = 15
+
+                if version < 16:
+                    self._migrate_v16(conn)
+                    conn.execute("PRAGMA user_version = 16")
+                    version = 16
+
+                if version < 17:
+                    self._migrate_v17(conn)
+                    conn.execute("PRAGMA user_version = 17")
+                    version = 17
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -721,6 +737,99 @@ class MinerDB:
                 ON pipeline_run_tickers(run_id, ticker);
         """)
 
+
+    def _migrate_v15(self, conn: sqlite3.Connection) -> None:
+        """Schema v15: accession dedup, extraction backlog, provenance, source normalization.
+
+        Reports additions:
+          accession_number, source_url_hash (dedup)
+          extraction_status, extraction_error, extraction_attempts (backlog)
+          source_channel, form_type (normalization)
+          amends_accession_number (EDGAR amendment tracking)
+
+        Data points additions:
+          run_id, model_name, extractor_version, prompt_version (provenance)
+          chunk_id (links back to document_chunks)
+
+        New table: qc_snapshots
+        """
+        existing_r = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        for col, typedef in [
+            ('accession_number',        'TEXT'),
+            ('source_url_hash',         'TEXT'),
+            ('source_channel',          'TEXT'),
+            ('form_type',               'TEXT'),
+            ('extraction_status',       "TEXT NOT NULL DEFAULT 'pending'"),
+            ('extraction_error',        'TEXT'),
+            ('extraction_attempts',     'INTEGER NOT NULL DEFAULT 0'),
+            ('amends_accession_number', 'TEXT'),
+        ]:
+            if col not in existing_r:
+                conn.execute(f"ALTER TABLE reports ADD COLUMN {col} {typedef}")
+
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_accession
+               ON reports(accession_number) WHERE accession_number IS NOT NULL"""
+        )
+
+        existing_dp = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
+        for col, typedef in [
+            ('run_id',           'TEXT'),
+            ('model_name',       'TEXT'),
+            ('extractor_version', 'TEXT'),
+            ('prompt_version',   'TEXT'),
+            ('chunk_id',         'INTEGER'),
+        ]:
+            if col not in existing_dp:
+                conn.execute(f"ALTER TABLE data_points ADD COLUMN {col} {typedef}")
+
+        existing_rq = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+        if 'report_id' not in existing_rq:
+            conn.execute("ALTER TABLE review_queue ADD COLUMN report_id INTEGER REFERENCES reports(id)")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS qc_snapshots (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                ticker       TEXT,
+                summary_json TEXT
+            )
+        """)
+
+    def _migrate_v16(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 15 to version 16.
+
+        Adds fetch provenance and content near-dedup columns to reports:
+          - fetch_strategy: how the document was fetched (e.g. rss, template, index)
+          - render_mode: rendering approach used (e.g. requests, playwright)
+          - fetch_timing_ms: time taken to fetch the document in milliseconds
+          - content_simhash: 64-bit simhash fingerprint for near-duplicate detection
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        for col, typedef in [
+            ('fetch_strategy',  'TEXT'),
+            ('render_mode',     'TEXT'),
+            ('fetch_timing_ms', 'INTEGER'),
+            ('content_simhash', 'INTEGER'),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE reports ADD COLUMN {col} {typedef}")
+
+    def _migrate_v17(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 16 to version 17.
+
+        Adds EDGAR filing regime and fiscal year config to companies:
+          - filing_regime: 'domestic' | 'canadian' | 'foreign'
+          - fiscal_year_end_month: 1-12 (default 12 = December)
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        for col, typedef in [
+            ('filing_regime',         "TEXT NOT NULL DEFAULT 'domestic'"),
+            ('fiscal_year_end_month', 'INTEGER NOT NULL DEFAULT 12'),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE companies ADD COLUMN {col} {typedef}")
+
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
 
@@ -778,29 +887,33 @@ class MinerDB:
                            (ticker, name, tier, ir_url, pr_base_url, cik, active,
                             rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
                             scraper_mode, sector, scraper_issues_log, scraper_status,
-                            prnewswire_url, globenewswire_url)
+                            prnewswire_url, globenewswire_url,
+                            filing_regime, fiscal_year_end_month)
                            VALUES
                            (:ticker,:name,:tier,:ir_url,:pr_base_url,:cik,:active,
                             :rss_url,:url_template,:pr_start_year,:skip_reason,:sandbox_note,
                             :scraper_mode,:sector,'','never_run',
-                            :prnewswire_url,:globenewswire_url)""",
+                            :prnewswire_url,:globenewswire_url,
+                            :filing_regime,:fiscal_year_end_month)""",
                         {
-                            'ticker':        ticker,
-                            'name':          c.get('name', ticker),
-                            'tier':          int(c.get('tier', 2)),
-                            'ir_url':        c.get('ir_url') or '',
-                            'pr_base_url':   c.get('pr_base_url'),
-                            'cik':           c.get('cik'),
-                            'active':        1 if c.get('active', True) else 0,
-                            'rss_url':       c.get('rss_url'),
-                            'url_template':  c.get('url_template'),
-                            'pr_start_year': c.get('pr_start_year'),
-                            'skip_reason':   c.get('skip_reason'),
-                            'sandbox_note':  c.get('sandbox_note'),
-                            'scraper_mode':  canonical_mode or legacy_mode or 'skip',
-                            'sector':        c.get('sector', 'BTC-miners'),
-                            'prnewswire_url': c.get('prnewswire_url'),
-                            'globenewswire_url': c.get('globenewswire_url'),
+                            'ticker':               ticker,
+                            'name':                 c.get('name', ticker),
+                            'tier':                 int(c.get('tier', 2)),
+                            'ir_url':               c.get('ir_url') or '',
+                            'pr_base_url':          c.get('pr_base_url'),
+                            'cik':                  c.get('cik'),
+                            'active':               1 if c.get('active', True) else 0,
+                            'rss_url':              c.get('rss_url'),
+                            'url_template':         c.get('url_template'),
+                            'pr_start_year':        c.get('pr_start_year'),
+                            'skip_reason':          c.get('skip_reason'),
+                            'sandbox_note':         c.get('sandbox_note'),
+                            'scraper_mode':         canonical_mode or legacy_mode or 'skip',
+                            'sector':               c.get('sector', 'BTC-miners'),
+                            'prnewswire_url':       c.get('prnewswire_url'),
+                            'globenewswire_url':    c.get('globenewswire_url'),
+                            'filing_regime':        c.get('filing_regime', 'domestic'),
+                            'fiscal_year_end_month': int(c.get('fiscal_year_end_month', 12)),
                         },
                     )
                     added += 1
@@ -814,28 +927,32 @@ class MinerDB:
                            pr_start_year=:pr_start_year, skip_reason=:skip_reason,
                            sandbox_note=:sandbox_note,
                            scraper_mode=:scraper_mode, sector=:sector,
-                           prnewswire_url=:prnewswire_url, globenewswire_url=:globenewswire_url
+                           prnewswire_url=:prnewswire_url, globenewswire_url=:globenewswire_url,
+                           filing_regime=:filing_regime,
+                           fiscal_year_end_month=:fiscal_year_end_month
                            WHERE ticker=:ticker""",
                         {
-                            'ticker':        ticker,
-                            'name':          c.get('name', ticker),
-                            'tier':          int(c.get('tier', 2)),
-                            'ir_url':        c.get('ir_url') or '',
-                            'pr_base_url':   c.get('pr_base_url'),
-                            'cik':           c.get('cik'),
-                            'active':        1 if c.get('active', True) else 0,
-                            'rss_url':       c.get('rss_url'),
-                            'url_template':  c.get('url_template'),
-                            'pr_start_year': c.get('pr_start_year'),
-                            'skip_reason':   c.get('skip_reason'),
-                            'sandbox_note':  c.get('sandbox_note'),
+                            'ticker':               ticker,
+                            'name':                 c.get('name', ticker),
+                            'tier':                 int(c.get('tier', 2)),
+                            'ir_url':               c.get('ir_url') or '',
+                            'pr_base_url':          c.get('pr_base_url'),
+                            'cik':                  c.get('cik'),
+                            'active':               1 if c.get('active', True) else 0,
+                            'rss_url':              c.get('rss_url'),
+                            'url_template':         c.get('url_template'),
+                            'pr_start_year':        c.get('pr_start_year'),
+                            'skip_reason':          c.get('skip_reason'),
+                            'sandbox_note':         c.get('sandbox_note'),
                             # For existing rows, only canonical "scraper_mode" may overwrite.
                             # Legacy "scrape_mode" is treated as seed-only to avoid reverting
                             # analyst-updated modes from old config files.
-                            'scraper_mode':  (canonical_mode if canonical_mode is not None else existing['scraper_mode']) or 'skip',
-                            'sector':        c.get('sector', 'BTC-miners'),
-                            'prnewswire_url': c.get('prnewswire_url'),
-                            'globenewswire_url': c.get('globenewswire_url'),
+                            'scraper_mode':         (canonical_mode if canonical_mode is not None else existing['scraper_mode']) or 'skip',
+                            'sector':               c.get('sector', 'BTC-miners'),
+                            'prnewswire_url':       c.get('prnewswire_url'),
+                            'globenewswire_url':    c.get('globenewswire_url'),
+                            'filing_regime':        c.get('filing_regime', 'domestic'),
+                            'fiscal_year_end_month': int(c.get('fiscal_year_end_month', 12)),
                         },
                     )
                     updated += 1
@@ -885,16 +1002,53 @@ class MinerDB:
     # ── Report CRUD ──────────────────────────────────────────────────────────
 
     def insert_report(self, report: dict) -> int:
+        source_url = report.get('source_url')
+        url_hash = hashlib.sha256(source_url.encode()).hexdigest() if source_url else None
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT INTO reports
                    (ticker, report_date, published_date, source_type, source_url, raw_text,
-                    parsed_at, covering_period)
+                    parsed_at, covering_period,
+                    accession_number, source_url_hash, source_channel, form_type,
+                    amends_accession_number,
+                    fetch_strategy, render_mode, fetch_timing_ms, content_simhash)
                    VALUES (:ticker, :report_date, :published_date, :source_type,
-                           :source_url, :raw_text, :parsed_at, :covering_period)""",
-                {**report, 'covering_period': report.get('covering_period')},
+                           :source_url, :raw_text, :parsed_at, :covering_period,
+                           :accession_number, :source_url_hash, :source_channel, :form_type,
+                           :amends_accession_number,
+                           :fetch_strategy, :render_mode, :fetch_timing_ms, :content_simhash)""",
+                {
+                    **report,
+                    'covering_period':         report.get('covering_period'),
+                    'accession_number':        report.get('accession_number'),
+                    'source_url_hash':         report.get('source_url_hash', url_hash),
+                    'source_channel':          report.get('source_channel'),
+                    'form_type':               report.get('form_type'),
+                    'amends_accession_number': report.get('amends_accession_number'),
+                    'fetch_strategy':          report.get('fetch_strategy'),
+                    'render_mode':             report.get('render_mode'),
+                    'fetch_timing_ms':         report.get('fetch_timing_ms'),
+                    'content_simhash':         report.get('content_simhash'),
+                },
             )
             return cursor.lastrowid
+
+    def find_near_duplicates(self, simhash: int, ticker: str, threshold: int = 3) -> list:
+        """Return reports for this ticker whose content_simhash is within hamming threshold.
+
+        Fetches all non-null simhash rows for the ticker and filters in Python,
+        since SQLite has no built-in hamming distance function.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, ticker, source_url, content_simhash FROM reports "
+                "WHERE ticker=? AND content_simhash IS NOT NULL",
+                (ticker,),
+            ).fetchall()
+        return [
+            dict(r) for r in rows
+            if bin(r['content_simhash'] ^ simhash).count('1') <= threshold
+        ]
 
     def get_reports_with_text(self) -> list:
         """Return all reports that have non-empty raw_text, for pattern application."""
@@ -932,25 +1086,92 @@ class MinerDB:
             ).fetchone()
             return dict(row) if row else None
 
-    def mark_report_extracted(self, report_id: int) -> None:
-        """Set extracted_at timestamp on a report after the extraction pipeline runs."""
+    def mark_report_extraction_running(self, report_id: int) -> None:
+        """Set extraction_status='running'. Called at pipeline entry to prevent double-processing."""
         with self._get_connection() as conn:
             conn.execute(
-                "UPDATE reports SET extracted_at = ? WHERE id = ?",
+                "UPDATE reports SET extraction_status = 'running' WHERE id = ?",
+                (report_id,),
+            )
+
+    def mark_report_extracted(self, report_id: int) -> None:
+        """Set extraction_status='done', increment extraction_attempts, set extracted_at."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """UPDATE reports
+                   SET extracted_at = ?,
+                       extraction_status = 'done',
+                       extraction_attempts = extraction_attempts + 1
+                   WHERE id = ?""",
                 (datetime.now(timezone.utc).isoformat(), report_id),
             )
+
+    def mark_report_extraction_failed(self, report_id: int, error: str) -> None:
+        """Record extraction failure, increment attempts. Promotes to dead_letter at MAX."""
+        from config import MAX_EXTRACTION_ATTEMPTS
+        with self._get_connection() as conn:
+            conn.execute(
+                """UPDATE reports
+                   SET extraction_error = ?,
+                       extraction_attempts = extraction_attempts + 1,
+                       extraction_status = CASE
+                           WHEN extraction_attempts + 1 >= ? THEN 'dead_letter'
+                           ELSE 'failed'
+                       END
+                   WHERE id = ?""",
+                (str(error)[:500], MAX_EXTRACTION_ATTEMPTS, report_id),
+            )
+
+    def reset_report_to_pending(self, report_id: int) -> None:
+        """Reset extraction_status from 'running' back to 'pending' for transient failures.
+
+        Called when a transient failure (e.g. LLM temporarily unavailable) occurs mid-pipeline
+        so the report is picked up again in the same process rather than waiting for next boot.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET extraction_status = 'pending' WHERE id = ?",
+                (report_id,),
+            )
+
+    def report_exists_by_accession(self, accession_number: str) -> bool:
+        """Return True if a report with this accession_number already exists."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM reports WHERE accession_number = ?",
+                (accession_number,),
+            ).fetchone()
+        return row is not None
+
+    def get_reports_by_channel(self, ticker: str, channel: str) -> list:
+        """Return reports for a ticker filtered by source_channel."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM reports WHERE ticker = ? AND source_channel = ? ORDER BY report_date",
+                (ticker, channel),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_unextracted_reports(
         self,
         ticker: Optional[str] = None,
         source_type: Optional[str] = None,
     ) -> list:
-        """Return reports with raw_text that have not yet been through the extraction pipeline.
+        """Return reports eligible for extraction.
+
+        Eligible means: raw_text present AND extraction_status IN ('pending','failed')
+        AND extraction_attempts < MAX_EXTRACTION_ATTEMPTS (not dead_letter).
 
         Optionally filter by ticker and/or source_type (e.g. 'edgar_10q').
         """
-        clauses = ["raw_text IS NOT NULL", "raw_text != ''", "extracted_at IS NULL"]
-        params: list = []
+        from config import MAX_EXTRACTION_ATTEMPTS
+        clauses = [
+            "raw_text IS NOT NULL",
+            "raw_text != ''",
+            "extraction_status IN ('pending', 'failed')",
+            "extraction_attempts < ?",
+        ]
+        params: list = [MAX_EXTRACTION_ATTEMPTS]
         if ticker:
             clauses.append("ticker = ?")
             params.append(ticker)
@@ -1130,6 +1351,15 @@ class MinerDB:
             ).fetchone()
             return row is not None
 
+    def report_exists_by_url_hash(self, url_hash: str) -> bool:
+        """Return True if any report with this source_url_hash already exists."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM reports WHERE source_url_hash=?",
+                (url_hash,),
+            ).fetchone()
+            return row is not None
+
     def update_report_raw_text(
         self, report_id: int, raw_text: str, source_url: str = None
     ) -> None:
@@ -1202,10 +1432,19 @@ class MinerDB:
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
-                    extraction_method, source_snippet)
+                    extraction_method, source_snippet,
+                    run_id, model_name, extractor_version, prompt_version, chunk_id)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
-                           :confidence, :extraction_method, :source_snippet)""",
-                dp,
+                           :confidence, :extraction_method, :source_snippet,
+                           :run_id, :model_name, :extractor_version, :prompt_version, :chunk_id)""",
+                {
+                    **dp,
+                    'run_id':            dp.get('run_id'),
+                    'model_name':        dp.get('model_name'),
+                    'extractor_version': dp.get('extractor_version'),
+                    'prompt_version':    dp.get('prompt_version'),
+                    'chunk_id':          dp.get('chunk_id'),
+                },
             )
             return cursor.lastrowid
 
@@ -1604,10 +1843,10 @@ class MinerDB:
             cursor = conn.execute(
                 """INSERT INTO review_queue
                    (data_point_id, ticker, period, metric, raw_value, confidence,
-                    source_snippet, status, llm_value, regex_value, agreement_status)
+                    source_snippet, status, llm_value, regex_value, agreement_status, report_id)
                    VALUES (:data_point_id, :ticker, :period, :metric, :raw_value,
                            :confidence, :source_snippet, :status,
-                           :llm_value, :regex_value, :agreement_status)""",
+                           :llm_value, :regex_value, :agreement_status, :report_id)""",
                 {
                     'data_point_id': item.get('data_point_id'),
                     'ticker': item['ticker'],
@@ -1620,6 +1859,7 @@ class MinerDB:
                     'llm_value': item.get('llm_value'),
                     'regex_value': item.get('regex_value'),
                     'agreement_status': item.get('agreement_status'),
+                    'report_id': item.get('report_id'),
                 },
             )
             return cursor.lastrowid
@@ -1664,12 +1904,13 @@ class MinerDB:
             return [dict(r) for r in rows]
 
     def find_report_for_period(self, ticker: str, period: str) -> Optional[dict]:
-        """Return {id, source_type, source_url} for the first report matching ticker + YYYY-MM."""
+        """Return {id, source_type, source_url} for the latest report matching ticker + YYYY-MM."""
         period_ym = period[:7]
         with self._get_connection() as conn:
             rows = conn.execute(
                 """SELECT id, source_type, source_url FROM reports
                    WHERE ticker = ? AND report_date LIKE ?
+                   ORDER BY report_date DESC, id DESC
                    LIMIT 1""",
                 (ticker, period_ym + '%'),
             ).fetchall()
@@ -1946,6 +2187,11 @@ class MinerDB:
                 "SELECT * FROM metric_rules WHERE metric = ?", (metric,)
             ).fetchone()
             return dict(row)
+
+    def delete_metric_rule(self, metric: str) -> None:
+        """Delete a metric_rules row by metric key. No-op if it does not exist."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM metric_rules WHERE metric = ?", (metric,))
 
     def get_snippets(self, limit: int = 2000) -> list:
         """Return source snippets from data_points and review_queue for keyword analysis."""

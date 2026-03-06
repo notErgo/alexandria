@@ -82,3 +82,33 @@ class TestDetectOutlier:
         trailing = [100.0, 200.0, 300.0]
         _, avg = detect_outlier(150.0, trailing, threshold_pct=0.40)
         assert avg == pytest.approx(200.0)
+
+
+class TestDetectOutlierMinHistory:
+    """Explicit min_history= param overrides config OUTLIER_MIN_HISTORY."""
+
+    def test_min_history_2_allows_check_with_2_values(self):
+        """With min_history=2, two trailing values are enough to run the check."""
+        from extractors.agreement import detect_outlier
+        trailing = [700.0, 720.0]   # only 2 values — default min_history=3 would skip
+        candidate = 9999.0
+        is_outlier, avg = detect_outlier(candidate, trailing, threshold_pct=0.40, min_history=2)
+        assert is_outlier is True
+
+    def test_min_history_5_skips_check_with_3_values(self):
+        """With min_history=5, three trailing values are not enough."""
+        from extractors.agreement import detect_outlier
+        trailing = [700.0, 720.0, 710.0]   # 3 values, would trigger with default min_history=3
+        candidate = 9999.0
+        is_outlier, avg = detect_outlier(candidate, trailing, threshold_pct=0.40, min_history=5)
+        assert is_outlier is False
+        assert avg is None
+
+    def test_min_history_none_falls_back_to_config(self):
+        """min_history=None uses OUTLIER_MIN_HISTORY from config (no regression)."""
+        from extractors.agreement import detect_outlier
+        from config import OUTLIER_MIN_HISTORY
+        trailing = [700.0] * OUTLIER_MIN_HISTORY
+        candidate = 9999.0
+        is_outlier, avg = detect_outlier(candidate, trailing, threshold_pct=0.40, min_history=None)
+        assert is_outlier is True

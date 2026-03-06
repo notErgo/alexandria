@@ -21,7 +21,7 @@ class PressReleaseParser:
             from bs4 import BeautifulSoup
             with open(str(path), encoding='utf-8', errors='replace') as f:
                 soup = BeautifulSoup(f, 'lxml')
-            return soup.get_text(separator=' ', strip=True)
+            return soup.get_text(separator='\n', strip=True)
         except OSError as e:
             log.error("Cannot read HTML file %s: %s", path, e)
             return ''

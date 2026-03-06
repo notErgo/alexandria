@@ -77,7 +77,8 @@ def run_edgar_for_company(
     for attempt in range(3):
         try:
             summary = connector.fetch_all_filings(
-                cik=cik, ticker=ticker, since_date=since
+                cik=cik, ticker=ticker, since_date=since,
+                filing_regime=company.get('filing_regime', 'domestic'),
             )
             result = {
                 'ticker': ticker,

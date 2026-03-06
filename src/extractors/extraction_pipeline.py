@@ -18,6 +18,8 @@ import re
 import threading
 from typing import Optional
 
+from extractors.context_window import ContextWindowSelector
+
 log = logging.getLogger('miners.extractors.extraction_pipeline')
 
 # Protected extraction methods — data points with these methods are never overwritten
@@ -324,6 +326,7 @@ def _apply_agreement(
     summary,
     attribution: Optional[str] = None,
     llm_extractor=None,
+    metric_rule: Optional[dict] = None,
 ) -> None:
     """Apply the agreement engine for one metric in one report. Writes to DB.
 
@@ -353,7 +356,10 @@ def _apply_agreement(
                 return
 
     if llm_available:
-        decision = evaluate_agreement(regex_best, llm_result, metric=metric)
+        # Use metric_rule overrides only when the rule is enabled
+        active_rule = metric_rule if (metric_rule and metric_rule.get('enabled', 1)) else None
+        agreement_threshold = active_rule['agreement_threshold'] if active_rule else None
+        decision = evaluate_agreement(regex_best, llm_result, metric=metric, threshold=agreement_threshold)
 
         # Outlier detection: if AUTO_ACCEPT, check against trailing data points
         # (also used by self-correction pass below — initialize here for both uses)
@@ -363,7 +369,10 @@ def _apply_agreement(
         if decision.decision == 'AUTO_ACCEPT' and decision.accepted_value is not None:
             from config import OUTLIER_THRESHOLDS, OUTLIER_MIN_HISTORY
             from extractors.agreement import detect_outlier
-            outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
+            if active_rule and 'outlier_threshold' in active_rule:
+                outlier_threshold = active_rule['outlier_threshold']
+            else:
+                outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
             try:
                 trailing_rows = db.get_trailing_data_points(
                     ticker, period_str, metric, limit=OUTLIER_MIN_HISTORY
@@ -582,23 +591,25 @@ def _extract_quarterly_report(
         summary.errors += 1
         return summary
 
-    text = (report.get('raw_text') or '')[:_LLM_QUARTERLY_TEXT_MAX_CHARS]
+    _q_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
+    text = (report.get('raw_text') or '')[:_q_selector.char_budget]
 
     llm_extractor = _get_llm_extractor(db)
     llm_available = _check_llm_available(llm_extractor)
 
     if not llm_available:
         log.warning(
-            "LLM not available for quarterly report id=%s ticker=%s %s — skipping",
+            "LLM not available for quarterly report id=%s ticker=%s %s — will retry when LLM is up",
             report_id, ticker, covering_period,
         )
-        db.mark_report_extracted(report_id)
+        # Transient failure: reset to 'pending' so this process can retry without waiting for next boot.
+        db.reset_report_to_pending(report_id)
         return summary
 
     all_metrics = list(registry.metrics.keys()) if registry.metrics else []
     if not all_metrics:
         log.warning("No metrics in registry for quarterly extraction %s %s", ticker, covering_period)
-        db.mark_report_extracted(report_id)
+        db.mark_report_extraction_failed(report_id, 'no_metrics_in_registry')
         return summary
 
     try:
@@ -609,7 +620,7 @@ def _extract_quarterly_report(
         log.error(
             "Quarterly LLM extraction failed for %s %s: %s", ticker, covering_period, e, exc_info=True
         )
-        db.mark_report_extracted(report_id)
+        db.mark_report_extraction_failed(report_id, str(e)[:500])
         summary.errors += 1
         return summary
 
@@ -683,6 +694,11 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     from config import CONFIDENCE_REVIEW_THRESHOLD
 
     summary = ExtractionSummary()
+
+    # Mark in-flight immediately so concurrent workers skip this report.
+    # Cleared to 'pending' on startup if the process crashes mid-extraction.
+    db.mark_report_extraction_running(report['id'])
+
     text = report.get('raw_text') or ''
 
     if not text.strip():
@@ -722,8 +738,12 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
         # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],
         # etc.) from the back of the document before sending to LLM. Regex extraction
-        # still runs on the full raw_text. Truncate after stripping.
-        llm_text = _clean_for_llm(text)[:_LLM_TEXT_MAX_CHARS]
+        # still runs on the full raw_text. Use ContextWindowSelector to budget the window.
+        _ctx_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
+        _ctx_windows = _ctx_selector.select_windows(
+            report['id'], _clean_for_llm(text), 'production_btc', db
+        )
+        llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_for_llm(text)[:_LLM_TEXT_MAX_CHARS]
 
         all_metrics = list(registry.metrics.keys())
         ticker = report.get('ticker')
@@ -765,10 +785,18 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             if not llm_available and regex_best is None:
                 continue
 
+            llm_result_for_metric = llm_by_metric.get(metric)
+            # Fallback: retry with subsequent context windows if primary result is absent/low-confidence
+            if llm_available and llm_extractor is not None:
+                for _fb_window in _ctx_windows[1:]:
+                    if not _ctx_selector.needs_fallback(llm_result_for_metric):
+                        break
+                    llm_result_for_metric = llm_extractor.extract(_fb_window['text'], metric)
+
             _apply_agreement(
                 metric=metric,
                 regex_best=regex_best,
-                llm_result=llm_by_metric.get(metric),
+                llm_result=llm_result_for_metric,
                 db=db,
                 report=report,
                 llm_available=llm_available,
@@ -793,8 +821,9 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             report.get('id'), report.get('ticker'), e, exc_info=True,
         )
         summary.errors += 1
+        db.mark_report_extraction_failed(report['id'], str(e)[:500])
+        return summary
 
-    finally:
-        db.mark_report_extracted(report['id'])
+    db.mark_report_extracted(report['id'])
 
     return summary

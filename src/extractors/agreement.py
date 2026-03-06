@@ -48,6 +48,7 @@ def evaluate_agreement(
     regex_result: Optional[ExtractionResult],
     llm_result: Optional[ExtractionResult],
     metric: Optional[str] = None,
+    threshold: Optional[float] = None,
 ) -> AgreementDecision:
     """
     Compare regex and LLM extraction results for the same document and metric.
@@ -119,8 +120,9 @@ def evaluate_agreement(
     else:
         agreement_pct = abs(rv - lv) / denominator * 100.0
 
-    # Per-metric threshold lookup
-    threshold = METRIC_AGREEMENT_THRESHOLDS.get(metric, METRIC_AGREEMENT_THRESHOLD_DEFAULT)
+    # Per-metric threshold: use caller-supplied value (from DB) or fall back to config
+    if threshold is None:
+        threshold = METRIC_AGREEMENT_THRESHOLDS.get(metric, METRIC_AGREEMENT_THRESHOLD_DEFAULT)
     threshold_pct = threshold * 100.0
 
     if agreement_pct <= threshold_pct:
@@ -151,6 +153,7 @@ def detect_outlier(
     candidate: float,
     trailing_values: list,
     threshold_pct: float,
+    min_history: Optional[int] = None,
 ) -> tuple:
     """Return (is_outlier, trailing_avg).
 
@@ -166,7 +169,8 @@ def detect_outlier(
     Returns:
         (is_outlier: bool, trailing_avg: float or None)
     """
-    if len(trailing_values) < OUTLIER_MIN_HISTORY:
+    _min_history = min_history if min_history is not None else OUTLIER_MIN_HISTORY
+    if len(trailing_values) < _min_history:
         return False, None
 
     avg = sum(trailing_values) / len(trailing_values)

@@ -449,7 +449,7 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   parentEl.appendChild(panel);
 
   // Init ECharts — pass active theme (null = ECharts default)
-  const chart = echarts.init(chartEl, _activeTheme || null, { renderer: 'svg' });
+  const chart = echarts.init(chartEl, _activeTheme || null, { renderer: 'canvas' });
   _charts.push(chart);
 
   const echartsX = timeSpine.map(function(ym) {
@@ -464,8 +464,9 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
       type: 'bar',
       stack: 'total',
       data: s.values.map(function(v) { return v === null ? 0 : v; }),
-      barMaxWidth: 24,
-      itemStyle: { color: color },
+      barCategoryGap: '-2%',
+      barGap: '0%',
+      itemStyle: { color: color, borderRadius: 0 },
     };
   });
 
@@ -937,7 +938,9 @@ async function loadStackedBar() {
       stack: 'total',
       emphasis: { focus: 'series' },
       data: s.values,
-      itemStyle: { color: tickerColor(s.ticker, allTickers) },
+      barCategoryGap: '-2%',
+      barGap: '0%',
+      itemStyle: { color: tickerColor(s.ticker, allTickers), borderRadius: 0 },
     };
   });
 

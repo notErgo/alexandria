@@ -16,7 +16,8 @@
 .scraper-badge-rss      { background: #3b82f620; color: #3b82f6; }
 .scraper-badge-index    { background: #10b98120; color: #10b981; }
 .scraper-badge-template { background: #8b5cf620; color: #8b5cf6; }
-.scraper-badge-skip     { background: #6b728020; color: #6b7280; }
+.scraper-badge-skip       { background: #6b728020; color: #6b7280; }
+.scraper-badge-playwright { background: #06b6d420; color: #06b6d4; }
 .scraper-badge-running  { background: #f9731620; color: #f97316; }
 .scraper-badge-ok       { background: #22c55e20; color: #22c55e; }
 .scraper-badge-error    { background: #ef444420; color: #ef4444; }
@@ -73,6 +74,29 @@
 /* Danger zone */
 .btn-danger { background: var(--theme-danger); color: #fff; border: none; }
 .btn-danger:hover { opacity: 0.88; }
+
+/* Pipeline Guide tab */
+.pipe-diagram { display: flex; align-items: flex-start; gap: 0; margin: 1.25rem 0 1.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.pipe-stage { display: flex; flex-direction: column; align-items: center; min-width: 148px; }
+.pipe-stage-title { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--theme-text-muted); margin-bottom: 0.55rem; }
+.pipe-connector { display: flex; align-items: center; padding: 0 6px; color: var(--theme-text-muted); font-size: 1.3rem; align-self: center; padding-top: 1.6rem; }
+.pipe-box { border: 1px solid var(--theme-border); border-radius: 6px; padding: 0.45rem 0.65rem; font-size: 0.78rem; font-weight: 600; text-align: center; margin-bottom: 5px; width: 136px; background: var(--theme-bg-secondary); }
+.pipe-box-sub { font-size: 0.66rem; font-weight: 400; color: var(--theme-text-muted); margin-top: 3px; line-height: 1.35; }
+.pipe-box-source { border-color: var(--theme-border); }
+.pipe-box-ingest { border-color: #3b82f6; color: #3b82f6; background: #3b82f60d; }
+.pipe-box-extract { border-color: #8b5cf6; color: #8b5cf6; background: #8b5cf60d; }
+.pipe-box-output { border-color: #22c55e; color: #22c55e; background: #22c55e0d; }
+.pipe-box-review { border-color: #f97316; color: #f97316; background: #f973160d; }
+.pipe-note { font-size: 0.68rem; color: var(--theme-text-muted); text-align: center; margin-top: 3px; font-style: italic; }
+.guide-section { margin-bottom: 1.75rem; }
+.guide-section h3 { font-size: 0.88rem; font-weight: 700; margin: 0 0 0.6rem; color: var(--theme-text-primary); border-bottom: 1px solid var(--theme-border); padding-bottom: 0.35rem; }
+.guide-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.guide-table th { text-align: left; padding: 5px 10px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); border-bottom: 1px solid var(--theme-border); background: var(--theme-bg-secondary); }
+.guide-table td { padding: 5px 10px; border-bottom: 1px solid var(--theme-border); vertical-align: top; }
+.guide-table tr:last-child td { border-bottom: none; }
+.guide-table code { font-size: 0.72rem; background: var(--theme-bg-tertiary); padding: 1px 4px; border-radius: 3px; }
+.guide-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+@media (max-width: 900px) { .guide-cols { grid-template-columns: 1fr; } .pipe-diagram { flex-direction: column; align-items: flex-start; } .pipe-connector { transform: rotate(90deg); padding: 4px 0; align-self: flex-start; margin-left: 60px; padding-top: 0; } }
 </style>
 {% endblock %}
 
@@ -85,6 +109,8 @@
   <button class="ops-tab" data-pane="explorer" data-ui-id="2.3">Explorer</button>
   <button class="ops-tab" data-pane="rules" data-ui-id="2.4">Metric Rules</button>
   <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5" data-spec-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
+  <button class="ops-tab" data-pane="guide" data-ui-id="2.6">Pipeline Guide</button>
+  <button class="ops-tab" data-pane="research" data-ui-id="2.7">Research</button>
 </div>
 
 <!-- ── Companies tab ──────────────────────────────────────────────────── -->
@@ -118,6 +144,7 @@
           <option value="rss">rss</option>
           <option value="index">index</option>
           <option value="template">template</option>
+          <option value="playwright">playwright</option>
         </select>
       </div>
       <div style="min-width:260px">
@@ -224,6 +251,9 @@
     <div class="acq-actions">
       <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
       <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+      <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
+        <option value="">Loading models…</option>
+      </select>
       <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
     </div>
     <div id="extract-status" class="acq-status">Idle</div>
@@ -261,97 +291,6 @@
         </tbody>
       </table>
     </div>
-  </div>
-
-  <div class="card" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">Overnight Pipeline + Scout</h3>
-      <span id="overnight-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;align-items:end">
-      <div>
-        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=auto)</label>
-        <input id="ov-tickers" type="text" placeholder="RIOT,CLSK,WULF,ABTC">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Mode</label>
-        <select id="ov-scout-mode">
-          <option value="auto" selected>auto</option>
-          <option value="always">always</option>
-          <option value="never">never</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Max Age (hours)</label>
-        <input id="ov-scout-max-age" type="number" min="1" max="8760" step="1" value="168">
-      </div>
-      <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;padding-bottom:4px">
-        <label style="font-size:0.75rem"><input id="ov-apply-modes" type="checkbox"> apply mode changes</label>
-        <label style="font-size:0.75rem"><input id="ov-warm-model" type="checkbox" checked> warm model</label>
-        <label style="font-size:0.75rem"><input id="ov-require-scout-success" type="checkbox"> require scout success</label>
-      </div>
-    </div>
-    <div style="margin-top:0.5rem">
-      <label style="font-size:0.75rem;display:block">Scout Seed Keywords (comma or newline separated)</label>
-      <textarea id="ov-scout-keywords" rows="3" style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem" placeholder="miner, bitcoin, mining, production, hodl"></textarea>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.35rem">
-        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromPack()">Seed From Active Pack</button>
-        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromFrequencyTop()">Seed Top Frequency</button>
-        <button class="btn btn-sm btn-secondary" onclick="loadScoutKeywordFrequency()">Refresh Frequency</button>
-        <span style="font-size:0.75rem;color:var(--theme-text-muted)">click any keyword chip to append</span>
-      </div>
-      <div id="ov-keyword-freq" style="margin-top:0.35rem"></div>
-    </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
-      <button class="btn btn-sm btn-primary" onclick="startOvernightWithScout()">Start Overnight Run</button>
-      <button class="btn btn-sm btn-secondary" onclick="refreshOvernightStatus()">Refresh Status</button>
-      <button class="btn btn-sm btn-secondary" onclick="cancelOvernightRun()">Cancel Run</button>
-      <label style="font-size:0.75rem;color:var(--theme-text-muted)">run id</label>
-      <input id="ov-run-id" type="number" min="1" step="1" style="width:100px" placeholder="auto">
-    </div>
-    <div id="overnight-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
-  </div>
-
-  <div class="card" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">Observer Swarm (Source Discovery + Scrape)</h3>
-      <span id="observer-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem;align-items:end">
-      <div>
-        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=all)</label>
-        <input id="obs-tickers" type="text" placeholder="BITF,BTDR">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Count</label>
-        <input id="obs-scout-count" type="number" min="1" max="16" step="1" value="4">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Max Attempts / Source</label>
-        <input id="obs-max-attempts" type="number" min="1" max="20" step="1" value="5">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Max No-Yield</label>
-        <input id="obs-max-no-yield" type="number" min="1" max="10" step="1" value="3">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Run ID (optional)</label>
-        <input id="obs-run-id" type="text" placeholder="observer_ui_...">
-      </div>
-      <div style="padding-bottom:4px">
-        <label style="font-size:0.75rem"><input id="obs-execute-scrape" type="checkbox" checked> execute scrape</label>
-        <label style="font-size:0.75rem;display:block"><input id="obs-feedback-loop" type="checkbox" checked> run feedback loop</label>
-        <label style="font-size:0.75rem;display:block"><input id="obs-apply-primitives" type="checkbox"> auto-apply validated primitives</label>
-      </div>
-    </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
-      <button class="btn btn-sm btn-primary" onclick="startObserverSwarm()">Run Observer Swarm</button>
-      <button class="btn btn-sm btn-secondary" onclick="refreshObserverSwarmStatus()">Refresh Status</button>
-      <label style="font-size:0.75rem;color:var(--theme-text-muted)">task id</label>
-      <input id="obs-task-id" type="text" style="width:300px" placeholder="auto">
-    </div>
-    <div id="observer-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
-    <div id="observer-artifacts" style="margin-top:0.35rem;font-size:0.74rem;color:var(--theme-text-muted)"></div>
   </div>
 
   <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
@@ -667,13 +606,291 @@
     </p>
   </div>
 </div>
+
+<!-- ── Pipeline Guide tab ─────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-guide" data-ui-id="2.6">
+  <h2 style="font-size:1rem;margin:0 0 0.25rem"><span class="spec-id">2.6</span>Pipeline Guide</h2>
+  <p style="font-size:0.8rem;color:var(--theme-text-secondary);margin:0 0 1.25rem">
+    How data moves from raw sources into the database and through to analyst-reviewed output.
+  </p>
+
+  <!-- Flow diagram -->
+  <div class="guide-section">
+    <h3>End-to-End Flow</h3>
+    <div class="pipe-diagram">
+
+      <!-- Stage 1: Sources -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">1. Sources</div>
+        <div class="pipe-box pipe-box-source">Archive
+          <div class="pipe-box-sub">PDFs + HTMLs on disk<br><code>OffChain/Miner/Miner Monthly/</code></div>
+        </div>
+        <div class="pipe-box pipe-box-source">IR Feed
+          <div class="pipe-box-sub">Live company IR page<br>modes: rss / index / template</div>
+        </div>
+        <div class="pipe-box pipe-box-source">EDGAR
+          <div class="pipe-box-sub">SEC API<br>8-K, 10-Q, 10-K, 6-K, 20-F</div>
+        </div>
+        <div class="pipe-box pipe-box-source">Newswire
+          <div class="pipe-box-sub">PRNewswire / GlobeNewswire<br>via /api/ingest/raw</div>
+        </div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 2: Ingest -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">2. Ingest</div>
+        <div class="pipe-box pipe-box-ingest" style="margin-top:1.1rem">reports table
+          <div class="pipe-box-sub">Raw text stored.<br>source_type labeled.<br>covering_period set.</div>
+        </div>
+        <div class="pipe-note">One row per document.<br>No extraction yet.</div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 3: Extract -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">3. Extract</div>
+        <div class="pipe-box pipe-box-extract" style="margin-top:1.1rem">LLM + regex
+          <div class="pipe-box-sub">Qwen3.5-35B via Ollama<br>+ pattern matching<br>per metric per report</div>
+        </div>
+        <div class="pipe-note">Agreement engine compares<br>LLM vs regex value.</div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 4: Output -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">4. Output</div>
+        <div class="pipe-box pipe-box-output">data_points
+          <div class="pipe-box-sub">LLM + regex agree (&le;2%)<br>Analyst-protected values</div>
+        </div>
+        <div class="pipe-box pipe-box-review" style="margin-top:8px">review_queue
+          <div class="pipe-box-sub">Disagree or LLM-only.<br>Analyst resolves &#8594;<br>data_points</div>
+        </div>
+      </div>
+
+    </div><!-- /pipe-diagram -->
+
+    <p style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:-0.5rem">
+      Ingest and extract are intentionally decoupled (two-stage pipeline). Ingest stores raw text; extraction runs separately on demand or via auto-extract after acquisition.
+      Analyst-edited values (<code>analyst</code>, <code>analyst_approved</code>, <code>review_approved</code>, <code>review_edited</code>) are never overwritten by the pipeline.
+    </p>
+  </div>
+
+  <div class="guide-cols">
+
+    <!-- Source channels -->
+    <div class="guide-section">
+      <h3>Source Channels</h3>
+      <table class="guide-table">
+        <thead>
+          <tr><th>Channel</th><th>scraper_mode</th><th>source_type in DB</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Archive (disk)</td>
+            <td><code>n/a</code></td>
+            <td><code>archive_html</code> <code>archive_pdf</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; RSS feed</td>
+            <td><code>rss</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; HTML index</td>
+            <td><code>index</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; URL template</td>
+            <td><code>template</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; Playwright (JS pages)</td>
+            <td><code>playwright</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; disabled</td>
+            <td><code>skip</code></td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>EDGAR (domestic)</td>
+            <td><code>n/a</code> (requires CIK)</td>
+            <td><code>edgar_8k</code> <code>edgar_10q</code> <code>edgar_10k</code></td>
+          </tr>
+          <tr>
+            <td>EDGAR (foreign)</td>
+            <td><code>n/a</code> (filing_regime)</td>
+            <td><code>edgar_filing</code> (6-K/20-F/40-F)</td>
+          </tr>
+          <tr>
+            <td>PRNewswire</td>
+            <td><code>n/a</code> (prnewswire_url)</td>
+            <td><code>prnewswire_press_release</code></td>
+          </tr>
+          <tr>
+            <td>GlobeNewswire</td>
+            <td><code>n/a</code> (globenewswire_url)</td>
+            <td><code>globenewswire_press_release</code></td>
+          </tr>
+          <tr>
+            <td>Wire / LLM crawl</td>
+            <td><code>n/a</code></td>
+            <td><code>wire_press_release</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Button reference -->
+    <div class="guide-section">
+      <h3>Button &rarr; Action Map</h3>
+      <table class="guide-table">
+        <thead>
+          <tr><th>Button</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Acquire Archive</strong></td>
+            <td>Walks <code>OffChain/Miner/Miner Monthly/</code>, parses PDFs/HTMLs, inserts into <code>reports</code>. Skips existing unless force-flag is set.</td>
+          </tr>
+          <tr>
+            <td><strong>Acquire IR</strong></td>
+            <td>Fetches live IR pages for all active companies using each company's configured scraper_mode. Stores raw text in <code>reports</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Acquire EDGAR</strong></td>
+            <td>Calls SEC EDGAR full-text search for each company with a CIK. Fetches 8-K/10-Q/10-K (or 6-K/20-F for foreign filers). Deduplicates by accession number.</td>
+          </tr>
+          <tr>
+            <td><strong>Auto-extract checkbox</strong></td>
+            <td>When checked, IR and EDGAR acquisition automatically run the extraction stage on all newly-ingested reports before marking the job complete.</td>
+          </tr>
+          <tr>
+            <td><strong>Start Extraction</strong></td>
+            <td>Runs LLM + regex extraction on all unextracted reports (or one ticker). Writes agreed values to <code>data_points</code> and disagreements to <code>review_queue</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Probe Targets</strong></td>
+            <td>Scraper governance: sends HTTP probes to IR URLs, checks RSS/index/template availability. Writes evidence to <code>source_audit</code>. Does not change modes.</td>
+          </tr>
+          <tr>
+            <td><strong>Probe + Apply Modes</strong></td>
+            <td>Same as Probe Targets, then automatically updates <code>scraper_mode</code> for companies where evidence supports a mode change (skip &rarr; active only with explicit policy).</td>
+          </tr>
+          <tr>
+            <td><strong>Sync Config</strong></td>
+            <td>Re-reads <code>config/companies.json</code> and upserts all company rows. Useful after editing the JSON file directly.</td>
+          </tr>
+          <tr>
+            <td><strong>Scan Manifest</strong></td>
+            <td>Walks the archive directory and records every file in <code>asset_manifest</code> (inventory of what is on disk, before ingest). Run this after adding new files to the archive folder.</td>
+          </tr>
+          <tr>
+            <td><strong>EDGAR Bridge</strong></td>
+            <td>Fills monthly coverage gaps by carrying forward or inferring values from quarterly/annual EDGAR filings when no monthly press release exists.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /guide-cols -->
+
+  <!-- Key concepts -->
+  <div class="guide-section">
+    <h3>Key Concepts and Terminology</h3>
+    <table class="guide-table">
+      <thead>
+        <tr><th style="width:160px">Term</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>reports</code></td>
+          <td>The central ingestion table. One row per document (press release, EDGAR filing, archive file). Holds raw text, source type, and covering period. Extraction status tracked via <code>extracted_at</code>.</td>
+        </tr>
+        <tr>
+          <td><code>data_points</code></td>
+          <td>Final extracted metric values. Populated when LLM and regex agree, or when an analyst approves a review item. These power the Explorer, Coverage, and Scorecard views.</td>
+        </tr>
+        <tr>
+          <td><code>review_queue</code></td>
+          <td>Holds extraction candidates where LLM and regex disagree, or where only LLM found a value. Analyst approves, rejects, or edits each item. Approved items become <code>data_points</code>.</td>
+        </tr>
+        <tr>
+          <td><code>asset_manifest</code></td>
+          <td>Inventory of files physically on disk in the archive folder. Separate from <code>reports</code>: a file can be in the manifest (known on disk) but not yet ingested (no reports row). Run <strong>Scan Manifest</strong> to populate. Tracks <code>ingest_state</code>: <code>pending</code>, <code>ingested</code>, <code>legacy_undated</code>.</td>
+        </tr>
+        <tr>
+          <td><code>covering_period</code></td>
+          <td>The calendar month or quarter a report covers, in <code>YYYY-MM</code> or <code>YYYY-Qn</code> format. Inferred from filename, document body, or EDGAR filing metadata. Drives the coverage grid.</td>
+        </tr>
+        <tr>
+          <td><code>scraper_mode</code></td>
+          <td>Controls how the IR scraper fetches live press releases for a company. One of: <code>rss</code> (parse RSS feed), <code>index</code> (scrape HTML listing page), <code>template</code> (generate URLs from a pattern), <code>skip</code> (do not scrape). EDGAR is a separate, always-on channel if a CIK is configured.</td>
+        </tr>
+        <tr>
+          <td><code>filing_regime</code></td>
+          <td>Whether a company files with the SEC as a domestic (<code>domestic</code>) or foreign private issuer (<code>foreign</code>). Foreign issuers file 6-K/20-F/40-F instead of 8-K/10-K.</td>
+        </tr>
+        <tr>
+          <td>Agreement engine</td>
+          <td>After extraction, compares the LLM value and regex value for each metric. If they agree within 2%, the regex value goes directly to <code>data_points</code>. If they disagree or only LLM found a value, the item goes to <code>review_queue</code>.</td>
+        </tr>
+        <tr>
+          <td>Analyst protection</td>
+          <td>Data points with <code>extraction_method</code> in (<code>analyst</code>, <code>analyst_approved</code>, <code>review_approved</code>, <code>review_edited</code>) are never overwritten by pipeline re-runs. Analyst corrections are permanent until explicitly changed.</td>
+        </tr>
+        <tr>
+          <td>Scraper governance</td>
+          <td>Automated probing system that tests whether a company's configured IR source URLs are reachable and of the expected type. Records probe evidence in <code>source_audit</code> and flags companies whose configuration may be stale or misconfigured.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ── Research tab ───────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-research" data-ui-id="2.7">
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+    <h2 style="margin:0;font-size:1rem">Research Crawl</h2>
+    <button class="btn btn-sm btn-primary" onclick="startCrawlAll()">Crawl All</button>
+    <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
+    <span id="research-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+    Triggers an Anthropic-powered agentic crawl for each company. The model navigates IR sites and wire services, fetches press releases, and stores them via <code>/api/ingest/raw</code>. Progress updates every 2 seconds while running.
+  </p>
+
+  <!-- Per-ticker selector -->
+  <div id="research-ticker-bar" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+
+  <!-- Status grid -->
+  <div id="research-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-bottom:1rem"></div>
+
+  <!-- Log panel (shown when a ticker is selected) -->
+  <div id="research-log-panel" style="display:none">
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+      <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
+      <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+    </div>
+    <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:320px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/js/doc_panel.js"></script>
 <script>
 // ── Tab routing ─────────────────────────────────────────────────────────────
-const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review'];
+const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review', 'guide', 'research'];
 let _activeTab = null;
 
 function activateTab(name) {
@@ -691,7 +908,7 @@ function activateTab(name) {
   url.searchParams.set('tab', name);
   history.replaceState(null, '', url.toString());
   // Lazy-load tab data on first activation
-  if (name === 'companies' && !_companiesLoaded) loadCompanies();
+  if (name === 'companies') { if (!_companiesLoaded) loadCompanies(); loadOllamaModels(); }
   if (name === 'registry' && !_registryLoaded) loadRegistry();
   if (name === 'explorer') {
     if (!_metricsLoaded) loadExplorerMetrics();
@@ -700,6 +917,7 @@ function activateTab(name) {
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
+  if (name === 'research') loadResearch();
 }
 
 // Tab button click — event delegation wired once (Anti-pattern #25)
@@ -738,11 +956,6 @@ let _acqTaskId = null;
 let _acqTaskTimer = null;
 let _extractTaskId = null;
 let _extractTimer = null;
-let _overnightRunId = null;
-let _overnightPollTimer = null;
-let _observerTaskId = null;
-let _observerPollTimer = null;
-let _scoutKeywordFrequency = [];
 
 function _acqStateLabel(raw) {
   if (raw === 'complete') return 'complete';
@@ -928,6 +1141,58 @@ async function _pollExtractionRun(taskId, ticker) {
   }, 1000);
 }
 
+async function loadOllamaModels() {
+  const sel = document.getElementById('extract-model');
+  if (!sel) return;
+  try {
+    // Query Ollama directly from the browser — no Flask proxy, no timeout delay.
+    // Falls back to the backend endpoint if CORS blocks the direct call.
+    let models = [];
+    try {
+      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
+      if (direct.ok) {
+        const d = await direct.json();
+        models = (d.models || []).map(function(m) { return m.name; });
+      }
+    } catch (_) {
+      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
+      const d = await fallback.json();
+      models = (d.data?.models || []).map(function(m) { return m.name; });
+    }
+    // Fetch the currently saved model from config (fast DB read).
+    let active = '';
+    try {
+      const cfgResp = await fetch('/api/config', { cache: 'no-store' });
+      const cfgData = await cfgResp.json();
+      const row = (cfgData.data?.config || []).find(function(r) { return r.key === 'ollama_model'; });
+      active = row?.value || '';
+    } catch (_) {}
+    sel.innerHTML = models.length
+      ? models.map(function(n) {
+          return '<option value="' + escapeAttr(n) + '"' + (n === active ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+        }).join('')
+      : '<option value="">No models found</option>';
+  } catch (_err) {
+    sel.innerHTML = '<option value="">Could not load models</option>';
+  }
+}
+
+async function saveOllamaModel(modelName) {
+  if (!modelName) return;
+  try {
+    const resp = await fetch('/api/config/ollama_model', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ value: modelName }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    showToast('Model set to ' + modelName);
+  } catch (err) {
+    showToast('Failed to save model: ' + String(err), true);
+  }
+}
+
 async function startExtractionRun() {
   if (_extractTaskId) return;
   const ticker = (document.getElementById('extract-ticker').value || '').trim().toUpperCase();
@@ -1042,305 +1307,6 @@ function _parseCommaOrNewlineTerms(raw) {
   return out;
 }
 
-function _setScoutKeywordTextarea(terms) {
-  const el = document.getElementById('ov-scout-keywords');
-  if (!el) return;
-  el.value = (terms || []).join(', ');
-}
-
-function _appendScoutKeywordTerm(term) {
-  const incoming = String(term || '').trim().toLowerCase();
-  if (!incoming) return;
-  const el = document.getElementById('ov-scout-keywords');
-  if (!el) return;
-  const cur = _parseCommaOrNewlineTerms(el.value);
-  if (!cur.includes(incoming)) cur.push(incoming);
-  el.value = cur.join(', ');
-}
-
-function _renderScoutKeywordFrequency(words) {
-  const root = document.getElementById('ov-keyword-freq');
-  if (!root) return;
-  if (!words || !words.length) {
-    root.innerHTML = '<span style="font-size:0.75rem;color:var(--theme-text-muted)">No keyword frequency data yet.</span>';
-    return;
-  }
-  root.innerHTML = words.map(function(w) {
-    const word = escapeHtml(w.word || '');
-    const count = escapeHtml(String(w.count || 0));
-    return '<button class="kw-chip" onclick="appendScoutKeywordFromChip(\'' + escapeAttr(w.word || '') + '\')" title="append keyword">' + word + ' (' + count + ')</button>';
-  }).join('');
-}
-
-function appendScoutKeywordFromChip(word) {
-  _appendScoutKeywordTerm(word);
-}
-
-async function loadScoutKeywordFrequency() {
-  const msgEl = document.getElementById('overnight-msg');
-  if (msgEl) msgEl.textContent = 'Loading keyword frequency…';
-  try {
-    const resp = await fetch('/api/diagnostics', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const words = ((data.data || {}).keywords || []).slice(0, 20);
-    _scoutKeywordFrequency = words;
-    _renderScoutKeywordFrequency(words);
-    if (msgEl) msgEl.textContent = 'Keyword frequency updated';
-  } catch (err) {
-    if (msgEl) msgEl.textContent = 'Keyword frequency unavailable';
-    _renderScoutKeywordFrequency([]);
-  }
-}
-
-function seedScoutKeywordsFromPack() {
-  const terms = _getKeywordTerms() || [];
-  if (!terms.length) {
-    showToast('No active keyword pack terms available', true);
-    return;
-  }
-  _setScoutKeywordTextarea(terms.slice(0, 40));
-  showToast('Seeded scout keywords from active pack');
-}
-
-function seedScoutKeywordsFromFrequencyTop() {
-  if (!_scoutKeywordFrequency || !_scoutKeywordFrequency.length) {
-    showToast('No frequency terms loaded yet', true);
-    return;
-  }
-  const terms = _scoutKeywordFrequency.slice(0, 12).map(function(r) { return (r.word || '').toLowerCase(); }).filter(Boolean);
-  _setScoutKeywordTextarea(terms);
-  showToast('Seeded scout keywords from frequency top terms');
-}
-
-function _parseTickerCsv(raw) {
-  return String(raw || '')
-    .split(',')
-    .map(function(t) { return t.trim().toUpperCase(); })
-    .filter(Boolean);
-}
-
-function _setOvernightStatus(text, isError) {
-  const el = document.getElementById('overnight-status');
-  if (!el) return;
-  el.textContent = text;
-  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
-}
-
-async function startOvernightWithScout() {
-  const tickers = _parseTickerCsv(document.getElementById('ov-tickers')?.value || '');
-  const scoutMode = (document.getElementById('ov-scout-mode')?.value || 'auto').trim();
-  const scoutMaxAgeHours = Math.max(1, Number(document.getElementById('ov-scout-max-age')?.value || 168));
-  const scoutKeywords = _parseCommaOrNewlineTerms(document.getElementById('ov-scout-keywords')?.value || '');
-  const applyModeChanges = !!document.getElementById('ov-apply-modes')?.checked;
-  const warmModel = !!document.getElementById('ov-warm-model')?.checked;
-  const requireScoutSuccess = !!document.getElementById('ov-require-scout-success')?.checked;
-
-  _setOvernightStatus('Starting overnight run…', false);
-  try {
-    const resp = await fetch('/api/pipeline/overnight/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        tickers,
-        apply_mode_changes: applyModeChanges,
-        warm_model: warmModel,
-        scout_mode: scoutMode,
-        scout_max_age_hours: scoutMaxAgeHours,
-        scout_keywords: scoutKeywords,
-        require_scout_success: requireScoutSuccess,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    _overnightRunId = Number(data.data?.run_id || 0) || null;
-    if (_overnightRunId) {
-      const runIdInput = document.getElementById('ov-run-id');
-      if (runIdInput) runIdInput.value = String(_overnightRunId);
-      _setOvernightStatus('Run #' + _overnightRunId + ' queued', false);
-      showToast('Overnight run started: #' + _overnightRunId);
-      refreshOvernightStatus();
-      if (_overnightPollTimer) clearInterval(_overnightPollTimer);
-      _overnightPollTimer = setInterval(refreshOvernightStatus, 3000);
-    }
-  } catch (err) {
-    _setOvernightStatus('Failed to start: ' + String(err), true);
-    showToast('Failed to start overnight run', true);
-  }
-}
-
-function _activeOvernightRunId() {
-  const explicit = Number(document.getElementById('ov-run-id')?.value || 0);
-  if (explicit > 0) return explicit;
-  return _overnightRunId;
-}
-
-async function refreshOvernightStatus() {
-  const runId = _activeOvernightRunId();
-  if (!runId) {
-    _setOvernightStatus('No run selected. Start a run or enter run id.', false);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/status', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const run = data.data?.run || {};
-    const summary = run.summary || {};
-    const scout = summary.scout || {};
-    const status = run.status || 'unknown';
-    const scoutText = scout.ran
-      ? ('scout=' + (scout.results ? scout.results.length : 0) + ' ok, ' + (scout.failures ? scout.failures.length : 0) + ' failed')
-      : ('scout=' + (scout.reason || 'skipped'));
-    _setOvernightStatus(
-      'Run #' + runId + ' status=' + status
-      + ' | targets=' + ((summary.scrape_targets || []).length || 0)
-      + ' | failures=' + ((summary.failures || []).length || 0)
-      + ' | ' + scoutText,
-      status === 'failed' || status === 'failed_preflight'
-    );
-    if (['complete', 'partial_complete', 'failed', 'failed_preflight', 'cancelled'].includes(status)) {
-      if (_overnightPollTimer) {
-        clearInterval(_overnightPollTimer);
-        _overnightPollTimer = null;
-      }
-      loadPipelineObservability();
-    }
-  } catch (err) {
-    _setOvernightStatus('Status check failed: ' + String(err), true);
-  }
-}
-
-async function cancelOvernightRun() {
-  const runId = _activeOvernightRunId();
-  if (!runId) {
-    showToast('No run id selected', true);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/cancel', { method: 'POST' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    _setOvernightStatus('Run #' + runId + ' cancel requested', false);
-    showToast('Cancel requested for run #' + runId);
-  } catch (err) {
-    _setOvernightStatus('Cancel failed: ' + String(err), true);
-    showToast('Cancel failed', true);
-  }
-}
-
-function _setObserverStatus(text, isError) {
-  const el = document.getElementById('observer-status');
-  if (!el) return;
-  el.textContent = text;
-  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
-}
-
-function _renderObserverArtifacts(summary) {
-  const el = document.getElementById('observer-artifacts');
-  if (!el) return;
-  if (!summary || typeof summary !== 'object') {
-    el.textContent = '';
-    return;
-  }
-  const promptIdx = summary.prompt_trace && summary.prompt_trace.index ? String(summary.prompt_trace.index) : '';
-  const decisionPath = summary.decision_trace && summary.decision_trace.path ? String(summary.decision_trace.path) : '';
-  const merged = summary.artifacts && summary.artifacts.merged_source_contracts ? String(summary.artifacts.merged_source_contracts) : '';
-  const parts = [];
-  if (merged) parts.push('merged=' + merged);
-  if (promptIdx) parts.push('prompt_trace=' + promptIdx);
-  if (decisionPath) parts.push('decision_trace=' + decisionPath);
-  el.textContent = parts.join(' | ');
-}
-
-async function startObserverSwarm() {
-  const tickers = _parseTickerCsv(document.getElementById('obs-tickers')?.value || '');
-  const scoutCount = Math.max(1, Number(document.getElementById('obs-scout-count')?.value || 4));
-  const maxAttempts = Math.max(1, Number(document.getElementById('obs-max-attempts')?.value || 5));
-  const maxNoYield = Math.max(1, Number(document.getElementById('obs-max-no-yield')?.value || 3));
-  const executeScrape = !!document.getElementById('obs-execute-scrape')?.checked;
-  const runFeedbackLoop = !!document.getElementById('obs-feedback-loop')?.checked;
-  const applyPrimitives = !!document.getElementById('obs-apply-primitives')?.checked;
-  const runIdRaw = (document.getElementById('obs-run-id')?.value || '').trim();
-
-  _setObserverStatus('Starting observer swarm…', false);
-  _renderObserverArtifacts(null);
-  try {
-    const resp = await fetch('/api/operations/observer_swarm/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        tickers,
-        scout_count: scoutCount,
-        max_attempts_source: maxAttempts,
-        max_no_yield: maxNoYield,
-        execute_scrape: executeScrape,
-        run_feedback_loop: runFeedbackLoop,
-        apply_validated_primitives: applyPrimitives,
-        run_id: runIdRaw || null,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-
-    _observerTaskId = String(data.data?.task_id || '');
-    const taskInput = document.getElementById('obs-task-id');
-    if (taskInput && _observerTaskId) taskInput.value = _observerTaskId;
-    _setObserverStatus('Observer swarm task queued: ' + _observerTaskId, false);
-    showToast('Observer swarm started');
-    refreshObserverSwarmStatus();
-    if (_observerPollTimer) clearInterval(_observerPollTimer);
-    _observerPollTimer = setInterval(refreshObserverSwarmStatus, 3000);
-  } catch (err) {
-    _setObserverStatus('Failed to start: ' + String(err), true);
-    showToast('Failed to start observer swarm', true);
-  }
-}
-
-function _activeObserverTaskId() {
-  const explicit = String(document.getElementById('obs-task-id')?.value || '').trim();
-  if (explicit) return explicit;
-  return _observerTaskId;
-}
-
-async function refreshObserverSwarmStatus() {
-  const taskId = _activeObserverTaskId();
-  if (!taskId) {
-    _setObserverStatus('No observer task selected. Start a run or enter task id.', false);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/operations/observer_swarm/' + encodeURIComponent(taskId) + '/status', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const s = data.data || {};
-    const state = s.status || 'unknown';
-    const summary = s.summary || {};
-    const statusCounts = summary.status_counts || {};
-    const feedback = summary.feedback_loop || {};
-    _setObserverStatus(
-      'Task ' + taskId + ' status=' + state
-      + ' | tickers=' + ((s.tickers || []).length || 0)
-      + ' | ready=' + (statusCounts.ready_for_scrape || 0)
-      + ' | partial=' + (statusCounts.partially_covered || 0)
-      + ' | blocked=' + (statusCounts.blocked || 0)
-      + ' | gaps=' + (feedback.gap_count || 0)
-      + ' | candidates=' + (feedback.candidate_count || 0),
-      state === 'error'
-    );
-    _renderObserverArtifacts(summary);
-    if (['complete', 'error'].includes(state)) {
-      if (_observerPollTimer) {
-        clearInterval(_observerPollTimer);
-        _observerPollTimer = null;
-      }
-      loadPipelineObservability();
-    }
-  } catch (err) {
-    _setObserverStatus('Status check failed: ' + String(err), true);
-  }
-}
-
 async function loadCompanies() {
   const tbody = document.getElementById('companies-tbody');
   try {
@@ -1360,7 +1326,6 @@ async function loadCompanies() {
     renderCompanies();
     loadScrapeQueue();
     loadPipelineObservability();
-    loadScoutKeywordFrequency();
   } catch (_err) {
     _companiesLoaded = false;
     if (tbody) {
@@ -2752,6 +2717,7 @@ async function loadMetricRules() {
           '<option value="0"' + (!r.enabled ? ' selected' : '') + '>Off</option>' +
           '</select></td>' +
         '<td><button class="btn btn-xs btn-primary" onclick="saveMetricRule(' + "'" + escapeHtml(r.metric) + "'" + ')">Save</button>' +
+          ' <button class="btn btn-xs btn-danger" onclick="deleteMetricRule(' + "'" + escapeHtml(r.metric) + "'" + ')">Delete</button>' +
           ' <span id="rules-msg-' + escapeHtml(r.metric) + '" style="font-size:0.75rem;color:var(--theme-text-muted)"></span></td>' +
         '</tr>';
     }).join('');
@@ -2786,6 +2752,170 @@ async function saveMetricRule(metric) {
     if (msgEl) msgEl.style.color = 'var(--theme-danger)';
     if (msgEl) msgEl.textContent = String(err);
   }
+}
+
+async function deleteMetricRule(metric) {
+  if (!confirm('Delete rule for "' + metric + '"? The pipeline will fall back to config.py defaults until a new rule is created.')) return;
+  try {
+    const resp = await fetch('/api/metric_rules/' + encodeURIComponent(metric), { method: 'DELETE' });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Delete failed');
+    showToast('Deleted rule for ' + metric);
+    loadMetricRules();
+  } catch(err) {
+    showToast('Delete failed: ' + String(err), true);
+  }
+}
+
+// ── Research tab ─────────────────────────────────────────────────────────────
+let _researchLoaded = false;
+let _researchPollTimer = null;
+let _researchTaskId = null;
+let _researchLogTicker = null;
+let _researchLastSnaps = {};
+
+function loadResearch() {
+  _researchLoaded = true;
+  _buildResearchTickerBar();
+  _pollResearchStatus();
+}
+
+function _buildResearchTickerBar() {
+  const bar = document.getElementById('research-ticker-bar');
+  if (!bar) return;
+  // Derive ticker list from companies already loaded (or fetch)
+  const tickers = _companies.length
+    ? _companies.map(function(c) { return c.ticker; })
+    : ['MARA','RIOT','CLSK','CORZ','BITF','BTBT','CIFR','HIVE','HUT8','ARBK','SDIG','WULF','IREN'];
+  bar.innerHTML = '';
+  tickers.forEach(function(t) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary';
+    btn.textContent = t;
+    btn.title = 'Crawl ' + t + ' only';
+    btn.onclick = function() { startCrawlTickers([t]); };
+    bar.appendChild(btn);
+  });
+}
+
+async function startCrawlAll() {
+  const tickers = _companies.length
+    ? _companies.filter(function(c) { return c.active !== false; }).map(function(c) { return c.ticker; })
+    : [];
+  await startCrawlTickers(tickers);
+}
+
+async function startCrawlTickers(tickers) {
+  if (!tickers.length) {
+    setResearchMsg('No active companies to crawl', true);
+    return;
+  }
+  setResearchMsg('Starting crawl for ' + tickers.join(', ') + '…');
+  try {
+    const resp = await fetch('/api/crawl/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tickers: tickers}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Start failed');
+    _researchTaskId = data.data.task_id;
+    setResearchMsg('Crawl started — task ' + _researchTaskId.slice(0, 8) + '…');
+    _startResearchPoll();
+  } catch (err) {
+    setResearchMsg('Failed to start crawl: ' + String(err), true);
+  }
+}
+
+function _startResearchPoll() {
+  if (_researchPollTimer) clearInterval(_researchPollTimer);
+  _researchPollTimer = setInterval(_pollResearchStatus, 2000);
+}
+
+async function _pollResearchStatus() {
+  try {
+    const resp = await fetch('/api/crawl/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const snaps = data.data || [];
+    _researchLastSnaps = {};
+    snaps.forEach(function(s) { _researchLastSnaps[s.ticker] = s; });
+    _renderResearchGrid(snaps);
+
+    // Stop polling if all done
+    const anyRunning = snaps.some(function(s) {
+      return s.status === 'running' || s.status === 'pending';
+    });
+    if (!anyRunning && _researchPollTimer) {
+      clearInterval(_researchPollTimer);
+      _researchPollTimer = null;
+    }
+
+    // Update log panel if open
+    if (_researchLogTicker && _researchLastSnaps[_researchLogTicker]) {
+      _renderResearchLog(_researchLastSnaps[_researchLogTicker]);
+    }
+  } catch (_e) {}
+}
+
+function _renderResearchGrid(snaps) {
+  const grid = document.getElementById('research-grid');
+  if (!grid) return;
+  if (!snaps.length) {
+    grid.innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.85rem">No active crawl session. Click "Crawl All" or a ticker button to start.</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  snaps.forEach(function(s) {
+    const color = s.status === 'complete' ? 'var(--theme-success)'
+      : s.status === 'failed'   ? 'var(--theme-danger)'
+      : s.status === 'running'  ? 'var(--theme-accent)'
+      : 'var(--theme-text-muted)';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'padding:0.5rem;cursor:pointer;';
+    card.onclick = function() { openResearchLog(s.ticker); };
+    const lastLog = s.log && s.log.length ? s.log[0] : '';
+    card.innerHTML = [
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem">',
+      '  <span style="font-weight:600;font-size:0.85rem">' + escapeHtml(s.ticker) + '</span>',
+      '  <span style="font-size:0.7rem;color:' + color + '">' + escapeHtml(s.status) + '</span>',
+      '</div>',
+      '<div style="font-size:0.72rem;color:var(--theme-text-muted)">',
+      '  Pages: ' + s.pages_fetched + ' &bull; Stored: ' + s.docs_stored + ' &bull; Skipped: ' + s.docs_skipped,
+      '</div>',
+      lastLog ? '<div style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:0.25rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="' + escapeAttr(lastLog) + '">' + escapeHtml(lastLog) + '</div>' : '',
+    ].join('');
+    grid.appendChild(card);
+  });
+}
+
+function openResearchLog(ticker) {
+  _researchLogTicker = ticker;
+  document.getElementById('research-log-ticker').textContent = ticker;
+  document.getElementById('research-log-panel').style.display = '';
+  const snap = _researchLastSnaps[ticker];
+  if (snap) _renderResearchLog(snap);
+}
+
+function closeResearchLog() {
+  _researchLogTicker = null;
+  document.getElementById('research-log-panel').style.display = 'none';
+}
+
+function _renderResearchLog(snap) {
+  const el = document.getElementById('research-log');
+  if (!el) return;
+  el.innerHTML = (snap.log || []).map(function(line) {
+    return '<div>' + escapeHtml(line) + '</div>';
+  }).join('');
+}
+
+function setResearchMsg(text, isError) {
+  const el = document.getElementById('research-msg');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-muted)';
 }
 </script>
 {% endblock %}

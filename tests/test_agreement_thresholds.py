@@ -126,3 +126,91 @@ class TestDefaultThreshold:
         llm = _make_result(1016.0, 'production_btc')
         d = evaluate_agreement(regex, llm, metric='production_btc')
         assert d.decision == 'REVIEW_QUEUE'
+
+
+class TestExplicitThresholdParam:
+    """Explicit threshold= param overrides config lookup (DB-sourced values)."""
+
+    def test_explicit_threshold_overrides_config(self):
+        """Passing threshold=0.50 accepts a 40% diff even though config has 1%."""
+        from extractors.agreement import evaluate_agreement
+        # production_btc config threshold is 1%; 40% diff would normally REVIEW_QUEUE
+        regex = _make_result(100.0, 'production_btc')
+        llm = _make_result(140.0, 'production_btc')
+        d = evaluate_agreement(regex, llm, metric='production_btc', threshold=0.50)
+        assert d.decision == 'AUTO_ACCEPT'
+
+    def test_explicit_threshold_tighter_than_config(self):
+        """Passing threshold=0.001 rejects a 5% diff even though config allows 10%."""
+        from extractors.agreement import evaluate_agreement
+        # hashrate_eh config threshold is 10%; 5% would normally AUTO_ACCEPT
+        regex = _make_result(10.0, 'hashrate_eh')
+        llm = _make_result(10.5, 'hashrate_eh')
+        d = evaluate_agreement(regex, llm, metric='hashrate_eh', threshold=0.001)
+        assert d.decision == 'REVIEW_QUEUE'
+
+    def test_explicit_threshold_none_falls_back_to_config(self):
+        """threshold=None falls back to per-metric config lookup (no regression)."""
+        from extractors.agreement import evaluate_agreement
+        regex = _make_result(1000.0, 'production_btc')
+        llm = _make_result(1005.0, 'production_btc')
+        d = evaluate_agreement(regex, llm, metric='production_btc', threshold=None)
+        assert d.decision == 'AUTO_ACCEPT'
+
+
+class TestMetricRuleEnabledFlag:
+    """Issue #4: disabled metric_rule (enabled=0) must fall back to config defaults."""
+
+    def test_disabled_rule_falls_back_to_config_threshold(self):
+        """A metric_rule with enabled=0 must be treated as no rule (config threshold used)."""
+        from extractors.extraction_pipeline import _apply_agreement
+        from unittest.mock import MagicMock, patch
+        from miner_types import ExtractionResult
+
+        regex_result = ExtractionResult(
+            value=1000.0, unit='BTC', confidence=0.9,
+            extraction_method='regex', source_snippet='produced 1000 BTC',
+            metric='production_btc', pattern_id='btc_1',
+        )
+        llm_result = ExtractionResult(
+            value=1015.0, unit='BTC', confidence=0.85,
+            extraction_method='llm', source_snippet='produced 1015 BTC',
+            metric='production_btc', pattern_id=None,
+        )
+        report = {
+            'id': 1, 'ticker': 'MARA', 'report_date': '2024-01-31',
+            'source_type': 'ir_press_release',
+        }
+
+        # Rule with enabled=0 and a very loose threshold of 50%
+        # If the rule were applied, 1.5% diff would AUTO_ACCEPT (50% > 1.5%)
+        # If disabled (falls back to config 1%), 1.5% diff routes to REVIEW_QUEUE
+        disabled_rule = {
+            'metric': 'production_btc', 'enabled': 0,
+            'agreement_threshold': 0.50, 'outlier_threshold': 2.0,
+            'outlier_min_history': 3,
+        }
+
+        db = MagicMock()
+        db.data_point_exists.return_value = False
+        db.get_trailing_values.return_value = []
+
+        from miner_types import ExtractionSummary
+        summary = ExtractionSummary()
+
+        with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}):
+            _apply_agreement(
+                metric='production_btc',
+                regex_best=regex_result,
+                llm_result=llm_result,
+                llm_available=True,
+                db=db,
+                report=report,
+                confidence_threshold=0.75,
+                summary=summary,
+                metric_rule=disabled_rule,
+            )
+
+        # With enabled=0, falls back to config 1% threshold → 1.5% diff → REVIEW_QUEUE → insert_review_item
+        db.insert_review_item.assert_called_once()
+        db.insert_data_point.assert_not_called()

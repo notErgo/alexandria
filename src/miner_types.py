@@ -17,9 +17,35 @@ class SourceType(Enum):
     ARCHIVE_HTML = "archive_html"
     IR_PRESS_RELEASE = "ir_press_release"
     EDGAR_8K = "edgar_8k"
+    EDGAR_8KA = "edgar_8ka"
     EDGAR_10Q = "edgar_10q"
     EDGAR_10K = "edgar_10k"
+    EDGAR_6K = "edgar_6k"
+    EDGAR_6KA = "edgar_6ka"
+    EDGAR_20F = "edgar_20f"
+    EDGAR_20FA = "edgar_20fa"
+    EDGAR_40F = "edgar_40f"
+    EDGAR_40FA = "edgar_40fa"
     MANUAL = "manual"
+
+
+class SourceChannel(str, Enum):
+    """High-level channel that produced a report."""
+    EDGAR = "edgar"
+    IR = "ir"
+    WIRE = "wire"
+    ARCHIVE = "archive"
+    MANUAL = "manual"
+
+
+class ExtractionStatus(str, Enum):
+    """Lifecycle state of report extraction."""
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
+    PARSE_FAILED = "parse_failed"
 
 
 class ReviewStatus(Enum):

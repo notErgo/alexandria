@@ -76,6 +76,20 @@ def _pick_evidence_urls(sources: list) -> list:
     return list(dict.fromkeys(urls))  # deduplicate, preserve order
 
 
+def _build_edgar_prereq_note(company: dict) -> str:
+    """Return an EDGAR prerequisite note if the company has a CIK, else ''."""
+    cik = company.get('cik')
+    if not cik:
+        return ''
+    regime = company.get('filing_regime', 'domestic')
+    fy_end = company.get('fiscal_year_end_month', 12)
+    return (
+        f"**EDGAR prerequisite**: Before running IR extraction for {company.get('ticker','')}, "
+        f"ensure EDGAR has been fetched (POST /api/ingest/edgar). "
+        f"Filing regime: {regime}. Fiscal year end month: {fy_end}. CIK: {cik}.\n\n"
+    )
+
+
 def generate_prompt(ticker: str, contract: dict, company: dict, contracts_dir: Path) -> None:
     """Fill template vars for ticker and write to OUTPUT_DIR/{ticker}_crawl.md."""
     template = _load_template()
@@ -84,6 +98,7 @@ def generate_prompt(ticker: str, contract: dict, company: dict, contracts_dir: P
     entry_urls = _pick_entry_urls(sources)
     evidence_urls = _pick_evidence_urls(sources)
     year_filter = _build_year_filter_instructions(company)
+    edgar_prereq_note = _build_edgar_prereq_note(company)
     pr_start_year = company.get('pr_start_year') or 2021
     output_path = str(_DATA_RESULTS_DIR / ticker / 'results.json')
 
@@ -95,6 +110,7 @@ def generate_prompt(ticker: str, contract: dict, company: dict, contracts_dir: P
         .replace('{entry_urls_json}', json.dumps(entry_urls, indent=2))
         .replace('{evidence_urls_json}', json.dumps(evidence_urls, indent=2))
         .replace('{year_filter_instructions}', year_filter)
+        .replace('{edgar_prereq_note}', edgar_prereq_note)
         .replace('{output_path}', output_path)
     )
 

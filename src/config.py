@@ -15,6 +15,9 @@ import os as _os
 # Extractions below this confidence route to review_queue for analyst approval.
 CONFIDENCE_REVIEW_THRESHOLD: float = 0.75
 
+# Reports that fail extraction this many times are promoted to dead_letter and skipped.
+MAX_EXTRACTION_ATTEMPTS: int = 5
+
 # --- Paths ---
 # Investigation data (sessions, results): backed up, not in project tree
 DATA_DIR: str = str(Path(
@@ -49,6 +52,8 @@ EDGAR_COMPANY_URL: str = "https://www.sec.gov/cgi-bin/browse-edgar"
 EDGAR_SUBMISSIONS_URL: str = "https://data.sec.gov/submissions/CIK{cik}.json"
 # Probed 2026-03-01: 0.1s between requests works without 429; conservative floor
 EDGAR_REQUEST_DELAY_SECONDS: float = 0.1
+# Base backoff sleep (seconds) when EDGAR returns 429 Too Many Requests
+EDGAR_RETRY_BACKOFF_BASE: float = 60.0
 
 # --- IR Scraper ---
 # 3.0s between requests: respectful crawl rate for public IR pages
@@ -72,6 +77,17 @@ MAX_SOURCE_SNIPPET_LEN: int = 1000
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:35b-a3b")
 LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s; 300s gives headroom
+
+# --- Crawl LLM (Anthropic Claude) ---
+# Used by llm_crawler.py for JS-heavy IR page understanding.
+# Set ANTHROPIC_API_KEY env var before running crawl jobs.
+ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
+CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
+
+# Context window budgets for ContextWindowSelector
+CONTEXT_CHAR_BUDGET = 8_000          # monthly press releases
+CONTEXT_CHAR_BUDGET_QUARTERLY = 24_000  # EDGAR 10-Q / 10-K
+
 # Deprecated: replaced by METRIC_AGREEMENT_THRESHOLDS. Kept for backward compatibility.
 LLM_AGREEMENT_THRESHOLD: float = 0.02
 

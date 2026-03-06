@@ -41,6 +41,8 @@ from routes.regime import bp as regime_bp
 from routes.explorer import bp as explorer_bp
 from routes.metric_rules import bp as metric_rules_bp
 from routes.pipeline import bp as pipeline_bp
+from routes.qc import bp as qc_bp
+from routes.crawl import bp as crawl_bp
 
 log = logging.getLogger('miners.web')
 
@@ -99,6 +101,8 @@ def create_app() -> Flask:
     app.register_blueprint(explorer_bp)
     app.register_blueprint(metric_rules_bp)
     app.register_blueprint(pipeline_bp)
+    app.register_blueprint(qc_bp)
+    app.register_blueprint(crawl_bp)
 
     @app.errorhandler(404)
     def not_found(e):

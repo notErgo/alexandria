@@ -21,7 +21,9 @@ from config import (
     EDGAR_BASE_URL,
     EDGAR_SUBMISSIONS_URL,
     EDGAR_REQUEST_DELAY_SECONDS,
+    EDGAR_RETRY_BACKOFF_BASE,
 )
+from scrapers.fetch_policy import DEFAULT_RETRY_POLICY, CircuitOpenError
 
 log = logging.getLogger('miners.scrapers.edgar_connector')
 
@@ -30,6 +32,18 @@ _DATE_PATTERN = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 # Maximum characters of filing text stored (10-Q/10-K can be very long)
 _MAX_FILING_TEXT_CHARS = 100_000
+
+# 8-K full-text search terms (OR-joined). Covers all known production PR phrasings.
+_8K_SEARCH_TERMS: list = [
+    '"bitcoin production"',
+    '"BTC production"',
+    '"bitcoin mined"',
+    '"BTC mined"',
+    '"mining operations update"',
+    '"production and operations"',
+    '"digital asset production"',
+    '"hash rate"',
+]
 
 
 # ── Module-level helpers (public, used by tests) ──────────────────────────────
@@ -44,7 +58,7 @@ def period_of_report_to_covering_period(period_of_report: str, form_type: str) -
     year = int(parts[0])
     month = int(parts[1])
 
-    if form_type in ('10-K', '10-k'):
+    if form_type in ('10-K', '10-k', '20-F', '20-F/A', '40-F', '40-F/A'):
         return f"{year}-FY"
 
     # Map month to quarter
@@ -251,35 +265,55 @@ class EdgarConnector:
     session: requests.Session
 
     def _edgar_request(self, url: str, params: dict = None) -> Optional[dict]:
-        """Make a rate-limited GET request to EDGAR. Returns JSON or None."""
-        time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
-        try:
-            resp = self.session.get(
-                url,
-                params=params,
-                timeout=30,
-                headers={"User-Agent": _USER_AGENT},
-            )
-            if resp.status_code == 400:
-                log.debug("EDGAR returned 400 for %s", url)
+        """Make a rate-limited GET request to EDGAR. Returns JSON or None.
+
+        Handles 429 with exponential backoff up to 2 retries.
+        """
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
+            try:
+                resp = DEFAULT_RETRY_POLICY.execute(
+                    self.session.get,
+                    url,
+                    params=params,
+                    timeout=30,
+                    headers={"User-Agent": _USER_AGENT},
+                )
+                if resp.status_code == 429:
+                    backoff = EDGAR_RETRY_BACKOFF_BASE * (2 ** attempt)
+                    log.warning(
+                        "EDGAR 429 Too Many Requests for %s, backing off %.0fs (attempt %d/%d)",
+                        url, backoff, attempt + 1, max_attempts,
+                    )
+                    time.sleep(backoff)
+                    continue
+                if resp.status_code == 400:
+                    log.debug("EDGAR returned 400 for %s", url)
+                    return None
+                resp.raise_for_status()
+                return resp.json()
+            except CircuitOpenError as e:
+                log.warning("Circuit open, skipping EDGAR request for %s: %s", url, e)
                 return None
-            resp.raise_for_status()
-            return resp.json()
-        except requests.Timeout:
-            log.warning("Timeout fetching EDGAR %s", url)
-            return None
-        except requests.RequestException as e:
-            log.error("EDGAR request error %s: %s", url, e, exc_info=True)
-            return None
-        except (ValueError, KeyError) as e:
-            log.error("Bad EDGAR response from %s: %s", url, e, exc_info=True)
-            return None
+            except requests.Timeout:
+                log.warning("Timeout fetching EDGAR %s", url)
+                return None
+            except requests.RequestException as e:
+                log.error("EDGAR request error %s: %s", url, e, exc_info=True)
+                return None
+            except (ValueError, KeyError) as e:
+                log.error("Bad EDGAR response from %s: %s", url, e, exc_info=True)
+                return None
+        log.error("EDGAR request failed after %d attempts: %s", max_attempts, url)
+        return None
 
     def _edgar_get_text(self, url: str) -> str:
         """Fetch an EDGAR document and return rate-limited HTML text, or empty string."""
         time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
         try:
-            resp = self.session.get(
+            resp = DEFAULT_RETRY_POLICY.execute(
+                self.session.get,
                 url,
                 timeout=30,
                 headers={"User-Agent": _USER_AGENT},
@@ -289,6 +323,9 @@ class EdgarConnector:
                 return ''
             resp.raise_for_status()
             return resp.text
+        except CircuitOpenError as e:
+            log.warning("Circuit open, skipping EDGAR document fetch for %s: %s", url, e)
+            return ''
         except requests.Timeout:
             log.warning("Timeout fetching EDGAR document %s", url)
             return ''
@@ -305,9 +342,19 @@ class EdgarConnector:
     def _ingest_periodic_filing(
         self, form_type: str, filing: dict, ticker: str, cik: str
     ) -> bool:
-        """Fetch and store one 10-Q or 10-K filing. Returns True if stored, False if skipped."""
+        """Fetch and store one 10-Q or 10-K (or foreign annual/periodic) filing.
+
+        Returns True if stored, False if skipped.
+        Uses accession number for primary dedup; falls back to (ticker, period, source_type).
+        """
         source_type = 'edgar_' + form_type.lower().replace('-', '').replace('/', '')
         period = filing['period_of_report']
+        acc_no = filing.get('accession_number', '')
+
+        # Accession-first dedup: if we already have this exact filing, skip
+        if acc_no and self.db.report_exists_by_accession(acc_no):
+            log.debug("Already ingested %s %s by accession %s", source_type, ticker, acc_no)
+            return False
 
         if self.db.report_exists(ticker, period, source_type):
             log.debug("Already ingested %s %s %s", source_type, ticker, period)
@@ -362,14 +409,16 @@ class EdgarConnector:
         parse_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
 
         report = {
-            'ticker':          ticker,
-            'report_date':     period,
-            'published_date':  filing.get('filing_date', period),
-            'source_type':     source_type,
-            'source_url':      primary_url,
-            'raw_text':        text,
-            'parsed_at':       datetime.now(timezone.utc).isoformat(),
-            'covering_period': filing.get('covering_period'),
+            'ticker':            ticker,
+            'report_date':       period,
+            'published_date':    filing.get('filing_date', period),
+            'source_type':       source_type,
+            'source_url':        primary_url,
+            'raw_text':          text,
+            'parsed_at':         datetime.now(timezone.utc).isoformat(),
+            'covering_period':   filing.get('covering_period'),
+            'accession_number':  acc_no or None,
+            'form_type':         form_type,
         }
         try:
             report_id = self.db.insert_report(report)
@@ -401,7 +450,7 @@ class EdgarConnector:
         summary = IngestSummary()
         cik_entity = str(cik).lstrip('0') or '0'
         params = {
-            'q': '"bitcoin production"',
+            'q': ' OR '.join(_8K_SEARCH_TERMS),
             'forms': '8-K',
             'dateRange': 'custom',
             'startdt': since_date.isoformat(),
@@ -438,8 +487,9 @@ class EdgarConnector:
                 accession_number = hit_id
                 doc_name = ''
 
-            if self.db.report_exists(ticker, period_str, 'edgar_8k'):
-                log.debug("Already ingested 8-K: %s %s", ticker, period_str)
+            # Accession-first dedup
+            if accession_number and self.db.report_exists_by_accession(accession_number):
+                log.debug("Already ingested 8-K by accession: %s %s", ticker, accession_number)
                 continue
 
             acc_no_clean = accession_number.replace('-', '')
@@ -488,14 +538,16 @@ class EdgarConnector:
                 continue
 
             report = {
-                'ticker':          ticker,
-                'report_date':     period_str,
-                'published_date':  period_str,
-                'source_type':     'edgar_8k',
-                'source_url':      exhibit_url,
-                'raw_text':        text,
-                'parsed_at':       datetime.now(timezone.utc).isoformat(),
-                'covering_period': None,
+                'ticker':           ticker,
+                'report_date':      period_str,
+                'published_date':   period_str,
+                'source_type':      'edgar_8k',
+                'source_url':       exhibit_url,
+                'raw_text':         text,
+                'parsed_at':        datetime.now(timezone.utc).isoformat(),
+                'covering_period':  None,
+                'accession_number': accession_number or None,
+                'form_type':        '8-K',
             }
             try:
                 self.db.insert_report(report)
@@ -623,8 +675,92 @@ class EdgarConnector:
 
         return summary
 
-    def fetch_all_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
-        """Fetch all 8-K, 10-Q, and 10-K filings for a ticker.
+    def fetch_6k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+        """Fetch 6-K filings from the submissions API (foreign companies — current reports).
+
+        Returns IngestSummary with counts.
+        """
+        from miner_types import IngestSummary
+        summary = IngestSummary()
+        submissions = self._get_submissions(cik)
+        if submissions is None:
+            log.warning("Could not fetch submissions for %s (CIK=%s)", ticker, cik)
+            summary.errors += 1
+            return summary
+
+        filings = parse_submissions_filings(submissions, form_type='6-K')
+        log.info("Found %d 6-K filings for %s", len(filings), ticker)
+
+        for filing in filings:
+            period = filing.get('period_of_report', '')
+            if period < since_date.isoformat():
+                continue
+            stored = self._ingest_periodic_filing('6-K', filing, ticker, cik)
+            if stored:
+                summary.reports_ingested += 1
+
+        return summary
+
+    def fetch_20f_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+        """Fetch 20-F annual filings from the submissions API (foreign private issuers).
+
+        Returns IngestSummary with counts.
+        """
+        from miner_types import IngestSummary
+        summary = IngestSummary()
+        submissions = self._get_submissions(cik)
+        if submissions is None:
+            log.warning("Could not fetch submissions for %s (CIK=%s)", ticker, cik)
+            summary.errors += 1
+            return summary
+
+        filings = parse_submissions_filings(submissions, form_type='20-F')
+        log.info("Found %d 20-F filings for %s", len(filings), ticker)
+
+        for filing in filings:
+            period = filing.get('period_of_report', '')
+            if period < since_date.isoformat():
+                continue
+            stored = self._ingest_periodic_filing('20-F', filing, ticker, cik)
+            if stored:
+                summary.reports_ingested += 1
+
+        return summary
+
+    def fetch_40f_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+        """Fetch 40-F annual filings from the submissions API (Canadian companies).
+
+        Returns IngestSummary with counts.
+        """
+        from miner_types import IngestSummary
+        summary = IngestSummary()
+        submissions = self._get_submissions(cik)
+        if submissions is None:
+            log.warning("Could not fetch submissions for %s (CIK=%s)", ticker, cik)
+            summary.errors += 1
+            return summary
+
+        filings = parse_submissions_filings(submissions, form_type='40-F')
+        log.info("Found %d 40-F filings for %s", len(filings), ticker)
+
+        for filing in filings:
+            period = filing.get('period_of_report', '')
+            if period < since_date.isoformat():
+                continue
+            stored = self._ingest_periodic_filing('40-F', filing, ticker, cik)
+            if stored:
+                summary.reports_ingested += 1
+
+        return summary
+
+    def fetch_all_filings(
+        self, cik: str, ticker: str, since_date: date, filing_regime: str = 'domestic'
+    ) -> 'IngestSummary':
+        """Fetch all filings for a ticker, routed by filing_regime.
+
+        domestic: 8-K + 10-Q + 10-K
+        canadian: 6-K + 40-F (no 10-Q/10-K)
+        foreign:  6-K + 20-F (no 10-Q/10-K)
 
         Updates last_edgar_at on the company row after completion.
         Returns a combined IngestSummary.
@@ -632,7 +768,18 @@ class EdgarConnector:
         from miner_types import IngestSummary
         combined = IngestSummary()
 
-        for fetcher in (self.fetch_8k_filings, self.fetch_10q_filings, self.fetch_10k_filings):
+        regime = (filing_regime or 'domestic').lower()
+        if regime == 'domestic':
+            fetchers = (self.fetch_8k_filings, self.fetch_10q_filings, self.fetch_10k_filings)
+        elif regime == 'canadian':
+            fetchers = (self.fetch_6k_filings, self.fetch_40f_filings)
+        elif regime == 'foreign':
+            fetchers = (self.fetch_6k_filings, self.fetch_20f_filings)
+        else:
+            log.warning("Unknown filing_regime '%s' for %s, defaulting to domestic", regime, ticker)
+            fetchers = (self.fetch_8k_filings, self.fetch_10q_filings, self.fetch_10k_filings)
+
+        for fetcher in fetchers:
             try:
                 result = fetcher(cik=cik, ticker=ticker, since_date=since_date)
                 combined.reports_ingested += result.reports_ingested

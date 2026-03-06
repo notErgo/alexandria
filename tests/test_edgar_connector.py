@@ -224,6 +224,7 @@ class TestFetch8kExhibitResolution:
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
 
         session = self._make_session(
             search_id='0001437491-24-001:ex991pressrelease.htm',
@@ -242,6 +243,7 @@ class TestFetch8kExhibitResolution:
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
 
         session = self._make_session(
             search_id='0001437491-24-001:ex991.htm',

@@ -4,7 +4,8 @@ Review queue API routes.
 Provides endpoints for the analyst review UI:
   GET  /api/review                    — list review items (paginated, filterable by status)
   GET  /api/review/<id>/document      — full document text + snippet positions
-  POST /api/review/<id>/reextract     — re-run extraction on analyst-selected text
+  POST /api/review/<id>/reextract     — re-run extraction on analyst-selected text (requires item)
+  POST /api/review/reextract_selection — re-run extraction by metric + selection (no item needed)
   POST /api/review/<id>/approve       — approve and store the value
   POST /api/review/<id>/reject        — reject with required note
   POST /api/review/<id>/edit          — correct value and approve
@@ -62,8 +63,12 @@ def get_review_document(item_id):
         if item is None:
             return jsonify({'success': False, 'error': {'message': 'Review item not found'}}), 404
 
-        # Find the report associated with this ticker + period
-        report = db.find_report_for_period(item['ticker'], item['period'])
+        # Use report_id for direct lookup when available; fall back to period-based lookup.
+        report_id = item.get('report_id')
+        if report_id:
+            report = db.get_report(report_id)
+        else:
+            report = db.find_report_for_period(item['ticker'], item['period'])
         if report is None:
             return jsonify({'success': True, 'data': {
                 'raw_text': '',
@@ -76,6 +81,7 @@ def get_review_document(item_id):
         return jsonify({'success': True, 'data': {
             'raw_text': raw_text,
             'source_url': report.get('source_url'),
+            'metric': item.get('metric'),
             'llm_value': item.get('llm_value'),
             'regex_value': item.get('regex_value'),
             'agreement_status': item.get('agreement_status'),
@@ -158,6 +164,77 @@ def reextract_from_selection(item_id):
         }})
     except Exception:
         log.error("Error re-extracting for review item %d", item_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/review/reextract_selection', methods=['POST'])
+def reextract_selection():
+    """
+    Re-run extraction on analyst-selected text without a review item ID.
+
+    Used from the miner_data.html cell panel when no pending review item exists.
+
+    Request body: {"metric": "<metric>", "selection": "<selected text>"}
+    Returns: {"metric": "...", "candidates": [...]}
+    Does NOT write to DB.
+    """
+    try:
+        from app_globals import get_db, get_registry
+        import requests as req_lib
+        from extractors.llm_extractor import LLMExtractor
+        from extractors.extractor import extract_all
+
+        body = request.get_json(silent=True) or {}
+        metric = (body.get('metric') or '').strip()
+        selection = (body.get('selection') or '').strip()
+
+        if not metric:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT', 'message': "'metric' is required"
+            }}), 400
+        if not selection:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT', 'message': "'selection' is required"
+            }}), 400
+        if len(selection) > 5000:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT', 'message': "'selection' must be <=5000 characters"
+            }}), 400
+
+        db = get_db()
+        registry = get_registry()
+        patterns = registry.metrics.get(metric, [])
+
+        regex_results = extract_all(selection, patterns, metric)
+        regex_best = regex_results[0] if regex_results else None
+
+        session = req_lib.Session()
+        llm = LLMExtractor(session=session, db=db)
+        llm_result = None
+        if llm.check_connectivity():
+            llm_result = llm.extract(selection, metric)
+
+        candidates = []
+        if regex_best:
+            candidates.append({
+                'source': 'regex',
+                'value': regex_best.value,
+                'unit': regex_best.unit,
+                'confidence': regex_best.confidence,
+                'pattern_id': regex_best.pattern_id,
+            })
+        if llm_result:
+            candidates.append({
+                'source': 'llm',
+                'value': llm_result.value,
+                'unit': llm_result.unit,
+                'confidence': llm_result.confidence,
+                'pattern_id': llm_result.pattern_id,
+            })
+
+        return jsonify({'success': True, 'data': {'metric': metric, 'candidates': candidates}})
+    except Exception:
+        log.error("Error in reextract_selection", exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
