@@ -21,23 +21,11 @@ MONTH_MAP: dict = {
     "september": 9, "october": 10, "november": 11, "december": 12,
 }
 
-# Tickers recognized in directory names (e.g. "MARA MONTHLY")
-_KNOWN_TICKERS = [
-    # Original 13
-    "MARA", "RIOT", "CLSK", "CORZ", "BITF", "BTBT", "CIFR",
-    "HIVE", "HUT8", "ARBK", "SDIG", "WULF", "IREN",
-    # Registry expansion (Phase III 2026-03)
-    "BTDR",   # Bitdeer Technologies — active monthly reporter
-    "ABTC",   # American Bitcoin (HUT8 spin-out) — quarterly only, skip
-    "APLD",   # Applied Digital — pivoted to AI/HPC, skip
-    "GRDI",   # GRIID Infrastructure — acquired by CLSK Oct 2024, skip
-    "MIGI",   # Mawson Infrastructure — negligible BTC, skip
-    "GREE",   # Greenidge Generation — quarterly only, skip
-]
-
-# Public alias for test imports (underscore-prefixed names are not importable
-# across modules that follow "no private API" convention in test code).
-KNOWN_TICKERS = _KNOWN_TICKERS
+# Tickers recognized in directory names (e.g. "MARA MONTHLY").
+# Loaded from config/companies.json — the single canonical source.
+from config import get_all_tickers as _get_all_tickers
+_KNOWN_TICKERS = _get_all_tickers()
+KNOWN_TICKERS = _KNOWN_TICKERS  # public alias for test imports
 
 _ISO_DATE_PATTERN = re.compile(r"^(\d{4})-(\d{2})-\d{2}")
 _ISO_DATE_ANYWHERE = re.compile(r"(\d{4})-(\d{2})-\d{2}")

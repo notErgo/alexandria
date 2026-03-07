@@ -35,6 +35,7 @@ from infra.db import MinerDB  # noqa: E402
 
 log = logging.getLogger("miners.coverage_scout")
 
+# canonical-sources: noqa — intentional CLI default subset (4 pilot tickers), not a copy of all tickers
 DEFAULT_TICKERS = ["RIOT", "CLSK", "WULF", "ABTC"]
 DEFAULT_OUTPUT_DIR = Path("/private/tmp/claude-501/miners_progress")
 ANALYST_METHODS = {"analyst", "analyst_approved", "review_approved", "review_edited"}

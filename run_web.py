@@ -19,7 +19,15 @@ setup_logging()
 import logging
 from flask import Flask, render_template, jsonify, request
 
-from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG
+from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG, validate_companies_config
+
+_config_errors = validate_companies_config()
+if _config_errors:
+    _log = logging.getLogger('miners.config')
+    for _e in _config_errors:
+        _log.error('companies.json: %s', _e)
+    raise SystemExit('companies.json failed schema validation — fix config before starting')
+
 from routes.data_points import bp as data_points_bp
 from routes.companies import bp as companies_bp
 from routes.reports import bp as reports_bp
@@ -169,7 +177,8 @@ def create_app() -> Flask:
 
     @app.route('/dashboard')
     def dashboard_page():
-        return render_template('dashboard.html')
+        from config import get_all_tickers
+        return render_template('dashboard.html', all_tickers=get_all_tickers())
 
     @app.route('/review')
     def review_page():

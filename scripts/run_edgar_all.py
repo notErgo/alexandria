@@ -3,7 +3,7 @@ EDGAR ingestion for ALL companies with CIKs — including inactive/quarterly-onl
 
 Runs 10-Q and 10-K fetching for every company in companies.json that has a CIK,
 regardless of active status. Designed to fill in quarterly data for companies
-that have stopped monthly reporting (CORZ, HUT8, WULF, IREN, ABTC, SDIG, etc.)
+that have stopped monthly reporting (CORZ, HUT8, WULF, IREN, ABTC, SDIG, etc.)  # canonical-sources: noqa — docstring example, not a ticker list
 
 Usage:
     cd OffChain/miners

@@ -1791,9 +1791,12 @@ class MinerDB:
                         )
                     else:
                         # For FULL hard-delete, clear regime windows and company catalog rows.
-                        # regime_config before companies (FK: regime_config.ticker → companies.ticker)
+                        # regime_config and scraper_discovery_candidates before companies
+                        # (FK: both reference companies.ticker)
                         _archive('regime_config')
                         counts['regime_config'] = _del('regime_config')
+                        _archive('scraper_discovery_candidates')
+                        counts['scraper_discovery_candidates'] = _del('scraper_discovery_candidates')
                         _archive('companies')
                         counts['companies'] = _del('companies')
                         if suppress_auto_sync:

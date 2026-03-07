@@ -35,6 +35,13 @@
 .acq-panel { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--theme-border); border-radius: 8px; background: var(--theme-bg-secondary); }
 .acq-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
+.research-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--theme-border); margin-bottom: 1rem; }
+.research-tab { padding: 0.45rem 1rem; font-size: 0.82rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--theme-text-secondary); background: none; border-top: none; border-left: none; border-right: none; }
+.research-tab:hover { color: var(--theme-text-primary); }
+.research-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
+.research-pane { display: none; }
+.research-pane.active { display: block; }
+.acq-section-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); margin: 1rem 0 0.4rem; }
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
 .kw-chip { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; border:1px solid var(--theme-border); background:var(--theme-bg-tertiary); font-size:0.72rem; cursor:pointer; margin:2px 4px 2px 0; }
@@ -223,75 +230,6 @@
     </div>
     <div id="gov-summary" style="font-size:0.78rem;color:var(--theme-text-secondary)">
       Governance not loaded yet.
-    </div>
-  </div>
-
-  <div class="acq-panel" data-ui-id="2.1.7" data-spec-id="2.1.7">
-    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">2.1.7</span>Data Acquisition Controls <span class="source-badge source-badge-na">n/a</span>
-    </div>
-    <div class="acq-actions">
-      <button class="btn btn-sm btn-primary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
-      <button class="btn btn-sm btn-primary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
-      <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
-      <button class="btn btn-sm btn-secondary" onclick="loadRegistry()">Refresh Registry</button>
-    </div>
-    <div style="margin-top:0.45rem">
-      <label style="font-size:0.78rem;color:var(--theme-text-muted)">
-        <input id="acq-auto-extract" type="checkbox" checked>
-        Auto-run extraction after IR/EDGAR acquisition
-      </label>
-    </div>
-    <div id="acq-status" class="acq-status">Idle</div>
-    <div id="acq-log" class="acq-log" style="display:none"></div>
-  </div>
-
-  <div class="acq-panel" data-ui-id="2.1.8" data-spec-id="2.1.8">
-    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">2.1.8</span>LLM Extraction Run Monitor <span class="source-badge source-badge-data">DATA</span>
-    </div>
-    <div class="acq-actions">
-      <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
-      <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
-      <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
-        <option value="">Loading models…</option>
-      </select>
-      <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
-    </div>
-    <div id="extract-status" class="acq-status">Idle</div>
-    <div id="extract-log" class="acq-log" style="display:none"></div>
-  </div>
-
-  <div class="card" data-ui-id="2.1.9" data-spec-id="2.1.9" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">2.1.9</span>Pipeline Observability <span class="source-badge source-badge-data">DATA</span>
-      </h3>
-      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
-      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">
-      Loading pipeline state…
-    </div>
-    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
-    <div style="overflow-x:auto">
-      <table id="pipeline-table">
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th>Mode</th>
-            <th>Manifest</th>
-            <th>Reports</th>
-            <th>Unextracted</th>
-            <th>Data Points</th>
-            <th>Review Pending</th>
-            <th>Config</th>
-          </tr>
-        </thead>
-        <tbody id="pipeline-tbody">
-          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
-        </tbody>
-      </table>
     </div>
   </div>
 
@@ -861,51 +799,130 @@
 <!-- ── Research tab ───────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-research" data-ui-id="2.7">
   <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem">Research Crawl</h2>
-    <button class="btn btn-sm btn-primary" onclick="startCrawlAll()">Crawl All</button>
-    <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
+    <h2 style="margin:0;font-size:1rem">Research</h2>
     <span id="research-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
-  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-    LLM-driven agentic crawl for each company. The model navigates IR sites and wire services, fetches press releases, and stores them via <code>/api/ingest/raw</code>. Progress updates every 2 seconds while running.
-  </p>
+  <div class="research-tabs">
+    <button class="research-tab active" data-rpane="input" onclick="activateResearchSubTab('input')">Input</button>
+    <button class="research-tab" data-rpane="crawl" onclick="activateResearchSubTab('crawl')">Crawl</button>
+    <button class="research-tab" data-rpane="interpret" onclick="activateResearchSubTab('interpret')">Interpret</button>
+  </div>
 
-  <!-- Model selector -->
-  <div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:0.75rem;flex-wrap:wrap">
-    <div>
+  <!-- ── Input sub-pane ── -->
+  <div class="research-pane active" id="rpane-input" data-ui-id="2.7.1" data-spec-id="2.7.1">
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+      Select a ticker to configure its crawl prompt, then switch to Crawl to run.
+    </p>
+
+    <!-- Ticker bar -->
+    <div id="research-ticker-bar" data-ui-id="2.7.1.1" data-spec-id="2.7.1.1" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+
+    <!-- Model provider -->
+    <div data-ui-id="2.7.1.2" data-spec-id="2.7.1.2" style="margin-bottom:0.75rem">
       <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model provider</label>
       <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem">
         <option value="ollama" selected>Local Qwen (Ollama)</option>
         <option value="anthropic">Anthropic API</option>
       </select>
     </div>
-  </div>
 
-  <!-- Prompt editor -->
-  <div style="margin-bottom:0.75rem">
-    <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
-      Crawl prompt (editable before launch)
-      <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
-    </label>
-    <textarea id="crawl-prompt-editor" rows="8"
-      style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
-      placeholder="Select a ticker below or click Crawl All to load the prompt..."></textarea>
-  </div>
-
-  <!-- Per-ticker selector -->
-  <div id="research-ticker-bar" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
-
-  <!-- Status grid -->
-  <div id="research-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-bottom:1rem"></div>
-
-  <!-- Log panel (shown when a ticker is selected) -->
-  <div id="research-log-panel" style="display:none">
-    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
-      <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
-      <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+    <!-- Prompt editor -->
+    <div data-ui-id="2.7.1.3" data-spec-id="2.7.1.3" style="margin-bottom:0.75rem">
+      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
+        Crawl prompt (editable before launch)
+        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
+      </label>
+      <textarea id="crawl-prompt-editor" rows="10"
+        style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
+        placeholder="Select a ticker above to load its crawl prompt..."></textarea>
     </div>
-    <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:320px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+  </div>
+
+  <!-- ── Crawl sub-pane ── -->
+  <div class="research-pane" id="rpane-crawl" data-ui-id="2.7.2" data-spec-id="2.7.2">
+
+    <div class="acq-section-label">Outside — IR sites &amp; Wire Services</div>
+    <div class="acq-panel" data-ui-id="2.7.2.1" data-spec-id="2.7.2.1">
+      <div class="acq-actions">
+        <button class="btn btn-sm btn-primary" onclick="startCrawlAll()">LLM Crawl All</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
+        <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
+        <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
+      </div>
+      <!-- LLM crawl status grid -->
+      <div id="research-grid" data-ui-id="2.7.2.2" data-spec-id="2.7.2.2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
+      <!-- LLM crawl log panel -->
+      <div id="research-log-panel" data-ui-id="2.7.2.3" data-spec-id="2.7.2.3" style="display:none;margin-top:0.5rem">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+          <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
+          <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+        </div>
+        <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+      </div>
+    </div>
+
+    <div class="acq-section-label">SEC EDGAR</div>
+    <div class="acq-panel" data-ui-id="2.7.2.4" data-spec-id="2.7.2.4">
+      <div class="acq-actions">
+        <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+          <input id="acq-auto-extract" type="checkbox" checked>
+          Auto-run extraction after acquisition
+        </label>
+      </div>
+    </div>
+
+    <!-- Shared acquire status / log for IR + Archive + EDGAR -->
+    <div id="acq-status" class="acq-status">Idle</div>
+    <div id="acq-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <!-- ── Interpret sub-pane ── -->
+  <div class="research-pane" id="rpane-interpret" data-ui-id="2.7.3" data-spec-id="2.7.3">
+
+    <div class="acq-section-label">LLM Extraction</div>
+    <div class="acq-panel" data-ui-id="2.7.3.1" data-spec-id="2.7.3.1">
+      <div class="acq-actions">
+        <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+        <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
+          <option value="">Loading models…</option>
+        </select>
+        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
+      </div>
+      <div id="extract-status" class="acq-status">Idle</div>
+      <div id="extract-log" class="acq-log" style="display:none"></div>
+    </div>
+
+    <div class="acq-section-label">Pipeline Observability</div>
+    <div class="card" data-ui-id="2.7.3.2" data-spec-id="2.7.3.2" style="margin-top:0.5rem">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
+        <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
+        <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
+      <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
+      <div style="overflow-x:auto">
+        <table id="pipeline-table" data-ui-id="2.7.3.3" data-spec-id="2.7.3.3">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Mode</th>
+              <th>Manifest</th>
+              <th>Reports</th>
+              <th>Unextracted</th>
+              <th>Data Points</th>
+              <th>Review Pending</th>
+              <th>Config</th>
+            </tr>
+          </thead>
+          <tbody id="pipeline-tbody">
+            <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -999,7 +1016,7 @@ function activateTab(name) {
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
-  if (name === 'research') loadResearch();
+  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'input'); }
   if (name === 'settings') loadSettings();
   if (name === 'qc') _loadQCTable();
 }
@@ -2854,6 +2871,18 @@ async function deleteMetricRule(metric) {
 // ── Research tab ─────────────────────────────────────────────────────────────
 let _researchLoaded = false;
 let _researchPollTimer = null;
+let _activeResearchSubTab = 'input';
+
+function activateResearchSubTab(name) {
+  _activeResearchSubTab = name;
+  document.querySelectorAll('.research-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-rpane') === name);
+  });
+  document.querySelectorAll('.research-pane').forEach(function(pane) {
+    pane.classList.toggle('active', pane.id === 'rpane-' + name);
+  });
+  if (name === 'interpret') { loadPipelineObservability(); loadOllamaModels(); }
+}
 let _researchTaskId = null;
 let _researchLogTicker = null;
 let _researchLastSnaps = {};
@@ -2867,11 +2896,12 @@ function loadResearch() {
 function _buildResearchTickerBar() {
   const bar = document.getElementById('research-ticker-bar');
   if (!bar) return;
-  // Derive ticker list from companies already loaded (or fetch)
-  const tickers = _companies.length
-    ? _companies.map(function(c) { return c.ticker; })
-    : ['MARA','RIOT','CLSK','CORZ','BITF','BTBT','CIFR','HIVE','HUT8','ARBK','SDIG','WULF','IREN'];
+  const tickers = _companies.map(function(c) { return c.ticker; });
   bar.innerHTML = '';
+  if (!tickers.length) {
+    bar.textContent = 'No companies configured.';
+    return;
+  }
   tickers.forEach(function(t) {
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm btn-secondary';

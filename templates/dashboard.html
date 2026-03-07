@@ -239,11 +239,8 @@ function tickerColor(ticker, allTickers) {
   return _colorCache[ticker];
 }
 
-// All 13 tickers — pre-populate checkboxes
-const ALL_TICKERS = [
-  'ARBK','BITF','BTBT','CIFR','CLSK','CORZ',
-  'HIVE','HUT8','IREN','MARA','RIOT','SDIG','WULF',
-];
+// Ticker list injected from config/companies.json at render time
+const ALL_TICKERS = {{ all_tickers | tojson }};
 const DEFAULT_CHECKED = new Set(['MARA', 'RIOT']);
 
 // Track ECharts instances for cleanup

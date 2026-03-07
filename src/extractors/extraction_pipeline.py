@@ -64,7 +64,7 @@ _BOILERPLATE_SENTINELS = [
     re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
-    re.compile(
+    re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list
         r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
         r'BIT\s+DIGITAL|HIVE|HUT\s+8|ARGO|STRONGHOLD|TERAWULF|IRIS)\b',
         re.IGNORECASE,

@@ -8,7 +8,9 @@ Infrastructure probe results (2026-03-01):
   IR URL status: RIOT=200, HIVE=200; others had 404/timeout/SSL issues — scraper handles gracefully
   RIOT CIK confirmed from EDGAR probe: 0001167419
 """
+import json as _json
 from pathlib import Path
+from typing import List
 import os as _os
 
 # --- Extraction thresholds ---
@@ -26,6 +28,87 @@ DATA_DIR: str = str(Path(
 
 # Config files (companies.json, patterns/): relative to this file's parent
 CONFIG_DIR: str = str(Path(__file__).parent.parent / "config")
+
+def load_companies() -> List[dict]:
+    """Return the full company list from config/companies.json.
+
+    This is the single canonical source of all tickers. Never maintain a
+    hardcoded ticker list elsewhere — call this function instead.
+    """
+    path = Path(CONFIG_DIR) / "companies.json"
+    return _json.loads(path.read_text())
+
+def get_all_tickers() -> List[str]:
+    """Return sorted list of all ticker symbols from config/companies.json."""
+    return sorted(c["ticker"] for c in load_companies())
+
+
+_VALID_SCRAPER_MODES: frozenset = frozenset({
+    'rss', 'template', 'index', 'skip', 'playwright',
+})
+
+_VALID_FILING_REGIMES: frozenset = frozenset({
+    'domestic', 'canadian', 'foreign',
+})
+
+_COMPANY_REQUIRED_FIELDS: tuple = (
+    'ticker', 'name', 'tier', 'active', 'scraper_mode',
+    'filing_regime', 'fiscal_year_end_month',
+)
+
+
+def validate_companies_config(companies: List[dict] = None) -> List[str]:
+    """Validate shape and mode contracts for companies.json entries.
+
+    Returns a list of error strings. Empty list means valid.
+    Does not raise — caller decides severity.
+    """
+    if companies is None:
+        companies = load_companies()
+    errors: List[str] = []
+    seen: set = set()
+    for i, c in enumerate(companies):
+        label = c.get('ticker', f'entry[{i}]')
+        if label in seen:
+            errors.append(f'{label}: duplicate ticker')
+        seen.add(label)
+
+        for field in _COMPANY_REQUIRED_FIELDS:
+            if field not in c:
+                errors.append(f'{label}: missing required field "{field}"')
+
+        tier = c.get('tier')
+        if not isinstance(tier, int) or tier not in (1, 2, 3):
+            errors.append(f'{label}: tier must be int 1, 2, or 3, got {tier!r}')
+
+        if not isinstance(c.get('active'), bool):
+            errors.append(f'{label}: active must be a boolean')
+
+        fye = c.get('fiscal_year_end_month')
+        if not isinstance(fye, int) or not (1 <= fye <= 12):
+            errors.append(f'{label}: fiscal_year_end_month must be int 1-12, got {fye!r}')
+
+        mode = c.get('scraper_mode')
+        if mode not in _VALID_SCRAPER_MODES:
+            errors.append(
+                f'{label}: unknown scraper_mode {mode!r}'
+                f' (valid: {sorted(_VALID_SCRAPER_MODES)})'
+            )
+        elif mode == 'rss' and not c.get('rss_url'):
+            errors.append(f'{label}: scraper_mode="rss" requires rss_url')
+        elif mode == 'template' and not c.get('url_template'):
+            errors.append(f'{label}: scraper_mode="template" requires url_template')
+        elif mode == 'skip' and not c.get('skip_reason'):
+            errors.append(f'{label}: scraper_mode="skip" requires skip_reason')
+
+        regime = c.get('filing_regime')
+        if regime not in _VALID_FILING_REGIMES:
+            errors.append(
+                f'{label}: unknown filing_regime {regime!r}'
+                f' (valid: {sorted(_VALID_FILING_REGIMES)})'
+            )
+
+    return errors
 
 # Archive of historical PDFs and HTMLs (OffChain/Miner/)
 ARCHIVE_DIR: str = str(Path(__file__).parent.parent.parent / "Miner")

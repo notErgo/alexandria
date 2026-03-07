@@ -18,11 +18,10 @@ from miner_types import ScanResult
 
 log = logging.getLogger('miners.scrapers.manifest_scanner')
 
-# Known tickers recognized in directory names
-_KNOWN_TICKERS = [
-    "MARA", "RIOT", "CLSK", "CORZ", "BITF", "BTBT", "CIFR",
-    "HIVE", "HUT8", "ARBK", "SDIG", "WULF", "IREN",
-]
+# Known tickers recognized in directory names.
+# Loaded from config/companies.json — the single canonical source.
+from config import get_all_tickers as _get_all_tickers
+_KNOWN_TICKERS = _get_all_tickers()
 
 
 def detect_ticker_from_path(path: Path) -> Optional[str]:
