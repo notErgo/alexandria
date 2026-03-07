@@ -1579,6 +1579,13 @@ function renderCompanies() {
       nameExtra = '<div style="font-size:0.7rem;color:var(--theme-text-muted);margin-top:2px;max-width:320px;white-space:normal">' + escapeHtml(c.skip_reason.slice(0, 120)) + (c.skip_reason.length > 120 ? '…' : '') + '</div>';
     }
 
+    const governance = _governanceByTicker[c.ticker];
+    const governanceBadge = governance
+      ? '<span class="scraper-badge scraper-badge-governance-' + escapeHtml(governance) + '"'
+        + ' title="scraper governance: ' + escapeAttr(governance) + '" style="margin-left:4px">'
+        + escapeHtml(governance) + '</span>'
+      : '';
+
     const hasDetail = !!(c.url_template || c.sandbox_note || (c.skip_reason && c.skip_reason.length > 120));
     const expandBtn = hasDetail
       ? '<button class="btn btn-sm btn-secondary" style="padding:1px 6px;font-size:0.7rem" data-ticker="' + escapeAttr(c.ticker) + '" onclick="toggleCompanyDetail(this.getAttribute(\'data-ticker\'))">+</button>'
@@ -3613,9 +3620,3 @@ async function _pollPipelineStatus() {
 }
 </script>
 {% endblock %}
-    const governance = _governanceByTicker[c.ticker];
-    const governanceBadge = governance
-      ? '<span class="scraper-badge scraper-badge-governance-' + escapeHtml(governance) + '"'
-        + ' title="scraper governance: ' + escapeAttr(governance) + '" style="margin-left:4px">'
-        + escapeHtml(governance) + '</span>'
-      : '';
