@@ -856,8 +856,10 @@
 
     <div class="acq-section-label">Step 1 — SEC EDGAR (establishes bitcoin lower bound)</div>
     <div class="acq-panel" data-ui-id="2.7.2.4" data-spec-id="2.7.2.4">
+      <div id="edgar-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
       <div class="acq-actions">
-        <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
+        <button class="btn btn-sm btn-primary" onclick="triggerAcquireEdgar(false)">Acquire Selected</button>
+        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Acquire All</button>
         <label style="font-size:0.78rem;color:var(--theme-text-muted)">
           <input id="acq-auto-extract" type="checkbox" checked>
           Auto-run extraction after acquisition
@@ -1160,27 +1162,30 @@ async function _pollAcquireTask(taskId, source) {
   }, 1000);
 }
 
-async function triggerAcquire(source) {
+async function triggerAcquire(source, tickers) {
   if (!source || _acqTaskId) return;
   const autoExtractEnabled = !!document.getElementById('acq-auto-extract')?.checked;
   const autoExtract = autoExtractEnabled && (source === 'ir' || source === 'edgar');
+  const scopeLabel = (tickers && tickers.length) ? ' [' + tickers.join(', ') + ']' : '';
   _setAcquireButtonsEnabled(false);
   _acqTaskId = 'starting';
-  _setAcqStatus('Acquire ' + source.toUpperCase() + ': queued' + (autoExtract ? ' (with extraction)' : ''), false);
-  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source + (autoExtract ? ' + extract' : ''));
+  _setAcqStatus('Acquire ' + source.toUpperCase() + scopeLabel + ': queued' + (autoExtract ? ' (with extraction)' : ''), false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source + scopeLabel + (autoExtract ? ' + extract' : ''));
+  const body = { auto_extract: autoExtract };
+  if (tickers && tickers.length) body.tickers = tickers;
   try {
     const resp = await fetch('/api/ingest/' + encodeURIComponent(source), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ auto_extract: autoExtract }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) {
       throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
     }
     _acqTaskId = data.data.task_id;
-    _setAcqStatus('Acquire ' + source.toUpperCase() + ': running' + (autoExtract ? ' (with extraction)' : ''), false);
-    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + ' (task ' + _acqTaskId + ')' + (autoExtract ? ' + extract' : ''));
+    _setAcqStatus('Acquire ' + source.toUpperCase() + scopeLabel + ': running' + (autoExtract ? ' (with extraction)' : ''), false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + scopeLabel + ' (task ' + _acqTaskId + ')' + (autoExtract ? ' + extract' : ''));
     _pollAcquireTask(_acqTaskId, source);
   } catch (err) {
     _acqTaskId = null;
@@ -1216,8 +1221,11 @@ function _setExtractEnabled(enabled) {
   if (btn) btn.disabled = !enabled;
 }
 
+let _extractLogCount = 0;  // tracks how many log lines we have already rendered
+
 async function _pollExtractionRun(taskId, ticker) {
   if (_extractTimer) clearInterval(_extractTimer);
+  _extractLogCount = 0;
   _extractTimer = setInterval(async function() {
     try {
       const resp = await fetch('/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress');
@@ -1234,6 +1242,12 @@ async function _pollExtractionRun(taskId, ticker) {
         'Extraction ' + (ticker || 'ALL') + ': ' + state + ' (' + processed + '/' + total + ', points=' + points + ', errors=' + errors + ')',
         state === 'error'
       );
+      const logs = p.logs || [];
+      if (logs.length > _extractLogCount) {
+        const newLines = logs.slice(_extractLogCount);
+        newLines.forEach(function(line) { _appendExtractLog(line); });
+        _extractLogCount = logs.length;
+      }
       if (state === 'running') return;
       _extractTaskId = null;
       clearInterval(_extractTimer);
@@ -2937,27 +2951,61 @@ function _buildResearchTickerBar() {
     bar.appendChild(btn);
   });
   _buildCrawlTickerSelector();
+  _buildEdgarTickerSelector();
 }
 
-function _buildCrawlTickerSelector() {
-  const bar = document.getElementById('crawl-ticker-selector');
+// Shared ticker selection state for Step 1 (EDGAR) and Step 2 (LLM Crawl).
+// Both selector bars read from and write to this Set so toggling a ticker
+// in either step automatically syncs the other.
+const _selectedCrawlTickers = new Set();
+
+function _toggleCrawlTicker(ticker) {
+  if (_selectedCrawlTickers.has(ticker)) {
+    _selectedCrawlTickers.delete(ticker);
+  } else {
+    _selectedCrawlTickers.add(ticker);
+  }
+  _renderCrawlTickerSelector('edgar-ticker-selector', true);
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+}
+
+function _renderCrawlTickerSelector(barId, cikOnly) {
+  const bar = document.getElementById(barId);
   if (!bar) return;
-  const actives = _companies.filter(function(c) { return c.active; });
+  const actives = _companies.filter(function(c) { return c.active && (!cikOnly || c.cik); });
   bar.innerHTML = '';
   actives.forEach(function(c) {
     const btn = document.createElement('button');
-    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn';
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
     btn.textContent = c.ticker;
     btn.dataset.ticker = c.ticker;
-    btn.onclick = function() { btn.classList.toggle('active'); };
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
     bar.appendChild(btn);
   });
 }
 
-function _getCrawlSelectedTickers() {
-  const bar = document.getElementById('crawl-ticker-selector');
-  if (!bar) return [];
-  return Array.from(bar.querySelectorAll('.crawl-ticker-btn.active')).map(function(b) { return b.dataset.ticker; });
+function _buildEdgarTickerSelector() {
+  _renderCrawlTickerSelector('edgar-ticker-selector', true);
+}
+
+function _buildCrawlTickerSelector() {
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+}
+
+function _getSharedSelectedTickers() {
+  return Array.from(_selectedCrawlTickers);
+}
+
+// Keep existing call-sites working
+function _getCrawlSelectedTickers() { return _getSharedSelectedTickers(); }
+
+async function triggerAcquireEdgar(all) {
+  const tickers = all ? [] : _getSharedSelectedTickers();
+  if (!all && !tickers.length) {
+    setResearchMsg('Select at least one company first, or use Acquire All', true);
+    return;
+  }
+  return triggerAcquire('edgar', tickers);
 }
 
 async function startCrawlSelected() {
@@ -3173,37 +3221,59 @@ const _SETTINGS_GROUPS = [
   {
     label: 'Extraction',
     keys: [
-      {key: 'confidence_review_threshold', label: 'Confidence review threshold', type: 'number'},
-      {key: 'agreement_threshold_default', label: 'Agreement threshold (default)', type: 'number'},
-      {key: 'outlier_min_history', label: 'Outlier min history', type: 'number'},
-      {key: 'context_char_budget', label: 'Context char budget (monthly)', type: 'number'},
-      {key: 'context_char_budget_quarterly', label: 'Context char budget (quarterly)', type: 'number'},
-      {key: 'context_max_windows', label: 'Context max windows', type: 'number'},
-      {key: 'context_fallback_confidence', label: 'Context fallback confidence', type: 'number'},
+      {key: 'confidence_review_threshold', label: 'Confidence review threshold', type: 'number',
+       desc: 'Minimum confidence score (0–1) for a regex extraction to be auto-accepted into data_points. Extractions scoring below this threshold are routed to the review queue instead.'},
+      {key: 'agreement_threshold_default', label: 'Agreement threshold (default)', type: 'number',
+       desc: 'Maximum relative difference (as a fraction) allowed between LLM and regex values before the result is flagged as a disagreement and sent to review. Example: 0.02 = 2%.'},
+      {key: 'outlier_min_history', label: 'Outlier min history', type: 'number',
+       desc: 'Minimum number of prior accepted data points required before an outlier check is applied to a new value. Prevents false positives when history is sparse.'},
+      {key: 'context_char_budget', label: 'Context char budget (monthly)', type: 'number',
+       desc: 'Maximum characters of raw document text passed to the LLM per monthly extraction call. Larger budgets improve recall on long press releases but increase token usage.'},
+      {key: 'context_char_budget_quarterly', label: 'Context char budget (quarterly)', type: 'number',
+       desc: 'Maximum characters passed to the LLM for quarterly and annual report extraction. Annual filings are much larger, so this is typically set higher than the monthly budget.'},
+      {key: 'context_max_windows', label: 'Context max windows', type: 'number',
+       desc: 'Maximum number of context window slices (date-range chunks) the pipeline will try per extraction call before giving up. Each additional window retries with a different document segment.'},
+      {key: 'context_fallback_confidence', label: 'Context fallback confidence', type: 'number',
+       desc: 'Confidence score assigned to values extracted from fallback context windows (non-primary slices). Should be lower than the primary confidence to signal reduced certainty.'},
+      {key: 'extract_num_ctx', label: 'Ollama context window — extraction (tokens)', type: 'number',
+       desc: 'Context window size (num_ctx) passed to Ollama for batch extraction calls. Extraction prompts are typically 3–4k tokens so 8,192 is sufficient. Increase only for very long annual filings.'},
     ],
   },
   {
     label: 'LLM',
     keys: [
-      {key: 'ollama_model', label: 'Ollama model', type: 'text'},
-      {key: 'llm_timeout_seconds', label: 'LLM timeout (seconds)', type: 'number'},
-      {key: 'llm_batch_preamble', label: 'Monthly batch preamble', type: 'textarea'},
-      {key: 'llm_quarterly_batch_preamble', label: 'Quarterly batch preamble', type: 'textarea'},
-      {key: 'llm_annual_batch_preamble', label: 'Annual batch preamble', type: 'textarea'},
-      {key: 'keyword_dictionary', label: 'Keyword dictionary (JSON)', type: 'textarea'},
+      {key: 'ollama_model', label: 'Ollama model', type: 'text',
+       desc: 'Ollama model ID used for extraction and crawl. Must be pulled and available locally (e.g. qwen2.5:32b). Run "ollama list" to see installed models.'},
+      {key: 'llm_timeout_seconds', label: 'LLM timeout (seconds)', type: 'number',
+       desc: 'Seconds before an Ollama API call is abandoned. Increase for large models or slow hardware. Default is 300s (5 min).'},
+      {key: 'llm_batch_preamble', label: 'Monthly batch preamble', type: 'textarea',
+       desc: 'System prompt preamble injected before monthly extraction prompts. Overrides the compiled-in default. Leave blank to use the built-in default.'},
+      {key: 'llm_quarterly_batch_preamble', label: 'Quarterly batch preamble', type: 'textarea',
+       desc: 'System prompt preamble for quarterly report extraction. Overrides the compiled-in default.'},
+      {key: 'llm_annual_batch_preamble', label: 'Annual batch preamble', type: 'textarea',
+       desc: 'System prompt preamble for annual report (10-K/20-F) extraction. Overrides the compiled-in default.'},
+      {key: 'keyword_dictionary', label: 'Keyword dictionary (JSON)', type: 'textarea',
+       desc: 'JSON keyword packs used by the registry scanner to filter which documents are relevant. The active_pack key selects which pack is applied during manifest scans.'},
     ],
   },
   {
     label: 'Crawl',
     keys: [
-      {key: 'crawl_max_iterations', label: 'Max iterations per ticker', type: 'number'},
-      {key: 'crawl_max_fetch_chars', label: 'Max fetch chars per page', type: 'number'},
+      {key: 'crawl_max_iterations', label: 'Max iterations per ticker', type: 'number',
+       desc: 'Maximum number of tool-call rounds the LLM crawler runs per ticker before stopping. Each round may fetch a page, run a search, or store a document.'},
+      {key: 'crawl_max_fetch_chars', label: 'Max fetch chars per page', type: 'number',
+       desc: 'Maximum characters of page content returned to the LLM per fetch call. Limits context growth; longer pages are truncated. Default is 12,000 chars.'},
+      {key: 'crawl_num_ctx', label: 'Ollama context window (tokens)', type: 'number',
+       desc: 'Context window size (num_ctx) passed to Ollama for crawl calls. Larger values allow longer multi-turn conversations but require more VRAM. Default is 32,768. Reduce if you see OOM crashes.'},
+      {key: 'bitcoin_mining_keywords', label: 'Bitcoin mining keywords', type: 'text',
+       desc: 'Comma-separated LIKE patterns used to identify the earliest bitcoin-related EDGAR filing. That filing date becomes the lower bound injected into Step 2 crawl prompts.'},
     ],
   },
   {
     label: 'Pipeline',
     keys: [
-      {key: 'pipeline_output_dir', label: 'Scout output directory', type: 'text'},
+      {key: 'pipeline_output_dir', label: 'Scout output directory', type: 'text',
+       desc: 'Filesystem path where pipeline progress files and scout output are written. Must be writable by the web server process.'},
     ],
   },
 ];
@@ -3215,12 +3285,21 @@ let _settingsValues = {};
 async function loadSettings() {
   if (_settingsLoaded) return;
   _settingsLoaded = true;
-  // Fetch current values
   try {
-    const resp = await fetch('/api/config');
-    if (resp.ok) {
-      const data = await resp.json();
-      (data.data || []).forEach(function(row) { _settingsValues[row.key] = row.value; });
+    const [valResp, defResp] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/config/defaults'),
+    ]);
+    if (valResp.ok) {
+      const data = await valResp.json();
+      // /api/config returns {success, data: [{key, value}, ...]}
+      (Array.isArray(data.data) ? data.data : []).forEach(function(row) {
+        _settingsValues[row.key] = row.value;
+      });
+    }
+    if (defResp.ok) {
+      const data = await defResp.json();
+      Object.assign(_settingsDefaults, data.data || {});
     }
   } catch (_e) {}
   _renderSettingsGroups();
@@ -3280,10 +3359,21 @@ function _renderSettingsGroups() {
     group.keys.forEach(function(item) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:0.5rem;align-items:flex-start;margin-bottom:0.4rem';
+      const lblWrap = document.createElement('div');
+      lblWrap.style.cssText = 'width:240px;flex-shrink:0;display:flex;align-items:center;gap:0.3rem;padding-top:0.2rem';
       const lbl = document.createElement('label');
       lbl.htmlFor = 'setting-' + item.key;
-      lbl.style.cssText = 'width:240px;font-size:0.8rem;flex-shrink:0;padding-top:0.2rem';
+      lbl.style.cssText = 'font-size:0.8rem';
       lbl.textContent = item.label;
+      lblWrap.appendChild(lbl);
+      if (item.desc) {
+        const bubble = document.createElement('span');
+        bubble.className = 'info-bubble';
+        bubble.setAttribute('data-tip', item.desc);
+        bubble.setAttribute('tabindex', '0');
+        bubble.textContent = '?';
+        lblWrap.appendChild(bubble);
+      }
       let input;
       if (item.type === 'textarea') {
         input = document.createElement('textarea');
@@ -3296,8 +3386,9 @@ function _renderSettingsGroups() {
       }
       input.id = 'setting-' + item.key;
       input.value = _settingsValues[item.key] || '';
-      input.placeholder = 'default';
-      row.appendChild(lbl);
+      const defaultVal = _settingsDefaults[item.key];
+      input.placeholder = defaultVal != null ? String(defaultVal) : 'default';
+      row.appendChild(lblWrap);
       row.appendChild(input);
       section.appendChild(row);
     });

@@ -17,6 +17,7 @@ Module-level registry:
 import json
 import logging
 import threading
+import urllib.parse as _urllib_parse
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -39,8 +40,33 @@ _INGEST_RAW_URL = 'http://127.0.0.1:5004/api/ingest/raw'
 
 _MAX_FETCH_CHARS = 12_000   # chars returned to model per page fetch
 _MAX_ITERATIONS  = 80       # safety ceiling per ticker
+_DEFAULT_NUM_CTX = 32_768   # Ollama context window tokens; override via crawl_num_ctx config
 _PRUNE_THRESHOLD_CHARS = 500   # fetch results shorter than this are not worth pruning
 _PRUNE_KEEP_RECENT_ROUNDS = 2  # keep the last N assistant turns verbatim; prune older fetch results
+_INDEXED_REFRESH_EVERY = 10    # re-inject DB index note every N iterations
+
+
+def _estimate_ctx(messages: list) -> tuple[int, int]:
+    """Return (total_chars, estimated_tokens) for a messages list.
+
+    Counts string content fields plus serialized tool_calls.
+    Token estimate uses a 4 chars/token heuristic — good enough for a
+    visual sanity check; not a tokenizer count.
+    """
+    chars = 0
+    for m in messages:
+        c = m.get('content')
+        if isinstance(c, str):
+            chars += len(c)
+        elif isinstance(c, list):
+            for block in c:
+                if isinstance(block, dict):
+                    v = block.get('content', '')
+                    chars += len(v) if isinstance(v, str) else len(str(v))
+        tcs = m.get('tool_calls')
+        if tcs:
+            chars += len(str(tcs))
+    return chars, chars // 4
 
 # ---------------------------------------------------------------------------
 # Module-level task registry
@@ -201,6 +227,88 @@ _WEB_SEARCH_TOOL_OAI = {
     },
 }
 
+_GET_INDEXED_DOCS_TOOL = {
+    'name': 'get_indexed_docs',
+    'description': (
+        'Query the database for documents already indexed for a ticker. '
+        'Call this before crawling a domain to avoid re-fetching stored pages. '
+        'Pass domain to filter to a specific site (e.g. "ir.mara.com"). '
+        'Returns path fragments, period, and source_type for up to 60 matching docs.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'ticker': {'type': 'string', 'description': 'Company ticker, e.g. MARA'},
+            'domain': {
+                'type': 'string',
+                'description': 'Optional domain filter, e.g. "ir.mara.com". Omit to see all domains.',
+            },
+        },
+        'required': ['ticker'],
+    },
+}
+_GET_INDEXED_DOCS_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'get_indexed_docs',
+        'description': _GET_INDEXED_DOCS_TOOL['description'],
+        'parameters': _GET_INDEXED_DOCS_TOOL['input_schema'],
+    },
+}
+
+_STORE_OBSERVATION_TOOL = {
+    'name': 'store_observation',
+    'description': (
+        'Persist a structured observation about a company\'s IR site or data source. '
+        'Use this to record site patterns, pagination behaviour, known dead-end URLs, '
+        'coverage gaps, or any other knowledge that should survive across crawl sessions. '
+        'Observations are injected back into the prompt on the next crawl so you do not '
+        'need to rediscover site behaviour from scratch. '
+        'key should be a stable dot-separated identifier, e.g. "ir.mara.com.pagination".'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'ticker': {'type': 'string', 'description': 'Company ticker, e.g. MARA'},
+            'key':    {'type': 'string', 'description': 'Stable identifier, e.g. "ir.mara.com.pagination"'},
+            'value':  {'type': 'string', 'description': 'Free-text observation to persist'},
+        },
+        'required': ['ticker', 'key', 'value'],
+    },
+}
+_STORE_OBSERVATION_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'store_observation',
+        'description': _STORE_OBSERVATION_TOOL['description'],
+        'parameters': _STORE_OBSERVATION_TOOL['input_schema'],
+    },
+}
+
+_GET_OBSERVATIONS_TOOL = {
+    'name': 'get_observations',
+    'description': (
+        'Retrieve all previously stored observations for a ticker. '
+        'Call this at the start of a crawl or when you need to recall site-specific '
+        'knowledge from previous sessions.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'ticker': {'type': 'string', 'description': 'Company ticker, e.g. MARA'},
+        },
+        'required': ['ticker'],
+    },
+}
+_GET_OBSERVATIONS_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'get_observations',
+        'description': _GET_OBSERVATIONS_TOOL['description'],
+        'parameters': _GET_OBSERVATIONS_TOOL['input_schema'],
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Ollama lifecycle helpers
@@ -267,7 +375,9 @@ class LLMCrawler:
         prompt_override: Optional[str] = None,
         max_iterations: int = _MAX_ITERATIONS,
         max_fetch_chars: int = _MAX_FETCH_CHARS,
+        num_ctx: int = _DEFAULT_NUM_CTX,
         context_block: Optional[str] = None,
+        db=None,
     ) -> None:
         self._progress = progress
         self._api_key = api_key
@@ -276,9 +386,14 @@ class LLMCrawler:
         self._prompt_override = prompt_override
         self._max_iterations = max_iterations
         self._max_fetch_chars = max_fetch_chars
+        self._num_ctx = num_ctx
         self._context_block = context_block
+        self._db = db
         self._session = _requests.Session()
-        self._seen_urls: set = set()
+        self._seen_urls: set = set()    # URLs passed to store_document (dedup guard)
+        self._fetched_urls: set = set() # URLs passed to fetch_url (re-fetch detection)
+        self._prev_tool_sigs: set = set()  # tool signatures from previous iteration
+        self._tool_repeat_streak: int = 0  # consecutive iterations with repeated calls
         self._session.headers.update({
             'User-Agent': (
                 'Hermeneutic Research Platform/1.0 '
@@ -287,9 +402,117 @@ class LLMCrawler:
         })
 
     # ------------------------------------------------------------------
+    # Indexed-docs note (DB ground truth injected into prompt)
+    # ------------------------------------------------------------------
+    def _build_indexed_note(self, ticker: str) -> Optional[str]:
+        """Query the DB for all already-indexed documents for this ticker and
+        return a compact note to inject into the conversation.
+
+        Full URLs are replaced with 8-char SHA-256 prefixes (like git short
+        hashes) to keep the note small.  The model cannot re-derive the URL
+        from the hash, but it does not need to — store_document will dedup on
+        the full URL anyway.  The note exists solely to signal 'these are
+        already covered; do not hunt for them again'.
+        """
+        if self._db is None:
+            return None
+        try:
+            docs = self._db.get_indexed_urls_for_ticker(ticker)
+        except Exception:
+            return None
+        if not docs:
+            return None
+        # Build a compact domain summary — one line per domain.
+        # Full per-URL detail is available on demand via the get_indexed_docs tool.
+        domain_map: dict = {}  # domain -> {periods, source_types, count}
+        for d in docs:
+            url = d.get('source_url') or ''
+            domain = _urllib_parse.urlparse(url).netloc or '(unknown)'
+            entry = domain_map.setdefault(domain, {'periods': [], 'count': 0})
+            entry['count'] += 1
+            p = d.get('covering_period')
+            if p:
+                entry['periods'].append(p)
+        lines = [
+            f'[DB INDEX — {ticker} already has {len(docs)} doc(s) indexed. '
+            f'Call get_indexed_docs(ticker, domain) before fetching from any domain to avoid re-work.]'
+        ]
+        for domain, info in sorted(domain_map.items()):
+            periods = sorted(set(info['periods']))
+            span = f'{periods[0]}–{periods[-1]}' if len(periods) > 1 else (periods[0] if periods else '?')
+            lines.append(f'  {domain}: {info["count"]} docs, {span}')
+        lines.append('[End of DB summary]')
+        return '\n'.join(lines)
+
+    # ------------------------------------------------------------------
     # Tool handlers
     # ------------------------------------------------------------------
+    def _tool_get_indexed_docs(self, ticker: str, domain: Optional[str] = None) -> str:
+        """Return path fragments of already-indexed docs for a ticker, optionally filtered by domain.
+
+        Capped at 60 entries to prevent context explosion.
+        """
+        if self._db is None:
+            return '{"error": "DB not available"}'
+        try:
+            docs = self._db.get_indexed_urls_for_ticker(ticker)
+        except Exception as exc:
+            return f'{{"error": "{exc}"}}'
+        if domain:
+            domain_lower = domain.lower().lstrip('www.')
+            docs = [
+                d for d in docs
+                if domain_lower in (_urllib_parse.urlparse(d.get('source_url') or '').netloc or '').lower()
+            ]
+        cap = 60
+        truncated = len(docs) > cap
+        results = []
+        for d in docs[:cap]:
+            url = d.get('source_url') or ''
+            parsed = _urllib_parse.urlparse(url)
+            path_frag = (parsed.netloc + parsed.path).rstrip('/')[-80:]
+            results.append({
+                'path': f'...{path_frag}',
+                'period': d.get('covering_period') or '?',
+                'type': d.get('source_type') or '?',
+            })
+        out: dict = {'ticker': ticker, 'count': len(docs), 'docs': results}
+        if truncated:
+            out['note'] = f'Showing first {cap} of {len(docs)} — pass domain= to narrow results'
+        self._progress.add_log(
+            f'get_indexed_docs: {len(results)} entries returned'
+            + (f' (domain={domain})' if domain else '')
+        )
+        return json.dumps(out)
+
+    def _tool_store_observation(self, ticker: str, key: str, value: str) -> str:
+        if self._db is None:
+            return '{"status": "error", "reason": "DB not available"}'
+        try:
+            self._db.upsert_crawl_observation(ticker, key, value)
+            self._progress.add_log(f'observation stored: {key}')
+            return json.dumps({'status': 'stored', 'key': key})
+        except Exception as exc:
+            self._progress.add_log(f'store_observation ERROR {key}: {exc}')
+            return json.dumps({'status': 'error', 'reason': str(exc)[:200]})
+
+    def _tool_get_observations(self, ticker: str) -> str:
+        if self._db is None:
+            return '{"observations": []}'
+        try:
+            rows = self._db.get_crawl_observations(ticker)
+            self._progress.add_log(f'get_observations: {len(rows)} entries returned')
+            return json.dumps({'ticker': ticker, 'observations': rows})
+        except Exception as exc:
+            self._progress.add_log(f'get_observations ERROR: {exc}')
+            return json.dumps({'observations': [], 'error': str(exc)[:200]})
+
     def _tool_fetch_url(self, url: str) -> str:
+        if url in self._fetched_urls:
+            self._progress.add_log(
+                f'WARN: re-fetching already-visited URL — possible context degradation: {url}'
+            )
+        self._fetched_urls.add(url)
         try:
             resp = self._session.get(url, timeout=20)
             resp.raise_for_status()
@@ -533,7 +756,10 @@ class LLMCrawler:
                 ),
             }
         ]
-        tools = [_FETCH_URL_TOOL, _STORE_DOCUMENT_TOOL, _WEB_SEARCH_TOOL]
+        tools = [
+            _FETCH_URL_TOOL, _STORE_DOCUMENT_TOOL, _WEB_SEARCH_TOOL,
+            _GET_INDEXED_DOCS_TOOL, _STORE_OBSERVATION_TOOL, _GET_OBSERVATIONS_TOOL,
+        ]
         return messages, tools
 
     def _run_anthropic(self, ticker: str, system_prompt: str) -> None:
@@ -550,8 +776,34 @@ class LLMCrawler:
                     self._progress.add_log('Stop requested — aborting crawl')
                     self._progress.status = 'stopped'
                     return
+                if iteration % _INDEXED_REFRESH_EVERY == 0:
+                    note = self._build_indexed_note(ticker)
+                    if note:
+                        messages.append({'role': 'user', 'content': note})
+                        self._progress.add_log(
+                            f'DB index injected ({note.count(chr(10))} entries)'
+                        )
+                if iteration == 0:
+                    obs = self._tool_get_observations(ticker)
+                    obs_data = json.loads(obs)
+                    if obs_data.get('observations'):
+                        messages.append({'role': 'user', 'content':
+                            f'[Observations from previous crawl sessions for {ticker}:\n{obs}\n'
+                            'Use these to skip re-discovery work.]'
+                        })
                 self._prune_old_fetches_anthropic(messages, fetch_tool_ids, iteration)
-                self._progress.add_log(f'API call #{iteration + 1}')
+                ctx_chars, ctx_tokens = _estimate_ctx(messages)
+                ctx_pct = ctx_tokens / self._num_ctx if self._num_ctx else 0
+                self._progress.add_log(
+                    f'API call #{iteration + 1} | '
+                    f'ctx {ctx_chars // 1000}k chars ~{ctx_tokens:,} tokens'
+                )
+                if ctx_pct >= 0.85:
+                    self._progress.add_log(
+                        f'WARN: context at {ctx_pct:.0%} of limit '
+                        f'({self._num_ctx - ctx_tokens:,} tokens remaining) — '
+                        'model may start losing earlier conversation'
+                    )
                 response = client.messages.create(
                     model=self._model,
                     max_tokens=4096,
@@ -567,11 +819,14 @@ class LLMCrawler:
                     break
 
                 tool_results = []
+                cur_tool_sigs: set = set()
                 for block in response.content:
                     if block.type != 'tool_use':
                         continue
                     name = block.name
                     inp = block.input
+                    primary_arg = inp.get('url') or inp.get('query') or inp.get('key') or ''
+                    cur_tool_sigs.add((name, primary_arg))
                     if name == 'fetch_url':
                         result_content = self._tool_fetch_url(inp.get('url', ''))
                         fetch_tool_ids[block.id] = iteration
@@ -585,6 +840,16 @@ class LLMCrawler:
                         result_content = json.dumps(result)
                     elif name == 'web_search':
                         result_content = self._tool_web_search(inp.get('query', ''))
+                    elif name == 'get_indexed_docs':
+                        result_content = self._tool_get_indexed_docs(
+                            inp.get('ticker', ticker), inp.get('domain')
+                        )
+                    elif name == 'store_observation':
+                        result_content = self._tool_store_observation(
+                            inp.get('ticker', ticker), inp.get('key', ''), inp.get('value', '')
+                        )
+                    elif name == 'get_observations':
+                        result_content = self._tool_get_observations(inp.get('ticker', ticker))
                     else:
                         result_content = f'Unknown tool: {name}'
                     tool_results.append({
@@ -596,6 +861,17 @@ class LLMCrawler:
                 if not tool_results:
                     self._progress.add_log('No tool calls in response — stopping')
                     break
+
+                if cur_tool_sigs & self._prev_tool_sigs:
+                    self._tool_repeat_streak += 1
+                    self._progress.add_log(
+                        f'WARN: repeated tool calls from previous iteration '
+                        f'(streak {self._tool_repeat_streak}) — '
+                        + ('context degradation likely' if self._tool_repeat_streak >= 2 else 'monitoring')
+                    )
+                else:
+                    self._tool_repeat_streak = 0
+                self._prev_tool_sigs = cur_tool_sigs
 
                 messages.append({'role': 'user', 'content': tool_results})
 
@@ -621,7 +897,10 @@ class LLMCrawler:
         _ensure_ollama(LLM_BASE_URL, self._model, self._progress)
 
         chat_url = f'{LLM_BASE_URL}/api/chat'
-        tools = [_FETCH_TOOL_OAI, _STORE_TOOL_OAI, _WEB_SEARCH_TOOL_OAI]
+        tools = [
+            _FETCH_TOOL_OAI, _STORE_TOOL_OAI, _WEB_SEARCH_TOOL_OAI,
+            _GET_INDEXED_DOCS_TOOL_OAI, _STORE_OBSERVATION_TOOL_OAI, _GET_OBSERVATIONS_TOOL_OAI,
+        ]
 
         messages: list = [
             {'role': 'system', 'content': system_prompt},
@@ -648,8 +927,35 @@ class LLMCrawler:
                     self._progress.add_log('Stop requested — aborting crawl')
                     self._progress.status = 'stopped'
                     return
+                if iteration % _INDEXED_REFRESH_EVERY == 0:
+                    note = self._build_indexed_note(ticker)
+                    if note:
+                        messages.append({'role': 'user', 'content': note})
+                        self._progress.add_log(
+                            f'DB index injected ({note.count(chr(10))} entries)'
+                        )
+                if iteration == 0:
+                    obs = self._tool_get_observations(ticker)
+                    obs_data = json.loads(obs)
+                    if obs_data.get('observations'):
+                        messages.append({'role': 'user', 'content':
+                            f'[Observations from previous crawl sessions for {ticker}:\n{obs}\n'
+                            'Use these to skip re-discovery work.]'
+                        })
                 self._prune_old_fetches(messages, fetch_indices)
-                self._progress.add_log(f'Ollama API call #{iteration + 1}')
+                ctx_chars, ctx_tokens = _estimate_ctx(messages)
+                ctx_pct = ctx_tokens / self._num_ctx if self._num_ctx else 0
+                self._progress.add_log(
+                    f'Ollama API call #{iteration + 1} | '
+                    f'ctx {ctx_chars // 1000}k chars ~{ctx_tokens:,} tokens '
+                    f'(limit {self._num_ctx:,})'
+                )
+                if ctx_pct >= 0.85:
+                    self._progress.add_log(
+                        f'WARN: context at {ctx_pct:.0%} of limit '
+                        f'({self._num_ctx - ctx_tokens:,} tokens remaining) — '
+                        'model may start losing earlier conversation'
+                    )
                 resp = _requests.post(
                     chat_url,
                     json={
@@ -658,6 +964,7 @@ class LLMCrawler:
                         'tools': tools,
                         'stream': False,
                         'think': False,
+                        'options': {'num_ctx': self._num_ctx},
                     },
                     timeout=300,
                 )
@@ -694,6 +1001,7 @@ class LLMCrawler:
 
                 base_msg_idx = len(messages)
                 tool_results = []
+                cur_tool_sigs: set = set()
                 for tc in tool_calls:
                     fn = tc.get('function', {})
                     name = fn.get('name', '')
@@ -703,6 +1011,8 @@ class LLMCrawler:
                             inp = json.loads(inp)
                         except Exception:
                             inp = {}
+                    primary_arg = inp.get('url') or inp.get('query') or inp.get('key') or ''
+                    cur_tool_sigs.add((name, primary_arg))
                     if name == 'fetch_url':
                         result_content = self._tool_fetch_url(inp.get('url', ''))
                         # Record future index: after extend, this result lands at
@@ -718,11 +1028,32 @@ class LLMCrawler:
                         result_content = json.dumps(result)
                     elif name == 'web_search':
                         result_content = self._tool_web_search(inp.get('query', ''))
+                    elif name == 'get_indexed_docs':
+                        result_content = self._tool_get_indexed_docs(
+                            inp.get('ticker', ticker), inp.get('domain')
+                        )
+                    elif name == 'store_observation':
+                        result_content = self._tool_store_observation(
+                            inp.get('ticker', ticker), inp.get('key', ''), inp.get('value', '')
+                        )
+                    elif name == 'get_observations':
+                        result_content = self._tool_get_observations(inp.get('ticker', ticker))
                     else:
                         result_content = f'Unknown tool: {name}'
                     tool_results.append({'role': 'tool', 'content': result_content})
 
                 messages.extend(tool_results)
+
+                if cur_tool_sigs & self._prev_tool_sigs:
+                    self._tool_repeat_streak += 1
+                    self._progress.add_log(
+                        f'WARN: repeated tool calls from previous iteration '
+                        f'(streak {self._tool_repeat_streak}) — '
+                        + ('context degradation likely' if self._tool_repeat_streak >= 2 else 'monitoring')
+                    )
+                else:
+                    self._tool_repeat_streak = 0
+                self._prev_tool_sigs = cur_tool_sigs
 
             else:
                 self._progress.add_log(f'Reached iteration limit ({self._max_iterations})')
@@ -749,7 +1080,9 @@ def _spawn_crawl_thread(
     prompt_override: Optional[str] = None,
     max_iterations: int = _MAX_ITERATIONS,
     max_fetch_chars: int = _MAX_FETCH_CHARS,
+    num_ctx: int = _DEFAULT_NUM_CTX,
     context_block: Optional[str] = None,
+    db=None,
 ) -> None:
     """Spawn a daemon thread that acquires the semaphore and runs the crawl."""
     def _worker():
@@ -760,7 +1093,9 @@ def _spawn_crawl_thread(
                 prompt_override=prompt_override,
                 max_iterations=max_iterations,
                 max_fetch_chars=max_fetch_chars,
+                num_ctx=num_ctx,
                 context_block=context_block,
+                db=db,
             )
             crawler.run()
 
@@ -793,6 +1128,7 @@ def start_crawl(
     # Read configurable limits from DB if available, fall back to module constants.
     max_iterations = _MAX_ITERATIONS
     max_fetch_chars = _MAX_FETCH_CHARS
+    num_ctx = _DEFAULT_NUM_CTX
     if db is not None:
         try:
             v = db.get_config('crawl_max_iterations')
@@ -804,6 +1140,12 @@ def start_crawl(
             v = db.get_config('crawl_max_fetch_chars')
             if v:
                 max_fetch_chars = int(v)
+        except Exception:
+            pass
+        try:
+            v = db.get_config('crawl_num_ctx')
+            if v:
+                num_ctx = int(v)
         except Exception:
             pass
 
@@ -856,7 +1198,9 @@ def start_crawl(
             prompt_override=prompt,
             max_iterations=max_iterations,
             max_fetch_chars=max_fetch_chars,
+            num_ctx=num_ctx,
             context_block=context_block,
+            db=db,
         )
 
     with _TASKS_LOCK:

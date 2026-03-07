@@ -230,6 +230,16 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 19")
                     version = 19
 
+                if version < 20:
+                    self._migrate_v20(conn)
+                    conn.execute("PRAGMA user_version = 20")
+                    version = 20
+
+                if version < 21:
+                    self._migrate_v21(conn)
+                    conn.execute("PRAGMA user_version = 21")
+                    version = 21
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -903,6 +913,76 @@ class MinerDB:
             if col not in existing:
                 conn.execute(f"ALTER TABLE reports ADD COLUMN {col} {typedef}")
 
+    def _migrate_v20(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v19 → v20: crawl_observations table.
+
+        Stores structured knowledge the LLM crawler learns about each company's
+        IR sites (pagination patterns, URL structures, known dead ends, etc.).
+        Observations survive across crawl sessions and are injected back into the
+        prompt so the model doesn't re-discover site behaviour from scratch.
+        """
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS crawl_observations (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker     TEXT    NOT NULL,
+                key        TEXT    NOT NULL,
+                value      TEXT    NOT NULL,
+                created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(ticker, key)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_obs_ticker ON crawl_observations(ticker)"
+        )
+
+    def upsert_crawl_observation(self, ticker: str, key: str, value: str) -> None:
+        """Insert or update a crawl observation for a ticker.
+
+        On conflict (same ticker+key) the value and updated_at are refreshed.
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO crawl_observations (ticker, key, value, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(ticker, key) DO UPDATE SET
+                       value      = excluded.value,
+                       updated_at = excluded.updated_at""",
+                (ticker.upper(), key, value, now, now),
+            )
+
+    def get_crawl_observations(self, ticker: str) -> list:
+        """Return all crawl observations for a ticker, ordered by key."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT key, value, updated_at
+                   FROM crawl_observations
+                   WHERE ticker = ?
+                   ORDER BY key""",
+                (ticker.upper(),),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def _migrate_v21(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v20 → v21: add llm_summary column to reports.
+
+        Stores the one-sentence summary returned by the LLM during batch
+        extraction so documents are searchable without re-running the model.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        if 'llm_summary' not in existing:
+            conn.execute("ALTER TABLE reports ADD COLUMN llm_summary TEXT")
+
+    def update_report_summary(self, report_id: int, summary: str) -> None:
+        """Write the LLM-generated summary for a report."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET llm_summary = ? WHERE id = ?",
+                (summary.strip()[:500] if summary else None, report_id),
+            )
+
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
 
@@ -1316,6 +1396,22 @@ class MinerDB:
                    WHERE ticker = ? AND source_type = ?
                    ORDER BY report_date ASC""",
                 (ticker, source_type),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_indexed_urls_for_ticker(self, ticker: str) -> list:
+        """Return compact doc index for a ticker: source_url, covering_period, source_type.
+
+        Used by the LLM crawler to inject an 'already indexed' block into the prompt
+        so the model does not re-fetch or re-store documents already in the DB.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT source_url, covering_period, source_type
+                   FROM reports
+                   WHERE ticker = ? AND source_url IS NOT NULL
+                   ORDER BY report_date ASC""",
+                (ticker.upper(),),
             ).fetchall()
             return [dict(r) for r in rows]
 

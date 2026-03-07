@@ -762,6 +762,12 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             llm_by_metric, _batch_meta = _run_llm_batch(
                 llm_interpreter, llm_text, all_metrics, ticker=ticker
             )
+            _batch_summary = getattr(llm_interpreter, '_last_batch_summary', '')
+            if _batch_summary:
+                try:
+                    db.update_report_summary(report['id'], _batch_summary)
+                except Exception as _sum_err:
+                    log.debug("Summary write failed (non-fatal): %s", _sum_err)
             try:
                 from interpreters.llm_interpreter import _active_model
                 hits = lambda t: sum(1 for r in llm_by_metric.values() if r.confidence >= t)

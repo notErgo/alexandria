@@ -27,12 +27,12 @@ _KNOWN_CONFIG_KEYS = {
     # Extraction
     'confidence_review_threshold', 'agreement_threshold_default',
     'outlier_min_history', 'context_char_budget', 'context_char_budget_quarterly',
-    'context_max_windows', 'context_fallback_confidence',
+    'context_max_windows', 'context_fallback_confidence', 'extract_num_ctx',
     # LLM
     'llm_timeout_seconds',
     'llm_quarterly_batch_preamble', 'llm_annual_batch_preamble',
     # Crawl
-    'crawl_max_iterations', 'crawl_max_fetch_chars',
+    'crawl_max_iterations', 'crawl_max_fetch_chars', 'crawl_num_ctx',
     'bitcoin_mining_keywords',
     # Pipeline
     'pipeline_output_dir',
@@ -97,6 +97,8 @@ def _get_default_for_key(key: str):
         return '3'
     if key == 'context_fallback_confidence':
         return '0.5'
+    if key == 'extract_num_ctx':
+        return '8192'
     if key == 'llm_timeout_seconds':
         from config import LLM_TIMEOUT_SECONDS
         return str(LLM_TIMEOUT_SECONDS)
@@ -104,6 +106,8 @@ def _get_default_for_key(key: str):
         return '80'
     if key == 'crawl_max_fetch_chars':
         return '12000'
+    if key == 'crawl_num_ctx':
+        return '32768'
     if key == 'bitcoin_mining_keywords':
         from infra.db import MinerDB
         return ','.join(MinerDB._DEFAULT_BITCOIN_MINING_KEYWORDS)
@@ -137,9 +141,24 @@ def list_config():
         from app_globals import get_db
         db = get_db()
         entries = db.list_config()
-        return jsonify({'success': True, 'data': {'config': entries}})
+        return jsonify({'success': True, 'data': entries})
     except Exception:
         log.error('Error listing config settings', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/config/defaults')
+def list_config_defaults():
+    """Return hardcoded defaults for all known config keys."""
+    try:
+        result = {}
+        for key in _KNOWN_CONFIG_KEYS:
+            val = _get_default_for_key(key)
+            if val is not None:
+                result[key] = val
+        return jsonify({'success': True, 'data': result})
+    except Exception:
+        log.error('Error building config defaults', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
