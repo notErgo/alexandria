@@ -38,10 +38,10 @@ def list_llm_prompts():
 def get_llm_prompt(metric):
     try:
         from app_globals import get_db
-        from extractors.llm_extractor import LLMExtractor
+        from interpreters.llm_interpreter import LLMInterpreter
         db = get_db()
         prompt = db.get_llm_prompt(metric)
-        default_prompt = LLMExtractor.get_default_prompt(metric)
+        default_prompt = LLMInterpreter.get_default_prompt(metric)
         return jsonify({'success': True, 'data': {
             'prompt': prompt,
             'default_prompt': default_prompt,

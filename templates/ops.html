@@ -1216,7 +1216,7 @@ async function _pollExtractionRun(taskId, ticker) {
   if (_extractTimer) clearInterval(_extractTimer);
   _extractTimer = setInterval(async function() {
     try {
-      const resp = await fetch('/api/operations/extract/' + encodeURIComponent(taskId) + '/progress');
+      const resp = await fetch('/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
       if (!data.success) throw new Error(data.error?.message || 'progress failed');
@@ -1318,7 +1318,7 @@ async function startExtractionRun() {
   _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': queued', false);
   _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : ''));
   try {
-    const resp = await fetch('/api/operations/extract', {
+    const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ ticker: ticker || null, force }),

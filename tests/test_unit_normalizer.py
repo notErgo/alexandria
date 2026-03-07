@@ -1,5 +1,5 @@
 """Tests for unit normalization functions."""
-from extractors.unit_normalizer import normalize_hashrate, normalize_btc, normalize_percent, normalize_value
+from interpreters.unit_normalizer import normalize_hashrate, normalize_btc, normalize_percent, normalize_value
 
 
 def test_normalize_hashrate_eh():

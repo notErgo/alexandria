@@ -238,7 +238,7 @@ def explorer_reextract():
     candidates = []
     try:
         registry = get_registry()
-        from extractors.extractor import extract_all
+        from interpreters.regex_interpreter import extract_all
         metrics = db.get_metric_schema('BTC-miners')
         for m in metrics:
             if not m.get('has_extraction_pattern'):

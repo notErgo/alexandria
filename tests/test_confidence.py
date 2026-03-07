@@ -1,5 +1,5 @@
 """Tests for confidence scoring."""
-from extractors.confidence import score_extraction
+from interpreters.confidence import score_extraction
 
 
 def test_high_weight_close_context_scores_high():

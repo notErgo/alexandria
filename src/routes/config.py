@@ -63,13 +63,13 @@ _OLLAMA_MANIFEST_DIR = Path.home() / '.ollama' / 'models' / 'manifests' / 'regis
 
 def _get_default_for_key(key: str):
     if key == 'llm_batch_preamble':
-        from extractors.llm_extractor import _DEFAULT_BATCH_PREAMBLE
+        from interpreters.llm_interpreter import _DEFAULT_BATCH_PREAMBLE
         return _DEFAULT_BATCH_PREAMBLE
     if key == 'llm_quarterly_batch_preamble':
-        from extractors.llm_extractor import _QUARTERLY_BATCH_PREAMBLE
+        from interpreters.llm_interpreter import _QUARTERLY_BATCH_PREAMBLE
         return _QUARTERLY_BATCH_PREAMBLE
     if key == 'llm_annual_batch_preamble':
-        from extractors.llm_extractor import _ANNUAL_BATCH_PREAMBLE
+        from interpreters.llm_interpreter import _ANNUAL_BATCH_PREAMBLE
         return _ANNUAL_BATCH_PREAMBLE
     if key == 'ollama_model':
         from config import LLM_MODEL_ID

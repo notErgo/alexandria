@@ -31,7 +31,7 @@ def get_registry():
     if _registry is None:
         with _lock:
             if _registry is None:
-                from extractors.pattern_registry import PatternRegistry
+                from interpreters.pattern_registry import PatternRegistry
                 from config import CONFIG_DIR
                 log.info("Loading PatternRegistry from %s", CONFIG_DIR)
                 _registry = PatternRegistry.load(CONFIG_DIR)
@@ -57,7 +57,7 @@ def reload_registry():
     """Force-reload PatternRegistry from disk. Called after pattern edits."""
     global _registry
     with _lock:
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
         from config import CONFIG_DIR
         _registry = PatternRegistry.load(CONFIG_DIR)
         log.info("PatternRegistry reloaded from %s", CONFIG_DIR)

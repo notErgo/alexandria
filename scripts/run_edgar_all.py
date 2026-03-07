@@ -28,8 +28,8 @@ setup_logging()
 from infra.db import MinerDB
 from config import DATA_DIR, CONFIG_DIR
 from scrapers.edgar_connector import EdgarConnector
-from extractors.extraction_pipeline import extract_report
-from extractors.pattern_registry import PatternRegistry
+from interpreters.extraction_pipeline import extract_report
+from interpreters.pattern_registry import PatternRegistry
 
 import requests as req_lib
 

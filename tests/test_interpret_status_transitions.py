@@ -32,7 +32,7 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
     """Issue #4: extraction_status must be set to 'running' before LLM call."""
 
     def test_running_status_set_before_extraction(self):
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         registry = MagicMock()
@@ -40,9 +40,9 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
 
         report = _make_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
-                with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
+                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
                     mock_llm_fn.return_value = None
                     extract_report(report, db, registry)
 
@@ -50,7 +50,7 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
 
     def test_running_called_before_mark_extracted(self):
         """mark_report_extraction_running must be called before mark_report_extracted."""
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         call_order = []
         db = MagicMock()
@@ -62,9 +62,9 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
 
         report = _make_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
-                with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
+                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
                     mock_llm_fn.return_value = None
                     extract_report(report, db, registry)
 
@@ -78,7 +78,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
     def test_quarterly_llm_unavailable_does_not_mark_extracted(self):
         """When LLM is unavailable for quarterly report, mark_report_extracted must NOT be called."""
-        from extractors.extraction_pipeline import _extract_quarterly_report
+        from interpreters.interpret_pipeline import _interpret_quarterly_report
         from miner_types import ExtractionSummary
 
         db = MagicMock()
@@ -88,16 +88,16 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         report = _make_quarterly_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _extract_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, registry, summary)
 
         db.mark_report_extracted.assert_not_called()
 
     def test_quarterly_llm_unavailable_does_not_mark_failed(self):
         """LLM unavailability is transient — must not mark the report as permanently failed."""
-        from extractors.extraction_pipeline import _extract_quarterly_report
+        from interpreters.interpret_pipeline import _interpret_quarterly_report
         from miner_types import ExtractionSummary
 
         db = MagicMock()
@@ -107,16 +107,16 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         report = _make_quarterly_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _extract_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, registry, summary)
 
         db.mark_report_extraction_failed.assert_not_called()
 
     def test_quarterly_llm_unavailable_resets_to_pending(self):
         """Transient LLM failure must reset status from running to pending so same process can retry."""
-        from extractors.extraction_pipeline import _extract_quarterly_report
+        from interpreters.interpret_pipeline import _interpret_quarterly_report
         from miner_types import ExtractionSummary
 
         db = MagicMock()
@@ -126,10 +126,10 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         report = _make_quarterly_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _extract_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, registry, summary)
 
         db.reset_report_to_pending.assert_called_once_with(report['id'])
 
@@ -138,7 +138,7 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
     """Issue #3: Exception during extraction must call mark_report_extraction_failed."""
 
     def test_extraction_exception_marks_failed(self):
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         registry = MagicMock()
@@ -146,9 +146,9 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
 
         report = _make_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=True):
-                with patch('extractors.extraction_pipeline._build_regex_by_metric',
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
+                with patch('interpreters.interpret_pipeline._build_regex_by_metric',
                            side_effect=RuntimeError('simulated error')):
                     mock_llm_fn.return_value = MagicMock()
                     extract_report(report, db, registry)
@@ -158,7 +158,7 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
         self.assertEqual(args[0], report['id'])
 
     def test_quarterly_exception_marks_failed(self):
-        from extractors.extraction_pipeline import _extract_quarterly_report
+        from interpreters.interpret_pipeline import _interpret_quarterly_report
         from miner_types import ExtractionSummary
 
         db = MagicMock()
@@ -168,11 +168,11 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
 
         report = _make_quarterly_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=True):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
                 mock_llm_fn.return_value = MagicMock()
                 mock_llm_fn.return_value.extract_quarterly_batch.side_effect = RuntimeError('llm crashed')
-                _extract_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, registry, summary)
 
         db.mark_report_extraction_failed.assert_called_once()
 
@@ -181,7 +181,7 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
     """Happy path: successful extraction must still call mark_report_extracted."""
 
     def test_successful_extraction_marks_done(self):
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         db.data_point_exists.return_value = False
@@ -191,10 +191,10 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
 
         report = _make_report()
 
-        with patch('extractors.extraction_pipeline._get_llm_extractor') as mock_llm_fn:
-            with patch('extractors.extraction_pipeline._check_llm_available', return_value=False):
-                with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}):
-                    with patch('extractors.extraction_pipeline._try_gap_fill'):
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
+                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
+                    with patch('interpreters.interpret_pipeline._try_gap_fill'):
                         mock_llm_fn.return_value = None
                         extract_report(report, db, registry)
 

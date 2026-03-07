@@ -15,7 +15,7 @@
     {"id": "2.1.5a", "name": "Scraper governance and probe controls", "source": "n/a", "template": "ops.html", "api_endpoints": ["/api/companies/scraper_governance", "/api/companies/bootstrap_probe_all", "/api/companies/<ticker>/discovery_candidates", "/api/companies/<ticker>/bootstrap_probe"]},
     {"id": "2.1.6", "name": "Sync Config button", "source": "n/a", "template": "ops.html", "api_endpoints": ["/api/companies/sync"]},
     {"id": "2.1.7", "name": "Data acquisition controls", "source": "n/a", "api_endpoints": ["/api/ingest/archive", "/api/ingest/ir", "/api/ingest/edgar", "/api/ingest/<id>/progress"]},
-    {"id": "2.1.8", "name": "LLM extraction run monitor", "source": "DATA", "api_endpoints": ["/api/operations/extract", "/api/operations/extract/<id>/progress"]},
+    {"id": "2.1.8", "name": "LLM interpret run monitor", "source": "DATA", "api_endpoints": ["/api/operations/interpret", "/api/operations/interpret/<id>/progress"]},
     {"id": "2.1.9", "name": "Pipeline observability panel", "source": "DATA", "api_endpoints": ["/api/operations/pipeline_observability"]},
     {"id": "2.2", "name": "Registry tab", "source": "n/a", "template": "ops.html"},
     {"id": "2.2.1", "name": "Filter bar", "source": "n/a", "template": "ops.html"},

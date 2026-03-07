@@ -24,7 +24,7 @@ def _update_progress(task_id: str, state: dict) -> None:
 
 def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
     """Run extraction over currently unextracted reports and return summary counts."""
-    from extractors.extraction_pipeline import extract_report
+    from interpreters.interpret_pipeline import extract_report
     from app_globals import get_registry
 
     registry = get_registry()

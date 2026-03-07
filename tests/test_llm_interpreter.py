@@ -2,7 +2,7 @@
 LLM extractor unit tests — TDD.
 
 All tests use mock HTTP sessions; no network calls permitted.
-Tests should FAIL before llm_extractor.py is implemented.
+Tests should FAIL before llm_interpreter.py is implemented.
 """
 import pytest
 from unittest.mock import MagicMock
@@ -27,10 +27,10 @@ class FakeResponse:
 
 
 def _make_extractor(session=None, db=None):
-    from extractors.llm_extractor import LLMExtractor
+    from interpreters.llm_interpreter import LLMInterpreter
     if session is None:
         session = MagicMock()
-    return LLMExtractor(session=session, db=db)
+    return LLMInterpreter(session=session, db=db)
 
 
 def _ollama_ok_response(metric, value, unit="BTC", confidence=0.92):
@@ -47,7 +47,7 @@ def _ollama_ok_response(metric, value, unit="BTC", confidence=0.92):
     )
 
 
-class TestLLMExtractorParsing:
+class TestLLMInterpreterParsing:
     def test_returns_extraction_result_on_valid_json(self):
         """LLM returns valid JSON → ExtractionResult with correct value and confidence."""
         from miner_types import ExtractionResult
@@ -148,7 +148,7 @@ class TestLLMExtractorParsing:
         assert result.extraction_method.startswith('llm_')
 
 
-class TestLLMExtractorPromptDB:
+class TestLLMInterpreterPromptDB:
     def test_uses_db_prompt_when_available(self, db):
         """If DB has active prompt for metric, it is included in the Ollama call."""
         with db._get_connection() as conn:

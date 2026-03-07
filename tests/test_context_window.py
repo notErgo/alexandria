@@ -1,5 +1,5 @@
 """
-Tests for extractors.context_window.ContextWindowSelector.
+Tests for interpreters.context_window.ContextWindowSelector.
 
 Written test-first (TDD). These tests FAIL before context_window.py is created,
 and PASS after implementation.
@@ -26,7 +26,7 @@ class TestContextWindowSelector:
 
     def test_chunk_path_scores_by_metric_keywords(self):
         """Primary window is the chunk with most keyword hits for target metric."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
 
         chunk0 = self._make_chunk(0, 'Company had strong revenue this quarter.')
         chunk1 = self._make_chunk(1, 'BTC produced: 750 bitcoin mined. Total mined BTC was 750.')
@@ -44,7 +44,7 @@ class TestContextWindowSelector:
 
     def test_chunk_path_respects_budget(self):
         """Combined chunks never exceed CONTEXT_CHAR_BUDGET chars."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET
 
         # Create chunks summing to ~30k chars total
@@ -63,7 +63,7 @@ class TestContextWindowSelector:
 
     def test_sliding_path_when_no_chunks(self):
         """When get_chunks_for_report returns [], falls back to first sliding window."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET
 
         db = MagicMock()
@@ -79,7 +79,7 @@ class TestContextWindowSelector:
 
     def test_sliding_window_overlap(self):
         """Second fallback window starts at budget - budget//4 chars (25% overlap)."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET
 
         db = MagicMock()
@@ -97,7 +97,7 @@ class TestContextWindowSelector:
 
     def test_fallback_windows_count(self):
         """select_windows() returns at most 3 windows total."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET
 
         db = MagicMock()
@@ -112,13 +112,13 @@ class TestContextWindowSelector:
 
     def test_needs_fallback_true_on_none(self):
         """needs_fallback(None) returns True."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         selector = ContextWindowSelector()
         assert selector.needs_fallback(None) is True
 
     def test_needs_fallback_true_on_low_confidence(self):
         """needs_fallback(result) where result.confidence=0.4 returns True."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from miner_types import ExtractionResult
 
         selector = ContextWindowSelector()
@@ -130,7 +130,7 @@ class TestContextWindowSelector:
 
     def test_needs_fallback_false_on_good_result(self):
         """needs_fallback returns False when confidence >= 0.5 and value is not None."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from miner_types import ExtractionResult
 
         selector = ContextWindowSelector()
@@ -142,7 +142,7 @@ class TestContextWindowSelector:
 
     def test_window_never_exceeds_budget(self):
         """Even if a single chunk is larger than budget, returned text is truncated."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET
 
         oversized_chunk = self._make_chunk(0, 'btc mined 750 ' + 'z' * (CONTEXT_CHAR_BUDGET * 2))
@@ -157,7 +157,7 @@ class TestContextWindowSelector:
 
     def test_quarterly_budget_larger_than_monthly(self):
         """edgar_10q doc_type uses a larger budget than ir_press_release."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
 
         monthly_selector = ContextWindowSelector(doc_type='ir_press_release')
         quarterly_selector = ContextWindowSelector(doc_type='edgar_10q')
@@ -166,7 +166,7 @@ class TestContextWindowSelector:
 
     def test_chunk_path_window_index_set(self):
         """Each returned window dict has window_index key set correctly."""
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
 
         chunks = [
             self._make_chunk(0, 'btc mined 500 bitcoin'),
@@ -188,7 +188,7 @@ class TestPerMetricFallbackWindows:
     def test_fallback_calls_select_windows_with_each_metric(self):
         """select_windows must be called with hashrate_eh when that metric needs fallback."""
         from unittest.mock import patch, MagicMock
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         db.get_metric_rules.return_value = []
@@ -214,12 +214,12 @@ class TestPerMetricFallbackWindows:
             {'text': 'window1 hashrate 35', 'source': 'sliding', 'window_index': 1},
         ]
 
-        with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=True), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=mock_llm), \
-             patch('extractors.extraction_pipeline._apply_agreement'), \
-             patch('extractors.extraction_pipeline._try_gap_fill'), \
-             patch('extractors.context_window.ContextWindowSelector.select_windows',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}), \
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=mock_llm), \
+             patch('interpreters.interpret_pipeline._apply_agreement'), \
+             patch('interpreters.interpret_pipeline._try_gap_fill'), \
+             patch('interpreters.context_window.ContextWindowSelector.select_windows',
                    return_value=two_windows) as mock_select:
             extract_report(report, db, registry)
 
@@ -238,7 +238,7 @@ class TestPerMetricFallbackWindows:
     def test_fallback_does_not_use_production_btc_windows_for_hashrate(self):
         """Before fix, fallback reused production_btc windows; after fix, per-metric windows used."""
         from unittest.mock import patch, MagicMock, call
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         db.get_metric_rules.return_value = []
@@ -263,12 +263,12 @@ class TestPerMetricFallbackWindows:
             {'text': 'window1', 'source': 'sliding', 'window_index': 1},
         ]
 
-        with patch('extractors.extraction_pipeline._build_regex_by_metric', return_value={}), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=True), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=mock_llm), \
-             patch('extractors.extraction_pipeline._apply_agreement'), \
-             patch('extractors.extraction_pipeline._try_gap_fill'), \
-             patch('extractors.context_window.ContextWindowSelector.select_windows',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}), \
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=mock_llm), \
+             patch('interpreters.interpret_pipeline._apply_agreement'), \
+             patch('interpreters.interpret_pipeline._try_gap_fill'), \
+             patch('interpreters.context_window.ContextWindowSelector.select_windows',
                    return_value=two_windows) as mock_select:
             extract_report(report, db, registry)
 

@@ -88,7 +88,7 @@ def test_ingest_edgar_passes_auto_extract_flag(tmp_path, monkeypatch):
 
 def test_extract_pending_reports_aggregates_counts(monkeypatch):
     import routes.reports as reports
-    import extractors.extraction_pipeline as pipeline
+    import interpreters.interpret_pipeline as pipeline
     import app_globals
 
     class _Summary:

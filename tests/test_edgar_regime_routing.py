@@ -203,45 +203,45 @@ class TestForeignFormExtractionRouting(unittest.TestCase):
     """Fix 2: edgar_20f/40f must be in _ANNUAL_SOURCES; edgar_6k in _QUARTERLY_SOURCES."""
 
     def test_edgar_20f_in_annual_sources(self):
-        from extractors.extraction_pipeline import _ANNUAL_SOURCES
+        from interpreters.interpret_pipeline import _ANNUAL_SOURCES
         self.assertIn('edgar_20f', _ANNUAL_SOURCES)
 
     def test_edgar_40f_in_annual_sources(self):
-        from extractors.extraction_pipeline import _ANNUAL_SOURCES
+        from interpreters.interpret_pipeline import _ANNUAL_SOURCES
         self.assertIn('edgar_40f', _ANNUAL_SOURCES)
 
     def test_edgar_6k_in_quarterly_sources(self):
-        from extractors.extraction_pipeline import _QUARTERLY_SOURCES
+        from interpreters.interpret_pipeline import _QUARTERLY_SOURCES
         self.assertIn('edgar_6k', _QUARTERLY_SOURCES)
 
     def test_edgar_20f_in_context_window_quarterly_sources(self):
-        from extractors.context_window import _QUARTERLY_SOURCES
+        from interpreters.context_window import _QUARTERLY_SOURCES
         self.assertIn('edgar_20f', _QUARTERLY_SOURCES)
 
     def test_edgar_40f_in_context_window_quarterly_sources(self):
-        from extractors.context_window import _QUARTERLY_SOURCES
+        from interpreters.context_window import _QUARTERLY_SOURCES
         self.assertIn('edgar_40f', _QUARTERLY_SOURCES)
 
     def test_edgar_6k_in_context_window_quarterly_sources(self):
-        from extractors.context_window import _QUARTERLY_SOURCES
+        from interpreters.context_window import _QUARTERLY_SOURCES
         self.assertIn('edgar_6k', _QUARTERLY_SOURCES)
 
     def test_context_window_selector_edgar_20f_uses_large_budget(self):
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET_QUARTERLY
         selector = ContextWindowSelector(doc_type='edgar_20f')
         self.assertEqual(selector.char_budget, CONTEXT_CHAR_BUDGET_QUARTERLY)
 
     def test_context_window_selector_edgar_40f_uses_large_budget(self):
-        from extractors.context_window import ContextWindowSelector
+        from interpreters.context_window import ContextWindowSelector
         from config import CONTEXT_CHAR_BUDGET_QUARTERLY
         selector = ContextWindowSelector(doc_type='edgar_40f')
         self.assertEqual(selector.char_budget, CONTEXT_CHAR_BUDGET_QUARTERLY)
 
     def test_extract_report_routes_20f_to_quarterly_path(self):
-        """extract_report with edgar_20f source_type must invoke _extract_quarterly_report."""
+        """extract_report with edgar_20f source_type must invoke _interpret_quarterly_report."""
         from unittest.mock import patch, MagicMock
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         report = {
             'id': 1, 'ticker': 'HIVE', 'report_date': '2024-03-31',
@@ -254,16 +254,16 @@ class TestForeignFormExtractionRouting(unittest.TestCase):
         registry = MagicMock()
         registry.metrics = {'production_btc': []}
 
-        with patch('extractors.extraction_pipeline._extract_quarterly_report') as mock_qr:
+        with patch('interpreters.interpret_pipeline._interpret_quarterly_report') as mock_qr:
             mock_qr.return_value = MagicMock(reports_processed=1, errors=0)
             extract_report(report, db, registry)
 
         mock_qr.assert_called_once()
 
     def test_extract_report_routes_40f_to_quarterly_path(self):
-        """extract_report with edgar_40f source_type must invoke _extract_quarterly_report."""
+        """extract_report with edgar_40f source_type must invoke _interpret_quarterly_report."""
         from unittest.mock import patch, MagicMock
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         report = {
             'id': 2, 'ticker': 'BITF', 'report_date': '2024-12-31',
@@ -276,7 +276,7 @@ class TestForeignFormExtractionRouting(unittest.TestCase):
         registry = MagicMock()
         registry.metrics = {'production_btc': []}
 
-        with patch('extractors.extraction_pipeline._extract_quarterly_report') as mock_qr:
+        with patch('interpreters.interpret_pipeline._interpret_quarterly_report') as mock_qr:
             mock_qr.return_value = MagicMock(reports_processed=1, errors=0)
             extract_report(report, db, registry)
 

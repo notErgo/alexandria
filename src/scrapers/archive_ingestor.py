@@ -194,7 +194,7 @@ def _extract_quarterly_data_points(text: str, registry, report_id: int, ticker: 
 
     Returns dict mapping period (date) → list of ExtractionResult.
     """
-    from extractors.extractor import extract_all
+    from interpreters.regex_interpreter import extract_all
 
     results_by_period: dict = {}
     for period_date in periods:
@@ -288,7 +288,7 @@ class ArchiveIngestor:
         """
         from miner_types import IngestSummary
         from config import CONFIDENCE_REVIEW_THRESHOLD
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
         from scrapers.manifest_scanner import scan_archive_directory
 
         summary = IngestSummary()

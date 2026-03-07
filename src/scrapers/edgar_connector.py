@@ -5,7 +5,7 @@ SEC EDGAR connector: Stage-1-only ingestor for 8-K, 10-Q, and 10-K filings.
 10-Q/10-K: Submissions API (https://data.sec.gov/submissions/CIK{cik}.json)
 
 All methods store raw text to reports table ONLY.
-No inline extraction — extraction is run separately by extraction_pipeline.extract_report().
+No inline extraction — extraction is run separately by interpret_pipeline.interpret_report().
 """
 import re
 import time
@@ -259,7 +259,7 @@ class EdgarConnector:
     """Fetches 8-K, 10-Q, and 10-K filings from SEC EDGAR for a given company.
 
     Stage-1-only: all methods store raw text to the reports table.
-    No extraction is performed — run extraction_pipeline.extract_report() separately.
+    No extraction is performed — run interpret_pipeline.interpret_report() separately.
     """
     db: object              # MinerDB
     session: requests.Session
@@ -838,6 +838,6 @@ EdgarConnector.fetch_production_filings = _fetch_production_filings_compat
 
 # Expose extract_all at module level so tests can patch it
 try:
-    from extractors.extractor import extract_all
+    from interpreters.regex_interpreter import extract_all
 except ImportError:
     extract_all = None  # type: ignore

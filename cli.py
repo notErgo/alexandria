@@ -25,7 +25,7 @@ from infra.logging_config import setup_logging
 setup_logging()
 
 from infra.db import MinerDB
-from extractors.pattern_registry import PatternRegistry
+from interpreters.pattern_registry import PatternRegistry
 from config import DATA_DIR, CONFIG_DIR, ARCHIVE_DIR
 from pathlib import Path
 
@@ -157,7 +157,7 @@ def cmd_export(args):
 def cmd_extract(args):
     """Run the extraction pipeline on stored reports (no re-scraping)."""
     from miner_types import ExtractionSummary
-    from extractors.extraction_pipeline import extract_report
+    from interpreters.interpret_pipeline import extract_report
 
     db = get_db()
     registry = get_registry()
@@ -198,11 +198,11 @@ def cmd_broad_extract(args):
     """Run broad LLM extraction on stored reports to capture ALL numeric values."""
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-    from extractors.broad_extractor import BroadExtractor
+    from interpreters.broad_interpreter import BroadInterpreter
 
     db = get_db()
     ticker_filter = args.ticker.upper() if args.ticker else None
-    extractor = BroadExtractor(db)
+    extractor = BroadInterpreter(db)
     result = extractor.extract_all(ticker=ticker_filter, force=getattr(args, 'force', False))
     print(f"Broad extraction complete: {result['reports_processed']} reports, "
           f"{result['metrics_stored']} metrics stored, "

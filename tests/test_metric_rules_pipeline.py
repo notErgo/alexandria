@@ -37,7 +37,7 @@ class TestMetricRulesLoadedInPipeline:
 
     def test_get_metric_rules_called_once_per_extract_report(self):
         """db.get_metric_rules() must be called during extract_report."""
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         db.get_metric_rules.return_value = []
@@ -46,18 +46,18 @@ class TestMetricRulesLoadedInPipeline:
         registry = MagicMock()
         registry.metrics = {'production_btc': []}
 
-        with patch('extractors.extraction_pipeline._build_regex_by_metric',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric',
                    return_value=_fake_regex_results()), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=False), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=None), \
-             patch('extractors.extraction_pipeline._apply_agreement'):
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=False), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=None), \
+             patch('interpreters.interpret_pipeline._apply_agreement'):
             extract_report(_make_report(), db, registry)
 
         db.get_metric_rules.assert_called()
 
     def test_metric_rule_passed_to_apply_agreement(self):
         """_apply_agreement must be called with metric_rule= set to the matching rule."""
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         rule = {
             'metric': 'production_btc',
@@ -73,11 +73,11 @@ class TestMetricRulesLoadedInPipeline:
         registry = MagicMock()
         registry.metrics = {'production_btc': []}
 
-        with patch('extractors.extraction_pipeline._build_regex_by_metric',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric',
                    return_value=_fake_regex_results()), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=False), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=None), \
-             patch('extractors.extraction_pipeline._apply_agreement') as mock_apply:
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=False), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=None), \
+             patch('interpreters.interpret_pipeline._apply_agreement') as mock_apply:
             extract_report(_make_report(), db, registry)
 
         assert mock_apply.called
@@ -86,7 +86,7 @@ class TestMetricRulesLoadedInPipeline:
 
     def test_no_rule_passes_none(self):
         """When no rule for a metric, _apply_agreement receives metric_rule=None."""
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
         db.get_metric_rules.return_value = []
@@ -95,11 +95,11 @@ class TestMetricRulesLoadedInPipeline:
         registry = MagicMock()
         registry.metrics = {'production_btc': []}
 
-        with patch('extractors.extraction_pipeline._build_regex_by_metric',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric',
                    return_value=_fake_regex_results()), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=False), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=None), \
-             patch('extractors.extraction_pipeline._apply_agreement') as mock_apply:
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=False), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=None), \
+             patch('interpreters.interpret_pipeline._apply_agreement') as mock_apply:
             extract_report(_make_report(), db, registry)
 
         assert mock_apply.called
@@ -108,7 +108,7 @@ class TestMetricRulesLoadedInPipeline:
 
     def test_multiple_metrics_each_get_correct_rule(self):
         """Each metric gets its own rule (keyed by metric name)."""
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
 
         rules = [
             {'metric': 'production_btc', 'agreement_threshold': 0.01, 'enabled': 1},
@@ -122,11 +122,11 @@ class TestMetricRulesLoadedInPipeline:
         registry.metrics = {'production_btc': [], 'hashrate_eh': []}
 
         calls_by_metric = {}
-        with patch('extractors.extraction_pipeline._build_regex_by_metric',
+        with patch('interpreters.interpret_pipeline._build_regex_by_metric',
                    return_value=_fake_regex_results(('production_btc', 'hashrate_eh'))), \
-             patch('extractors.extraction_pipeline._check_llm_available', return_value=False), \
-             patch('extractors.extraction_pipeline._get_llm_extractor', return_value=None), \
-             patch('extractors.extraction_pipeline._apply_agreement') as mock_apply:
+             patch('interpreters.interpret_pipeline._check_llm_available', return_value=False), \
+             patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=None), \
+             patch('interpreters.interpret_pipeline._apply_agreement') as mock_apply:
             extract_report(_make_report(), db, registry)
 
         for c in mock_apply.call_args_list:

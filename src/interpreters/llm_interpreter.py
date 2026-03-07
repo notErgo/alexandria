@@ -34,7 +34,7 @@ def _active_model(db=None) -> str:
         except Exception:
             pass
     return LLM_MODEL_ID
-from extractors.confidence import METRIC_VALID_RANGES
+from interpreters.confidence import METRIC_VALID_RANGES
 from miner_types import ExtractionResult
 
 # Valid ranges for quarterly/annual aggregated values (3x the monthly bounds for flow metrics).
@@ -44,7 +44,7 @@ _QUARTERLY_VALID_RANGES = {
     k: (lo, hi * 3) for k, (lo, hi) in METRIC_VALID_RANGES.items()
 }
 
-log = logging.getLogger('miners.extractors.llm_extractor')
+log = logging.getLogger('miners.interpreters.llm_interpreter')
 
 # Hardcoded default prompts per metric.
 # Stored as DB overrides (llm_prompts table) take priority when available.
@@ -358,12 +358,12 @@ _DEFAULT_BATCH_PREAMBLE = (
 )
 
 
-class LLMExtractor:
+class LLMInterpreter:
     """
     Calls Ollama to extract a named metric from document text.
 
     Usage:
-        extractor = LLMExtractor(session=requests.Session(), db=miner_db)
+        extractor = LLMInterpreter(session=requests.Session(), db=miner_db)
         result = extractor.extract(text, 'production_btc')
         # Returns ExtractionResult or None
     """

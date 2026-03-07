@@ -10,7 +10,7 @@ import math
 from flask import Blueprint, jsonify, request, Response
 
 from app_globals import get_db, get_registry
-from extractors.extractor import extract_all
+from interpreters.regex_interpreter import extract_all
 
 log = logging.getLogger('miners.routes.miner')
 

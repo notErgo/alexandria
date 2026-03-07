@@ -212,7 +212,7 @@ def _run_coverage_scout_stage(
 
 def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[str]) -> None:
     from app_globals import get_db, get_registry
-    from extractors.extraction_pipeline import extract_report
+    from interpreters.interpret_pipeline import extract_report
     from infra.ollama_warmup import warm_ollama_for_extraction
     from routes.companies import _run_bootstrap_probe_for_ticker
     from routes.reports import _run_ir_ingest, _run_edgar_ingest

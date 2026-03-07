@@ -7,8 +7,8 @@ classify it. Known metrics map to standard buckets; novel metrics are stored
 with a best-guess category and description so they can be parsed later.
 
 Usage:
-    from extractors.broad_extractor import BroadExtractor
-    extractor = BroadExtractor(db)
+    from interpreters.broad_interpreter import BroadInterpreter
+    extractor = BroadInterpreter(db)
     count = extractor.extract_report(report)
 """
 import json
@@ -21,7 +21,7 @@ import requests
 
 from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
 
-log = logging.getLogger('miners.extractors.broad_extractor')
+log = logging.getLogger('miners.interpreters.broad_interpreter')
 
 # Mapping from LLM-returned metric_key synonyms -> canonical standard metric key.
 # When the LLM returns one of these keys, the category is set accordingly
@@ -124,7 +124,7 @@ Document:
 {text}"""
 
 
-class BroadExtractor:
+class BroadInterpreter:
     """Extracts all numeric values from a report using a broad LLM pass."""
 
     def __init__(self, db, model: Optional[str] = None):

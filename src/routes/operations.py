@@ -5,8 +5,8 @@ Operations panel API routes.
   GET  /api/operations/pipeline_observability      — end-to-end ingest/extract counts + config health
   POST /api/operations/observer_swarm/start        — trigger observer swarm discovery/scrape run
   GET  /api/operations/observer_swarm/<id>/status  — observer swarm run status
-  POST /api/operations/extract                     — trigger extraction for a ticker
-  GET  /api/operations/extract/<task_id>/progress  — extraction progress
+  POST /api/operations/interpret                     — trigger extraction for a ticker
+  GET  /api/operations/interpret/<task_id>/progress  — extraction progress
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
@@ -328,7 +328,7 @@ def operations_observer_swarm_status(task_id: str):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
-@bp.route('/api/operations/extract', methods=['POST'])
+@bp.route('/api/operations/interpret', methods=['POST'])
 def operations_extract():
     """Trigger background extraction for a ticker (or all tickers). Returns task_id."""
     try:
@@ -366,8 +366,8 @@ def operations_extract():
         def _run():
             try:
                 from app_globals import get_db
-                from extractors.extraction_pipeline import extract_report
-                from extractors.pattern_registry import PatternRegistry
+                from interpreters.interpret_pipeline import extract_report
+                from interpreters.pattern_registry import PatternRegistry
                 from app_globals import get_registry
                 from infra.ollama_warmup import warm_ollama_for_extraction
 
@@ -417,7 +417,7 @@ def operations_extract():
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
-@bp.route('/api/operations/extract/<task_id>/progress')
+@bp.route('/api/operations/interpret/<task_id>/progress')
 def operations_extract_progress(task_id: str):
     """Return extraction task progress."""
     try:

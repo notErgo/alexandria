@@ -1,6 +1,6 @@
 """Tests for PatternRegistry loading and validation."""
 import os
-from extractors.pattern_registry import PatternRegistry
+from interpreters.pattern_registry import PatternRegistry
 
 _CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'config')
 

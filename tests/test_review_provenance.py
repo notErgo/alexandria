@@ -233,7 +233,7 @@ class TestReviewItemHasReportId(unittest.TestCase):
 
     def test_llm_only_low_confidence_includes_report_id(self):
         """LLM_ONLY low-confidence branch must include report_id in insert_review_item."""
-        from extractors.extraction_pipeline import _apply_agreement
+        from interpreters.interpret_pipeline import _apply_agreement
         report = self._make_report(report_id=77)
         db = self._make_db()
         llm_result = self._make_result(value=750.0, confidence=0.5, method='llm')
@@ -247,7 +247,7 @@ class TestReviewItemHasReportId(unittest.TestCase):
             llm_available=True,
             confidence_threshold=0.75,
             summary=self._make_summary(),
-            llm_extractor=None,
+            llm_interpreter=None,
         )
 
         db.insert_review_item.assert_called_once()
@@ -257,7 +257,7 @@ class TestReviewItemHasReportId(unittest.TestCase):
 
     def test_review_queue_branch_includes_report_id(self):
         """REVIEW_QUEUE branch (regex/LLM disagree) must include report_id in insert_review_item."""
-        from extractors.extraction_pipeline import _apply_agreement
+        from interpreters.interpret_pipeline import _apply_agreement
         report = self._make_report(report_id=88)
         db = self._make_db()
         # production_btc threshold=1%; 1000 vs 1020 = 2% diff → REVIEW_QUEUE
@@ -273,7 +273,7 @@ class TestReviewItemHasReportId(unittest.TestCase):
             llm_available=True,
             confidence_threshold=0.75,
             summary=self._make_summary(),
-            llm_extractor=None,
+            llm_interpreter=None,
         )
 
         db.insert_review_item.assert_called_once()
@@ -283,7 +283,7 @@ class TestReviewItemHasReportId(unittest.TestCase):
 
     def test_legacy_regex_only_low_confidence_includes_report_id(self):
         """Legacy regex-only low-confidence branch must include report_id in insert_review_item."""
-        from extractors.extraction_pipeline import _apply_agreement
+        from interpreters.interpret_pipeline import _apply_agreement
         report = self._make_report(report_id=99)
         db = self._make_db()
         regex_result = self._make_result(value=750.0, confidence=0.5, method='regex')

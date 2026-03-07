@@ -104,8 +104,8 @@ def reextract_from_selection(item_id):
     try:
         from app_globals import get_db, get_registry
         import requests as req_lib
-        from extractors.llm_extractor import LLMExtractor
-        from extractors.extractor import extract_all
+        from interpreters.llm_interpreter import LLMInterpreter
+        from interpreters.regex_interpreter import extract_all
 
         db = get_db()
         item = db.get_review_item(item_id)
@@ -135,7 +135,7 @@ def reextract_from_selection(item_id):
 
         # Run LLM on selection
         session = req_lib.Session()
-        llm = LLMExtractor(session=session, db=db)
+        llm = LLMInterpreter(session=session, db=db)
         llm_result = None
         if llm.check_connectivity():
             llm_result = llm.extract(selection, metric)
@@ -181,8 +181,8 @@ def reextract_selection():
     try:
         from app_globals import get_db, get_registry
         import requests as req_lib
-        from extractors.llm_extractor import LLMExtractor
-        from extractors.extractor import extract_all
+        from interpreters.llm_interpreter import LLMInterpreter
+        from interpreters.regex_interpreter import extract_all
 
         body = request.get_json(silent=True) or {}
         metric = (body.get('metric') or '').strip()
@@ -209,7 +209,7 @@ def reextract_selection():
         regex_best = regex_results[0] if regex_results else None
 
         session = req_lib.Session()
-        llm = LLMExtractor(session=session, db=db)
+        llm = LLMInterpreter(session=session, db=db)
         llm_result = None
         if llm.check_connectivity():
             llm_result = llm.extract(selection, metric)

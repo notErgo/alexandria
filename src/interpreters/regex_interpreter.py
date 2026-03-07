@@ -9,12 +9,12 @@ import re
 import logging
 from typing import Optional
 
-from extractors.unit_normalizer import normalize_value
-from extractors.confidence import score_extraction
+from interpreters.unit_normalizer import normalize_value
+from interpreters.confidence import score_extraction
 from miner_types import ExtractionResult
 from config import EXTRACTION_CONTEXT_WINDOW, MAX_SOURCE_SNIPPET_LEN
 
-log = logging.getLogger('miners.extractors.extractor')
+log = logging.getLogger('miners.interpreters.regex_interpreter')
 
 # Phrases in the pre-context window that signal a global/network entity
 # rather than the company being reported on.

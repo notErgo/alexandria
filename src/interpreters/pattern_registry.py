@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
 
-log = logging.getLogger('miners.extractors.pattern_registry')
+log = logging.getLogger('miners.interpreters.pattern_registry')
 
 _REQUIRED_PATTERN_KEYS = {'id', 'regex', 'confidence_weight', 'priority'}
 
