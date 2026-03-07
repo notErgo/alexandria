@@ -36,12 +36,8 @@
 .acq-panel { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--theme-border); border-radius: 8px; background: var(--theme-bg-secondary); }
 .acq-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
-.research-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--theme-border); margin-bottom: 1rem; }
-.research-tab { padding: 0.45rem 1rem; font-size: 0.82rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--theme-text-secondary); background: none; border-top: none; border-left: none; border-right: none; }
-.research-tab:hover { color: var(--theme-text-primary); }
-.research-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
+/* research-tab/pane classes kept for CSS compat but no longer used in layout */
 .research-pane { display: none; }
-.research-pane.active { display: block; }
 .acq-section-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); margin: 1rem 0 0.4rem; }
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
@@ -799,209 +795,177 @@
 
 <!-- ── Research tab ───────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-research" data-ui-id="2.7">
-  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem">Research</h2>
-    <span id="research-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+
+  <!-- ── Step 1: Scrape ───────────────────────────────────────────────────── -->
+  <div style="display:flex;align-items:baseline;gap:0.6rem;margin-bottom:0.5rem">
+    <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.08em;color:var(--theme-text-muted);text-transform:uppercase">Step 1</span>
+    <h2 style="margin:0;font-size:1rem">Scrape</h2>
+    <span style="font-size:0.78rem;color:var(--theme-text-muted)">— fetch raw documents from all sources</span>
   </div>
 
-  <div class="research-tabs">
-    <button class="research-tab active" data-rpane="scrape" onclick="activateResearchSubTab('scrape')">Scrape</button>
-    <button class="research-tab" data-rpane="crawl" onclick="activateResearchSubTab('crawl')">LLM Discovery</button>
-    <button class="research-tab" data-rpane="interpret" onclick="activateResearchSubTab('interpret')">Interpret</button>
+  <div class="acq-panel" style="margin-bottom:0.4rem">
+    <div class="acq-actions">
+      <button class="btn btn-primary" data-acq-source="all" onclick="triggerScrapeAll()" style="font-size:0.9rem;padding:0.35rem 1.2rem">Scrape All Sources</button>
+    </div>
+    <div style="margin-top:0.4rem;font-size:0.73rem;color:var(--theme-text-muted)">
+      Runs: Archive (local HTMLs/PDFs) &rarr; IR feeds &rarr; SEC EDGAR. Archive includes inline extraction.
+      IR &amp; EDGAR store raw text only — extraction runs in Step 2.
+    </div>
   </div>
 
-  <!-- ── Scrape sub-pane ── -->
-  <div class="research-pane active" id="rpane-scrape" data-ui-id="2.7.0" data-spec-id="2.7.0">
+  <div id="acq-status" class="acq-status" style="margin-bottom:0.1rem">Idle</div>
+  <div id="acq-log" class="acq-log" style="display:none;margin-bottom:0.75rem"></div>
 
-    <!-- Primary CTA -->
-    <div class="acq-panel" style="margin-bottom:0.75rem" data-ui-id="2.7.0.1">
-      <div style="font-size:0.82rem;color:var(--theme-text-muted);margin-bottom:0.6rem">
-        Fetches raw documents from all sources into the reports table. Run this first, then Interpret.
+  <details style="margin-bottom:1.25rem">
+    <summary style="font-size:0.78rem;cursor:pointer;color:var(--theme-text-muted);user-select:none;padding:0.25rem 0">Scrape individual sources</summary>
+    <div style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.4rem">
+      <div class="acq-panel">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.3rem">Archive — local HTMLs &amp; PDFs</div>
+        <div class="acq-actions">
+          <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Acquire Archive</button>
+        </div>
       </div>
-      <div class="acq-actions">
-        <button class="btn btn-primary" data-acq-source="all" onclick="triggerScrapeAll()" style="font-size:0.9rem;padding:0.35rem 1.1rem">Scrape All Sources</button>
-        <button class="btn btn-sm btn-danger" onclick="triggerScrapeReset()" title="Delete all raw reports and reset — requires confirmation">Reset Scrape</button>
+      <div class="acq-panel">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.3rem">IR Feeds — RSS / scrapers</div>
+        <div class="acq-actions">
+          <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Acquire IR</button>
+        </div>
       </div>
-      <div style="margin-top:0.5rem;font-size:0.73rem;color:var(--theme-text-muted)">
-        Sources: Archive (local HTMLs/PDFs, includes inline extraction) &rarr; IR feeds &rarr; SEC EDGAR
+      <div class="acq-panel">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.3rem">SEC EDGAR</div>
+        <div id="edgar-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
+        <div class="acq-actions">
+          <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(false)">Acquire Selected</button>
+          <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Acquire All</button>
+          <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+            <input id="acq-auto-extract" type="checkbox"> Auto-extract after acquire
+          </label>
+        </div>
       </div>
     </div>
+  </details>
 
-    <!-- Individual source controls -->
-    <details style="margin-bottom:0.75rem">
-      <summary style="font-size:0.8rem;cursor:pointer;color:var(--theme-text-muted);user-select:none">Individual source controls</summary>
-      <div style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.5rem">
-
-        <div class="acq-panel">
-          <div class="acq-section-label" style="margin-bottom:0.4rem">Archive (local HTMLs &amp; PDFs)</div>
-          <div class="acq-actions">
-            <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Acquire Archive</button>
-          </div>
-          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
-            Walks the on-disk archive folder and processes every production report file. Inline LLM extraction runs per file.
-          </div>
-        </div>
-
-        <div class="acq-panel">
-          <div class="acq-section-label" style="margin-bottom:0.4rem">IR Feeds (RSS / scrapers)</div>
-          <div class="acq-actions">
-            <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Acquire IR</button>
-          </div>
-          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
-            Fetches live press releases from configured IR scrapers. Stores raw text only — run Interpret to extract.
-          </div>
-        </div>
-
-        <div class="acq-panel">
-          <div class="acq-section-label" style="margin-bottom:0.4rem">SEC EDGAR</div>
-          <div id="edgar-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
-          <div class="acq-actions">
-            <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(false)">Acquire Selected</button>
-            <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Acquire All</button>
-            <label style="font-size:0.78rem;color:var(--theme-text-muted)">
-              <input id="acq-auto-extract" type="checkbox">
-              Auto-extract after acquire
-            </label>
-          </div>
-          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
-            Fetches 8-K / 10-Q / 10-K filings. The earliest bitcoin-mention date is injected into LLM Discovery prompts.
-          </div>
-        </div>
-
-      </div>
-    </details>
-
-    <!-- Shared acquire status / log -->
-    <div id="acq-status" class="acq-status">Idle</div>
-    <div id="acq-log" class="acq-log" style="display:none"></div>
+  <!-- ── Step 2: Interpret ─────────────────────────────────────────────────── -->
+  <div style="display:flex;align-items:baseline;gap:0.6rem;margin-bottom:0.5rem;padding-top:0.25rem;border-top:1px solid var(--theme-border)">
+    <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.08em;color:var(--theme-text-muted);text-transform:uppercase">Step 2</span>
+    <h2 style="margin:0;font-size:1rem">Interpret</h2>
+    <span style="font-size:0.78rem;color:var(--theme-text-muted)">— run LLM + regex extraction on all pending reports</span>
   </div>
 
-  <!-- ── LLM Discovery sub-pane (formerly "Crawl") ── -->
-  <div class="research-pane" id="rpane-crawl" data-ui-id="2.7.2" data-spec-id="2.7.2">
+  <div class="acq-panel" id="rpane-interpret" style="margin-bottom:0.4rem">
+    <div class="acq-actions">
+      <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+      <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
+        <option value="">Loading models…</option>
+      </select>
+      <button id="extract-start-btn" class="btn btn-primary" onclick="startExtractionRun()" style="font-size:0.9rem;padding:0.35rem 1.2rem">Start Extraction</button>
+    </div>
+    <div id="extract-status" class="acq-status" style="margin-top:0.35rem">Idle</div>
+    <div id="extract-log" class="acq-log" style="display:none"></div>
+  </div>
 
-    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-      Agentic LLM crawler — discovers press releases on IR sites and wire services that are not yet in the archive.
-      Select a ticker on the Input tab first to review and edit its crawl prompt.
-    </p>
+  <!-- Pipeline state table -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
+      <span style="font-size:0.78rem;font-weight:600">Pipeline State</span>
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
+      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem"></div>
+    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
+    <div style="overflow-x:auto">
+      <table id="pipeline-table">
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Mode</th><th>Manifest</th><th>Reports</th>
+            <th>Unextracted</th><th>Data Points</th><th>Review Pending</th><th>Config</th>
+          </tr>
+        </thead>
+        <tbody id="pipeline-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-    <!-- Ticker bar + model selector (moved from Input tab, stays here for context) -->
-    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
-      <div>
-        <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
-        <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
-          <option value="ollama" selected>Local (Ollama)</option>
-          <option value="anthropic">Anthropic API</option>
-        </select>
-      </div>
-      <div id="crawl-model-wrap">
-        <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
-        <div style="display:flex;align-items:center;gap:0.4rem">
-          <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px">
-            <option value="">Loading models…</option>
+  <!-- ── Step 3: LLM Discovery (optional) ─────────────────────────────────── -->
+  <details id="rpane-crawl">
+    <summary style="display:flex;align-items:baseline;gap:0.6rem;cursor:pointer;user-select:none;padding:0.35rem 0;border-top:1px solid var(--theme-border)">
+      <span style="font-size:0.65rem;font-weight:700;letter-spacing:0.08em;color:var(--theme-text-muted);text-transform:uppercase">Step 3</span>
+      <span style="font-size:1rem;font-weight:600;color:var(--theme-text-primary)">LLM Discovery</span>
+      <span style="font-size:0.78rem;color:var(--theme-text-muted)">— optional: agentic crawl for gap-filling</span>
+      <span class="source-badge source-badge-config" style="font-size:0.65rem;margin-left:auto">optional</span>
+    </summary>
+
+    <div style="padding-top:0.75rem">
+      <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+        Sends an LLM agent to IR sites and wire services to find press releases not yet in the archive.
+        Run Steps 1 and 2 first — the agent uses existing EDGAR data to bound its search to the periods you actually need.
+      </p>
+
+      <!-- Model controls -->
+      <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div>
+          <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
+          <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
+            <option value="ollama" selected>Local (Ollama)</option>
+            <option value="anthropic">Anthropic API</option>
           </select>
-          <button class="btn btn-sm btn-secondary" onclick="loadCrawlOllamaModels()" title="Reload model list">&#8635;</button>
+        </div>
+        <div id="crawl-model-wrap">
+          <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
+          <div style="display:flex;align-items:center;gap:0.4rem">
+            <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px">
+              <option value="">Loading models…</option>
+            </select>
+            <button class="btn btn-sm btn-secondary" onclick="loadCrawlOllamaModels()" title="Reload model list">&#8635;</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="acq-section-label">Step 1 — EDGAR context bound</div>
-    <div class="acq-panel" style="margin-bottom:0.5rem">
-      <div style="font-size:0.75rem;color:var(--theme-text-muted);margin-bottom:0.4rem">
-        EDGAR is queried for each ticker's earliest bitcoin mention. That date is injected into crawl prompts so the LLM does not search before mining began.
-        Run Scrape (EDGAR) first, or use the button below.
-      </div>
-      <div id="edgar-ticker-selector-crawl" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
-      <div class="acq-actions">
-        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgarForCrawl(false)">Acquire EDGAR Selected</button>
-        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgarForCrawl(true)">Acquire EDGAR All</button>
-      </div>
-    </div>
-
-    <div class="acq-section-label">Step 2 — LLM Crawl</div>
-    <div class="acq-panel" data-ui-id="2.7.2.1" data-spec-id="2.7.2.1">
-      <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
-      <div class="acq-actions">
-        <button class="btn btn-sm btn-primary" onclick="startCrawlSelected()">Crawl Selected</button>
-        <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Crawl All</button>
-        <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop</button>
-        <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
-      </div>
-      <!-- LLM crawl status grid -->
-      <div id="research-grid" data-ui-id="2.7.2.2" data-spec-id="2.7.2.2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
-      <!-- LLM crawl log panel -->
-      <div id="research-log-panel" data-ui-id="2.7.2.3" data-spec-id="2.7.2.3" style="display:none;margin-top:0.5rem">
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
-          <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
-          <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+      <!-- Prompt editor -->
+      <div style="margin-bottom:0.75rem">
+        <div style="font-size:0.78rem;font-weight:600;margin-bottom:0.3rem">
+          Ticker selection &amp; prompt
+          <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
         </div>
-        <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+        <div id="research-ticker-bar" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
+        <textarea id="crawl-prompt-editor" rows="8"
+          style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
+          placeholder="Select a ticker above to load its crawl prompt..."></textarea>
       </div>
+
+      <!-- Crawl controls -->
+      <div class="acq-panel">
+        <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
+        <div class="acq-actions">
+          <button class="btn btn-sm btn-primary" onclick="startCrawlSelected()">Crawl Selected</button>
+          <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Crawl All</button>
+          <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop</button>
+          <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
+        </div>
+        <div id="research-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
+        <div id="research-log-panel" style="display:none;margin-top:0.5rem">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+            <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
+            <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+          </div>
+          <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+        </div>
+      </div>
+
+      <!-- Hidden compat elements for JS that expects these IDs -->
+      <div id="edgar-ticker-selector-crawl" style="display:none"></div>
     </div>
+  </details>
+
+  <!-- Hidden panes kept for JS compat (activateResearchSubTab is now a no-op) -->
+  <div id="rpane-scrape" style="display:none"></div>
+  <div id="rpane-input" style="display:none">
+    <div id="crawl-prompt-source-legacy" style="display:none"></div>
   </div>
 
-  <!-- ── Input sub-pane (prompt editor, accessed from LLM Discovery) ── -->
-  <div class="research-pane" id="rpane-input" data-ui-id="2.7.1" data-spec-id="2.7.1" style="display:none">
-    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-      Select a ticker to configure its crawl prompt, then switch to LLM Discovery to run.
-    </p>
-    <div id="research-ticker-bar" data-ui-id="2.7.1.1" data-spec-id="2.7.1.1" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
-    <div data-ui-id="2.7.1.3" data-spec-id="2.7.1.3" style="margin-bottom:0.75rem">
-      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
-        Crawl prompt (editable before launch)
-        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
-      </label>
-      <textarea id="crawl-prompt-editor" rows="10"
-        style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
-        placeholder="Select a ticker above to load its crawl prompt..."></textarea>
-    </div>
-  </div>
-
-  <!-- ── Interpret sub-pane ── -->
-  <div class="research-pane" id="rpane-interpret" data-ui-id="2.7.3" data-spec-id="2.7.3">
-
-    <div class="acq-section-label">LLM Extraction</div>
-    <div class="acq-panel" data-ui-id="2.7.3.1" data-spec-id="2.7.3.1">
-      <div class="acq-actions">
-        <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
-        <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
-        <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
-          <option value="">Loading models…</option>
-        </select>
-        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
-      </div>
-      <div id="extract-status" class="acq-status">Idle</div>
-      <div id="extract-log" class="acq-log" style="display:none"></div>
-    </div>
-
-    <div class="acq-section-label">Pipeline Observability</div>
-    <div class="card" data-ui-id="2.7.3.2" data-spec-id="2.7.3.2" style="margin-top:0.5rem">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-        <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
-        <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-      <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
-      <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
-      <div style="overflow-x:auto">
-        <table id="pipeline-table" data-ui-id="2.7.3.3" data-spec-id="2.7.3.3">
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th>Mode</th>
-              <th>Manifest</th>
-              <th>Reports</th>
-              <th>Unextracted</th>
-              <th>Data Points</th>
-              <th>Review Pending</th>
-              <th>Config</th>
-            </tr>
-          </thead>
-          <tbody id="pipeline-tbody">
-            <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- ── Settings tab ────────────────────────────────────────────────────── -->
@@ -1094,7 +1058,7 @@ function activateTab(name) {
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
-  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'scrape'); loadCrawlOllamaModels(); }
+  if (name === 'research') { loadResearch(); loadPipelineObservability(); loadOllamaModels(); loadCrawlOllamaModels(); }
   if (name === 'settings') loadSettings();
   if (name === 'qc') _loadQCTable();
 }
@@ -2984,23 +2948,10 @@ let _researchLoaded = false;
 let _researchPollTimer = null;
 let _activeResearchSubTab = 'input';
 
-function activateResearchSubTab(name) {
-  // 'input' is a legacy sub-pane (prompt editor); redirect to 'crawl' which now hosts
-  // the model selector inline. Keep 'input' accessible but not in the tab bar.
-  _activeResearchSubTab = name;
-  document.querySelectorAll('.research-tab').forEach(function(btn) {
-    btn.classList.toggle('active', btn.getAttribute('data-rpane') === name);
-  });
-  document.querySelectorAll('.research-pane').forEach(function(pane) {
-    const isTarget = pane.id === 'rpane-' + name;
-    pane.classList.toggle('active', isTarget);
-    if (pane.id !== 'rpane-input') {
-      pane.style.display = isTarget ? '' : 'none';
-    }
-  });
-  if (name === 'interpret') { loadPipelineObservability(); loadOllamaModels(); }
-  if (name === 'crawl') { loadCrawlOllamaModels(); _buildCrawlTickerSelector('edgar-ticker-selector-crawl', true); }
-  if (name === 'scrape') { _buildEdgarTickerSelector(); }
+function activateResearchSubTab(_name) {
+  // Research page is now a single flat layout — sub-tabs removed.
+  // This function is kept for backwards compatibility with any remaining callers.
+  _activeResearchSubTab = _name;
 }
 
 async function triggerScrapeAll() {
