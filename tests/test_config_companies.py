@@ -42,6 +42,11 @@ class TestValidateCompaniesConfig:
         errors = validate_companies_config([_valid_entry(fiscal_year_end_month=13)])
         assert any('fiscal_year_end_month' in e for e in errors)
 
+    def test_fiscal_year_end_month_bool_rejected(self):
+        # bool is a subclass of int in Python; True == 1 passes range check without explicit guard
+        errors = validate_companies_config([_valid_entry(fiscal_year_end_month=True)])
+        assert any('fiscal_year_end_month' in e for e in errors)
+
     def test_unknown_scraper_mode(self):
         errors = validate_companies_config([_valid_entry(scraper_mode='magic')])
         assert any('scraper_mode' in e for e in errors)

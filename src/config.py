@@ -85,7 +85,7 @@ def validate_companies_config(companies: List[dict] = None) -> List[str]:
             errors.append(f'{label}: active must be a boolean')
 
         fye = c.get('fiscal_year_end_month')
-        if not isinstance(fye, int) or not (1 <= fye <= 12):
+        if not isinstance(fye, int) or isinstance(fye, bool) or not (1 <= fye <= 12):
             errors.append(f'{label}: fiscal_year_end_month must be int 1-12, got {fye!r}')
 
         mode = c.get('scraper_mode')
