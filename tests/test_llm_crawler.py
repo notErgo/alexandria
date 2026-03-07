@@ -295,6 +295,7 @@ class TestWebSearchTool(unittest.TestCase):
             with patch.object(crawler, '_progress') as mock_p:
                 mock_p.ticker = 'MARA'
                 mock_p._lock = p._lock
+                mock_p.stop_requested = False
                 # Run but avoid the full run() to bypass file read
                 crawler._run_anthropic('MARA', 'system prompt here')
 
@@ -306,45 +307,36 @@ class TestWebSearchTool(unittest.TestCase):
 
         p = CrawlProgress('RIOT')
         crawler = LLMCrawler(p, api_key='', model='qwen3.5', provider='ollama')
-
-        # First response: tool call for web_search
-        tc = MagicMock()
-        tc.function.name = 'web_search'
-        tc.function.arguments = json.dumps({'query': 'RIOT production 2024'})
-        tc.id = 'tc_001'
-
-        msg1 = MagicMock()
-        msg1.tool_calls = [tc]
-
-        choice1 = MagicMock()
-        choice1.message = msg1
-        choice1.finish_reason = 'tool_calls'
-
-        resp1 = MagicMock()
-        resp1.choices = [choice1]
-
-        # Second response: stop
-        msg2 = MagicMock()
-        msg2.tool_calls = None
-
-        choice2 = MagicMock()
-        choice2.message = msg2
-        choice2.finish_reason = 'stop'
-
-        resp2 = MagicMock()
-        resp2.choices = [choice2]
-
-        mock_oai = MagicMock()
-        mock_oai.chat.completions.create.side_effect = [resp1, resp2]
-
         crawler._tool_web_search = MagicMock(return_value='search results')
 
-        mock_openai_module = MagicMock()
-        mock_openai_module.OpenAI.return_value = mock_oai
-        with patch.dict('sys.modules', {'openai': mock_openai_module}):
-            with patch('config.LLM_BASE_URL', 'http://localhost:11434'):
-                crawler._run_ollama('RIOT', 'system prompt here')
+        # First response: web_search tool call
+        resp1 = MagicMock()
+        resp1.raise_for_status = MagicMock()
+        resp1.json.return_value = {
+            'message': {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [{'function': {'name': 'web_search', 'arguments': {'query': 'RIOT production 2024'}}}],
+            },
+            'done': False,
+            'done_reason': 'tool_calls',
+        }
 
+        # Second response: stop
+        resp2 = MagicMock()
+        resp2.raise_for_status = MagicMock()
+        resp2.json.return_value = {
+            'message': {'role': 'assistant', 'content': 'Done.'},
+            'done': True,
+            'done_reason': 'stop',
+        }
+
+        with patch('requests.post', side_effect=[resp1, resp2]) as mock_post:
+            with patch('config.LLM_BASE_URL', 'http://localhost:11434'):
+                with patch('scrapers.llm_crawler._ensure_ollama'):
+                    crawler._run_ollama('RIOT', 'system prompt here')
+
+        mock_post.assert_called()
         crawler._tool_web_search.assert_called_once_with('RIOT production 2024')
 
 

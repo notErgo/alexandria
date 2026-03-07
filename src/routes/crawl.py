@@ -33,6 +33,7 @@ def crawl_start():
 
     provider = body.get('provider') or None
     prompt = body.get('prompt') or None
+    model = body.get('model') or None
 
     import scrapers.llm_crawler as _crawler
     from app_globals import get_db
@@ -42,6 +43,7 @@ def crawl_start():
         task_id=task_id,
         provider=provider,
         prompt=prompt,
+        model=model,
         db=get_db(),
     )
 
@@ -53,6 +55,19 @@ def crawl_start():
         'task_id': task_id,
         'tickers': list(per_ticker.keys()),
     }}), 202
+
+
+@bp.route('/api/crawl/stop', methods=['POST'])
+def crawl_stop():
+    body = request.get_json(silent=True) or {}
+    task_id = body.get('task_id') or None
+    import scrapers.llm_crawler as _crawler
+    if task_id:
+        count = _crawler.stop_crawl(task_id)
+    else:
+        count = _crawler.stop_all_crawls()
+    log.info('event=crawl_stop_request task_id=%s signalled=%s', task_id or 'all', count)
+    return jsonify({'success': True, 'data': {'signalled': count}})
 
 
 @bp.route('/api/crawl/prompt/<ticker>', methods=['GET'])

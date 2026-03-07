@@ -7,6 +7,7 @@
 .ops-tab  { padding: 0.55rem 1.1rem; font-size: 0.85rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--theme-text-secondary); background: none; border-top: none; border-left: none; border-right: none; }
 .ops-tab:hover { color: var(--theme-text-primary); }
 .ops-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
+.crawl-ticker-btn.active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
 .ops-pane { display: none; }
 .ops-pane.active { display: block; }
 
@@ -818,13 +819,21 @@
     <!-- Ticker bar -->
     <div id="research-ticker-bar" data-ui-id="2.7.1.1" data-spec-id="2.7.1.1" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
 
-    <!-- Model provider -->
-    <div data-ui-id="2.7.1.2" data-spec-id="2.7.1.2" style="margin-bottom:0.75rem">
-      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model provider</label>
-      <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem">
-        <option value="ollama" selected>Local Qwen (Ollama)</option>
-        <option value="anthropic">Anthropic API</option>
-      </select>
+    <!-- Model provider + model selector -->
+    <div data-ui-id="2.7.1.2" data-spec-id="2.7.1.2" style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+      <div>
+        <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
+        <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
+          <option value="ollama" selected>Local (Ollama)</option>
+          <option value="anthropic">Anthropic API</option>
+        </select>
+      </div>
+      <div id="crawl-model-wrap">
+        <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
+        <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px">
+          <option value="">Loading models…</option>
+        </select>
+      </div>
     </div>
 
     <!-- Prompt editor -->
@@ -844,8 +853,11 @@
 
     <div class="acq-section-label">Outside — IR sites &amp; Wire Services</div>
     <div class="acq-panel" data-ui-id="2.7.2.1" data-spec-id="2.7.2.1">
+      <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
       <div class="acq-actions">
-        <button class="btn btn-sm btn-primary" onclick="startCrawlAll()">LLM Crawl All</button>
+        <button class="btn btn-sm btn-primary" onclick="startCrawlSelected()">Crawl Selected</button>
+        <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Crawl All</button>
+        <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop</button>
         <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
         <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
         <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
@@ -1007,7 +1019,7 @@ function activateTab(name) {
   url.searchParams.set('tab', name);
   history.replaceState(null, '', url.toString());
   // Lazy-load tab data on first activation
-  if (name === 'companies') { if (!_companiesLoaded) loadCompanies(); loadOllamaModels(); }
+  if (name === 'companies') { if (!_companiesLoaded) loadCompanies(); }
   if (name === 'registry' && !_registryLoaded) loadRegistry();
   if (name === 'explorer') {
     if (!_metricsLoaded) loadExplorerMetrics();
@@ -1016,7 +1028,7 @@ function activateTab(name) {
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
-  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'input'); }
+  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'input'); loadCrawlOllamaModels(); }
   if (name === 'settings') loadSettings();
   if (name === 'qc') _loadQCTable();
 }
@@ -2086,6 +2098,10 @@ async function submitAddCompany() {
   const data = await resp.json();
   if (!data.success) {
     document.getElementById('ac-error').textContent = data.error?.message || 'Error';
+    if (resp.status === 409) {
+      _companiesLoaded = false;
+      loadCompanies();
+    }
     return;
   }
   document.getElementById('add-company-form').style.display = 'none';
@@ -2712,9 +2728,11 @@ function toggleSelectAll() {
   document.getElementById('rv-bulk-approve').disabled = !checked;
 }
 
-// Event delegation for checkbox changes — wired once
+// Event delegation for checkbox changes — wired once (review.html only)
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('review-tbody').addEventListener('change', function(e) {
+  const reviewTbody = document.getElementById('review-tbody');
+  if (!reviewTbody) return;
+  reviewTbody.addEventListener('change', function(e) {
     if (!e.target.classList.contains('rv-cb')) return;
     const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
     document.getElementById('rv-bulk-approve').disabled = !anyChecked;
@@ -2910,6 +2928,49 @@ function _buildResearchTickerBar() {
     btn.onclick = async function() { await loadCrawlPrompt(t); startCrawlTickers([t]); };
     bar.appendChild(btn);
   });
+  _buildCrawlTickerSelector();
+}
+
+function _buildCrawlTickerSelector() {
+  const bar = document.getElementById('crawl-ticker-selector');
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active; });
+  bar.innerHTML = '';
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn';
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { btn.classList.toggle('active'); };
+    bar.appendChild(btn);
+  });
+}
+
+function _getCrawlSelectedTickers() {
+  const bar = document.getElementById('crawl-ticker-selector');
+  if (!bar) return [];
+  return Array.from(bar.querySelectorAll('.crawl-ticker-btn.active')).map(function(b) { return b.dataset.ticker; });
+}
+
+async function startCrawlSelected() {
+  const tickers = _getCrawlSelectedTickers();
+  if (!tickers.length) {
+    setResearchMsg('Select at least one company first', true);
+    return;
+  }
+  await startCrawlTickers(tickers);
+}
+
+async function stopCrawl() {
+  try {
+    const resp = await fetch('/api/crawl/stop', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    const data = await resp.json();
+    if (data.success) {
+      setResearchMsg('Stop signalled (' + (data.data?.signalled || 0) + ' crawlers)');
+    }
+  } catch (err) {
+    setResearchMsg('Failed to stop: ' + String(err), true);
+  }
 }
 
 async function startCrawlAll() {
@@ -2917,6 +2978,46 @@ async function startCrawlAll() {
     ? _companies.filter(function(c) { return c.active !== false; }).map(function(c) { return c.ticker; })
     : [];
   await startCrawlTickers(tickers);
+}
+
+async function loadCrawlOllamaModels() {
+  const sel = document.getElementById('crawl-model');
+  if (!sel) return;
+  try {
+    let models = [];
+    try {
+      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
+      if (direct.ok) {
+        const d = await direct.json();
+        models = (d.models || []).map(function(m) { return m.name; });
+      }
+    } catch (_) {
+      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
+      const d = await fallback.json();
+      models = (d.data?.models || []).map(function(m) { return m.name; });
+    }
+    if (models.length) {
+      const preferred = ['qwen3.5:27b', 'qwen3.5:9b'];
+      models.sort(function(a, b) {
+        const ai = preferred.indexOf(a), bi = preferred.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      });
+      sel.innerHTML = models.map(function(n) { return '<option value="' + escapeAttr(n) + '">' + escapeHtml(n) + '</option>'; }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No models found</option>';
+    }
+  } catch (_) {
+    sel.innerHTML = '<option value="">Could not load models</option>';
+  }
+}
+
+function onCrawlProviderChange() {
+  const provider = document.getElementById('crawl-provider')?.value;
+  const wrap = document.getElementById('crawl-model-wrap');
+  if (wrap) wrap.style.display = provider === 'ollama' ? '' : 'none';
 }
 
 async function loadCrawlPrompt(ticker) {
@@ -2942,10 +3043,12 @@ async function startCrawlTickers(tickers) {
     return;
   }
   const provider = document.getElementById('crawl-provider')?.value || 'ollama';
+  const model = document.getElementById('crawl-model')?.value || null;
   const prompt = document.getElementById('crawl-prompt-editor')?.value || null;
   setResearchMsg('Starting crawl for ' + tickers.join(', ') + ' via ' + provider + '…');
   try {
     const body = {tickers: tickers, provider: provider};
+    if (model && model.trim()) body.model = model.trim();
     if (prompt && prompt.trim()) body.prompt = prompt.trim();
     const resp = await fetch('/api/crawl/start', {
       method: 'POST',
@@ -2956,6 +3059,8 @@ async function startCrawlTickers(tickers) {
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Start failed');
     _researchTaskId = data.data.task_id;
     setResearchMsg('Crawl started — task ' + _researchTaskId.slice(0, 8) + '…');
+    const stopBtn = document.getElementById('crawl-stop-btn');
+    if (stopBtn) stopBtn.style.display = '';
     _startResearchPoll();
   } catch (err) {
     setResearchMsg('Failed to start crawl: ' + String(err), true);
@@ -2984,6 +3089,8 @@ async function _pollResearchStatus() {
     if (!anyRunning && _researchPollTimer) {
       clearInterval(_researchPollTimer);
       _researchPollTimer = null;
+      const stopBtn = document.getElementById('crawl-stop-btn');
+      if (stopBtn) stopBtn.style.display = 'none';
     }
 
     // Update log panel if open

@@ -156,9 +156,9 @@ MAX_SOURCE_SNIPPET_LEN: int = 1000
 # --- LLM Extractor (Ollama) ---
 # Probed on Apple Silicon 32GB+ with Q4_K_M: ~30–50 tok/s, 262K context.
 # Confirm model tag with `ollama list` before running ingest.
-# Model: qwen3.5:35b-a3b (confirmed ready 2026-03-03)
+# Model: qwen3.5:27b (default crawl model; qwen3.5:35b-a3b remains available for extraction)
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:35b-a3b")
+LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:27b")
 LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s; 300s gives headroom
 
 # --- Crawl LLM (Anthropic Claude) ---

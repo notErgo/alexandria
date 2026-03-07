@@ -28,6 +28,8 @@ from bs4 import BeautifulSoup
 
 log = logging.getLogger('miners.crawl')
 
+_PREFERRED_MODELS = ['qwen3.5:27b', 'qwen3.5:9b']
+
 # ---------------------------------------------------------------------------
 # Paths & constants
 # ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ class CrawlProgress:
 
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
-        self.status: str = 'pending'          # pending | running | complete | failed
+        self.status: str = 'pending'          # pending | running | complete | failed | stopped
         self.pages_fetched: int = 0
         self.docs_stored: int = 0
         self.docs_skipped: int = 0
@@ -66,6 +68,14 @@ class CrawlProgress:
         self.finished_at: Optional[str] = None
         self._logs: deque = deque(maxlen=150)
         self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+
+    def request_stop(self) -> None:
+        self._stop_event.set()
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_event.is_set()
 
     def add_log(self, msg: str) -> None:
         ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
@@ -164,6 +174,22 @@ _WEB_SEARCH_TOOL = {
     },
 }
 
+_FETCH_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'fetch_url',
+        'description': _FETCH_URL_TOOL['description'],
+        'parameters': _FETCH_URL_TOOL['input_schema'],
+    },
+}
+_STORE_TOOL_OAI = {
+    'type': 'function',
+    'function': {
+        'name': 'store_document',
+        'description': _STORE_DOCUMENT_TOOL['description'],
+        'parameters': _STORE_DOCUMENT_TOOL['input_schema'],
+    },
+}
 _WEB_SEARCH_TOOL_OAI = {
     'type': 'function',
     'function': {
@@ -172,6 +198,56 @@ _WEB_SEARCH_TOOL_OAI = {
         'parameters': _WEB_SEARCH_TOOL['input_schema'],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Ollama lifecycle helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None:
+    """Start Ollama if not running, then warm the target model into memory."""
+    import subprocess
+    import time
+
+    tags_url = f'{base_url}/api/tags'
+
+    def _is_up() -> bool:
+        try:
+            return _requests.get(tags_url, timeout=3).ok
+        except Exception:
+            return False
+
+    if not _is_up():
+        progress.add_log('Ollama not running — starting server...')
+        try:
+            subprocess.Popen(
+                ['ollama', 'serve'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            raise RuntimeError('ollama not found on PATH — install Ollama first')
+        for _ in range(30):
+            time.sleep(1)
+            if _is_up():
+                progress.add_log('Ollama server ready')
+                break
+        else:
+            raise RuntimeError('Ollama did not start within 30 seconds')
+    else:
+        progress.add_log('Ollama already running')
+
+    progress.add_log(f'Warming model {model}...')
+    try:
+        r = _requests.post(
+            f'{base_url}/api/chat',
+            json={'model': model, 'messages': [{'role': 'user', 'content': 'hi'}], 'stream': False},
+            timeout=120,
+        )
+        r.raise_for_status()
+        progress.add_log(f'Model {model} loaded and ready')
+    except Exception as exc:
+        progress.add_log(f'Warm-up warning (non-fatal): {exc}')
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +439,10 @@ class LLMCrawler:
 
         try:
             for iteration in range(self._max_iterations):
+                if self._progress.stop_requested:
+                    self._progress.add_log('Stop requested — aborting crawl')
+                    self._progress.status = 'stopped'
+                    return
                 self._progress.add_log(f'API call #{iteration + 1}')
                 response = client.messages.create(
                     model=self._model,
@@ -424,69 +504,91 @@ class LLMCrawler:
             self._progress.finished_at = datetime.now(timezone.utc).isoformat()
 
     def _run_ollama(self, ticker: str, system_prompt: str) -> None:
-        """Run the agentic loop using Ollama's OpenAI-compatible tool-use endpoint."""
-        from openai import OpenAI
+        """Run the agentic loop using Ollama's native /api/chat endpoint via requests."""
+        import requests as _requests
 
         from config import LLM_BASE_URL
 
-        client = OpenAI(
-            api_key='ollama',
-            base_url=f'{LLM_BASE_URL}/v1',
-        )
+        _ensure_ollama(LLM_BASE_URL, self._model, self._progress)
 
-        _FETCH_TOOL_OAI = {
-            'type': 'function',
-            'function': {
-                'name': 'fetch_url',
-                'description': _FETCH_URL_TOOL['description'],
-                'parameters': _FETCH_URL_TOOL['input_schema'],
-            },
-        }
-        _STORE_TOOL_OAI = {
-            'type': 'function',
-            'function': {
-                'name': 'store_document',
-                'description': _STORE_DOCUMENT_TOOL['description'],
-                'parameters': _STORE_DOCUMENT_TOOL['input_schema'],
-            },
-        }
+        chat_url = f'{LLM_BASE_URL}/api/chat'
         tools = [_FETCH_TOOL_OAI, _STORE_TOOL_OAI, _WEB_SEARCH_TOOL_OAI]
 
-        messages = [
+        messages: list = [
             {'role': 'system', 'content': system_prompt},
             {
                 'role': 'user',
                 'content': (
                     f'Execute the crawl plan for {ticker}. '
-                    'Use fetch_url to navigate pages, then store_document for each press release you find. '
-                    'When you have collected all available documents, stop.'
+                    'Do NOT write any text — call fetch_url immediately on the first entry point URL. '
+                    'Your very first response must be a fetch_url tool call, not text.'
                 ),
             },
         ]
 
+        any_tools_called = False
+        no_tool_streak = 0
+        _MAX_NO_TOOL_STREAK = 3  # give up if model repeatedly ignores tools
+
         try:
             for iteration in range(self._max_iterations):
+                if self._progress.stop_requested:
+                    self._progress.add_log('Stop requested — aborting crawl')
+                    self._progress.status = 'stopped'
+                    return
                 self._progress.add_log(f'Ollama API call #{iteration + 1}')
-                response = client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice='auto',
+                resp = _requests.post(
+                    chat_url,
+                    json={
+                        'model': self._model,
+                        'messages': messages,
+                        'tools': tools,
+                        'stream': False,
+                        'think': False,
+                    },
+                    timeout=120,
                 )
-                msg = response.choices[0].message
+                resp.raise_for_status()
+                body = resp.json()
+                msg = body.get('message', {})
                 messages.append(msg)
 
-                if response.choices[0].finish_reason == 'stop' or not msg.tool_calls:
-                    self._progress.add_log('Model signaled stop — crawl complete')
-                    break
+                tool_calls = msg.get('tool_calls') or []
+                done_reason = body.get('done_reason', '')
+
+                if not tool_calls:
+                    if done_reason == 'stop' and any_tools_called:
+                        # Model has done real work and explicitly finished
+                        self._progress.add_log('Model signaled stop after completing tool work — crawl complete')
+                        break
+                    # Model returned text without calling any tools — nudge it
+                    no_tool_streak += 1
+                    content_preview = (msg.get('content') or '')[:120]
+                    self._progress.add_log(
+                        f'No tool calls (nudge {no_tool_streak}/{_MAX_NO_TOOL_STREAK}): {content_preview}'
+                    )
+                    if no_tool_streak >= _MAX_NO_TOOL_STREAK:
+                        self._progress.add_log('Model repeatedly produced no tool calls — giving up')
+                        break
+                    messages.append({
+                        'role': 'user',
+                        'content': 'You must use the tools. Call fetch_url now on the first entry point URL.',
+                    })
+                    continue
+
+                any_tools_called = True
+                no_tool_streak = 0
 
                 tool_results = []
-                for tc in msg.tool_calls:
-                    name = tc.function.name
-                    try:
-                        inp = json.loads(tc.function.arguments)
-                    except Exception:
-                        inp = {}
+                for tc in tool_calls:
+                    fn = tc.get('function', {})
+                    name = fn.get('name', '')
+                    inp = fn.get('arguments') or {}
+                    if isinstance(inp, str):
+                        try:
+                            inp = json.loads(inp)
+                        except Exception:
+                            inp = {}
                     if name == 'fetch_url':
                         result_content = self._tool_fetch_url(inp.get('url', ''))
                     elif name == 'store_document':
@@ -501,11 +603,7 @@ class LLMCrawler:
                         result_content = self._tool_web_search(inp.get('query', ''))
                     else:
                         result_content = f'Unknown tool: {name}'
-                    tool_results.append({
-                        'role': 'tool',
-                        'tool_call_id': tc.id,
-                        'content': result_content,
-                    })
+                    tool_results.append({'role': 'tool', 'content': result_content})
 
                 messages.extend(tool_results)
 
@@ -556,6 +654,7 @@ def start_crawl(
     task_id: Optional[str] = None,
     provider: Optional[str] = None,
     prompt: Optional[str] = None,
+    model: Optional[str] = None,
     db=None,
 ) -> dict:
     """Create CrawlProgress entries, register the task, and spawn worker threads.
@@ -564,6 +663,7 @@ def start_crawl(
 
     provider: 'ollama' (default) or 'anthropic'.
     prompt: optional system prompt override; overrides per-ticker file.
+    model: optional model override; overrides config/default for this run.
     db: optional MinerDB instance for reading config_settings (crawl_max_iterations, etc.).
     """
     from config import ANTHROPIC_API_KEY, CRAWL_MODEL, CRAWL_PROVIDER, LLM_MODEL_ID
@@ -588,17 +688,20 @@ def start_crawl(
         except Exception:
             pass
 
-    # Model selection: Ollama uses the local LLM; Anthropic uses CRAWL_MODEL.
+    # Model selection: caller override > DB config > module default.
     if provider == 'ollama':
         api_key = ''
-        model = LLM_MODEL_ID
+        resolved_model = LLM_MODEL_ID
         if db is not None:
             try:
                 m = db.get_config('ollama_model')
                 if m:
-                    model = m
+                    resolved_model = m
             except Exception:
                 pass
+        if model:
+            resolved_model = model
+        model = resolved_model
     else:
         api_key = ANTHROPIC_API_KEY
         model = CRAWL_MODEL
@@ -627,6 +730,31 @@ def start_crawl(
         task_id, ','.join(per_ticker), provider,
     )
     return per_ticker
+
+
+def stop_crawl(task_id: str) -> int:
+    """Signal stop on all tickers in a specific task. Returns count signalled."""
+    with _TASKS_LOCK:
+        per_ticker = _TASKS.get(task_id, {})
+    count = 0
+    for progress in per_ticker.values():
+        if progress.status in ('pending', 'running'):
+            progress.request_stop()
+            count += 1
+    return count
+
+
+def stop_all_crawls() -> int:
+    """Signal stop on every active ticker across all tasks. Returns count signalled."""
+    with _TASKS_LOCK:
+        tasks = list(_TASKS.values())
+    count = 0
+    for per_ticker in tasks:
+        for progress in per_ticker.values():
+            if progress.status in ('pending', 'running'):
+                progress.request_stop()
+                count += 1
+    return count
 
 
 def get_crawl_status() -> list:

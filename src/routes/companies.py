@@ -535,6 +535,8 @@ def create_company():
             skip_reason=skip_reason,
             sandbox_note=sandbox_note,
         )
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'error': {'message': f'Company {ticker!r} already exists'}}), 409
     except Exception:
         log.error("Failed to create company %s", ticker, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
