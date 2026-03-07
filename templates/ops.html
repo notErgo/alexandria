@@ -805,22 +805,87 @@
   </div>
 
   <div class="research-tabs">
-    <button class="research-tab active" data-rpane="input" onclick="activateResearchSubTab('input')">Input</button>
-    <button class="research-tab" data-rpane="crawl" onclick="activateResearchSubTab('crawl')">Crawl</button>
+    <button class="research-tab active" data-rpane="scrape" onclick="activateResearchSubTab('scrape')">Scrape</button>
+    <button class="research-tab" data-rpane="crawl" onclick="activateResearchSubTab('crawl')">LLM Discovery</button>
     <button class="research-tab" data-rpane="interpret" onclick="activateResearchSubTab('interpret')">Interpret</button>
   </div>
 
-  <!-- ── Input sub-pane ── -->
-  <div class="research-pane active" id="rpane-input" data-ui-id="2.7.1" data-spec-id="2.7.1">
+  <!-- ── Scrape sub-pane ── -->
+  <div class="research-pane active" id="rpane-scrape" data-ui-id="2.7.0" data-spec-id="2.7.0">
+
+    <!-- Primary CTA -->
+    <div class="acq-panel" style="margin-bottom:0.75rem" data-ui-id="2.7.0.1">
+      <div style="font-size:0.82rem;color:var(--theme-text-muted);margin-bottom:0.6rem">
+        Fetches raw documents from all sources into the reports table. Run this first, then Interpret.
+      </div>
+      <div class="acq-actions">
+        <button class="btn btn-primary" data-acq-source="all" onclick="triggerScrapeAll()" style="font-size:0.9rem;padding:0.35rem 1.1rem">Scrape All Sources</button>
+        <button class="btn btn-sm btn-danger" onclick="triggerScrapeReset()" title="Delete all raw reports and reset — requires confirmation">Reset Scrape</button>
+      </div>
+      <div style="margin-top:0.5rem;font-size:0.73rem;color:var(--theme-text-muted)">
+        Sources: Archive (local HTMLs/PDFs, includes inline extraction) &rarr; IR feeds &rarr; SEC EDGAR
+      </div>
+    </div>
+
+    <!-- Individual source controls -->
+    <details style="margin-bottom:0.75rem">
+      <summary style="font-size:0.8rem;cursor:pointer;color:var(--theme-text-muted);user-select:none">Individual source controls</summary>
+      <div style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.5rem">
+
+        <div class="acq-panel">
+          <div class="acq-section-label" style="margin-bottom:0.4rem">Archive (local HTMLs &amp; PDFs)</div>
+          <div class="acq-actions">
+            <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Acquire Archive</button>
+          </div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
+            Walks the on-disk archive folder and processes every production report file. Inline LLM extraction runs per file.
+          </div>
+        </div>
+
+        <div class="acq-panel">
+          <div class="acq-section-label" style="margin-bottom:0.4rem">IR Feeds (RSS / scrapers)</div>
+          <div class="acq-actions">
+            <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Acquire IR</button>
+          </div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
+            Fetches live press releases from configured IR scrapers. Stores raw text only — run Interpret to extract.
+          </div>
+        </div>
+
+        <div class="acq-panel">
+          <div class="acq-section-label" style="margin-bottom:0.4rem">SEC EDGAR</div>
+          <div id="edgar-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
+          <div class="acq-actions">
+            <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(false)">Acquire Selected</button>
+            <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Acquire All</button>
+            <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+              <input id="acq-auto-extract" type="checkbox">
+              Auto-extract after acquire
+            </label>
+          </div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
+            Fetches 8-K / 10-Q / 10-K filings. The earliest bitcoin-mention date is injected into LLM Discovery prompts.
+          </div>
+        </div>
+
+      </div>
+    </details>
+
+    <!-- Shared acquire status / log -->
+    <div id="acq-status" class="acq-status">Idle</div>
+    <div id="acq-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <!-- ── LLM Discovery sub-pane (formerly "Crawl") ── -->
+  <div class="research-pane" id="rpane-crawl" data-ui-id="2.7.2" data-spec-id="2.7.2">
+
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-      Select a ticker to configure its crawl prompt, then switch to Crawl to run.
+      Agentic LLM crawler — discovers press releases on IR sites and wire services that are not yet in the archive.
+      Select a ticker on the Input tab first to review and edit its crawl prompt.
     </p>
 
-    <!-- Ticker bar -->
-    <div id="research-ticker-bar" data-ui-id="2.7.1.1" data-spec-id="2.7.1.1" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
-
-    <!-- Model provider + model selector -->
-    <div data-ui-id="2.7.1.2" data-spec-id="2.7.1.2" style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+    <!-- Ticker bar + model selector (moved from Input tab, stays here for context) -->
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
       <div>
         <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
         <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
@@ -839,39 +904,20 @@
       </div>
     </div>
 
-    <!-- Prompt editor -->
-    <div data-ui-id="2.7.1.3" data-spec-id="2.7.1.3" style="margin-bottom:0.75rem">
-      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
-        Crawl prompt (editable before launch)
-        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
-      </label>
-      <textarea id="crawl-prompt-editor" rows="10"
-        style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
-        placeholder="Select a ticker above to load its crawl prompt..."></textarea>
-    </div>
-  </div>
-
-  <!-- ── Crawl sub-pane ── -->
-  <div class="research-pane" id="rpane-crawl" data-ui-id="2.7.2" data-spec-id="2.7.2">
-
-    <div class="acq-section-label">Step 1 — SEC EDGAR (establishes bitcoin lower bound)</div>
-    <div class="acq-panel" data-ui-id="2.7.2.4" data-spec-id="2.7.2.4">
-      <div id="edgar-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
+    <div class="acq-section-label">Step 1 — EDGAR context bound</div>
+    <div class="acq-panel" style="margin-bottom:0.5rem">
+      <div style="font-size:0.75rem;color:var(--theme-text-muted);margin-bottom:0.4rem">
+        EDGAR is queried for each ticker's earliest bitcoin mention. That date is injected into crawl prompts so the LLM does not search before mining began.
+        Run Scrape (EDGAR) first, or use the button below.
+      </div>
+      <div id="edgar-ticker-selector-crawl" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.4rem"></div>
       <div class="acq-actions">
-        <button class="btn btn-sm btn-primary" onclick="triggerAcquireEdgar(false)">Acquire Selected</button>
-        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Acquire All</button>
-        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
-          <input id="acq-auto-extract" type="checkbox" checked>
-          Auto-run extraction after acquisition
-        </label>
-      </div>
-      <div style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:0.35rem">
-        EDGAR filings are scanned for the earliest bitcoin mention. That date becomes the lower bound
-        automatically injected into Step 2 prompts so the LLM crawl does not search before mining began.
+        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgarForCrawl(false)">Acquire EDGAR Selected</button>
+        <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgarForCrawl(true)">Acquire EDGAR All</button>
       </div>
     </div>
 
-    <div class="acq-section-label">Step 2 — LLM Crawl (IR sites &amp; Wire Services)</div>
+    <div class="acq-section-label">Step 2 — LLM Crawl</div>
     <div class="acq-panel" data-ui-id="2.7.2.1" data-spec-id="2.7.2.1">
       <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
       <div class="acq-actions">
@@ -879,8 +925,6 @@
         <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Crawl All</button>
         <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop</button>
         <button class="btn btn-sm btn-secondary" onclick="loadResearch()">Refresh</button>
-        <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
-        <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
       </div>
       <!-- LLM crawl status grid -->
       <div id="research-grid" data-ui-id="2.7.2.2" data-spec-id="2.7.2.2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
@@ -893,10 +937,23 @@
         <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
       </div>
     </div>
+  </div>
 
-    <!-- Shared acquire status / log for IR + Archive + EDGAR -->
-    <div id="acq-status" class="acq-status">Idle</div>
-    <div id="acq-log" class="acq-log" style="display:none"></div>
+  <!-- ── Input sub-pane (prompt editor, accessed from LLM Discovery) ── -->
+  <div class="research-pane" id="rpane-input" data-ui-id="2.7.1" data-spec-id="2.7.1" style="display:none">
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+      Select a ticker to configure its crawl prompt, then switch to LLM Discovery to run.
+    </p>
+    <div id="research-ticker-bar" data-ui-id="2.7.1.1" data-spec-id="2.7.1.1" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+    <div data-ui-id="2.7.1.3" data-spec-id="2.7.1.3" style="margin-bottom:0.75rem">
+      <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">
+        Crawl prompt (editable before launch)
+        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
+      </label>
+      <textarea id="crawl-prompt-editor" rows="10"
+        style="width:100%;font-family:monospace;font-size:0.75rem;padding:0.4rem;box-sizing:border-box;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)"
+        placeholder="Select a ticker above to load its crawl prompt..."></textarea>
+    </div>
   </div>
 
   <!-- ── Interpret sub-pane ── -->
@@ -1037,7 +1094,7 @@ function activateTab(name) {
   }
   if (name === 'review' && !_reviewLoaded) loadReview();
   if (name === 'rules') loadMetricRules();
-  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'input'); loadCrawlOllamaModels(); }
+  if (name === 'research') { loadResearch(); activateResearchSubTab(_activeResearchSubTab || 'scrape'); loadCrawlOllamaModels(); }
   if (name === 'settings') loadSettings();
   if (name === 'qc') _loadQCTable();
 }
@@ -1122,7 +1179,8 @@ async function _pollAcquireTask(taskId, source) {
       const p = data.data || {};
       const state = _acqStateLabel(p.status || '');
       const phase = p.phase ? (' (' + p.phase + ')') : '';
-      _setAcqStatus('Acquire ' + source.toUpperCase() + ': ' + state + phase, state === 'failed');
+      const srcLabel = source === 'all' ? 'Scrape All' : ('Acquire ' + source.toUpperCase());
+      _setAcqStatus(srcLabel + ': ' + state + phase, state === 'failed');
       if (state === 'running') {
         return;
       }
@@ -1132,16 +1190,23 @@ async function _pollAcquireTask(taskId, source) {
       _setAcquireButtonsEnabled(true);
       if (state === 'complete') {
         const detail = [];
-        if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
-        if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
-        if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
-        if (typeof p.reports_extracted === 'number') detail.push('extracted_reports=' + p.reports_extracted);
-        if (typeof p.extraction_data_points === 'number') detail.push('extract_points=' + p.extraction_data_points);
-        if (typeof p.extraction_review_flagged === 'number') detail.push('extract_review=' + p.extraction_review_flagged);
-        if (typeof p.extraction_errors === 'number') detail.push('extract_errors=' + p.extraction_errors);
-        if (typeof p.errors === 'number') detail.push('errors=' + p.errors);
+        if (source === 'all') {
+          // Per-phase counters for scrape-all
+          if (typeof p.archive_reports === 'number') detail.push('archive=' + p.archive_reports + ' reports, ' + (p.archive_points || 0) + ' pts');
+          if (typeof p.ir_reports === 'number') detail.push('ir=' + p.ir_reports + ' reports');
+          if (typeof p.edgar_reports === 'number') detail.push('edgar=' + p.edgar_reports + ' reports');
+        } else {
+          if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
+          if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
+          if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
+          if (typeof p.reports_extracted === 'number') detail.push('extracted_reports=' + p.reports_extracted);
+          if (typeof p.extraction_data_points === 'number') detail.push('extract_points=' + p.extraction_data_points);
+          if (typeof p.extraction_review_flagged === 'number') detail.push('extract_review=' + p.extraction_review_flagged);
+          if (typeof p.extraction_errors === 'number') detail.push('extract_errors=' + p.extraction_errors);
+        }
+        if (typeof p.errors === 'number' && p.errors > 0) detail.push('errors=' + p.errors);
         _appendAcqLog(new Date().toISOString().slice(11, 19) + ' complete ' + source + (detail.length ? ' (' + detail.join(', ') + ')' : ''));
-        showToast('Acquire ' + source.toUpperCase() + ' complete');
+        showToast((source === 'all' ? 'Scrape All' : 'Acquire ' + source.toUpperCase()) + ' complete');
         loadPipelineObservability();
         if (_registryLoaded) loadRegistry();
         if (_explorerLoaded) loadExplorer();
@@ -2913,15 +2978,66 @@ let _researchPollTimer = null;
 let _activeResearchSubTab = 'input';
 
 function activateResearchSubTab(name) {
+  // 'input' is a legacy sub-pane (prompt editor); redirect to 'crawl' which now hosts
+  // the model selector inline. Keep 'input' accessible but not in the tab bar.
   _activeResearchSubTab = name;
   document.querySelectorAll('.research-tab').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-rpane') === name);
   });
   document.querySelectorAll('.research-pane').forEach(function(pane) {
-    pane.classList.toggle('active', pane.id === 'rpane-' + name);
+    const isTarget = pane.id === 'rpane-' + name;
+    pane.classList.toggle('active', isTarget);
+    if (pane.id !== 'rpane-input') {
+      pane.style.display = isTarget ? '' : 'none';
+    }
   });
   if (name === 'interpret') { loadPipelineObservability(); loadOllamaModels(); }
-  if (name === 'crawl') { loadCrawlOllamaModels(); }
+  if (name === 'crawl') { loadCrawlOllamaModels(); _buildCrawlTickerSelector('edgar-ticker-selector-crawl', true); }
+  if (name === 'scrape') { _buildEdgarTickerSelector(); }
+}
+
+async function triggerScrapeAll() {
+  if (_acqTaskId) { showToast('An acquire task is already running', true); return; }
+  _setAcquireButtonsEnabled(false);
+  _acqTaskId = 'starting';
+  _setAcqStatus('Scrape All: queued', false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued scrape-all');
+  try {
+    const resp = await fetch('/api/ingest/all', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    }
+    _acqTaskId = data.data.task_id;
+    _setAcqStatus('Scrape All: running', false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running scrape-all (task ' + _acqTaskId + ')');
+    _pollAcquireTask(_acqTaskId, 'all');
+  } catch (err) {
+    _acqTaskId = null;
+    _setAcquireButtonsEnabled(true);
+    _setAcqStatus('Scrape All: failed', true);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' failed scrape-all (' + String(err) + ')');
+    showToast('Scrape All failed: ' + String(err), true);
+  }
+}
+
+function triggerScrapeReset() {
+  if (!confirm('This will delete ALL raw reports and reset extraction state for all sources. This cannot be undone.\n\nType CONFIRM to proceed.')) return;
+  const answer = prompt('Type RESET_SCRAPE to confirm deletion of all ingested documents:');
+  if (answer !== 'RESET_SCRAPE') { showToast('Reset cancelled', false); return; }
+  showToast('Use the Purge control in the QC / Pipeline tab to execute a full reset.', false);
+  // Navigate user to QC tab
+  document.querySelector('[data-pane="qc"]') && document.querySelector('[data-pane="qc"]').click();
+}
+
+function triggerAcquireEdgarForCrawl(all) {
+  // Mirrors triggerAcquireEdgar but uses the crawl-pane EDGAR ticker selector
+  const tickers = all ? [] : Array.from(_selectedCrawlTickers);
+  return triggerAcquire('edgar', tickers.length ? tickers : undefined);
 }
 let _researchTaskId = null;
 let _researchLogTicker = null;
