@@ -546,7 +546,7 @@ class LLMCrawler:
                         'stream': False,
                         'think': False,
                     },
-                    timeout=120,
+                    timeout=300,
                 )
                 resp.raise_for_status()
                 body = resp.json()
