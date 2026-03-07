@@ -39,6 +39,8 @@ _INGEST_RAW_URL = 'http://127.0.0.1:5004/api/ingest/raw'
 
 _MAX_FETCH_CHARS = 12_000   # chars returned to model per page fetch
 _MAX_ITERATIONS  = 80       # safety ceiling per ticker
+_PRUNE_THRESHOLD_CHARS = 500   # fetch results shorter than this are not worth pruning
+_PRUNE_KEEP_RECENT_ROUNDS = 2  # keep the last N assistant turns verbatim; prune older fetch results
 
 # ---------------------------------------------------------------------------
 # Module-level task registry
@@ -265,6 +267,7 @@ class LLMCrawler:
         prompt_override: Optional[str] = None,
         max_iterations: int = _MAX_ITERATIONS,
         max_fetch_chars: int = _MAX_FETCH_CHARS,
+        context_block: Optional[str] = None,
     ) -> None:
         self._progress = progress
         self._api_key = api_key
@@ -273,6 +276,7 @@ class LLMCrawler:
         self._prompt_override = prompt_override
         self._max_iterations = max_iterations
         self._max_fetch_chars = max_fetch_chars
+        self._context_block = context_block
         self._session = _requests.Session()
         self._seen_urls: set = set()
         self._session.headers.update({
@@ -391,6 +395,99 @@ class LLMCrawler:
             return f'ERROR: {exc}'
 
     # ------------------------------------------------------------------
+    # Context management
+    # ------------------------------------------------------------------
+    def _prune_old_fetches(
+        self,
+        messages: list,
+        fetch_indices: dict,
+        keep_recent_rounds: int = _PRUNE_KEEP_RECENT_ROUNDS,
+    ) -> None:
+        """Replace old fetch_url result content with a compact placeholder.
+
+        Keeps the last `keep_recent_rounds` assistant turns verbatim so the
+        model retains recent context. Everything older is collapsed to a
+        single-line summary, bounding context growth to O(active_batch)
+        rather than O(total_fetched).
+
+        fetch_indices: maps message-list index -> URL for each fetch_url result.
+        """
+        asst_positions = [
+            i for i, m in enumerate(messages)
+            if m.get('role') == 'assistant'
+        ]
+        if len(asst_positions) <= keep_recent_rounds:
+            return  # not enough rounds elapsed yet
+
+        # Everything before this message index is old enough to compress
+        cutoff = asst_positions[-keep_recent_rounds]
+
+        pruned = 0
+        chars_freed = 0
+        for idx, url in fetch_indices.items():
+            if idx >= cutoff:
+                continue  # recent round — leave verbatim
+            content = messages[idx].get('content', '')
+            if len(content) <= _PRUNE_THRESHOLD_CHARS:
+                continue  # already short (pagination page, error, etc.)
+            chars_freed += len(content)
+            messages[idx]['content'] = f'[fetch_url result pruned — already processed: {url}]'
+            pruned += 1
+
+        if pruned:
+            self._progress.add_log(
+                f'Context pruned: {pruned} old fetch result(s) '
+                f'(~{chars_freed // 1000}k chars freed)'
+            )
+
+    def _prune_old_fetches_anthropic(
+        self,
+        messages: list,
+        fetch_tool_ids: dict,
+        current_round: int,
+        keep_recent_rounds: int = _PRUNE_KEEP_RECENT_ROUNDS,
+    ) -> None:
+        """Prune old fetch_url results from Anthropic-format messages.
+
+        fetch_tool_ids: maps tool_use_id -> round_number for fetch_url calls.
+        Replaces content of tool_result blocks that are older than
+        keep_recent_rounds with a compact placeholder.
+        """
+        cutoff_round = current_round - keep_recent_rounds
+        if cutoff_round <= 0:
+            return
+
+        old_ids = {tid for tid, rnd in fetch_tool_ids.items() if rnd <= cutoff_round}
+        if not old_ids:
+            return
+
+        pruned = 0
+        chars_freed = 0
+        for msg in messages:
+            if msg.get('role') != 'user':
+                continue
+            content = msg.get('content')
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if block.get('type') != 'tool_result':
+                    continue
+                if block.get('tool_use_id') not in old_ids:
+                    continue
+                old_content = block.get('content', '')
+                if len(old_content) <= _PRUNE_THRESHOLD_CHARS:
+                    continue
+                chars_freed += len(old_content)
+                block['content'] = '[fetch_url result pruned — already processed]'
+                pruned += 1
+
+        if pruned:
+            self._progress.add_log(
+                f'Context pruned: {pruned} old fetch result(s) '
+                f'(~{chars_freed // 1000}k chars freed)'
+            )
+
+    # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
     def run(self) -> None:
@@ -407,6 +504,11 @@ class LLMCrawler:
                 self._progress.add_log(f'ERROR: missing crawl prompt {prompt_path}')
                 return
             system_prompt = prompt_path.read_text()
+
+        # Prepend auto-detected coverage context (lower bound + gaps) if available.
+        if self._context_block:
+            system_prompt = self._context_block + system_prompt
+            self._progress.add_log('Coverage context block prepended to system prompt')
 
         self._progress.status = 'running'
         self._progress.started_at = datetime.now(timezone.utc).isoformat()
@@ -439,6 +541,8 @@ class LLMCrawler:
 
         client = anthropic.Anthropic(api_key=self._api_key)
         messages, tools = self._build_messages_and_tools(ticker, system_prompt)
+        # Maps tool_use_id -> round number for fetch_url calls (Anthropic format).
+        fetch_tool_ids: dict = {}
 
         try:
             for iteration in range(self._max_iterations):
@@ -446,6 +550,7 @@ class LLMCrawler:
                     self._progress.add_log('Stop requested — aborting crawl')
                     self._progress.status = 'stopped'
                     return
+                self._prune_old_fetches_anthropic(messages, fetch_tool_ids, iteration)
                 self._progress.add_log(f'API call #{iteration + 1}')
                 response = client.messages.create(
                     model=self._model,
@@ -469,6 +574,7 @@ class LLMCrawler:
                     inp = block.input
                     if name == 'fetch_url':
                         result_content = self._tool_fetch_url(inp.get('url', ''))
+                        fetch_tool_ids[block.id] = iteration
                     elif name == 'store_document':
                         result = self._tool_store_document(
                             inp.get('ticker', ticker),
@@ -532,6 +638,9 @@ class LLMCrawler:
         any_tools_called = False
         no_tool_streak = 0
         _MAX_NO_TOOL_STREAK = 3  # give up if model repeatedly ignores tools
+        # Maps message-list index -> URL for every fetch_url tool result appended.
+        # Used by _prune_old_fetches to identify and compress stale page content.
+        fetch_indices: dict = {}
 
         try:
             for iteration in range(self._max_iterations):
@@ -539,6 +648,7 @@ class LLMCrawler:
                     self._progress.add_log('Stop requested — aborting crawl')
                     self._progress.status = 'stopped'
                     return
+                self._prune_old_fetches(messages, fetch_indices)
                 self._progress.add_log(f'Ollama API call #{iteration + 1}')
                 resp = _requests.post(
                     chat_url,
@@ -582,6 +692,7 @@ class LLMCrawler:
                 any_tools_called = True
                 no_tool_streak = 0
 
+                base_msg_idx = len(messages)
                 tool_results = []
                 for tc in tool_calls:
                     fn = tc.get('function', {})
@@ -594,6 +705,9 @@ class LLMCrawler:
                             inp = {}
                     if name == 'fetch_url':
                         result_content = self._tool_fetch_url(inp.get('url', ''))
+                        # Record future index: after extend, this result lands at
+                        # base_msg_idx + current position in tool_results list.
+                        fetch_indices[base_msg_idx + len(tool_results)] = inp.get('url', '')
                     elif name == 'store_document':
                         result = self._tool_store_document(
                             inp.get('ticker', ticker),
@@ -635,6 +749,7 @@ def _spawn_crawl_thread(
     prompt_override: Optional[str] = None,
     max_iterations: int = _MAX_ITERATIONS,
     max_fetch_chars: int = _MAX_FETCH_CHARS,
+    context_block: Optional[str] = None,
 ) -> None:
     """Spawn a daemon thread that acquires the semaphore and runs the crawl."""
     def _worker():
@@ -645,6 +760,7 @@ def _spawn_crawl_thread(
                 prompt_override=prompt_override,
                 max_iterations=max_iterations,
                 max_fetch_chars=max_fetch_chars,
+                context_block=context_block,
             )
             crawler.run()
 
@@ -669,7 +785,7 @@ def start_crawl(
     model: optional model override; overrides config/default for this run.
     db: optional MinerDB instance for reading config_settings (crawl_max_iterations, etc.).
     """
-    from config import ANTHROPIC_API_KEY, CRAWL_MODEL, CRAWL_PROVIDER, LLM_MODEL_ID
+    from config import ANTHROPIC_API_KEY, CRAWL_MODEL, CRAWL_OLLAMA_MODEL, CRAWL_PROVIDER
 
     if provider is None:
         provider = CRAWL_PROVIDER
@@ -691,13 +807,13 @@ def start_crawl(
         except Exception:
             pass
 
-    # Model selection: caller override > DB config > module default.
+    # Model selection: caller override > DB config > CRAWL_OLLAMA_MODEL default.
     if provider == 'ollama':
         api_key = ''
-        resolved_model = LLM_MODEL_ID
+        resolved_model = CRAWL_OLLAMA_MODEL
         if db is not None:
             try:
-                m = db.get_config('ollama_model')
+                m = db.get_config('crawl_ollama_model')
                 if m:
                     resolved_model = m
             except Exception:
@@ -717,12 +833,30 @@ def start_crawl(
         ticker = ticker.upper()
         progress = CrawlProgress(ticker)
         per_ticker[ticker] = progress
+
+        # Build coverage context block from DB data (lower bound + gap list).
+        context_block = None
+        if db is not None:
+            try:
+                from scrapers.crawl_context import build_crawl_context, format_context_block
+                ctx = build_crawl_context(ticker, db)
+                formatted = format_context_block(ticker, ctx)
+                context_block = formatted or None
+                if context_block:
+                    log.info(
+                        'event=crawl_context_injected ticker=%s lower_bound=%s gaps=%d covered=%d',
+                        ticker, ctx.get('lower_bound'), len(ctx.get('gaps', [])), len(ctx.get('covered', [])),
+                    )
+            except Exception as exc:
+                log.warning('event=crawl_context_build_failed ticker=%s error=%s', ticker, exc)
+
         _spawn_crawl_thread(
             progress, api_key, model,
             provider=provider,
             prompt_override=prompt,
             max_iterations=max_iterations,
             max_fetch_chars=max_fetch_chars,
+            context_block=context_block,
         )
 
     with _TASKS_LOCK:

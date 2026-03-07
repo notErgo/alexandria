@@ -33,6 +33,7 @@ _KNOWN_CONFIG_KEYS = {
     'llm_quarterly_batch_preamble', 'llm_annual_batch_preamble',
     # Crawl
     'crawl_max_iterations', 'crawl_max_fetch_chars',
+    'bitcoin_mining_keywords',
     # Pipeline
     'pipeline_output_dir',
 }
@@ -103,6 +104,9 @@ def _get_default_for_key(key: str):
         return '80'
     if key == 'crawl_max_fetch_chars':
         return '12000'
+    if key == 'bitcoin_mining_keywords':
+        from infra.db import MinerDB
+        return ','.join(MinerDB._DEFAULT_BITCOIN_MINING_KEYWORDS)
     if key == 'pipeline_output_dir':
         return '/private/tmp/claude-501/miners_progress'
     return None

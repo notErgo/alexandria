@@ -747,17 +747,16 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],
         # etc.) from the back of the document before sending to LLM. Regex extraction
         # still runs on the full raw_text. Use ContextWindowSelector to budget the window.
+        _clean_text = _clean_for_llm(text)
         _ctx_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
-        _ctx_windows = _ctx_selector.select_windows(
-            report['id'], _clean_for_llm(text), 'production_btc', db
-        )
-        llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_for_llm(text)[:_LLM_TEXT_MAX_CHARS]
+        _ctx_windows = _ctx_selector.select_windows(report['id'], _clean_text, 'production_btc', db)
+        llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_text[:_LLM_TEXT_MAX_CHARS]
 
         all_metrics = list(registry.metrics.keys())
         ticker = report.get('ticker')
 
-        # Single batch LLM call (pays prefill once for all metrics).
-        # Falls back to per-metric if batch returns empty.
+        # Primary batch LLM call — pays prefill once for all metrics on window 0.
+        # Falls back to per-metric extract() if batch returns empty.
         llm_by_metric = {}
         if llm_available:
             llm_by_metric, _batch_meta = _run_llm_batch(
@@ -787,6 +786,31 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             except Exception as _bench_err:
                 log.debug("Benchmark write failed (non-fatal): %s", _bench_err)
 
+            # Per-metric fallback: each metric that still needs higher confidence gets
+            # its own select_windows call so the context window is metric-appropriate.
+            _needs_fallback = [
+                m for m in all_metrics
+                if _ctx_selector.needs_fallback(llm_by_metric.get(m), db)
+            ]
+            for _fb_metric in _needs_fallback:
+                _fb_windows = _ctx_selector.select_windows(
+                    report['id'], _clean_text, _fb_metric, db
+                )
+                for _fb_window in _fb_windows[1:]:
+                    log.debug(
+                        "Fallback window %d: retrying %s for %s %s",
+                        _fb_window['window_index'], _fb_metric,
+                        ticker, report.get('report_date'),
+                    )
+                    _fb_results, _ = _run_llm_batch(
+                        llm_interpreter, _fb_window['text'], [_fb_metric], ticker=ticker
+                    )
+                    if _fb_metric in _fb_results and not _ctx_selector.needs_fallback(
+                        _fb_results[_fb_metric], db
+                    ):
+                        llm_by_metric[_fb_metric] = _fb_results[_fb_metric]
+                        break
+
         # Load per-metric rules from DB (keyed by metric name)
         metric_rules_by_name = {}
         try:
@@ -801,21 +825,10 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             if not llm_available and regex_best is None:
                 continue
 
-            llm_result_for_metric = llm_by_metric.get(metric)
-            # Fallback: retry with per-metric context windows if primary result is absent/low-confidence
-            if llm_available and llm_interpreter is not None:
-                _metric_windows = _ctx_selector.select_windows(
-                    report['id'], _clean_for_llm(text), metric, db
-                )
-                for _fb_window in _metric_windows[1:]:
-                    if not _ctx_selector.needs_fallback(llm_result_for_metric):
-                        break
-                    llm_result_for_metric = llm_interpreter.extract(_fb_window['text'], metric)
-
             _apply_agreement(
                 metric=metric,
                 regex_best=regex_best,
-                llm_result=llm_result_for_metric,
+                llm_result=llm_by_metric.get(metric),
                 db=db,
                 report=report,
                 llm_available=llm_available,

@@ -2217,6 +2217,42 @@ class MinerDB:
                 y += 1
         return gaps
 
+    _DEFAULT_BITCOIN_MINING_KEYWORDS = [
+        '%bitcoin%', '%btc%', '%hash rate%', '%hashrate%',
+        '%exahash%', '%petahash%', '%mining operations%',
+    ]
+
+    def get_earliest_bitcoin_report_period(self, ticker: str) -> Optional[str]:
+        """Return the earliest covering_period for reports that mention bitcoin mining.
+
+        Scans raw_text for LIKE-pattern keywords indicating active mining operations.
+        Keywords are read from config_settings key 'bitcoin_mining_keywords'
+        (comma-separated, e.g. '%bitcoin%,%btc%') and fall back to hardcoded defaults.
+        Returns None if no such report exists for the ticker.
+        """
+        raw = self.get_config('bitcoin_mining_keywords')
+        if raw:
+            keywords = [k.strip() for k in raw.split(',') if k.strip()]
+        else:
+            keywords = list(self._DEFAULT_BITCOIN_MINING_KEYWORDS)
+        clauses = ' OR '.join('LOWER(raw_text) LIKE ?' for _ in keywords)
+        params = [ticker] + [k.lower() for k in keywords]
+        with self._get_connection() as conn:
+            row = conn.execute(
+                f"SELECT MIN(covering_period) FROM reports WHERE ticker=? AND ({clauses})",
+                params,
+            ).fetchone()
+        return row[0] if row and row[0] else None
+
+    def get_covered_periods(self, ticker: str) -> list:
+        """Return distinct covering_period values that have at least one data_point."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT period FROM data_points WHERE ticker=? ORDER BY period",
+                (ticker,),
+            ).fetchall()
+        return [r[0] for r in rows]
+
     # ── Metric Rules CRUD ─────────────────────────────────────────────────────
 
     def get_metric_rules(self, metric: Optional[str] = None) -> list:

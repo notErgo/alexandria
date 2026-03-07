@@ -153,19 +153,18 @@ EXTRACTION_CONTEXT_WINDOW: int = 500
 # Maximum source_snippet length stored in DB
 MAX_SOURCE_SNIPPET_LEN: int = 1000
 
-# --- LLM Extractor (Ollama) ---
-# Probed on Apple Silicon 32GB+ with Q4_K_M: ~30–50 tok/s, 262K context.
-# Confirm model tag with `ollama list` before running ingest.
-# Model: qwen3.5:27b (default crawl model; qwen3.5:35b-a3b remains available for extraction)
+# --- LLM Interpreter (Ollama) — Stage 2 metric extraction ---
+# Used by interpreters/llm_interpreter.py for metric extraction from stored documents.
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:27b")
-LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s; 300s gives headroom
+LLM_TIMEOUT_SECONDS: int = 300
 
-# --- Crawl LLM (Anthropic Claude) ---
-# Used by llm_crawler.py for JS-heavy IR page understanding.
-# Set ANTHROPIC_API_KEY env var before running crawl jobs.
+# --- Crawl LLM (Ollama or Anthropic) — Stage 1 IR navigation ---
+# qwen3.5:9b is used for crawling: fast enough for link navigation, avoids
+# the 300s timeout that qwen3.5:27b hits when message history fills with page text.
 ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
 CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
+CRAWL_OLLAMA_MODEL: str = _os.environ.get("CRAWL_OLLAMA_MODEL", "qwen3.5:9b")
 CRAWL_PROVIDER: str = _os.environ.get("CRAWL_PROVIDER", "ollama")
 
 # Context window budgets for ContextWindowSelector

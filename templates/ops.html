@@ -854,7 +854,22 @@
   <!-- ── Crawl sub-pane ── -->
   <div class="research-pane" id="rpane-crawl" data-ui-id="2.7.2" data-spec-id="2.7.2">
 
-    <div class="acq-section-label">Outside — IR sites &amp; Wire Services</div>
+    <div class="acq-section-label">Step 1 — SEC EDGAR (establishes bitcoin lower bound)</div>
+    <div class="acq-panel" data-ui-id="2.7.2.4" data-spec-id="2.7.2.4">
+      <div class="acq-actions">
+        <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+          <input id="acq-auto-extract" type="checkbox" checked>
+          Auto-run extraction after acquisition
+        </label>
+      </div>
+      <div style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:0.35rem">
+        EDGAR filings are scanned for the earliest bitcoin mention. That date becomes the lower bound
+        automatically injected into Step 2 prompts so the LLM crawl does not search before mining began.
+      </div>
+    </div>
+
+    <div class="acq-section-label">Step 2 — LLM Crawl (IR sites &amp; Wire Services)</div>
     <div class="acq-panel" data-ui-id="2.7.2.1" data-spec-id="2.7.2.1">
       <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
       <div class="acq-actions">
@@ -874,17 +889,6 @@
           <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
         </div>
         <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-surface);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
-      </div>
-    </div>
-
-    <div class="acq-section-label">SEC EDGAR</div>
-    <div class="acq-panel" data-ui-id="2.7.2.4" data-spec-id="2.7.2.4">
-      <div class="acq-actions">
-        <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
-        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
-          <input id="acq-auto-extract" type="checkbox" checked>
-          Auto-run extraction after acquisition
-        </label>
       </div>
     </div>
 
@@ -3001,7 +3005,7 @@ async function loadCrawlOllamaModels() {
       models = (d.data?.models || []).map(function(m) { return m.name; });
     }
     if (models.length) {
-      const preferred = ['qwen3.5:27b', 'qwen3.5:9b'];
+      const preferred = ['qwen3.5:9b', 'qwen3.5:27b'];
       models.sort(function(a, b) {
         const ai = preferred.indexOf(a), bi = preferred.indexOf(b);
         if (ai !== -1 && bi !== -1) return ai - bi;
