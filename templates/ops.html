@@ -809,7 +809,7 @@
   <!-- ── Input sub-pane ── -->
   <div class="research-pane active" id="rpane-input" data-ui-id="2.7.1" data-spec-id="2.7.1">
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-      Select a ticker to configure its crawl prompt, then switch to Crawl to run.
+      Toggle tickers to select them. Selection carries through Crawl and Interpret. Selecting a single ticker loads its crawl prompt below.
     </p>
 
     <!-- Ticker bar -->
@@ -901,8 +901,9 @@
 
     <div class="acq-section-label">LLM Extraction</div>
     <div class="acq-panel" data-ui-id="2.7.3.1" data-spec-id="2.7.3.1">
+      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
       <div class="acq-actions">
-        <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No selection = all tickers</span>
         <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
         <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
           <option value="">Loading models…</option>
@@ -1335,7 +1336,8 @@ async function saveOllamaModel(modelName) {
 
 async function startExtractionRun() {
   if (_extractTaskId) return;
-  const ticker = (document.getElementById('extract-ticker').value || '').trim().toUpperCase();
+  const _sel = Array.from(_selectedCrawlTickers);
+  const ticker = _sel.length === 1 ? _sel[0] : '';
   const force = !!document.getElementById('extract-force').checked;
   _setExtractEnabled(false);
   _extractTaskId = 'starting';
@@ -2991,24 +2993,54 @@ function loadResearch() {
 }
 
 function _buildResearchTickerBar() {
+  _renderAllResearchTickerBars();
+}
+
+function _renderAllResearchTickerBars() {
+  _renderResearchInputBar();
+  _renderCrawlTickerSelector('edgar-ticker-selector', true);
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+  _renderInterpretTickerBar();
+}
+
+function _renderResearchInputBar() {
   const bar = document.getElementById('research-ticker-bar');
   if (!bar) return;
-  const tickers = _companies.map(function(c) { return c.ticker; });
+  const actives = _companies.filter(function(c) { return c.active !== false; });
   bar.innerHTML = '';
-  if (!tickers.length) {
-    bar.textContent = 'No companies configured.';
-    return;
-  }
-  tickers.forEach(function(t) {
+  if (!actives.length) { bar.textContent = 'No companies configured.'; return; }
+  actives.forEach(function(c) {
     const btn = document.createElement('button');
-    btn.className = 'btn btn-sm btn-secondary';
-    btn.textContent = t;
-    btn.title = 'Crawl ' + t + ' only';
-    btn.onclick = async function() { await loadCrawlPrompt(t); startCrawlTickers([t]); };
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
     bar.appendChild(btn);
   });
-  _buildCrawlTickerSelector();
-  _buildEdgarTickerSelector();
+}
+
+function _renderInterpretTickerBar() {
+  const bar = document.getElementById('interpret-ticker-bar');
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active !== false; });
+  bar.innerHTML = '';
+  if (!actives.length) { bar.textContent = 'No companies configured.'; return; }
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
+    bar.appendChild(btn);
+  });
+}
+
+function _buildCrawlTickerSelector() {
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+}
+
+function _buildEdgarTickerSelector() {
+  _renderCrawlTickerSelector('edgar-ticker-selector', true);
 }
 
 // Shared ticker selection state for Step 1 (EDGAR) and Step 2 (LLM Crawl).
@@ -3022,8 +3054,11 @@ function _toggleCrawlTicker(ticker) {
   } else {
     _selectedCrawlTickers.add(ticker);
   }
-  _renderCrawlTickerSelector('edgar-ticker-selector', true);
-  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+  _renderAllResearchTickerBars();
+  // Load prompt when exactly one ticker is selected
+  if (_selectedCrawlTickers.size === 1) {
+    loadCrawlPrompt(Array.from(_selectedCrawlTickers)[0]);
+  }
 }
 
 function _renderCrawlTickerSelector(barId, cikOnly) {
@@ -3039,14 +3074,6 @@ function _renderCrawlTickerSelector(barId, cikOnly) {
     btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
     bar.appendChild(btn);
   });
-}
-
-function _buildEdgarTickerSelector() {
-  _renderCrawlTickerSelector('edgar-ticker-selector', true);
-}
-
-function _buildCrawlTickerSelector() {
-  _renderCrawlTickerSelector('crawl-ticker-selector', false);
 }
 
 function _getSharedSelectedTickers() {
