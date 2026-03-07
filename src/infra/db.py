@@ -225,6 +225,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 18")
                     version = 18
 
+                if version < 19:
+                    self._migrate_v19(conn)
+                    conn.execute("PRAGMA user_version = 19")
+                    version = 19
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -879,6 +884,24 @@ class MinerDB:
             "CREATE UNIQUE INDEX idx_reports_url_hash "
             "ON reports(ticker, source_url_hash) WHERE source_url_hash IS NOT NULL"
         )
+
+    def _migrate_v19(self, conn: sqlite3.Connection) -> None:
+        """Schema migration from version 18 to version 19.
+
+        Backfill: ensures fetch-provenance columns exist on the reports table.
+        These were introduced in _migrate_v16 but that migration was added to the
+        codebase after some DBs had already advanced past user_version 16, leaving
+        the columns absent. This migration is idempotent and safe to re-run.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        for col, typedef in [
+            ('fetch_strategy',  'TEXT'),
+            ('render_mode',     'TEXT'),
+            ('fetch_timing_ms', 'INTEGER'),
+            ('content_simhash', 'INTEGER'),
+        ]:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE reports ADD COLUMN {col} {typedef}")
 
     def _seed_metric_rules(self, conn: sqlite3.Connection) -> None:
         """Seed metric_rules with config.py threshold values.
