@@ -410,7 +410,10 @@ class LLMCrawler:
 
         self._progress.status = 'running'
         self._progress.started_at = datetime.now(timezone.utc).isoformat()
-        self._progress.add_log(f'Starting crawl for {ticker} via {self._provider}')
+        self._progress.add_log(
+            f'Starting crawl for {ticker} via {self._provider}'
+            + (f' model={self._model}' if self._provider == 'ollama' else '')
+        )
 
         if self._provider == 'ollama':
             self._run_ollama(ticker, system_prompt)

@@ -830,9 +830,12 @@
       </div>
       <div id="crawl-model-wrap">
         <label style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
-        <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px">
-          <option value="">Loading models…</option>
-        </select>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+          <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px">
+            <option value="">Loading models…</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="loadCrawlOllamaModels()" title="Reload model list">&#8635;</button>
+        </div>
       </div>
     </div>
 
@@ -2900,6 +2903,7 @@ function activateResearchSubTab(name) {
     pane.classList.toggle('active', pane.id === 'rpane-' + name);
   });
   if (name === 'interpret') { loadPipelineObservability(); loadOllamaModels(); }
+  if (name === 'crawl') { loadCrawlOllamaModels(); }
 }
 let _researchTaskId = null;
 let _researchLogTicker = null;
