@@ -307,6 +307,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 32")
                     version = 32
 
+                if version < 33:
+                    self._migrate_v33(conn)
+                    conn.execute("PRAGMA user_version = 33")
+                    version = 33
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1305,6 +1310,62 @@ class MinerDB:
                     (_json.dumps(kws), metric_key),
                 )
             conn.execute("DROP TABLE metric_keywords")
+
+    def _migrate_v33(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v32 → v33: analyst reviewed_periods table."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reviewed_periods (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker      TEXT NOT NULL,
+                period      TEXT NOT NULL,
+                reviewed_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(ticker, period)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rp_ticker ON reviewed_periods(ticker)"
+        )
+
+    # ── Reviewed periods CRUD ─────────────────────────────────────────────────
+
+    def get_reviewed_periods(self, ticker: str) -> set:
+        """Return set of period strings marked as reviewed for ticker."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT period FROM reviewed_periods WHERE ticker = ?",
+                (ticker,),
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    def set_reviewed_periods(self, ticker: str, periods: list) -> int:
+        """Mark periods as reviewed (INSERT OR IGNORE). Returns count inserted."""
+        inserted = 0
+        with self._get_connection() as conn:
+            for period in periods:
+                result = conn.execute(
+                    "INSERT OR IGNORE INTO reviewed_periods (ticker, period) VALUES (?, ?)",
+                    (ticker, period),
+                )
+                inserted += result.rowcount
+        return inserted
+
+    def unset_reviewed_period(self, ticker: str, period: str) -> int:
+        """Unmark one period as reviewed. Returns rows deleted."""
+        with self._get_connection() as conn:
+            result = conn.execute(
+                "DELETE FROM reviewed_periods WHERE ticker = ? AND period = ?",
+                (ticker, period),
+            )
+        return result.rowcount
+
+    def unset_all_reviewed(self, ticker: str) -> int:
+        """Clear all reviewed_periods entries for ticker. Returns rows deleted."""
+        with self._get_connection() as conn:
+            result = conn.execute(
+                "DELETE FROM reviewed_periods WHERE ticker = ?",
+                (ticker,),
+            )
+        return result.rowcount
 
     # ── BTC first-filing-date CRUD ─────────────────────────────────────────────
 

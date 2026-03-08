@@ -718,6 +718,28 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   font-size: 0.8rem;
   width: 200px;
 }
+tr.is-reviewed td { opacity: 0.65; }
+.badge-method {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0 3px;
+  border-radius: 2px;
+  margin-left: 3px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.badge-method-r { background: var(--theme-bg-secondary); color: var(--theme-text-muted); }
+.badge-method-l { background: #1e3a5f; color: #93c5fd; }
+.badge-method-a { background: #1c3a1c; color: #86efac; }
+.badge-method-f { background: #2d1b69; color: #c4b5fd; }
+#coverage-summary-bar table { border-collapse: collapse; }
+#coverage-summary-bar td, #coverage-summary-bar th {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--theme-border);
+  font-size: 0.78rem;
+}
+#coverage-summary-bar th { background: var(--theme-bg-secondary); font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -784,10 +806,18 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
         </div>
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       </div>
+      <!-- Coverage summary bar — populated by loadCoverageSummary() -->
+      <details id="coverage-summary-details" style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
+        <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
+        <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
+          <span style="color:var(--theme-text-muted)">Loading…</span>
+        </div>
+      </details>
       <div class="md-table-scroll">
         <table id="timeline-table">
           <thead>
             <tr id="timeline-thead-row">
+              <th title="Reviewed" style="width:30px;min-width:28px"><input type="checkbox" id="mark-all-reviewed-cb" title="Mark all visible rows reviewed" onchange="toggleMarkAllReviewed(this.checked)"></th>
               <th data-sort="period">Period</th>
               <!-- metric columns injected by buildTableHeaders() -->
               <th data-col="doc-type">Type</th>
@@ -863,6 +893,13 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 
     <!-- LLM reprompt -->
     <div>
+      <div style="margin-bottom:0.4rem">
+        <label style="font-size:0.8rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Metrics to reprompt (empty = all)</label>
+        <select id="reprompt-metrics-filter" multiple
+          style="min-width:180px;max-height:80px;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:2px 4px">
+          <!-- populated from /api/metric_schema in boot() -->
+        </select>
+      </div>
       <button class="btn btn-primary btn-sm" id="reprompt-btn" onclick="doReprompt()">Reprompt LLM</button>
       <span id="reprompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
     </div>
@@ -1082,6 +1119,195 @@ document.addEventListener('DOMContentLoaded', function() {
   // Manual fill is now handled by ReviewPanel.setOnFilled (wired above).
 });
 
+// ── Coverage summary ───────────────────────────────────────────────────────
+async function loadCoverageSummary(ticker) {
+  const bar = document.getElementById('coverage-summary-bar');
+  if (!bar) return;
+  bar.innerHTML = '<span style="color:var(--theme-text-muted)">Loading...</span>';
+  try {
+    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/coverage_summary`);
+    if (!resp.ok) { bar.innerHTML = ''; return; }
+    const body = await resp.json();
+    if (!body.success) { bar.innerHTML = ''; return; }
+    const d = body.data;
+    const rows = [
+      ['Monthly (PR/IR)', d.monthly.total_reports, d.monthly.extracted, d.monthly.earliest || '—', d.monthly.latest || '—'],
+      ['10-Q / 10-K', (d.sec.by_source['edgar_10q'] || 0) + (d.sec.by_source['edgar_10k'] || 0),
+        null, null, null],
+      ['8-K', d.sec.by_source['edgar_8k'] || 0, null, null, null],
+    ];
+    // For SEC row, aggregate
+    rows[1][2] = d.sec.extracted;
+    rows[1][3] = d.sec.earliest || '—';
+    rows[1][4] = d.sec.latest || '—';
+    rows[2][2] = '—';
+    rows[2][3] = '—';
+    rows[2][4] = '—';
+
+    bar.innerHTML = `<table>
+      <thead><tr><th>Source</th><th>Count</th><th>Extracted</th><th>Earliest</th><th>Latest</th></tr></thead>
+      <tbody>
+        ${rows.map(function(r) {
+          return `<tr><td>${escapeHtml(String(r[0]))}</td><td>${escapeHtml(String(r[1]))}</td><td>${escapeHtml(String(r[2]))}</td><td>${escapeHtml(String(r[3]))}</td><td>${escapeHtml(String(r[4]))}</td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  } catch (e) {
+    bar.innerHTML = '';
+  }
+}
+
+// ── XBRL preamble strip ────────────────────────────────────────────────────
+function stripXbrlPreamble(text) {
+  if (!text) return text;
+  const idx = text.search(/UNITED\s+STATES/i);
+  if (idx > 200 && /^\d{9,10}\s/.test(text)) {
+    return text.slice(idx);
+  }
+  return text;
+}
+
+// ── Reviewed period checkboxes ─────────────────────────────────────────────
+async function onReviewedChange(cb) {
+  if (!_ticker) return;
+  const period = cb.getAttribute('data-period');
+  const tr = cb.closest('tr');
+  try {
+    if (cb.checked) {
+      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({periods: [period]}),
+      });
+      if (resp.ok) {
+        if (tr) tr.classList.add('is-reviewed');
+      } else {
+        cb.checked = false;
+      }
+    } else {
+      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({period: period}),
+      });
+      if (resp.ok) {
+        if (tr) tr.classList.remove('is-reviewed');
+      } else {
+        cb.checked = true;
+      }
+    }
+  } catch (e) {
+    // revert on error
+    cb.checked = !cb.checked;
+  }
+}
+
+async function toggleMarkAllReviewed(checked) {
+  if (!_ticker) return;
+  const cbs = document.querySelectorAll('.period-reviewed-cb');
+  if (checked) {
+    const periods = Array.from(cbs).map(function(cb) { return cb.getAttribute('data-period'); });
+    try {
+      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({periods: periods}),
+      });
+      if (resp.ok) {
+        cbs.forEach(function(cb) {
+          cb.checked = true;
+          const tr = cb.closest('tr');
+          if (tr) tr.classList.add('is-reviewed');
+        });
+      }
+    } catch (e) {}
+  } else {
+    try {
+      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed/all`, {
+        method: 'DELETE',
+      });
+      if (resp.ok) {
+        cbs.forEach(function(cb) {
+          cb.checked = false;
+          const tr = cb.closest('tr');
+          if (tr) tr.classList.remove('is-reviewed');
+        });
+      }
+    } catch (e) {}
+  }
+}
+
+// ── Inline cell editing ────────────────────────────────────────────────────
+let _editingCell = null;
+
+function inlineEditCell(event, period, metric) {
+  event.stopPropagation();
+  if (_editingCell) return; // one edit at a time
+  const td = event.currentTarget;
+  const row = _rows.find(function(r) { return r.period === period; });
+  const m = row && row.metrics && row.metrics[metric];
+  const currentVal = m ? m.value : null;
+
+  _editingCell = {td: td, period: period, metric: metric, original: td.innerHTML};
+  td.innerHTML = `<input type="number" step="any" style="width:80px;font-size:0.82rem;background:var(--theme-bg-input);border:1px solid var(--theme-accent);border-radius:3px;color:var(--theme-text-primary);padding:1px 3px" value="${currentVal != null ? currentVal : ''}" id="inline-edit-input">` +
+    `<button style="margin-left:2px;font-size:0.7rem;padding:1px 4px;background:var(--theme-accent);color:#fff;border:none;border-radius:2px;cursor:pointer" onclick="confirmInlineEdit(event,'${escapeHtml(period)}','${escapeHtml(metric)}')">OK</button>`;
+  const input = td.querySelector('#inline-edit-input');
+  if (input) { input.focus(); input.select(); }
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') confirmInlineEdit(e, period, metric);
+    if (e.key === 'Escape') cancelInlineEdit();
+  });
+}
+
+async function confirmInlineEdit(event, period, metric) {
+  event.stopPropagation();
+  if (!_editingCell) return;
+  const td = _editingCell.td;
+  const input = td.querySelector('input');
+  const val = input ? parseFloat(input.value) : NaN;
+  if (isNaN(val) || val < 0) { cancelInlineEdit(); return; }
+
+  const original = _editingCell.original;
+  _editingCell = null;
+
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: [{period: period, metric: metric, value: val}]}),
+    });
+    const body = await resp.json();
+    if (body.success) {
+      // Update _rows cache
+      const row = _rows.find(function(r) { return r.period === period; });
+      if (row) {
+        if (!row.metrics[metric]) row.metrics[metric] = {};
+        row.metrics[metric].value = val;
+        row.metrics[metric].is_finalized = true;
+      }
+      // Re-render just this cell
+      const formatted = val.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1});
+      td.innerHTML = `${escapeHtml(formatted)}<span class="badge-final">F</span>`;
+      showToast('Value finalized');
+      // Reload finalized list
+      if (_currentView === 'interpret') loadInterpretData(_ticker);
+    } else {
+      td.innerHTML = original;
+      showToast((body.error && body.error.message) || 'Finalize failed', true);
+    }
+  } catch (e) {
+    td.innerHTML = original;
+    showToast('Finalize failed', true);
+  }
+}
+
+function cancelInlineEdit() {
+  if (!_editingCell) return;
+  _editingCell.td.innerHTML = _editingCell.original;
+  _editingCell = null;
+}
+
 async function boot() {
   // Load metric schema from SSOT — populates #pattern-metric and METRICS_ORDER fallback
   try {
@@ -1094,11 +1320,19 @@ async function boot() {
         metrics.forEach(function(m) { _assignMetricColor(m.key); });
         const sel = document.getElementById('pattern-metric');
         sel.innerHTML = '';
+        const repromptSel = document.getElementById('reprompt-metrics-filter');
+        if (repromptSel) repromptSel.innerHTML = '';
         metrics.forEach(function(m) {
           const opt = document.createElement('option');
           opt.value = m.key;
-          opt.textContent = m.key;
+          opt.textContent = m.label || m.key;
           sel.appendChild(opt);
+          if (repromptSel) {
+            const opt2 = document.createElement('option');
+            opt2.value = m.key;
+            opt2.textContent = m.label || m.key;
+            repromptSel.appendChild(opt2);
+          }
         });
       }
     }
@@ -1179,6 +1413,7 @@ async function selectCompany(ticker) {
     buildTableHeaders(METRICS_ORDER, data.metric_labels || {}, data.metric_units || {});
 
     renderInfoCard(data.company, data.stats);
+    loadCoverageSummary(ticker);
     renderTable(_rows);
     makeSortable('timeline-table');
 
@@ -1311,17 +1546,24 @@ function renderTable(allRows) {
       if (m && m.value != null) {
         const formatted = escapeHtml(fmtValue(m) || '');
         if (m.is_pending) {
-          return `<td class="td-pending">${formatted}<span class="badge-pending">pending</span></td>`;
+          return `<td class="td-pending">${formatted}<span class="badge-pending">P</span></td>`;
         }
-        const methodBadge = m.extraction_method
-          ? `<span class="method-badge">${escapeHtml(m.extraction_method)}</span>`
+        // Method badge: R=regex, L=LLM, A=analyst, F=finalized
+        let methodChar = '';
+        if (m.is_finalized) methodChar = 'F';
+        else if (m.extraction_method === 'analyst' || m.extraction_method === 'analyst_approved') methodChar = 'A';
+        else if (m.extraction_method && m.extraction_method.startsWith('llm')) methodChar = 'L';
+        else if (m.extraction_method === 'regex') methodChar = 'R';
+        const badge = methodChar
+          ? `<span class="badge-method badge-method-${methodChar.toLowerCase()}">${methodChar}</span>`
           : '';
         const finalBadge = m.is_finalized ? `<span class="badge-final">F</span>` : '';
-        return `<td class="td-value">${formatted}${methodBadge}${finalBadge}</td>`;
+        const tooltip = m.source_snippet ? escapeHtml(m.source_snippet.slice(0, 200)) : '';
+        return `<td class="td-value" title="${tooltip}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">${formatted}${m.is_finalized ? finalBadge : badge}</td>`;
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
-        return `<td class="td-empty">—</td>`;
+        return `<td class="td-empty" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       }
       return `<td class="td-nodoc">—</td>`;
     });
@@ -1332,8 +1574,12 @@ function renderTable(allRows) {
     const dateVal = row.report_date ? row.report_date.slice(0, 10) : '—';
     const dateCell = `<td class="td-date-col">${escapeHtml(dateVal)}</td>`;
 
+    const reviewedClass = row.is_reviewed ? ' is-reviewed' : '';
+    const reviewedChecked = row.is_reviewed ? ' checked' : '';
+    const reviewedCb = `<td style="text-align:center"><input type="checkbox" class="period-reviewed-cb" data-period="${escapeHtml(row.period)}"${reviewedChecked} onchange="onReviewedChange(this)"></td>`;
     parts.push(`
-      <tr class="${rowClass}${selClass}" data-period="${escapeHtml(row.period)}">
+      <tr class="${rowClass}${selClass}${reviewedClass}" data-period="${escapeHtml(row.period)}">
+        ${reviewedCb}
         <td class="td-period">${escapeHtml(row.period_label)}</td>
         ${metricCells.join('')}
         ${typeCell}${dateCell}
@@ -1365,6 +1611,8 @@ function srcTypeLabel(srcType) {
 // says otherwise.
 const _CORE_5 = new Set(['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate']);
 const _COL_VIS_KEY = 'miners-visible-cols';
+const _COL_VIS_VERSION = 2;
+const _COL_VIS_VER_KEY = 'miners-col-vis-version';
 
 function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
   _metricLabelsCache = metricLabels || {};
@@ -1396,6 +1644,12 @@ function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
   // ── Rebuild col-vis metric checkboxes ──────────────────────────────────
   const metricsContainer = document.getElementById('col-vis-metrics');
   let savedState = {};
+  // Clear stale column visibility state when schema version changes
+  const savedVersion = parseInt(localStorage.getItem(_COL_VIS_VER_KEY) || '0', 10);
+  if (savedVersion !== _COL_VIS_VERSION) {
+    localStorage.removeItem(_COL_VIS_KEY);
+    localStorage.setItem(_COL_VIS_VER_KEY, String(_COL_VIS_VERSION));
+  }
   const saved = localStorage.getItem(_COL_VIS_KEY);
   if (saved) { try { savedState = JSON.parse(saved); } catch(e) {} }
 
@@ -1897,7 +2151,10 @@ async function doReprompt() {
     const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reprompt`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({commentary}),
+      body: JSON.stringify({
+      commentary,
+      metrics: Array.from(document.getElementById('reprompt-metrics-filter').selectedOptions).map(function(o) { return o.value; }),
+    }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const body = await resp.json();

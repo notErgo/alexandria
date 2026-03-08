@@ -178,6 +178,9 @@ def get_miner_timeline(ticker: str):
         finals = db.get_final_data_points(ticker_upper)
         finalized_keys = {(f['period'], f['metric']) for f in finals}
 
+        # Build a set of reviewed periods for is_reviewed flag
+        reviewed_set = db.get_reviewed_periods(ticker_upper)
+
         # Build pivot dict: period → metric → cell dict
         # Monthly source: normalize all periods to YYYY-MM-01 so that data points
         # stored with non-standard dates (e.g. "2025-01-31" from 8-K filing dates)
@@ -195,6 +198,7 @@ def get_miner_timeline(ticker: str):
                 'unit':              dp.get('unit'),
                 'confidence':        dp['confidence'],
                 'extraction_method': dp.get('extraction_method'),
+                'source_snippet':    dp.get('source_snippet'),
                 'is_finalized':      (period, metric) in finalized_keys,
                 'is_pending':        False,
             }
@@ -362,6 +366,7 @@ def get_miner_timeline(ticker: str):
                 'source_type': report_info['source_type'] if report_info else None,
                 'source_url':  report_info['source_url'] if report_info else None,
                 'is_gap':      is_gap,
+                'is_reviewed': period in reviewed_set,
                 'metrics':     metric_cells,
             })
 
@@ -624,3 +629,109 @@ def get_all_metrics():
         for k in ALL_METRICS_ORDER
     ]
     return jsonify({'success': True, 'data': {'metrics': metrics}})
+
+
+@bp.route('/api/miner/<ticker>/coverage_summary')
+def get_coverage_summary(ticker: str):
+    """Return report and extraction coverage summary for a ticker.
+
+    Response shape:
+      {
+        "success": true,
+        "data": {
+          "monthly": {
+            "total_reports": N,
+            "extracted": N,
+            "earliest": "YYYY-MM",
+            "latest": "YYYY-MM",
+            "by_source": {"archive_pdf": N, ...}
+          },
+          "sec": {
+            "total_reports": N,
+            "extracted": N,
+            "earliest": "YYYY-Qn",
+            "latest": "YYYY-Qn",
+            "by_source": {"edgar_10q": N, ...}
+          }
+        }
+      }
+    """
+    try:
+        db = get_db()
+        ticker_upper = ticker.upper()
+        company = db.get_company(ticker_upper)
+        if company is None:
+            return jsonify({'success': False, 'error': {'message': f'Unknown ticker: {ticker}'}}), 404
+
+        _SEC_SOURCE_TYPES = {'edgar_10q', 'edgar_10k', 'edgar_8k', 'edgar_20f', 'edgar_40f', 'edgar_6k'}
+
+        with db._get_connection() as conn:
+            report_rows = conn.execute(
+                """SELECT id, report_date, source_type, extracted_at, covering_period
+                   FROM reports
+                   WHERE ticker = ?
+                   ORDER BY report_date""",
+                (ticker_upper,),
+            ).fetchall()
+
+        monthly_reports = []
+        sec_reports = []
+        for row in report_rows:
+            st = (row[2] or '').lower()
+            entry = {
+                'id':              row[0],
+                'report_date':     row[1] or '',
+                'source_type':     row[2],
+                'extracted':       row[3] is not None,
+                'covering_period': row[4],
+            }
+            if st in _SEC_SOURCE_TYPES:
+                sec_reports.append(entry)
+            else:
+                monthly_reports.append(entry)
+
+        def _summarize(entries, period_key='report_date'):
+            if not entries:
+                return {
+                    'total_reports': 0,
+                    'extracted': 0,
+                    'earliest': None,
+                    'latest': None,
+                    'by_source': {},
+                }
+            total = len(entries)
+            extracted = sum(1 for e in entries if e['extracted'])
+            dates = [e[period_key] for e in entries if e.get(period_key)]
+            earliest = min(dates)[:7] if dates else None
+            latest = max(dates)[:7] if dates else None
+            by_source: dict = {}
+            for e in entries:
+                st = e.get('source_type') or 'unknown'
+                by_source[st] = by_source.get(st, 0) + 1
+            return {
+                'total_reports': total,
+                'extracted': extracted,
+                'earliest': earliest,
+                'latest': latest,
+                'by_source': by_source,
+            }
+
+        # For SEC, prefer covering_period for earliest/latest when available
+        sec_summary = _summarize(sec_reports, period_key='report_date')
+        if sec_reports:
+            covering_periods = [e['covering_period'] for e in sec_reports if e.get('covering_period')]
+            if covering_periods:
+                sec_summary['earliest'] = min(covering_periods)
+                sec_summary['latest'] = max(covering_periods)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'monthly': _summarize(monthly_reports),
+                'sec': sec_summary,
+            },
+        })
+
+    except Exception as e:
+        log.error("get_coverage_summary failed for %s: %s", ticker, e, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

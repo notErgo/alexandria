@@ -87,6 +87,18 @@ def detect_parse_quality(text: str, page_count: int) -> str:
     return 'text_ok'
 
 
+def _is_toc_stub(section_text: str) -> bool:
+    """Return True if this looks like a TOC entry rather than real content.
+
+    Strips the first line (the Item N header) and checks if remaining body
+    is shorter than 300 characters. TOC entries are typically a single line
+    like "Item 1. Business" with no following content.
+    """
+    lines = section_text.strip().split('\n', 1)
+    body = lines[1].strip() if len(lines) > 1 else ''
+    return len(body) < 300
+
+
 class AnnualReportParser:
     """Parser for SEC EDGAR annual/quarterly reports."""
 
@@ -125,6 +137,20 @@ class AnnualReportParser:
                     char_start=section_start,
                     char_end=section_end,
                 ))
+
+            # Filter out TOC stubs — short sections that are just table-of-contents
+            # entries rather than actual document content.
+            real_sections = [s for s in sections if not _is_toc_stub(s.text)]
+            if real_sections:
+                sections = real_sections
+            else:
+                # All sections are stubs (e.g. pure TOC page) — fall back to full_text
+                sections = [TextSection(
+                    name='full_text',
+                    text=full_text,
+                    char_start=0,
+                    char_end=len(full_text),
+                )]
 
         return ParseResult(
             text=full_text,

@@ -22,12 +22,20 @@ log = logging.getLogger('miners.routes.interpret')
 
 bp = Blueprint('interpret', __name__)
 
-_VALID_METRICS = {
-    'production_btc', 'hodl_btc', 'hodl_btc_unrestricted', 'hodl_btc_restricted',
-    'sold_btc', 'hashrate_eh', 'realization_rate',
-    'net_btc_balance_change', 'encumbered_btc',
-    'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
-}
+_VALID_METRICS_FALLBACK = frozenset({
+    'production_btc', 'hodl_btc', 'sold_btc',
+})
+
+
+def _get_valid_metrics(db) -> frozenset:
+    """Return set of valid metric keys from DB SSOT (metric_schema table)."""
+    try:
+        rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+        if rows:
+            return frozenset(r['key'] for r in rows)
+    except Exception:
+        pass
+    return _VALID_METRICS_FALLBACK
 _PERIOD_MONTHLY_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 _PERIOD_QUARTER_RE = re.compile(r'^\d{4}-Q\d$')
 _PERIOD_ANNUAL_RE  = re.compile(r'^\d{4}-FY$')
@@ -119,9 +127,10 @@ def reprompt(ticker: str):
 
     body = request.get_json(silent=True) or {}
     commentary = str(body.get('commentary') or '').strip()
+    valid_metrics = _get_valid_metrics(db)
     metrics_filter = body.get('metrics') or []
     if metrics_filter:
-        invalid = [m for m in metrics_filter if m not in _VALID_METRICS]
+        invalid = [m for m in metrics_filter if m not in valid_metrics]
         if invalid:
             return jsonify({'success': False, 'error': {
                 'code': 'INVALID_METRIC', 'message': f'Unknown metrics: {invalid}',
@@ -174,7 +183,7 @@ def reprompt(ticker: str):
         m = s.get('metric')
         p = s.get('period')
         v = s.get('value')
-        if m not in _VALID_METRICS:
+        if m not in valid_metrics:
             continue
         if not _valid_period(str(p)):
             continue
@@ -206,6 +215,7 @@ def finalize(ticker: str):
     """Write analyst-accepted values into final_data_points."""
     db = get_db()
     ticker_upper = ticker.upper()
+    valid_metrics = _get_valid_metrics(db)
     if not db.get_company(ticker_upper):
         return jsonify({'success': False, 'error': {
             'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
@@ -223,7 +233,7 @@ def finalize(ticker: str):
         metric = entry.get('metric')
         period = entry.get('period')
         value = entry.get('value')
-        if metric not in _VALID_METRICS:
+        if metric not in valid_metrics:
             errors.append(f"values[{i}]: unknown metric {metric!r}")
             continue
         if not period or not _valid_period(str(period)):
@@ -337,3 +347,73 @@ def purge_final():
         mode, ticker or 'ALL', result['deleted'], result.get('archive_batch_id'),
     )
     return jsonify({'success': True, 'data': result})
+
+
+@bp.route('/api/interpret/<ticker>/reviewed', methods=['POST'])
+def mark_reviewed(ticker: str):
+    """Mark one or more periods as reviewed for a ticker.
+
+    Body: {"periods": ["2024-01-01", "2024-02-01", ...]}
+    Returns 201 with {"success": true, "data": {"count": N}}.
+    """
+    db = get_db()
+    ticker_upper = ticker.upper()
+    if not db.get_company(ticker_upper):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    body = request.get_json(silent=True) or {}
+    periods = body.get('periods')
+    if not isinstance(periods, list) or not periods:
+        return jsonify({'success': False, 'error': {
+            'code': 'MISSING_PERIODS', 'message': 'body must include non-empty "periods" list',
+        }}), 400
+
+    count = db.set_reviewed_periods(ticker_upper, [str(p) for p in periods])
+    log.info("event=mark_reviewed ticker=%s periods=%d inserted=%d", ticker_upper, len(periods), count)
+    return jsonify({'success': True, 'data': {'count': count}}), 201
+
+
+@bp.route('/api/interpret/<ticker>/reviewed', methods=['DELETE'])
+def unmark_reviewed(ticker: str):
+    """Unmark one period as reviewed.
+
+    Body: {"period": "2024-01-01"}
+    Returns 200 with {"success": true, "data": {"deleted": N}}.
+    """
+    db = get_db()
+    ticker_upper = ticker.upper()
+    if not db.get_company(ticker_upper):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    body = request.get_json(silent=True) or {}
+    period = body.get('period')
+    if not period:
+        return jsonify({'success': False, 'error': {
+            'code': 'MISSING_PERIOD', 'message': 'body must include "period" field',
+        }}), 400
+
+    deleted = db.unset_reviewed_period(ticker_upper, str(period))
+    log.info("event=unmark_reviewed ticker=%s period=%s deleted=%d", ticker_upper, period, deleted)
+    return jsonify({'success': True, 'data': {'deleted': deleted}})
+
+
+@bp.route('/api/interpret/<ticker>/reviewed/all', methods=['DELETE'])
+def clear_all_reviewed(ticker: str):
+    """Clear all reviewed_periods for a ticker.
+
+    Returns 200 with {"success": true, "data": {"deleted": N}}.
+    """
+    db = get_db()
+    ticker_upper = ticker.upper()
+    if not db.get_company(ticker_upper):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    deleted = db.unset_all_reviewed(ticker_upper)
+    log.info("event=clear_all_reviewed ticker=%s deleted=%d", ticker_upper, deleted)
+    return jsonify({'success': True, 'data': {'deleted': deleted}})

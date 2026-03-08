@@ -176,3 +176,58 @@ class TestStripXbrlPreamble:
             "iXBRL preamble must be stripped from parsed text"
         )
         assert 'We mined 700 BTC' in result.text
+
+
+# ── TOC stub filter (parse_html) ─────────────────────────────────────────────
+
+def test_parse_html_filters_toc_stubs():
+    """Sections with <300 chars body are filtered out (TOC stubs)."""
+    from parsers.annual_report_parser import AnnualReportParser
+    # HTML with a TOC section (short) and a real section (long)
+    html = """<html><body>
+    <p>Item 1. Business</p>
+    <p>Item 2. Risk Factors</p>
+    <p>Item 1. Business</p>
+    """ + "<p>" + "A" * 400 + "</p>" + """
+    <p>Item 2. Risk Factors</p>
+    """ + "<p>" + "B" * 400 + "</p>" + """
+    </body></html>"""
+    parser = AnnualReportParser()
+    result = parser.parse_html(html)
+    # Should not have stub sections with <300 chars body
+    for section in result.sections:
+        if section.name == 'full_text':
+            continue
+        body_lines = section.text.strip().split('\n', 1)
+        body = body_lines[1].strip() if len(body_lines) > 1 else ''
+        assert len(body) >= 300 or section.name == 'full_text', \
+            f"TOC stub section {section.name!r} not filtered: body len={len(body)}"
+
+
+def test_parse_html_all_stubs_falls_back_to_full_text():
+    """If all sections are stubs, returns a single full_text section."""
+    from parsers.annual_report_parser import AnnualReportParser
+    # HTML where every Item section is tiny (TOC-like)
+    html = """<html><body>
+    <p>Item 1. Business</p>
+    <p>Item 2. Risk Factors</p>
+    </body></html>"""
+    parser = AnnualReportParser()
+    result = parser.parse_html(html)
+    # Must have at least one section
+    assert len(result.sections) >= 1
+    # If all stubs, should fall back to full_text
+    names = [s.name for s in result.sections]
+    assert 'full_text' in names
+
+
+def test_parse_html_real_sections_preserved():
+    """Sections with substantial content (>=300 chars) are kept."""
+    from parsers.annual_report_parser import AnnualReportParser
+    long_body = "X" * 500
+    html = f"""<html><body><p>Item 1. Business</p><p>{long_body}</p></body></html>"""
+    parser = AnnualReportParser()
+    result = parser.parse_html(html)
+    item_sections = [s for s in result.sections if s.name != 'full_text']
+    assert len(item_sections) >= 1
+    assert any(len(s.text) > 300 for s in item_sections)

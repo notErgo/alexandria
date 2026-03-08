@@ -285,3 +285,53 @@ class TestV32KeywordsOnMetricSchema:
         assert row is not None
         kws = json.loads(row[0] or '[]')
         assert kws == [], f"sold_btc should have no seeded keywords, got: {kws}"
+
+
+class TestSchemaV33:
+    """v33 migration: reviewed_periods table."""
+
+    def test_user_version_is_33(self, raw_conn):
+        version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version >= 33
+
+    def test_reviewed_periods_table_exists(self, raw_conn):
+        cols = _table_columns(raw_conn, 'reviewed_periods')
+        assert len(cols) > 0, "reviewed_periods table does not exist"
+
+    def test_reviewed_periods_columns(self, raw_conn):
+        cols = _table_columns(raw_conn, 'reviewed_periods')
+        required = {'id', 'ticker', 'period', 'reviewed_at'}
+        assert required.issubset(cols), f"Missing columns: {required - cols}"
+
+    def test_reviewed_periods_unique_constraint(self, fresh_db):
+        """Cannot insert duplicate (ticker, period) pair."""
+        fresh_db.set_reviewed_periods('MARA', ['2024-01-01'])
+        count = fresh_db.set_reviewed_periods('MARA', ['2024-01-01'])  # INSERT OR IGNORE
+        assert count == 0  # second insert is a no-op
+
+    def test_get_reviewed_periods_empty(self, fresh_db):
+        result = fresh_db.get_reviewed_periods('MARA')
+        assert isinstance(result, set)
+        assert len(result) == 0
+
+    def test_set_and_get_reviewed_periods(self, fresh_db):
+        fresh_db.set_reviewed_periods('MARA', ['2024-01-01', '2024-02-01'])
+        result = fresh_db.get_reviewed_periods('MARA')
+        assert '2024-01-01' in result
+        assert '2024-02-01' in result
+
+    def test_unset_reviewed_period(self, fresh_db):
+        fresh_db.set_reviewed_periods('MARA', ['2024-01-01', '2024-02-01'])
+        deleted = fresh_db.unset_reviewed_period('MARA', '2024-01-01')
+        assert deleted == 1
+        result = fresh_db.get_reviewed_periods('MARA')
+        assert '2024-01-01' not in result
+        assert '2024-02-01' in result
+
+    def test_unset_all_reviewed(self, fresh_db):
+        fresh_db.set_reviewed_periods('MARA', ['2024-01-01', '2024-02-01'])
+        fresh_db.set_reviewed_periods('RIOT', ['2024-01-01'])
+        deleted = fresh_db.unset_all_reviewed('MARA')
+        assert deleted == 2
+        assert len(fresh_db.get_reviewed_periods('MARA')) == 0
+        assert len(fresh_db.get_reviewed_periods('RIOT')) == 1

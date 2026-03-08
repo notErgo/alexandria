@@ -307,6 +307,8 @@ const ReviewPanel = (function () {
   function _renderDocText(rawText, matches) {
     const el = _el('rp-doc-text');
     if (!el) return;
+    // Strip XBRL/EDGAR boilerplate preamble if the page-global helper is available
+    if (typeof stripXbrlPreamble === 'function') rawText = stripXbrlPreamble(rawText);
     if (rawText) {
       el.innerHTML = buildHighlightedSource(rawText, matches || []);
       el.style.display = '';
