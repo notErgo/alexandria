@@ -2,7 +2,7 @@
 Tests for edgar_connector.py v2 overhaul — TDD.
 
 Covers: Finding 1 (accession dedup), Finding 2 (foreign forms + regime routing),
-        Finding 10 (rate-limit backoff).
+        Finding 10 (rate-limit backoff), BTC first-filing-date detection (Step 0).
 """
 import hashlib
 from datetime import date
@@ -21,6 +21,14 @@ def _mock_db(accession_exists=False, report_exists=False):
     db.insert_report.return_value = 1
     db.set_report_parse_quality.return_value = None
     db.update_company_last_edgar.return_value = None
+    # Return empty list so _build_edgar_query falls back to hardcoded _8K_SEARCH_TERMS
+    db.get_search_keywords.return_value = []
+    # metric_keywords: no per-metric phrases seeded in mock
+    db.get_metric_keywords.return_value = []
+    db.get_all_metric_keywords.return_value = []
+    # Default: no btc_first_filing_date stored (triggers keyword-filter fallback)
+    db.get_btc_first_filing_date.return_value = None
+    db.set_btc_first_filing_date.return_value = None
     return db
 
 
@@ -284,3 +292,105 @@ class TestRateLimitBackoff:
         # The backoff sleep value should be >= EDGAR_RETRY_BACKOFF_BASE
         sleep_values = [c.args[0] for c in mock_sleep.call_args_list]
         assert any(v >= EDGAR_RETRY_BACKOFF_BASE for v in sleep_values)
+
+
+# ── BTC first-filing-date detection ──────────────────────────────────────────
+
+class TestBtcFirstFilingDate:
+
+    def _mock_edgar_efts_hit(self, filed_date='2017-09-15'):
+        """Return a minimal EDGAR EFTS response with one hit."""
+        return {
+            'hits': {
+                'hits': [{
+                    '_source': {
+                        'file_date': filed_date,
+                        'entity_name': 'RIOT BLOCKCHAIN INC',
+                        'entity_id': '1167419',
+                    }
+                }]
+            }
+        }
+
+    def test_detect_btc_first_filing_date_returns_iso_date(self):
+        """detect_btc_first_filing_date returns the earliest matching filed date as YYYY-MM-DD."""
+        db = _mock_db()
+        db.get_all_metric_keywords.return_value = [
+            {'phrase': '"bitcoin production"', 'active': 1, 'metric_key': 'production_btc'},
+        ]
+        db.get_btc_first_filing_date = MagicMock(return_value=None)
+        db.set_btc_first_filing_date = MagicMock()
+
+        conn = _connector(db)
+        conn._edgar_request = MagicMock(return_value=self._mock_edgar_efts_hit('2017-09-15'))
+
+        result = conn.detect_btc_first_filing_date('1167419', 'RIOT')
+
+        assert result == '2017-09-15'
+        db.set_btc_first_filing_date.assert_called_once_with('RIOT', '2017-09-15')
+
+    def test_detect_btc_first_filing_date_returns_none_when_no_hits(self):
+        """detect_btc_first_filing_date returns None when EDGAR returns no hits."""
+        db = _mock_db()
+        db.get_all_metric_keywords.return_value = [
+            {'phrase': '"bitcoin mined"', 'active': 1, 'metric_key': 'production_btc'},
+        ]
+        db.get_btc_first_filing_date = MagicMock(return_value=None)
+        db.set_btc_first_filing_date = MagicMock()
+
+        conn = _connector(db)
+        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
+
+        result = conn.detect_btc_first_filing_date('1167419', 'RIOT')
+
+        assert result is None
+        db.set_btc_first_filing_date.assert_not_called()
+
+    def test_detect_btc_first_filing_date_skips_if_already_set(self):
+        """detect_btc_first_filing_date returns stored date without hitting EDGAR."""
+        db = _mock_db()
+        db.get_btc_first_filing_date = MagicMock(return_value='2017-09-15')
+        db.set_btc_first_filing_date = MagicMock()
+
+        conn = _connector(db)
+        conn._edgar_request = MagicMock()
+
+        result = conn.detect_btc_first_filing_date('1167419', 'RIOT')
+
+        assert result == '2017-09-15'
+        conn._edgar_request.assert_not_called()
+
+    def test_fetch_8k_no_q_param_when_btc_first_filing_date_set(self):
+        """fetch_8k_filings omits the q= keyword filter when btc_first_filing_date is set."""
+        db = _mock_db()
+        db.get_btc_first_filing_date = MagicMock(return_value='2017-09-15')
+        db.bump_keyword_hit_counts = MagicMock()
+
+        conn = _connector(db)
+        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
+
+        conn.fetch_8k_filings('1167419', 'RIOT', date(2017, 9, 15))
+
+        call_params = conn._edgar_request.call_args[0][1]
+        assert 'q' not in call_params, (
+            "fetch_8k_filings must NOT include q= keyword filter when btc_first_filing_date is set"
+        )
+
+    def test_fetch_8k_uses_keyword_filter_when_btc_first_filing_date_not_set(self):
+        """fetch_8k_filings uses keyword q= filter when btc_first_filing_date is not set."""
+        db = _mock_db()
+        db.get_btc_first_filing_date = MagicMock(return_value=None)
+        db.bump_keyword_hit_counts = MagicMock()
+        # detect_btc_first_filing_date will be called and also return None (no keywords match)
+        db.get_search_keywords.return_value = []
+        db.set_btc_first_filing_date = MagicMock()
+
+        conn = _connector(db)
+        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
+
+        conn.fetch_8k_filings('0001507605', 'MARA', date(2023, 1, 1))
+
+        call_params = conn._edgar_request.call_args[0][1]
+        assert 'q' in call_params, (
+            "fetch_8k_filings must include q= keyword filter as fallback when btc_first_filing_date not set"
+        )

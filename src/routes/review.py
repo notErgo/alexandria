@@ -126,6 +126,7 @@ def reextract_from_selection(item_id):
             }}), 400
 
         metric = item['metric']
+        ticker = item.get('ticker')
         registry = get_registry()
         patterns = registry.metrics.get(metric, [])
 
@@ -133,12 +134,13 @@ def reextract_from_selection(item_id):
         regex_results = extract_all(selection, patterns, metric)
         regex_best = regex_results[0] if regex_results else None
 
-        # Run LLM on selection
+        # Run LLM on selection — use extract_batch to inject company context + keywords
         session = req_lib.Session()
         llm = LLMInterpreter(session=session, db=db)
         llm_result = None
         if llm.check_connectivity():
-            llm_result = llm.extract(selection, metric)
+            batch = llm.extract_batch(selection, [metric], ticker=ticker)
+            llm_result = batch.get(metric)
 
         candidates = []
         if regex_best:
@@ -187,6 +189,7 @@ def reextract_selection():
         body = request.get_json(silent=True) or {}
         metric = (body.get('metric') or '').strip()
         selection = (body.get('selection') or '').strip()
+        ticker = (body.get('ticker') or None)
 
         if not metric:
             return jsonify({'success': False, 'error': {
@@ -212,7 +215,8 @@ def reextract_selection():
         llm = LLMInterpreter(session=session, db=db)
         llm_result = None
         if llm.check_connectivity():
-            llm_result = llm.extract(selection, metric)
+            batch = llm.extract_batch(selection, [metric], ticker=ticker)
+            llm_result = batch.get(metric)
 
         candidates = []
         if regex_best:

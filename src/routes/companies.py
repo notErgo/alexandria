@@ -8,11 +8,11 @@ from pathlib import Path
 import requests
 from flask import Blueprint, jsonify, request
 
+from config import _VALID_SCRAPER_MODES
+
 log = logging.getLogger('miners.routes.companies')
 
 bp = Blueprint('companies', __name__)
-
-_VALID_SCRAPER_MODES = {'rss', 'index', 'template', 'skip'}
 _VALID_SOURCE_TYPES = {'IR_PRIMARY', 'RSS', 'TEMPLATE', 'EDGAR', 'PRNEWSWIRE', 'GLOBENEWSWIRE'}
 
 
@@ -68,6 +68,8 @@ def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
             return "template mode requires pr_start_year"
     if mode == 'index' and not fields.get('ir_url'):
         return "index mode requires non-empty ir_url"
+    if mode == 'playwright' and not fields.get('ir_url'):
+        return "playwright mode requires non-empty ir_url"
     return None
 
 
@@ -707,3 +709,272 @@ def add_metric_schema():
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
     return jsonify({'success': True, 'data': row}), 201
+
+
+@bp.route('/api/metric_schema/<int:row_id>', methods=['DELETE'])
+def delete_metric_schema(row_id):
+    """Permanently delete a metric_schema row.
+
+    Returns 200 on success, 404 if row not found.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        deleted = db.delete_metric_schema(row_id)
+        if not deleted:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND',
+                'message': f'Metric schema row {row_id} not found',
+            }}), 404
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error deleting metric_schema row %s', row_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<int:row_id>', methods=['PATCH'])
+def update_metric_schema(row_id):
+    """Update active flag, label, or unit for a metric_schema row.
+
+    Body: {active?: 0|1, label?: str, unit?: str}
+    Returns 200 on success, 404 if row not found.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        body = request.get_json(silent=True) or {}
+        active = body.get('active')
+        label = body.get('label')
+        unit = body.get('unit')
+
+        if active is not None:
+            active = int(active)
+        if label is not None:
+            label = str(label).strip()
+            if not label or len(label) > 100:
+                return jsonify({'success': False, 'error': {
+                    'message': 'label must be 1-100 chars'
+                }}), 400
+        if unit is not None:
+            unit = str(unit).strip()
+
+        updated = db.update_metric_schema(row_id, active=active, label=label, unit=unit)
+        if not updated:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND',
+                'message': f'Metric schema row {row_id} not found',
+            }}), 404
+
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error updating metric_schema row %s', row_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+# ── Metric Keywords routes ──────────────────────────────────────────────────
+
+def _metric_key_exists(db, key: str) -> bool:
+    """Return True if the given key exists in metric_schema."""
+    rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+    return any(r['key'] == key for r in rows)
+
+
+def _normalize_phrase(phrase: str) -> str:
+    """Ensure phrase is surrounded by double-quotes (EDGAR exact-match syntax)."""
+    p = phrase.strip()
+    if p.startswith('"') and p.endswith('"'):
+        return p
+    return f'"{p}"'
+
+
+@bp.route('/api/metric_keywords', methods=['GET'])
+def list_all_metric_keywords():
+    """List all metric keywords across all metrics.
+
+    ?all=1 to include inactive rows; default is active only.
+    Returns rows sorted by metric_key then id.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        active_only = request.args.get('all', '0') != '1'
+        rows = db.get_all_metric_keywords(active_only=active_only)
+        return jsonify({'success': True, 'data': {'keywords': rows, 'total': len(rows)}})
+    except Exception:
+        log.error('Error listing all metric keywords', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/keywords', methods=['GET'])
+def list_metric_keywords(metric_key):
+    """List keywords for a specific metric.
+
+    ?all=1 to include inactive rows; default is active only.
+    Returns 404 if metric_key is not in metric_schema.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        if not _metric_key_exists(db, metric_key):
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Unknown metric key: {metric_key}',
+            }}), 404
+        active_only = request.args.get('all', '0') != '1'
+        rows = db.get_metric_keywords(metric_key, active_only=active_only)
+        return jsonify({'success': True, 'data': {
+            'metric_key': metric_key,
+            'keywords': rows,
+            'total': len(rows),
+        }})
+    except Exception:
+        log.error('Error listing metric keywords for %s', metric_key, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+def _parse_bulk_phrases(body: dict) -> list:
+    """Extract a list of phrases from POST body.
+
+    Accepts three input forms:
+    - phrase: str          — single phrase (legacy / single-add)
+    - phrases: list[str]   — explicit array
+    - csv: str             — comma-separated or newline-separated string
+
+    Returns a list of stripped, non-empty strings.  Does NOT normalise quotes
+    (caller does that per-phrase).
+    """
+    if 'phrases' in body:
+        raw = body['phrases']
+        if not isinstance(raw, list):
+            return []
+        return [str(p).strip() for p in raw if str(p).strip()]
+    if 'csv' in body:
+        raw = body['csv']
+        if not isinstance(raw, str):
+            return []
+        # Split on commas or newlines, strip whitespace
+        import re as _re
+        parts = _re.split(r'[,\n]+', raw)
+        return [p.strip() for p in parts if p.strip()]
+    if 'phrase' in body:
+        p = body.get('phrase', '')
+        return [str(p).strip()] if isinstance(p, str) and p.strip() else []
+    return []
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/keywords', methods=['POST'])
+def add_metric_keyword(metric_key):
+    """Add one or more keyword phrases to a specific metric.
+
+    Single add:
+      Body: {phrase: str, exclude_terms?: str}
+      Returns 201 with {id, metric_key, phrase, exclude_terms}.
+
+    Bulk add (phrases array or csv string):
+      Body: {phrases: [str, ...]} or {csv: "phrase1, phrase2"}
+      Returns 201 with {added: int, skipped: int, ids: [int]}.
+      Duplicate phrases are silently skipped (not an error).
+
+    Returns 400 if no valid phrases, 404 if metric unknown.
+    """
+    import sqlite3 as _sqlite3
+    try:
+        from app_globals import get_db
+        db = get_db()
+        if not _metric_key_exists(db, metric_key):
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Unknown metric key: {metric_key}',
+            }}), 404
+        body = request.get_json(silent=True) or {}
+        phrases = _parse_bulk_phrases(body)
+        if not phrases:
+            return jsonify({'success': False, 'error': {
+                'code': 'MISSING_PHRASE', 'message': 'phrase, phrases, or csv is required',
+            }}), 400
+
+        is_single = 'phrase' in body and 'phrases' not in body and 'csv' not in body
+        exclude_terms = str(body.get('exclude_terms', '')).strip() if is_single else ''
+
+        added, skipped, ids = 0, 0, []
+        for raw_phrase in phrases:
+            phrase = _normalize_phrase(raw_phrase)
+            try:
+                kw_id = db.add_metric_keyword(metric_key, phrase, exclude_terms=exclude_terms)
+                added += 1
+                ids.append(kw_id)
+            except _sqlite3.IntegrityError:
+                skipped += 1
+
+        if is_single and added == 1:
+            return jsonify({'success': True, 'data': {
+                'id': ids[0], 'metric_key': metric_key, 'phrase': _normalize_phrase(phrases[0]),
+                'exclude_terms': exclude_terms,
+            }}), 201
+
+        if added == 0 and skipped > 0:
+            return jsonify({'success': False, 'error': {
+                'code': 'DUPLICATE', 'message': 'All phrases already exist for this metric',
+            }}), 409
+
+        return jsonify({'success': True, 'data': {
+            'added': added, 'skipped': skipped, 'ids': ids, 'metric_key': metric_key,
+        }}), 201
+    except Exception:
+        log.error('Error adding metric keyword for %s', metric_key, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/keywords/<int:kw_id>', methods=['PATCH'])
+def update_metric_keyword(metric_key, kw_id):
+    """Update active flag, phrase, and/or exclude_terms for a metric keyword.
+
+    Body: {active?: 0|1, phrase?: str, exclude_terms?: str}
+    Returns 200, 400, or 404.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        body = request.get_json(silent=True) or {}
+        active = body.get('active')
+        phrase = body.get('phrase')
+        exclude_terms = body.get('exclude_terms')
+        if active is None and phrase is None and exclude_terms is None:
+            return jsonify({'success': False, 'error': {
+                'message': 'Provide active, phrase, or exclude_terms to update',
+            }}), 400
+        if active is not None:
+            active = int(active)
+        if phrase is not None:
+            phrase = _normalize_phrase(phrase)
+        if exclude_terms is not None:
+            exclude_terms = str(exclude_terms).strip()
+        updated = db.update_metric_keyword(
+            kw_id, active=active, phrase=phrase, exclude_terms=exclude_terms,
+        )
+        if not updated:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Keyword {kw_id} not found',
+            }}), 404
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error updating metric keyword %s', kw_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/keywords/<int:kw_id>', methods=['DELETE'])
+def delete_metric_keyword(metric_key, kw_id):
+    """Permanently delete a metric keyword.
+
+    Returns 200 on success, 404 if not found.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        deleted = db.delete_metric_keyword(kw_id)
+        if not deleted:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Keyword {kw_id} not found',
+            }}), 404
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error deleting metric keyword %s', kw_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

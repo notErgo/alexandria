@@ -101,6 +101,8 @@ OffChain/miners/
 | v5 | asset_manifest, document_chunks, data_points.chunk_id, reports.parse_quality |
 | v6 | (see migration history) |
 | v7 | companies: sector, scraper_mode, scraper_issues_log, scraper_status, last_scrape_at, last_scrape_error, probe_completed_at; asset_manifest.mutation_log; regime_config; metric_schema; scrape_queue |
+| v29 | companies.btc_first_filing_date (EDGAR first-filing anchor date) |
+| v30 | metric_keywords table (per-metric anchor phrases); search_keywords retired (emptied) |
 
 ## Data Flow (v3 — two-stage pipeline + optional ingest chain)
 
@@ -314,6 +316,23 @@ Ops page (`/ops?tab=<tab>`) → `ops.html` — 4-tab unified interface.
 - `static/css/style.css` — `.doc-panel`, `.doc-panel-body`, `.doc-source-view`, `.doc-hl` classes
 
 Initial manifest scan after deployment: `POST http://localhost:5004/api/manifest/scan`
+
+## SSOT Registry (Non-Negotiable)
+
+| Concept | SSOT | Purpose |
+|---|---|---|
+| Metrics | `metric_schema` DB table | What to extract; populates all UI dropdowns, LLM extraction prompts |
+| Keywords | `metric_keywords` DB table (v30) | Per-metric EDGAR anchor phrases; used for first-filing detection and LLM extraction context. `search_keywords` is retired (kept empty for compat). |
+| BTC activity start | `companies.btc_first_filing_date` | Derived from keyword scan; drives EDGAR ingestion window and LLM crawl context |
+| Extraction patterns | `config/patterns/<key>.json` | Regex patterns keyed by metric |
+| Thresholds | `metric_rules` DB table | Agreement and outlier thresholds per metric |
+
+Rules:
+- No template, JS file, or Python module may contain a hardcoded list of metric keys.
+- All metric lists must be fetched from `GET /api/metric_schema` at runtime.
+- EDGAR 8-K ingestion must NOT filter by keyword content — use `btc_first_filing_date` as `since_date`.
+- Keywords are not metrics. Do not conflate them.
+- `detect_btc_first_filing_date()` is called once per company; result cached in `companies.btc_first_filing_date`.
 
 ## Running Tests
 

@@ -123,7 +123,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   </div>
   <span style="margin-left:auto;display:flex;gap:0.4rem;align-items:center">
     <button id="help-btn" class="btn btn-sm btn-secondary" onclick="toggleHelp()" title="Pipeline guide">?</button>
-    <button id="dev-mode-btn" class="btn btn-sm btn-secondary" onclick="toggleDevMode()" title="Toggle Dev Mode (Ctrl+Shift+D)">Dev</button>
+    <button id="dev-mode-btn" class="btn btn-sm btn-secondary" onclick="toggleDevMode()" title="Cycle path filter: All / Critical / +Optional (Ctrl+Shift+D)">Dev</button>
   </span>
 </div>
 
@@ -133,7 +133,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   <button class="ops-tab" data-pane="ingest" data-ui-id="2.0">Ingest</button>
   <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
   <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
-  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Data</button>
+  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Raw Data</button>
   <button class="ops-tab" data-pane="interrogate" data-ui-id="6.0">Interrogate</button>
 </div>
 
@@ -161,9 +161,10 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 <!-- ── Track Config pane ──────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-config" data-ui-id="1.1" data-spec-id="1.1">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies</button>
-    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.3">Settings</button>
-    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.4">Crawl Setup</button>
+    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="metrics" onclick="activatePipelineSubTab('config','metrics')" data-ui-id="1.5">Metrics <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.3">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.4">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Companies (1.1) -->
@@ -176,7 +177,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   </div>
 
   <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="1.1.4">
-    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">2.1.5</span>Add Company</h3>
+    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">1.1.4</span>Add Company</h3>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
       <div>
         <label style="font-size:0.75rem;display:block">Ticker *</label>
@@ -258,7 +259,37 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     </div>
   </div>
 
-  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem">
+  <div class="card" data-spec-id="1.1.6" style="margin-bottom:0.7rem"><span data-spec-id="1.2.2" style="display:none"></span>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:0.9rem">
+        <span class="spec-id">1.1.6</span>Search Keywords <span class="wf-path-badge wf-critical">Critical</span>
+      </h3>
+      <span style="font-size:0.76rem;color:var(--theme-text-muted)">Active keywords gate EDGAR 8-K discovery and are injected into every LLM prompt.</span>
+    </div>
+    <table id="kw-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:0.6rem">
+      <thead>
+        <tr style="border-bottom:1px solid var(--theme-border);text-align:left">
+          <th style="padding:4px 8px;font-weight:600">Phrase</th>
+          <th style="padding:4px 8px;font-weight:600">Status</th>
+          <th style="padding:4px 8px;font-weight:600">Notes</th>
+          <th style="padding:4px 8px;font-weight:600">Added</th>
+          <th style="padding:4px 8px;font-weight:600;text-align:right">Searches</th>
+          <th style="padding:4px 8px"></th>
+        </tr>
+      </thead>
+      <tbody id="kw-tbody"></tbody>
+    </table>
+    <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+      <input id="kw-phrase" type="text" placeholder="new phrase (quotes added automatically)" style="width:280px;font-size:0.82rem">
+      <input id="kw-notes" type="text" placeholder="notes (optional)" style="width:160px;font-size:0.82rem">
+      <button class="btn btn-sm btn-primary" onclick="addKeyword()">Add</button>
+    </div>
+    <div id="kw-error" style="font-size:0.76rem;color:var(--theme-danger,#c0392b);margin-top:0.3rem"></div>
+  </div>
+
+  <details class="offpath-details" id="companies-governance-details">
+    <summary><span class="offpath-label">Scraper Governance</span> <span class="offpath-desc">probe sources, apply modes</span></summary>
+  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem;margin-top:0.75rem">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
       <h3 style="margin:0;font-size:0.9rem">
         <span class="spec-id">1.1.5</span>Scraper Governance Probe
@@ -276,6 +307,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       Governance not loaded yet.
     </div>
   </div>
+  </details><!-- /companies-governance-details -->
 
   <table id="companies-table" data-ui-id="1.1.1" data-spec-id="1.1.1">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
@@ -300,7 +332,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   <!-- Regime editor: deprecated — routes kept, UI hidden -->
   <div id="regime-editor" style="display:none" class="card" data-ui-id="1.1.2" data-spec-id="1.1.2">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">2.1.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">1.1.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
     </div>
     <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
@@ -329,8 +361,11 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     <div id="rw-error" style="color:var(--theme-danger);font-size:0.78rem;margin-top:0.3rem"></div>
   </div>
 
+  <details class="offpath-details" id="companies-ops-details">
+    <summary><span class="offpath-label">Operations &amp; Maintenance</span> <span class="offpath-desc">scrape queue, danger zone</span></summary>
+
   <!-- Scrape queue -->
-  <div style="margin-top:1.5rem" data-spec-id="1.1.2">
+  <div style="margin-top:1rem" data-spec-id="1.1.2">
     <h2 style="font-size:1rem;margin-bottom:0.5rem"><span class="spec-id">1.1.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
     <table id="scrape-table" data-ui-id="1.1.2">
       <thead>
@@ -395,8 +430,82 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       </div>
     </div>
   </div>
+  </details><!-- /companies-ops-details -->
   </div><!-- /spane-config-companies -->
 
+
+  <!-- Sub-pane: Metrics (1.5) — SSOT for all tracked metrics -->
+  <div class="pipeline-sub-pane" id="spane-config-metrics" data-ui-id="1.5" data-spec-id="1.5">
+    <h2 style="font-size:1rem;margin:0 0 0.25rem"><span class="spec-id">1.5</span>Metric Schema</h2>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
+      Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt, all UI dropdowns, and the pattern editor.
+      Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it.
+    </p>
+
+    <!-- 1.5.1 Metrics + Keywords — single consolidated table -->
+    <div class="card" data-spec-id="1.5.1">
+      <div class="section-header-row" style="margin-bottom:0.75rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.5.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
+        <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
+      </div>
+
+      <!-- Bulk paste -->
+      <div style="margin-bottom:1rem">
+        <div style="font-size:0.73rem;color:var(--theme-text-muted);margin-bottom:6px;line-height:1.6">
+          Paste from spreadsheet &mdash; <strong>Key&nbsp;&nbsp;Label&nbsp;&nbsp;Unit&nbsp;&nbsp;Pattern&nbsp;&nbsp;Keywords(pipe-separated)</strong>.
+          Creates metric if missing, adds all pipe-separated keywords.
+          Or use keyword-only format: <code style="font-size:0.71rem">metric_key, phrase[, exclude_terms]</code>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start">
+          <textarea id="kw-bulk-paste" rows="3"
+            placeholder="Key&#9;Label&#9;Unit&#9;Pattern&#9;Keywords&#10;production_btc&#9;Production&#9;BTC&#9;&#9;bitcoin mined|btc produced|self-mined"
+            style="flex:1;font-family:monospace;font-size:0.78rem;padding:4px 6px;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text)"></textarea>
+          <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
+            <button class="btn btn-sm btn-primary" onclick="submitBulkKeywords()" style="white-space:nowrap">Add All</button>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('kw-bulk-paste').value=''" style="white-space:nowrap">Clear</button>
+          </div>
+        </div>
+        <div id="kw-bulk-status" style="font-size:0.75rem;margin-top:4px;display:none"></div>
+      </div>
+
+      <!-- Combined table -->
+      <table id="metric-schema-table" style="width:100%;font-size:0.82rem;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--theme-border)">
+            <th style="text-align:left;padding:3px 6px;white-space:nowrap">Key</th>
+            <th style="text-align:left;padding:3px 6px">Label</th>
+            <th style="text-align:left;padding:3px 6px;width:70px">Unit</th>
+            <th style="text-align:left;padding:3px 6px">Keywords</th>
+            <th style="text-align:center;padding:3px 4px;width:50px">Active</th>
+            <th style="text-align:left;padding:3px 4px;width:60px"></th>
+          </tr>
+        </thead>
+        <tbody id="metric-schema-tbody">
+          <tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--theme-border)">
+        <h4 style="font-size:0.85rem;margin:0 0 0.5rem">Add metric</h4>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Key <span style="color:var(--theme-text-muted)">(no spaces)</span></label>
+            <input id="ms-add-key" type="text" placeholder="my_metric" style="font-size:0.82rem;padding:3px 6px;width:140px">
+          </div>
+          <div>
+            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Label</label>
+            <input id="ms-add-label" type="text" placeholder="My Metric" style="font-size:0.82rem;padding:3px 6px;width:160px">
+          </div>
+          <div>
+            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Unit</label>
+            <input id="ms-add-unit" type="text" placeholder="BTC" style="font-size:0.82rem;padding:3px 6px;width:80px">
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="addMetricSchema()">Add</button>
+        </div>
+        <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
+      </div>
+    </div>
+  </div><!-- /spane-config-metrics -->
 
   <!-- Sub-pane: Settings (1.3) -->
   <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.3" data-spec-id="1.3">
@@ -408,13 +517,13 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     <div id="settings-groups"></div>
 
     <!-- Metric Rules (1.3.R) — tune after first extraction cycle -->
-    <div class="card" style="margin-top:1.5rem" data-ui-id="1.3.R" data-spec-id="1.3.R">
+    <div class="card" style="margin-top:1.5rem" data-ui-id="1.3.R" data-spec-id="1.3.R" data-spec-id-alias="1.2"><span data-spec-id="1.2" style="display:none"></span>
       <div class="section-header-row" style="margin-bottom:0.5rem">
         <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
         <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
       </div>
-      <table id="rules-table" style="width:100%;font-size:0.82rem">
+      <table id="rules-table" data-spec-id="1.2.1" style="width:100%;font-size:0.82rem">
         <thead>
           <tr>
             <th data-sort="metric" style="text-align:left">Metric</th>
@@ -437,6 +546,13 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         Valid Range: values outside min/max are discarded before confidence scoring.
         Defaults are safe — only adjust after observing real extraction results.
       </p>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
+      <p style="margin:0;font-size:0.85rem;color:var(--theme-text-secondary)">
+        Prompt preview has moved to <strong>Interpret &rarr; Extract</strong> — review and verify the assembled LLM prompt immediately before running extraction.
+      </p>
+      <button class="btn btn-sm btn-secondary" style="margin-top:0.5rem" onclick="activateTab('interpret');activatePipelineSubTab('interpret','extract')">Go to Interpret</button>
     </div>
   </div><!-- /spane-config-settings -->
 
@@ -475,15 +591,18 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <li>Run LLM + regex extraction on all unextracted documents</li>
     </ol>
     <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0 0 0.65rem;line-height:1.4">
-      LLM-directed crawl (Step 3 below) is a separate manual step and is not included here —
-      it navigates IR pages autonomously and should be run on-demand before this pipeline if you want
-      crawl-sourced documents included.
+      LLM-directed crawl is included when the checkbox below is ticked — it runs after EDGAR and IR ingest, before extraction.
+      Leave it unchecked for faster runs when crawl-sourced documents are not needed.
       After this pipeline completes, review disagreements in the <strong>Review</strong> tab.
     </p>
     <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
         <input id="pipeline-include-ir" type="checkbox" checked>
         Include IR (live scrape + archive ingest)
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-include-crawl" type="checkbox">
+        Include LLM crawl (slow — navigates IR + wire services autonomously)
       </label>
     </div>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
@@ -492,13 +611,13 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <span id="pipeline-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
     </div>
     <div id="pipeline-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.35rem"></div>
-    <div id="pipeline-log" class="acq-log" style="display:none;max-height:200px;margin-top:0.5rem"></div>
+    <div id="pipeline-log" class="acq-log" style="display:none;max-height:400px;margin-top:0.5rem"></div>
   </div>
 
   <!-- Shared ticker selector — selection applies to EDGAR fetch and LLM crawl -->
-  <div style="margin-bottom:1rem">
+  <div data-spec-id="2.2.1" style="margin-bottom:1rem">
     <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Select companies</div>
-    <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+    <div id="crawl-ticker-selector" data-spec-id="1.4.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
     <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">Selection applies to EDGAR fetch and LLM crawl. IR scrape and archive ingest always run for all configured companies.</div>
   </div>
 
@@ -522,10 +641,13 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     </div>
   </div>
 
+  <details class="offpath-details" id="ingest-optional-sources">
+    <summary><span class="offpath-label">Optional Sources</span> <span class="offpath-desc">IR press releases, LLM-directed crawl</span></summary>
+
   <!-- Step 2 — IR Press Releases [OPTIONAL] -->
-  <div class="card" style="margin-bottom:1rem" data-ui-id="2.1.1" data-spec-id="2.1.1">
+  <div class="card" style="margin-bottom:1rem;margin-top:0.75rem" data-ui-id="2.1.1" data-spec-id="2.1.1">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2</span>IR Press Releases &amp; Archive</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.1.1</span>IR Press Releases &amp; Archive</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
@@ -534,10 +656,10 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <strong>Local Archive</strong> ingests pre-downloaded PDFs and HTML files from the archive folder.
       Monthly press releases often carry the most precise per-month production figures.
     </p>
-    <div class="acq-actions">
+    <div class="acq-actions" data-spec-id="2.1.4">
       <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
       <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Ingest Local Archive</button>
-      <button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button>
+      <span data-spec-id="2.1.5"><button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button></span>
       <button class="btn btn-sm btn-secondary" onclick="loadIngest()">Refresh</button>
     </div>
   </div>
@@ -551,7 +673,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   <!-- Step 3 — LLM-Directed Crawl [OPTIONAL] -->
   <div class="card" style="margin-bottom:1rem" data-ui-id="2.2" data-spec-id="2.2">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>LLM-Directed Crawl</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2</span>LLM-Directed Crawl</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.5">
@@ -577,7 +699,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         </div>
       </div>
     </div>
-    <div style="margin-bottom:0.75rem">
+    <div data-spec-id="1.4.3" style="margin-bottom:0.75rem">
       <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">
         Crawl prompt (editable before launch — select a single ticker above to load its custom prompt)
         <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
@@ -599,11 +721,15 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-bg-tertiary);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
     </div>
   </div>
+  </details><!-- /ingest-optional-sources -->
+
+  <details class="offpath-details" id="ingest-pipeline-health">
+    <summary><span class="offpath-label">Pipeline Health</span> <span class="offpath-desc">document counts, extraction backlog, scraper config</span></summary>
 
   <!-- Step 4 — Ingest Status [OPTIONAL] -->
   <div class="card" data-ui-id="2.3" data-spec-id="2.3">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.4</span>Ingest Status</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>Ingest Status</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
       <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()" style="margin-left:auto">Refresh</button>
       <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
@@ -612,7 +738,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       Document counts, extraction backlog, and scraper config health per company.
       Check here if extraction results are sparse — grey cells in the Data Explorer mean no document was ingested for that period.
     </p>
-    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
+    <div id="pipe-summary" data-spec-id="2.3.1" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
     <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
     <div style="overflow-x:auto">
       <table id="pipeline-table" data-ui-id="2.3.2" data-spec-id="2.3.2">
@@ -635,18 +761,45 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     </div>
   </div>
 
+  </details><!-- /ingest-pipeline-health -->
+
   <span id="ingest-msg" style="font-size:0.8rem;color:var(--theme-text-muted);display:block;margin-top:0.75rem"></span>
 </div><!-- /pane-ingest -->
 
 <!-- ── Interpret pane ──────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-interpret" data-ui-id="3.0" data-spec-id="3.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="3.1">Extract</button>
-    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="3.2">QC</button>
+    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="3.1">Extract <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="3.2">QC <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Extract (3.1) -->
   <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="3.1" data-spec-id="3.1">
+
+    <!-- Prompt preview — review before running extraction -->
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.3.P" data-spec-id="1.3.P">
+      <div class="section-header-row" style="margin-bottom:0.5rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.P</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Assembled prompt the LLM receives — verify before running extraction</span>
+        <button class="btn btn-sm btn-secondary" onclick="loadPromptPreview()" style="margin-left:auto">Refresh</button>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600">Ticker hint</label>
+        <select id="prompt-preview-ticker" style="font-size:0.82rem;padding:0.15rem 0.3rem">
+          <option value="">(none)</option>
+        </select>
+        <span style="font-size:0.76rem;color:var(--theme-text-muted)">Select a ticker to inject its company context hint.</span>
+      </div>
+      <textarea id="prompt-preview-text" rows="14" readonly
+        style="width:100%;font-family:ui-monospace,monospace;font-size:0.72rem;line-height:1.5;resize:vertical;background:var(--theme-bg-tertiary);border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem;color:var(--theme-text-secondary)"
+        placeholder="Click Refresh to render the current prompt…"></textarea>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.4rem">
+        Active keywords from Track Config &rarr; Companies are injected automatically.
+        To edit per-metric prompt overrides, use Track Config &rarr; Settings.
+        Override + save + run audit trail are planned features.
+      </p>
+    </div>
+
     <div class="acq-section-label">LLM Extraction</div>
     <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
       <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
@@ -697,8 +850,8 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 <!-- ── Data pane ───────────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-data" data-ui-id="5.0" data-spec-id="5.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1">Explorer</button>
-    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2">Registry</button>
+    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Explorer (5.1) -->
@@ -749,7 +902,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       </div>
     </div>
     <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="5.1.3" data-spec-id="5.1.3">
-      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">5.1.3</span><span id="cell-detail-header-text">Cell Detail</span> <span class="source-badge source-badge-data">DATA</span></div>
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">5.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
       <div class="cell-actions" id="cell-actions" data-spec-id="5.1.5"></div>
       <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="5.1.4" data-spec-id="5.1.4">
@@ -821,15 +974,19 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
     </tbody>
   </table>
+  <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-sm btn-secondary" onclick="backfillRawHtml()" title="Populate raw_html for archive_html reports ingested before schema v24 (raw_html column). Reads original files from source_url on disk. Idempotent.">Backfill raw HTML (pre-v24 archives)</button>
+    <span id="backfill-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+  </div>
   </div><!-- /spane-data-registry -->
 </div><!-- /pane-data -->
 
 <!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue</button>
-    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns</button>
-    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight</button>
+    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns <span class="wf-path-badge wf-later">Later</span></button>
+    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-later">Later</span></button>
   </div>
 
   <!-- Sub-pane: Queue (4.1) -->
@@ -926,9 +1083,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         <div>
           <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
           <select id="gen-pattern-metric" style="font-size:0.85rem">
-            <option value="production_btc">Production BTC</option>
-            <option value="hodl_btc">Holdings BTC</option>
-            <option value="sold_btc">Sold BTC</option>
+            <option value="">Loading…</option>
           </select>
         </div>
         <div style="flex:1;min-width:280px">
@@ -961,9 +1116,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         <div>
           <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
           <select id="add-pattern-metric" style="font-size:0.85rem">
-            <option value="production_btc">Production BTC</option>
-            <option value="hodl_btc">Holdings BTC</option>
-            <option value="sold_btc">Sold BTC</option>
+            <option value="">Loading…</option>
           </select>
         </div>
         <div style="flex:1;min-width:260px">
@@ -990,9 +1143,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         <div>
           <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
           <select id="test-pattern-metric" style="font-size:0.85rem">
-            <option value="production_btc">Production BTC</option>
-            <option value="hodl_btc">Holdings BTC</option>
-            <option value="sold_btc">Sold BTC</option>
+            <option value="">Loading…</option>
           </select>
         </div>
         <button class="btn btn-sm btn-secondary" onclick="runPatternTest()">Test</button>
@@ -1311,6 +1462,107 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+// ── Dev mode / path filter ───────────────────────────────────────────────────
+//
+// SSOT: ui_spec.json provides the authoritative path classification (critical /
+// optional / later / n/a) for every component. On init, each [data-spec-id] and
+// [data-ui-id] element is stamped with a data-path attribute from the spec;
+// CSS body classes do the actual filtering.
+//
+// Cycle on each Dev button click (or Ctrl+Shift+D):
+//   'all'               — show everything, spec-ids visible, tooltips active
+//   'critical'          — critical path only; tooltips suppressed
+//   'critical+optional' — critical + optional; tooltips suppressed
+
+const _DEV_STATES = ['all', 'critical', 'critical+optional'];
+const _DEV_LABELS  = { 'all': 'Dev', 'critical': 'Critical', 'critical+optional': '+Optional' };
+const _DEV_BODY_CLASSES = {
+  'all':               [],
+  'critical':          ['path-filter-critical'],
+  'critical+optional': ['path-filter-critical-optional'],
+};
+let _devPathState = 'all';
+
+let _uiSpecPathMap = null;
+
+async function _loadUiSpecPaths() {
+  if (_uiSpecPathMap) return _uiSpecPathMap;
+  try {
+    const resp = await fetch('/static/data/ui_spec.json');
+    const spec  = await resp.json();
+    _uiSpecPathMap = {};
+    (spec.components || []).forEach(function(c) {
+      if (c.id && c.path && c.path !== 'n/a') _uiSpecPathMap[c.id] = c.path;
+    });
+  } catch (_e) { _uiSpecPathMap = {}; }
+  return _uiSpecPathMap;
+}
+
+async function _applyDataPaths() {
+  const pathMap = await _loadUiSpecPaths();
+  ['data-spec-id', 'data-ui-id'].forEach(function(attr) {
+    document.querySelectorAll('[' + attr + ']').forEach(function(el) {
+      const path = pathMap[el.getAttribute(attr)];
+      if (path) el.setAttribute('data-path', path);
+    });
+  });
+}
+
+// Save/restore native browser tooltips (title attributes) when suppressing them.
+const _titleCache = new Map();
+
+function _suppressTitles() {
+  document.querySelectorAll('[title]').forEach(function(el) {
+    if (!_titleCache.has(el)) _titleCache.set(el, el.getAttribute('title'));
+    el.removeAttribute('title');
+  });
+}
+
+function _restoreTitles() {
+  _titleCache.forEach(function(val, el) {
+    if (document.contains(el)) el.setAttribute('title', val);
+  });
+  _titleCache.clear();
+}
+
+function _applyDevState() {
+  const body    = document.body;
+  const btn     = document.getElementById('dev-mode-btn');
+  const isDevOn = _devPathState !== 'all';
+
+  body.classList.remove('path-filter-critical', 'path-filter-critical-optional', 'dev-no-tips');
+  (_DEV_BODY_CLASSES[_devPathState] || []).forEach(function(c) { body.classList.add(c); });
+  if (isDevOn) body.classList.add('dev-no-tips');
+
+  if (isDevOn) { _suppressTitles(); } else { _restoreTitles(); }
+
+  if (btn) {
+    btn.textContent = _DEV_LABELS[_devPathState] || 'Dev';
+    btn.classList.toggle('path-active', isDevOn);
+  }
+
+  try { localStorage.setItem('dev_path_state', _devPathState); } catch (_e) {}
+}
+
+function toggleDevMode() {
+  const idx = _DEV_STATES.indexOf(_devPathState);
+  _devPathState = _DEV_STATES[(idx + 1) % _DEV_STATES.length];
+  _applyDevState();
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.shiftKey && e.key === 'D') { e.preventDefault(); toggleDevMode(); }
+});
+
+(async function _initDevMode() {
+  await _applyDataPaths();
+  try {
+    const saved = localStorage.getItem('dev_path_state');
+    if (_DEV_STATES.includes(saved)) _devPathState = saved;
+  } catch (_e) {}
+  _applyDevState();
+})();
+
 // ── Tab routing ─────────────────────────────────────────────────────────────
 const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate'];
 const TAB_ALIASES = {
@@ -1325,6 +1577,11 @@ function activateTab(name) {
     name = TAB_ALIASES[name] || 'config';
   }
   if (!VALID_TABS.includes(name)) name = 'config';
+  // Raw Data tab navigates to the dedicated miner-data page
+  if (name === 'data') {
+    window.location.href = '/miner-data';
+    return;
+  }
   if (_activeTab === name) return;
   _activeTab = name;
   document.querySelectorAll('.ops-tab').forEach(function(b) {
@@ -1342,6 +1599,7 @@ function activateTab(name) {
   if (name === 'config') {
     if (!_companiesLoaded) loadCompanies();
     loadSettings();
+    loadKeywords();
   }
   if (name === 'data') {
     if (!_registryLoaded) loadRegistry();
@@ -1352,7 +1610,7 @@ function activateTab(name) {
   if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); }
 
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
-  if (name === 'interpret') { loadOllamaModels(); _loadQCTable(); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); _loadQCTable(); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -1366,9 +1624,10 @@ function activatePipelineSubTab(pane, name) {
     p.classList.toggle('active', p.id === 'spane-' + pane + '-' + name);
   });
   // Lazy-load on sub-tab activation
+  if (pane === 'config' && name === 'metrics') { loadMetricSchemaTable(); loadAllKeywordsTable(); }
   if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
-  if (pane === 'review' && name === 'patterns') loadPatterns();
-  if (pane === 'interpret' && name === 'extract') loadOllamaModels();
+  if (pane === 'review' && name === 'patterns') { loadPatterns(); loadPatternMetricSelects(); }
+  if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); }
   if (pane === 'interpret' && name === 'qc') _loadQCTable();
 }
 
@@ -1672,12 +1931,12 @@ async function _pollExtractionRun(taskId, ticker) {
   }, 1000);
 }
 
-async function loadOllamaModels() {
-  const sel = document.getElementById('extract-model');
+// Shared model loader — reads ollama_model config key as the SSOT default.
+// Sorts: saved config model first, then preferred fallbacks, then alpha.
+async function populateOllamaModelSelect(selId) {
+  const sel = document.getElementById(selId);
   if (!sel) return;
   try {
-    // Query Ollama directly from the browser — no Flask proxy, no timeout delay.
-    // Falls back to the backend endpoint if CORS blocks the direct call.
     let models = [];
     try {
       const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
@@ -1690,7 +1949,6 @@ async function loadOllamaModels() {
       const d = await fallback.json();
       models = (d.data?.models || []).map(function(m) { return m.name; });
     }
-    // Read saved model from config — same key used by backend extraction and crawl.
     let active = '';
     try {
       const cfgResp = await fetch('/api/config', { cache: 'no-store' });
@@ -1702,9 +1960,6 @@ async function loadOllamaModels() {
       sel.innerHTML = '<option value="">No models found</option>';
       return;
     }
-    // Sort: saved config model first, then preferred fallbacks, then alpha.
-    // This ensures the correct model is pre-selected even when the exact name
-    // doesn't appear first in the Ollama model list.
     const preferred = ['qwen3.5:9b', 'qwen3.5:27b'];
     models.sort(function(a, b) {
       if (a === active) return -1;
@@ -1721,6 +1976,10 @@ async function loadOllamaModels() {
   } catch (_err) {
     sel.innerHTML = '<option value="">Could not load models</option>';
   }
+}
+
+async function loadOllamaModels() {
+  await populateOllamaModelSelect('extract-model');
 }
 
 async function saveOllamaModel(modelName) {
@@ -2509,6 +2768,83 @@ async function submitBulkCompanies() {
   }
 }
 
+// ── Search Keywords (1.1.6) ──────────────────────────────────────────────────
+
+async function loadKeywords() {
+  const tbody = document.getElementById('kw-tbody');
+  if (!tbody) return;
+  try {
+    const resp = await fetch('/api/keywords?all=1', { cache: 'no-store' });
+    const body = await resp.json();
+    if (!body.success) { tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">Error loading keywords.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    for (const kw of body.data.keywords) {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--theme-border)';
+      const added = kw.created_at ? kw.created_at.slice(0, 10) : '';
+      const statusBadge = kw.active
+        ? '<span style="font-size:0.72rem;padding:1px 6px;border-radius:10px;background:var(--theme-success-muted,#d4edda);color:var(--theme-success,#155724)">active</span>'
+        : '<span style="font-size:0.72rem;padding:1px 6px;border-radius:10px;background:var(--theme-bg-muted,#f5f5f5);color:var(--theme-text-muted)">inactive</span>';
+      tr.innerHTML = `
+        <td style="padding:5px 8px;font-family:monospace">${kw.phrase}</td>
+        <td style="padding:5px 8px">${statusBadge}</td>
+        <td style="padding:5px 8px;color:var(--theme-text-muted);font-size:0.78rem">${kw.notes || ''}</td>
+        <td style="padding:5px 8px;color:var(--theme-text-muted);font-size:0.78rem;white-space:nowrap">${added}</td>
+        <td style="padding:5px 8px;text-align:right;color:var(--theme-text-muted);font-size:0.78rem">${kw.hit_count ?? 0}</td>
+        <td style="padding:5px 8px;white-space:nowrap">
+          <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px" onclick="toggleKeyword(${kw.id}, ${kw.active ? 0 : 1})">${kw.active ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 7px;color:var(--theme-danger,#c0392b);border-color:var(--theme-danger,#c0392b)" onclick="deleteKeyword(${kw.id})">Delete</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+    if (!body.data.keywords.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">No keywords defined.</td></tr>';
+    }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">Error loading keywords.</td></tr>';
+  }
+}
+
+async function addKeyword() {
+  const phrase = document.getElementById('kw-phrase').value.trim();
+  const notes  = document.getElementById('kw-notes').value.trim();
+  const errEl  = document.getElementById('kw-error');
+  errEl.textContent = '';
+  if (!phrase) { errEl.textContent = 'Phrase is required.'; return; }
+  try {
+    const resp = await fetch('/api/keywords', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phrase, notes }),
+    });
+    const body = await resp.json();
+    if (!body.success) { errEl.textContent = body.error?.message || 'Error adding keyword.'; return; }
+    document.getElementById('kw-phrase').value = '';
+    document.getElementById('kw-notes').value = '';
+    loadKeywords();
+  } catch (e) {
+    errEl.textContent = 'Network error.';
+  }
+}
+
+async function toggleKeyword(id, active) {
+  try {
+    await fetch(`/api/keywords/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    });
+    loadKeywords();
+  } catch (e) { /* silent */ }
+}
+
+async function deleteKeyword(id) {
+  try {
+    await fetch(`/api/keywords/${id}`, { method: 'DELETE' });
+    loadKeywords();
+  } catch (e) { /* silent */ }
+}
+
 async function submitAddCompany() {
   const ticker = document.getElementById('ac-ticker').value.trim().toUpperCase();
   const name   = document.getElementById('ac-name').value.trim();
@@ -2682,6 +3018,22 @@ async function loadRegistry() {
       + '<td style="font-size:0.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="' + escapeAttr(item.source_path || '') + '">' + escapeHtml((item.source_path || item.source_url || '').split('/').slice(-1)[0]) + '</td>'
       + '</tr>';
   }).join('');
+}
+
+async function backfillRawHtml() {
+  const msg = document.getElementById('backfill-msg');
+  if (msg) msg.textContent = 'Running backfill…';
+  try {
+    const resp = await fetch('/api/ingest/backfill_raw_html', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    const r = data.data || {};
+    if (msg) msg.textContent = 'Done — backfilled: ' + (r.backfilled || 0)
+      + ', skipped (missing): ' + (r.skipped_missing || 0)
+      + ', errors: ' + (r.errors || 0);
+  } catch(err) {
+    if (msg) msg.textContent = 'Error: ' + String(err);
+  }
 }
 
 // ── Explorer tab ─────────────────────────────────────────────────────────────
@@ -3331,6 +3683,409 @@ function highlightReviewRow(rows) {
   if (rows[_reviewIdx]) rows[_reviewIdx].scrollIntoView({ block: 'nearest' });
 }
 
+// ── Metric Schema (1.3.M) — SSOT management ──────────────────────────────────
+
+async function loadMetricSchemaTable() {
+  const tbody = document.getElementById('metric-schema-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>';
+  try {
+    const [mResp, kResp] = await Promise.all([
+      fetch('/api/metric_schema?sector=BTC-miners'),
+      fetch('/api/metric_keywords?all=1'),
+    ]);
+    if (!mResp.ok) throw new Error('HTTP ' + mResp.status);
+    if (!kResp.ok) throw new Error('HTTP ' + kResp.status);
+    const mBody = await mResp.json();
+    const kBody = await kResp.json();
+    if (!mBody.success) throw new Error(mBody.error?.message || 'Failed');
+    const metrics = mBody.data || [];
+    const allKws = kBody.success ? (kBody.data.keywords || []) : [];
+
+    // Index keywords by metric_key
+    const kwsByMetric = {};
+    for (const kw of allKws) {
+      if (!kwsByMetric[kw.metric_key]) kwsByMetric[kw.metric_key] = [];
+      kwsByMetric[kw.metric_key].push(kw);
+    }
+
+    if (!metrics.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">No metrics defined.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = metrics.map(function(m) {
+      const activeChecked = m.active ? 'checked' : '';
+      const analystBadge = m.analyst_defined
+        ? ' <span style="font-size:0.7rem;color:var(--theme-text-muted)">(custom)</span>' : '';
+      const kws = kwsByMetric[m.key] || [];
+      const chips = kws.map(function(kw) {
+        const dimStyle = kw.active ? '' : 'opacity:0.5;';
+        const titleAttr = kw.exclude_terms ? ` title="exclude: ${escapeHtml(kw.exclude_terms)}"` : '';
+        return `<span class="kw-chip" style="${dimStyle}"${titleAttr}>${escapeHtml(kw.phrase)}<button class="kw-chip-del" onclick="deleteKw(${kw.id},'${escapeHtml(m.key)}')" title="Remove">&times;</button></span>`;
+      }).join('');
+      const addInput = `<input class="kw-add-input" type="text" placeholder="add phrase..."
+        data-metric-key="${escapeHtml(m.key)}"
+        onkeydown="if(event.key==='Enter'){addKwInline('${escapeHtml(m.key)}',this);event.preventDefault()}"
+        style="font-size:0.75rem;padding:1px 5px;width:120px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text);vertical-align:middle">`;
+      return `<tr data-ms-id="${m.id}" data-ms-key="${escapeHtml(m.key)}" style="border-bottom:1px solid var(--theme-border)">
+        <td style="padding:3px 6px;font-family:monospace;font-size:0.79rem;white-space:nowrap;vertical-align:top">${escapeHtml(m.key)}${analystBadge}</td>
+        <td style="padding:3px 6px;vertical-align:top">
+          <input type="text" value="${escapeHtml(m.label)}"
+            style="font-size:0.8rem;padding:2px 5px;width:150px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text)"
+            onblur="saveMetricSchemaField(${m.id},'label',this.value)">
+        </td>
+        <td style="padding:3px 6px;vertical-align:top">
+          <input type="text" value="${escapeHtml(m.unit)}"
+            style="font-size:0.8rem;padding:2px 5px;width:62px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text)"
+            onblur="saveMetricSchemaField(${m.id},'unit',this.value)">
+        </td>
+        <td style="padding:3px 6px;vertical-align:middle">
+          <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center">
+            ${chips}${addInput}
+          </div>
+        </td>
+        <td style="padding:3px 4px;text-align:center;vertical-align:top">
+          <input type="checkbox" ${activeChecked} onchange="toggleMetricSchemaActive(${m.id}, this.checked)">
+        </td>
+        <td style="padding:3px 4px;vertical-align:top">
+          <button class="btn btn-sm btn-danger" onclick="deleteMetricSchema(${m.id},'${escapeHtml(m.key)}')"
+            style="font-size:0.72rem;padding:1px 6px">Del</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--theme-danger);padding:6px">Error: ${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+// loadAllKeywordsTable is now an alias — both tables are combined
+async function loadAllKeywordsTable() {
+  return loadMetricSchemaTable();
+}
+
+async function saveKwField(kwId, metricKey, field, value) {
+  try {
+    const resp = await fetch(`/api/metric_schema/${metricKey}/keywords/${kwId}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({[field]: value}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    // Re-render row opacity for active toggle
+    if (field === 'active') {
+      const row = document.querySelector(`tr[data-kw-id="${kwId}"]`);
+      if (row) row.style.opacity = value ? '1' : '0.5';
+    }
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+    loadAllKeywordsTable();
+  }
+}
+
+async function deleteKw(kwId, metricKey) {
+  try {
+    const resp = await fetch(`/api/metric_schema/${metricKey}/keywords/${kwId}`, {method: 'DELETE'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    await loadMetricSchemaTable();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function addKwInline(metricKey, inputEl) {
+  const phrase = (inputEl.value || '').trim();
+  if (!phrase) return;
+  try {
+    const resp = await fetch(`/api/metric_schema/${metricKey}/keywords`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({phrase}),
+    });
+    const body = await resp.json();
+    if (!body.success && resp.status !== 409) throw new Error(body.error?.message || 'Failed');
+    inputEl.value = '';
+    await loadMetricSchemaTable();
+  } catch (e) {
+    showToast('Add failed: ' + e.message, 'error');
+  }
+}
+
+async function submitBulkKeywords() {
+  const textarea = document.getElementById('kw-bulk-paste');
+  const statusEl = document.getElementById('kw-bulk-status');
+  statusEl.style.display = 'none';
+  const raw = textarea ? textarea.value.trim() : '';
+  if (!raw) return;
+
+  const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
+
+  // Detect format: if any line has >=4 tokens, treat as 5-column spreadsheet format
+  // Key | Label | Unit | Pattern | Keywords(pipe-separated)
+  let isSpreadsheetFormat = false;
+  for (const line of lines) {
+    if (_splitCsvLine(line).length >= 4) { isSpreadsheetFormat = true; break; }
+  }
+
+  if (isSpreadsheetFormat) {
+    // Skip header row if col[0] is "key" or "label" (case-insensitive)
+    let dataLines = lines;
+    if (lines.length > 0) {
+      const firstCol = _splitCsvLine(lines[0])[0].toLowerCase().trim();
+      if (firstCol === 'key' || firstCol === 'label') dataLines = lines.slice(1);
+    }
+
+    let metricsCreated = 0, totalAdded = 0, totalSkipped = 0;
+    const errors = [];
+
+    for (const line of dataLines) {
+      const tokens = _splitCsvLine(line);
+      if (!tokens[0]) continue;
+      const metricKey = tokens[0].trim().toLowerCase().replace(/\s+/g, '_');
+      const label = tokens[1] ? tokens[1].trim() : metricKey;
+      const unit = tokens[2] ? tokens[2].trim() : '';
+      // tokens[3] = pattern column (ignored — managed separately)
+      const kwRaw = tokens[4] ? tokens[4].trim() : '';
+      const keywords = kwRaw ? kwRaw.split('|').map(k => k.trim()).filter(Boolean) : [];
+
+      if (!metricKey) continue;
+
+      // Create metric if it doesn't exist (409 = already exists, acceptable)
+      try {
+        const resp = await fetch('/api/metric_schema', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({key: metricKey, label, unit}),
+        });
+        const body = await resp.json();
+        if (resp.ok && body.success) metricsCreated++;
+        else if (resp.status !== 409) errors.push(`Create ${metricKey}: ${body.error?.message || 'failed'}`);
+      } catch (e) {
+        errors.push(`Create ${metricKey}: ${e.message}`);
+        continue;
+      }
+
+      if (keywords.length) {
+        try {
+          const resp = await fetch(`/api/metric_schema/${metricKey}/keywords`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({phrases: keywords}),
+          });
+          const body = await resp.json();
+          if (body.success) {
+            totalAdded += body.data?.added ?? 0;
+            totalSkipped += body.data?.skipped ?? 0;
+          } else if (resp.status !== 409) {
+            errors.push(`${metricKey} keywords: ${body.error?.message || 'failed'}`);
+          }
+        } catch (e) {
+          errors.push(`${metricKey} keywords: ${e.message}`);
+        }
+      }
+    }
+
+    textarea.value = '';
+    const parts = [];
+    if (metricsCreated) parts.push(`${metricsCreated} metric${metricsCreated > 1 ? 's' : ''} created`);
+    if (totalAdded) parts.push(`${totalAdded} keyword${totalAdded > 1 ? 's' : ''} added`);
+    if (totalSkipped) parts.push(`${totalSkipped} duplicate${totalSkipped > 1 ? 's' : ''} skipped`);
+    const msg = (parts.length ? parts.join(', ') : 'Nothing added') + (errors.length ? '. Errors: ' + errors.join('; ') : '.');
+    statusEl.style.color = errors.length ? 'var(--theme-danger)' : 'var(--theme-success)';
+    statusEl.textContent = msg;
+    statusEl.style.display = 'block';
+    await loadMetricSchemaTable();
+    await loadAllKeywordsTable();
+    return;
+  }
+
+  // Keyword-only format: metric_key, phrase[, exclude_terms] — one row per line
+  const byMetric = {};
+  const parseErrors = [];
+  lines.forEach(function(line, i) {
+    const tokens = _splitCsvLine(line);
+    if (tokens.length < 2) {
+      parseErrors.push(`Line ${i+1}: need at least metric_key and phrase`);
+      return;
+    }
+    const metricKey = tokens[0].trim();
+    const phrase = tokens[1].trim();
+    const exclude = tokens[2] ? tokens[2].trim() : '';
+    if (!metricKey || !phrase) return;
+    if (!byMetric[metricKey]) byMetric[metricKey] = [];
+    byMetric[metricKey].push({phrase, exclude});
+  });
+
+  if (parseErrors.length) {
+    statusEl.style.color = 'var(--theme-danger)';
+    statusEl.textContent = parseErrors.join('; ');
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  const keys = Object.keys(byMetric);
+  if (!keys.length) {
+    statusEl.style.color = 'var(--theme-danger)';
+    statusEl.textContent = 'No valid rows parsed.';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  let totalAdded = 0, totalSkipped = 0, errors = [];
+  for (const key of keys) {
+    const entries = byMetric[key];
+    const hasExcludes = entries.some(e => e.exclude);
+    if (!hasExcludes) {
+      try {
+        const resp = await fetch(`/api/metric_schema/${key}/keywords`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({phrases: entries.map(e => e.phrase)}),
+        });
+        const body = await resp.json();
+        if (body.success || body.error?.code === 'DUPLICATE') {
+          totalAdded += body.data?.added ?? 0;
+          totalSkipped += body.data?.skipped ?? 0;
+        } else {
+          errors.push(`${key}: ${body.error?.message || 'failed'}`);
+        }
+      } catch (e) {
+        errors.push(`${key}: ${e.message}`);
+      }
+    } else {
+      for (const entry of entries) {
+        try {
+          const payload = {phrase: entry.phrase};
+          if (entry.exclude) payload.exclude_terms = entry.exclude;
+          const resp = await fetch(`/api/metric_schema/${key}/keywords`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+          });
+          const body = await resp.json();
+          if (body.success) {
+            totalAdded++;
+          } else if (body.error?.code === 'DUPLICATE') {
+            totalSkipped++;
+          } else {
+            errors.push(`${key}/${entry.phrase}: ${body.error?.message || 'failed'}`);
+          }
+        } catch (e) {
+          errors.push(`${key}/${entry.phrase}: ${e.message}`);
+        }
+      }
+    }
+  }
+
+  textarea.value = '';
+  const msg = `Added ${totalAdded}${totalSkipped ? `, skipped ${totalSkipped} duplicate${totalSkipped > 1 ? 's' : ''}` : ''}.${errors.length ? ' Errors: ' + errors.join('; ') : ''}`;
+  statusEl.style.color = errors.length ? 'var(--theme-danger)' : 'var(--theme-success)';
+  statusEl.textContent = msg;
+  statusEl.style.display = 'block';
+  await loadAllKeywordsTable();
+}
+
+function _splitCsvLine(line) {
+  // Minimal CSV tokeniser: handles "quoted, values" and tab/comma separators
+  const tokens = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuote = !inQuote; cur += ch; }
+    else if (!inQuote && (ch === ',' || ch === '\t')) { tokens.push(cur); cur = ''; }
+    else { cur += ch; }
+  }
+  tokens.push(cur);
+  return tokens.map(t => t.trim());
+}
+
+async function toggleMetricSchemaActive(id, active) {
+  try {
+    const resp = await fetch(`/api/metric_schema/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active: active ? 1 : 0}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    // Refresh table and all downstream metric selects
+    loadMetricSchemaTable();
+    loadPatternMetricSelects();
+  } catch (e) {
+    showToast('Failed to update metric: ' + e.message, 'error');
+    loadMetricSchemaTable();  // revert checkbox to DB state
+  }
+}
+
+async function saveMetricSchemaField(id, field, value) {
+  try {
+    const resp = await fetch(`/api/metric_schema/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({[field]: value}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    loadPatternMetricSelects();
+  } catch (e) {
+    showToast('Failed to save: ' + e.message, 'error');
+    loadMetricSchemaTable();
+  }
+}
+
+async function deleteMetricSchema(id, key) {
+  if (!confirm(`Delete metric "${key}"? This cannot be undone.`)) return;
+  try {
+    const resp = await fetch(`/api/metric_schema/${id}`, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    loadMetricSchemaTable();
+    loadPatternMetricSelects();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function addMetricSchema() {
+  const key = document.getElementById('ms-add-key').value.trim();
+  const label = document.getElementById('ms-add-label').value.trim();
+  const unit = document.getElementById('ms-add-unit').value.trim();
+  const errEl = document.getElementById('ms-add-error');
+  errEl.style.display = 'none';
+  if (!key || !label) {
+    errEl.textContent = 'Key and Label are required.';
+    errEl.style.display = 'block';
+    return;
+  }
+  try {
+    const resp = await fetch('/api/metric_schema', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key, label, unit, sector: 'BTC-miners'}),
+    });
+    const body = await resp.json();
+    if (!body.success) {
+      errEl.textContent = body.error?.message || 'Failed';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('ms-add-key').value = '';
+    document.getElementById('ms-add-label').value = '';
+    document.getElementById('ms-add-unit').value = '';
+    loadMetricSchemaTable();
+    loadPatternMetricSelects();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
 // ── Metric Rules tab ─────────────────────────────────────────────────────────
 
 async function loadMetricRules() {
@@ -3432,6 +4187,26 @@ async function deleteMetricRule(metric) {
 // ── Regex Patterns (1.2.1) ────────────────────────────────────────────────────
 
 let _patternsData = null;
+
+async function loadPatternMetricSelects() {
+  // Populate all metric <select> elements in the Pattern editor from /api/metric_schema
+  // (single source of truth). Passing active_only=false so analyst-defined and
+  // deprecated metrics are still accessible for pattern maintenance.
+  const selectIds = ['gen-pattern-metric', 'add-pattern-metric', 'test-pattern-metric'];
+  try {
+    const resp = await fetch('/api/metric_schema?active_only=false');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const metrics = data.data || [];
+    selectIds.forEach(function(id) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.innerHTML = metrics.map(function(m) {
+        return '<option value="' + escapeAttr(m.key) + '">' + escapeHtml(m.label || m.key) + '</option>';
+      }).join('');
+    });
+  } catch (_e) {}
+}
 
 async function loadPatterns() {
   const container = document.getElementById('patterns-list');
@@ -3766,6 +4541,7 @@ function loadIngest() {
   _ingestLoaded = true;
   _renderAllTickerBars();
   _pollCrawlStatus();
+  _restorePipelineRun();
 }
 
 function _renderAllTickerBars() {
@@ -3891,39 +4667,7 @@ async function startCrawlAll() {
 }
 
 async function loadCrawlOllamaModels() {
-  const sel = document.getElementById('crawl-model');
-  if (!sel) return;
-  try {
-    let models = [];
-    try {
-      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
-      if (direct.ok) {
-        const d = await direct.json();
-        models = (d.models || []).map(function(m) { return m.name; });
-      }
-    } catch (_) {
-      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
-      const d = await fallback.json();
-      models = (d.data?.models || []).map(function(m) { return m.name; });
-    }
-    // Read saved model from config (same key used by Interpret tab)
-    let active = '';
-    try {
-      const cfgResp = await fetch('/api/config', { cache: 'no-store' });
-      const cfgData = await cfgResp.json();
-      const row = (cfgData.data?.config || []).find(function(r) { return r.key === 'ollama_model'; });
-      active = row?.value || '';
-    } catch (_) {}
-    if (models.length) {
-      sel.innerHTML = models.map(function(n) {
-        return '<option value="' + escapeAttr(n) + '"' + (n === active ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
-      }).join('');
-    } else {
-      sel.innerHTML = '<option value="">No models found</option>';
-    }
-  } catch (_) {
-    sel.innerHTML = '<option value="">Could not load models</option>';
-  }
+  await populateOllamaModelSelect('crawl-model');
 }
 
 function onCrawlProviderChange() {
@@ -3994,10 +4738,15 @@ async function _pollCrawlStatus() {
     snaps.forEach(function(s) { _crawlSnaps[s.ticker] = s; });
     _renderResearchGrid(snaps);
 
-    // Stop polling if all done
+    // Resume polling if crawls are running but timer was lost (e.g. page navigation)
     const anyRunning = snaps.some(function(s) {
       return s.status === 'running' || s.status === 'pending';
     });
+    if (anyRunning && !_crawlPollTimer) {
+      _crawlPollTimer = setInterval(_pollCrawlStatus, 2000);
+      const stopBtn = document.getElementById('crawl-stop-btn');
+      if (stopBtn) stopBtn.style.display = '';
+    }
     if (!anyRunning && _crawlPollTimer) {
       clearInterval(_crawlPollTimer);
       _crawlPollTimer = null;
@@ -4170,6 +4919,37 @@ async function loadSettings() {
   _renderSettingsGroups();
 }
 
+async function loadPromptPreview() {
+  const ta = document.getElementById('prompt-preview-text');
+  const tickerSel = document.getElementById('prompt-preview-ticker');
+  if (!ta) return;
+
+  // Populate ticker selector from company list on first call.
+  if (tickerSel && tickerSel.options.length === 1 && _companies.length) {
+    _companies.filter(function(c) { return c.active !== false; }).forEach(function(c) {
+      const opt = document.createElement('option');
+      opt.value = c.ticker;
+      opt.textContent = c.ticker;
+      tickerSel.appendChild(opt);
+    });
+  }
+
+  const ticker = tickerSel?.value || '';
+  const url = '/api/llm_prompts/preview' + (ticker ? '?ticker=' + encodeURIComponent(ticker) : '');
+  ta.value = 'Loading…';
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      ta.value = data.data.prompt;
+    } else {
+      ta.value = 'Error: ' + (data.error?.message || resp.status);
+    }
+  } catch (err) {
+    ta.value = 'Failed to load preview: ' + String(err);
+  }
+}
+
 async function _settingsSaveGroup(groupLabel) {
   const group = _SETTINGS_GROUPS.find(function(g) { return g.label === groupLabel; });
   if (!group) return;
@@ -4306,6 +5086,52 @@ async function _loadQCTable() {
 let _pipelineRunId = null;
 let _pipelineEventOffset = 0;
 
+function _setPipelineRunId(id) {
+  _pipelineRunId = id;
+  try { localStorage.setItem('pipeline_run_id', String(id)); } catch (_e) {}
+}
+
+async function _restorePipelineRun() {
+  // Try localStorage first, then fall back to /api/pipeline/overnight/latest.
+  let runId = null;
+  try { runId = parseInt(localStorage.getItem('pipeline_run_id'), 10) || null; } catch (_e) {}
+  if (!runId) {
+    try {
+      const resp = await fetch('/api/pipeline/overnight/latest');
+      if (resp.ok) {
+        const d = await resp.json();
+        runId = d.data?.run?.id || null;
+      }
+    } catch (_e) {}
+  }
+  if (!runId) return;
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + runId + '/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const run = data.data?.run || {};
+    const msgEl = document.getElementById('pipeline-msg');
+    const statusEl = document.getElementById('pipeline-status');
+    const cancelBtn = document.getElementById('pipeline-cancel-btn');
+    const terminalStatuses = new Set(['complete', 'partial_complete', 'failed', 'failed_preflight', 'cancelled']);
+    if (terminalStatuses.has(run.status)) {
+      // Terminal run — show status only, do NOT replay log. Log is blank so user
+      // sees a clean slate ready for the next run.
+      if (msgEl) msgEl.textContent = 'Last run: ' + run.status + ' (run ' + runId + ')';
+      if (statusEl) statusEl.textContent = 'Status: ' + run.status;
+      if (cancelBtn) cancelBtn.style.display = 'none';
+    } else {
+      // Run is still active — restore run id, replay events, resume polling.
+      _pipelineRunId = runId;
+      _pipelineEventOffset = 0;
+      await _fetchPipelineEvents();
+      if (msgEl) msgEl.textContent = 'Resumed run ' + runId + '…';
+      if (cancelBtn) cancelBtn.style.display = '';
+      _startPipelinePoll();
+    }
+  } catch (_e) {}
+}
+
 function _appendPipelineLog(text, warn) {
   const el = document.getElementById('pipeline-log');
   if (!el) return;
@@ -4323,10 +5149,16 @@ function _clearPipelineLog() {
   if (el) { el.innerHTML = ''; el.style.display = 'none'; }
 }
 
+function _shortUrl(url, max) {
+  if (!url) return '';
+  max = max || 90;
+  return url.length > max ? url.slice(0, max) + '…' : url;
+}
+
 async function _fetchPipelineEvents() {
   if (!_pipelineRunId) return;
   try {
-    const resp = await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/events?limit=300');
+    const resp = await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/events?limit=500');
     if (!resp.ok) return;
     const data = await resp.json();
     const rows = (data.data || []);
@@ -4338,62 +5170,132 @@ async function _fetchPipelineEvents() {
       const stage = row.stage || '';
       const event = row.event || '';
       const d = row.details || {};
+      const ticker = d.ticker || row.ticker || '';
       const warn = row.level === 'WARNING';
 
-      // Per-URL scraper events — show full URL prominently
+      // ── IR scrape URL-level events ────────────────────────────────────────
       if (stage === 'ir_scrape') {
-        const ticker = d.ticker || row.ticker || '';
-        const period = d.period ? ' ' + d.period : '';
-        const url = d.url || '';
-        const shortUrl = url.length > 80 ? url.slice(0, 80) + '...' : url;
-        if (event === 'url_ingested') {
-          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ingested — ' + shortUrl, false);
+        const period = d.period ? ' ' + d.period.slice(0, 7) : '';
+        const url = _shortUrl(d.url);
+        if (event === 'scrape_start') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + ' starting ' + (d.mode || '') + ' — ' + _shortUrl(d.ir_url || ''), false);
+        } else if (event === 'url_ingested') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' stored — ' + url, false);
         } else if (event === 'url_skipped') {
-          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' skipped (' + (d.reason || '') + ') — ' + shortUrl, false);
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' skip:' + (d.reason || '') + ' — ' + url, false);
         } else if (event === 'url_error') {
-          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ERROR — ' + (d.error || '') + ' — ' + shortUrl, true);
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ERROR: ' + (d.error || '') + ' — ' + url, true);
         } else if (event === 'page_fetch') {
-          _appendPipelineLog(ts + ' [IR] ' + ticker + ' fetching page ' + (d.page || 1) + ' — ' + shortUrl, false);
+          _appendPipelineLog(ts + ' [IR] ' + ticker + ' page ' + (d.page || 1) + ' — ' + url, false);
         }
         return;
       }
 
-      // Ollama lifecycle events — show message directly
+      // ── EDGAR ingest URL-level events ─────────────────────────────────────
+      if (stage === 'edgar_ingest') {
+        const form = d.form_type || '';
+        const period = d.covering_period || d.period || '';
+        const url = _shortUrl(d.url);
+        const acc = d.accession ? d.accession.slice(-12) : '';
+        if (event === 'url_ingested') {
+          const quality = d.quality ? ' [' + d.quality + ']' : '';
+          _appendPipelineLog(ts + ' [EDGAR] ' + ticker + ' ' + form + ' ' + period.slice(0, 7) + quality + ' — ' + url, false);
+        } else if (event === 'url_error') {
+          _appendPipelineLog(ts + ' [EDGAR] ' + ticker + ' ' + form + ' ' + acc + ' ERROR: ' + (d.error || '') + ' — ' + url, true);
+        } else if (event === 'search_result') {
+          _appendPipelineLog(ts + ' [EDGAR] ' + ticker + ' ' + form + ' found ' + (d.hits || 0) + ' hit(s)', false);
+        }
+        return;
+      }
+
+      // ── Ollama lifecycle ──────────────────────────────────────────────────
       if (event === 'ollama_status') {
         _appendPipelineLog(ts + ' [Ollama] ' + (d.message || ''), warn);
         return;
       }
       if (event === 'ollama_warmup') {
-        const status = d.warmed ? 'model loaded' : 'warmup failed (' + d.reason + ')';
+        const status = d.warmed ? 'model ready' : 'warmup failed (' + (d.reason || '') + ')';
         _appendPipelineLog(ts + ' [Ollama] ' + (d.model || '') + ' — ' + status, !d.warmed);
         return;
       }
 
-      // Per-report extraction events
+      // ── Extraction per-report events ──────────────────────────────────────
       if (stage === 'extract' && event === 'stage_start') {
-        _appendPipelineLog(ts + ' [Extract] starting — ' + (d.total_reports || 0) + ' reports queued');
+        _appendPipelineLog(ts + ' [Extract] ' + (d.total_reports || 0) + ' reports queued for extraction');
         return;
       }
       if (stage === 'extract' && event === 'report_done') {
         const pct = d.total > 0 ? Math.round(d.progress / d.total * 100) : 0;
-        const pts = d.data_points > 0 ? ' +' + d.data_points + ' pts' : '';
-        const rv = d.review_flagged > 0 ? ' +' + d.review_flagged + ' review' : '';
-        const src = d.source_type ? ' [' + d.source_type.replace('ir_press_release','IR').replace('edgar_','SEC ') + ']' : '';
+        const pts = d.data_points > 0 ? ' +' + d.data_points + 'dp' : '';
+        const rv = d.review_flagged > 0 ? ' +' + d.review_flagged + 'rv' : '';
+        const src = d.source_type ? ' [' + d.source_type.replace('ir_press_release', 'IR').replace('edgar_', 'SEC/') + ']' : '';
+        const tok = (d.prompt_tokens || d.response_tokens) ? ' (' + (d.prompt_tokens || 0) + '+' + (d.response_tokens || 0) + 'tok)' : '';
         _appendPipelineLog(
           ts + ' [Extract] ' + d.progress + '/' + d.total + ' (' + pct + '%) ' +
-          d.ticker + ' ' + (d.period || '').slice(0,7) + src + pts + rv +
-          ' — total ' + d.running_total_dp + ' pts'
+          ticker + ' ' + (d.period || '').slice(0, 7) + src + pts + rv + tok +
+          ' — ' + d.running_total_dp + ' pts total'
         );
         return;
       }
       if (stage === 'extract' && event === 'report_extract_failed') {
-        _appendPipelineLog(ts + ' [Extract] FAILED ' + d.ticker + ' ' + (d.period || '') + ' — ' + (d.error || ''), true);
+        _appendPipelineLog(ts + ' [Extract] FAILED ' + ticker + ' ' + (d.period || '') + ' — ' + (d.error || ''), true);
+        return;
+      }
+      if (stage === 'extract' && event === 'stage_end') {
+        _appendPipelineLog(ts + ' [Extract] done — ' + (d.reports_processed || 0) + ' reports, ' + (d.data_points || 0) + ' pts, ' + (d.errors || 0) + ' errors');
         return;
       }
 
-      // High-level pipeline stage events
+      // ── High-level pipeline stage transitions ─────────────────────────────
+      if (event === 'pipeline_run_start') {
+        const tickers = (d.config?.tickers || []).join(', ') || 'all';
+        _appendPipelineLog(ts + ' [Pipeline] started — ' + (d.requested_count || '?') + ' companies: ' + tickers);
+        return;
+      }
+      if (event === 'pipeline_run_end') {
+        _appendPipelineLog(ts + ' [Pipeline] ' + (d.status || 'done') + (d.failures ? ' (' + d.failures + ' failures)' : ''), warn || d.status === 'failed');
+        return;
+      }
+      if (event === 'pipeline_run_cancelled') {
+        _appendPipelineLog(ts + ' [Pipeline] cancelled', true);
+        return;
+      }
+      if (event === 'pipeline_run_failed') {
+        _appendPipelineLog(ts + ' [Pipeline] FAILED — ' + (d.error || ''), true);
+        return;
+      }
+      if (stage === 'ingest' && event === 'stage_end') {
+        _appendPipelineLog(ts + ' [Ingest] done — ' + (d.ingested_delta || 0) + ' new docs (' + (d.before_reports || 0) + ' → ' + (d.after_reports || 0) + ' total)');
+        return;
+      }
+      if (stage === 'ingest' && event === 'ir_skipped') {
+        _appendPipelineLog(ts + ' [Ingest] IR skipped (' + (d.reason || '') + ')', false);
+        return;
+      }
+      if (stage === 'crawl' && event === 'stage_start') {
+        _appendPipelineLog(ts + ' [Crawl] starting ' + (d.tickers || 0) + ' companies via ' + (d.provider || 'ollama'));
+        return;
+      }
+      if (stage === 'crawl' && event === 'stage_end') {
+        _appendPipelineLog(ts + ' [Crawl] done — ' + (d.stored || 0) + ' docs stored, ' + (d.failed || 0) + ' failed');
+        return;
+      }
+      if (stage === 'crawl' && event === 'stage_skipped') {
+        _appendPipelineLog(ts + ' [Crawl] skipped (' + (d.reason || '') + ')');
+        return;
+      }
+      if (event === 'stage_skipped') {
+        _appendPipelineLog(ts + ' [' + stage + '] skipped — ' + (d.reason || ''));
+        return;
+      }
+      if (event === 'cancel_requested') {
+        _appendPipelineLog(ts + ' [Pipeline] cancel requested', true);
+        return;
+      }
+
+      // Fallback — generic key=value pairs
       const parts = [];
-      if (d.ticker) parts.push(d.ticker);
+      if (ticker) parts.push(ticker);
       if (d.recommended_mode) parts.push('mode=' + d.recommended_mode);
       if (d.targeted != null) parts.push('targeted=' + d.targeted);
       if (d.ingested_delta != null) parts.push('new_docs=' + d.ingested_delta);
@@ -4402,7 +5304,7 @@ async function _fetchPipelineEvents() {
       if (d.errors) parts.push('errors=' + d.errors);
       if (d.reason) parts.push('reason=' + d.reason);
       if (d.error) parts.push('err=' + d.error);
-      const detail = parts.length ? ' ' + parts.join(' ') : '';
+      const detail = parts.length ? ' — ' + parts.join(', ') : '';
       _appendPipelineLog(ts + ' [' + stage + '] ' + event + detail, warn);
     });
   } catch (_e) {}
@@ -4418,7 +5320,7 @@ async function runOvernightScout() {
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
-    _pipelineRunId = data.data?.run_id;
+    _setPipelineRunId(data.data?.run_id);
     document.getElementById('pipeline-msg').textContent = 'Scout started (run ' + _pipelineRunId + ').';
     _startPipelinePoll();
   } catch (err) {
@@ -4434,15 +5336,16 @@ async function runFullPipeline() {
   var cancelBtn = document.getElementById('pipeline-cancel-btn');
   if (cancelBtn) cancelBtn.style.display = '';
   var includeIr = document.getElementById('pipeline-include-ir')?.checked !== false;
+  var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
-    _pipelineRunId = data.data?.run_id;
+    _setPipelineRunId(data.data?.run_id);
     document.getElementById('pipeline-msg').textContent = 'Running (run ' + _pipelineRunId + ')…';
     _startPipelinePoll();
   } catch (err) {
@@ -4476,11 +5379,17 @@ async function _pollPipelineStatus() {
     const statusEl = document.getElementById('pipeline-status');
     const cancelBtn = document.getElementById('pipeline-cancel-btn');
     if (statusEl) statusEl.textContent = status ? ('Status: ' + status) : '';
-    if (status && status !== 'running') {
+    if (msgEl && (status === 'queued' || status === 'running')) {
+      msgEl.textContent = status === 'queued' ? 'Queued — waiting for thread…' : 'Running (run ' + _pipelineRunId + ')…';
+    }
+    const _terminalStatuses = new Set(['complete', 'partial_complete', 'failed', 'failed_preflight', 'cancelled']);
+    if (status && _terminalStatuses.has(status)) {
       clearInterval(_pipelinePollTimer);
       _pipelinePollTimer = null;
       if (cancelBtn) cancelBtn.style.display = 'none';
       if (msgEl) msgEl.textContent = 'Done — ' + status + '.';
+      // Final event flush before stopping
+      await _fetchPipelineEvents();
       // Refresh crawl prompt — EDGAR ingest may have updated bitcoin start date context
       const tickers = _getCrawlSelectedTickers();
       const promptTicker = tickers.length === 1 ? tickers[0] : (_companies.find(function(c) { return c.active !== false; }) || {}).ticker;

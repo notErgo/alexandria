@@ -48,9 +48,13 @@ def detect_ingest_state(
 ) -> tuple:
     """Determine ingest_state and period for a file.
 
+    existing_report_dates must be a set of YYYY-MM strings (7-char prefixes).
+    The inferred period is compared by its YYYY-MM prefix so that filenames
+    producing "2024-09-01" match DB records stored as e.g. "2024-09-03".
+
     Returns:
-        ('ingested', 'YYYY-MM-01')   if period detected AND in existing_report_dates
-        ('pending', 'YYYY-MM-01')    if period detected AND NOT in existing_report_dates
+        ('ingested', 'YYYY-MM-01')   if period detected AND YYYY-MM in existing_report_dates
+        ('pending', 'YYYY-MM-01')    if period detected AND YYYY-MM NOT in existing_report_dates
         ('legacy_undated', None)     if no period can be inferred
     """
     from scrapers.archive_ingestor import infer_period_from_filename
@@ -61,7 +65,8 @@ def detect_ingest_state(
         return ('legacy_undated', None)
 
     period_str = period_date.strftime('%Y-%m-01')
-    if period_str in existing_report_dates:
+    period_ym = period_str[:7]  # YYYY-MM
+    if period_ym in existing_report_dates:
         return ('ingested', period_str)
     return ('pending', period_str)
 
@@ -118,12 +123,15 @@ def scan_archive_directory(archive_root: Path, db) -> ScanResult:
 
         tickers_seen.add(ticker)
 
-        # Lazy-load existing report dates for this ticker
+        # Lazy-load existing report dates for this ticker.
+        # Store as YYYY-MM prefixes (first 7 chars of report_date) so that the
+        # comparison in detect_ingest_state works regardless of the day component
+        # (DB stores actual dates like "2024-09-03"; inferred periods are "2024-09-01").
         if ticker not in existing_dates_by_ticker:
             try:
                 reports = db.get_all_reports_for_extraction(ticker=ticker)
                 existing_dates_by_ticker[ticker] = {
-                    r['report_date'] for r in reports
+                    r['report_date'][:7] for r in reports if r.get('report_date')
                 }
             except Exception as e:
                 log.error("Failed to fetch reports for %s: %s", ticker, e)

@@ -15,6 +15,35 @@ log = logging.getLogger('miners.parsers.annual_report_parser')
 # Regex to detect EDGAR Item headers (e.g. "ITEM 1. BUSINESS", "Item 7A")
 _EDGAR_ITEM_RE = re.compile(r'(?i)\bitem\s+(\d+[a-z]?)\b')
 
+# iXBRL preamble detection: modern EDGAR filings embed XBRL context metadata as
+# text-extractable lines of the form "<CIK> <namespace:Member> <date>".
+# The block ends just before the SEC cover page.
+_XBRL_PREAMBLE_START = re.compile(r'^\d{9,10}\s')
+_EDGAR_COVER_PAGE    = re.compile(r'\bUNITED\s+STATES\b', re.IGNORECASE)
+
+
+def _strip_xbrl_preamble(text: str) -> str:
+    """Strip iXBRL XBRL context block from EDGAR filing text.
+
+    Modern EDGAR HTML filings (iXBRL format, mandatory from 2019 onward) embed
+    XBRL instance-document metadata — CIK + taxonomy namespace lines — as
+    text-extractable content at the top of the parsed text.  These lines look
+    like:
+        0001507605 us-gaap:CommonStockMember 2021-06-30
+        iso4217:USD xbrli:shares xbrli:pure MARA:Integer
+
+    The block always precedes the SEC cover page ("UNITED STATES SECURITIES AND
+    EXCHANGE COMMISSION").  If the text starts with the CIK-prefixed pattern and
+    a cover page marker is found later, everything before that marker is dropped.
+    If either condition is not met the text is returned unchanged.
+    """
+    if not _XBRL_PREAMBLE_START.match(text):
+        return text
+    m = _EDGAR_COVER_PAGE.search(text)
+    if m and m.start() > 0:
+        return text[m.start():]
+    return text
+
 
 def convert_tables_to_pipe_text(soup) -> None:
     """Replace HTML <table> elements with pipe-delimited plain text rows, in-place.
@@ -70,7 +99,7 @@ class AnnualReportParser:
 
         soup = BeautifulSoup(html, 'lxml')
         convert_tables_to_pipe_text(soup)
-        full_text = soup.get_text(separator='\n', strip=True)
+        full_text = _strip_xbrl_preamble(soup.get_text(separator='\n', strip=True))
         quality = detect_parse_quality(full_text, page_count=0)
 
         # Find all Item header positions

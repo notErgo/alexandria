@@ -113,3 +113,66 @@ def test_annual_report_parser_no_items_single_section():
     result = parser.parse_html(html)
     assert len(result.sections) == 1
     assert result.sections[0].name == 'full_text'
+
+
+# ── _strip_xbrl_preamble ─────────────────────────────────────────────────────
+
+class TestStripXbrlPreamble:
+    """_strip_xbrl_preamble removes iXBRL context block from EDGAR filing text."""
+
+    def test_strips_cik_prefixed_lines_before_cover_page(self):
+        """Text starting with CIK-prefixed XBRL lines is stripped to UNITED STATES."""
+        from parsers.annual_report_parser import _strip_xbrl_preamble
+
+        preamble = (
+            '0001507605 false --12-31 2021 Q3\n'
+            '0001507605 2021-01-01 2021-09-30\n'
+            '0001507605 us-gaap:CommonStockMember 2021-06-30\n'
+            'iso4217:USD xbrli:shares xbrli:pure MARA:Integer\n'
+        )
+        body = 'UNITED STATES SECURITIES AND EXCHANGE COMMISSION\nFORM 10-Q\nWe mined 700 BTC.'
+        result = _strip_xbrl_preamble(preamble + body)
+        assert result.startswith('UNITED STATES'), (
+            "Expected result to start with cover page, got: " + repr(result[:60])
+        )
+        assert 'We mined 700 BTC' in result
+        # Preamble noise must be gone
+        assert 'us-gaap:CommonStockMember' not in result
+
+    def test_no_op_when_no_xbrl_preamble(self):
+        """Text that does not start with a CIK pattern is returned unchanged."""
+        from parsers.annual_report_parser import _strip_xbrl_preamble
+
+        text = 'UNITED STATES SECURITIES AND EXCHANGE COMMISSION\nFORM 10-Q\nItem 1. Financials'
+        assert _strip_xbrl_preamble(text) == text
+
+    def test_no_op_when_cover_page_not_found(self):
+        """If cover page marker is missing, return original text unchanged."""
+        from parsers.annual_report_parser import _strip_xbrl_preamble
+
+        text = '0001507605 false --12-31 2021 Q3\nno cover page here'
+        assert _strip_xbrl_preamble(text) == text
+
+    def test_parse_html_strips_xbrl_preamble(self):
+        """AnnualReportParser.parse_html must not include iXBRL preamble in result text."""
+        from parsers.annual_report_parser import AnnualReportParser
+
+        # Simulate an iXBRL filing: XBRL context block followed by real HTML content
+        xbrl_block = (
+            '0001507605 false --12-31 2021 Q3 0001507605 2021-01-01 2021-09-30 '
+            '0001507605 us-gaap:CommonStockMember 2021-06-30 iso4217:USD xbrli:shares '
+        )
+        html = f'''<html><body>
+        <div style="display:none">{xbrl_block}</div>
+        <p>UNITED STATES SECURITIES AND EXCHANGE COMMISSION</p>
+        <p>FORM 10-Q</p>
+        <p>PART I. FINANCIAL INFORMATION</p>
+        <p>Item 2. We mined 700 BTC in Q3 2021.</p>
+        </body></html>'''
+
+        parser = AnnualReportParser()
+        result = parser.parse_html(html)
+        assert 'us-gaap:CommonStockMember' not in result.text, (
+            "iXBRL preamble must be stripped from parsed text"
+        )
+        assert 'We mined 700 BTC' in result.text

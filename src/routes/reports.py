@@ -182,7 +182,7 @@ def _run_edgar_ingest(
         ticker_filter = {t.upper() for t in tickers} if tickers else None
         companies = [c for c in all_companies if ticker_filter is None or c['ticker'].upper() in ticker_filter]
         since = date(2019, 1, 1)
-        totals = {'reports_ingested': 0, 'errors': 0}
+        totals = {'reports_ingested': 0, 'data_points_extracted': 0, 'review_flagged': 0, 'errors': 0}
         for company in companies:
             if company.get('cik'):
                 s = connector.fetch_all_filings(
@@ -211,6 +211,8 @@ def _run_edgar_ingest(
             if warm_model:
                 warm_ollama_for_extraction(db=db, reason='ingest_edgar_auto_extract')
             extracted = _extract_pending_reports(db)
+            totals['data_points_extracted'] += extracted['data_points_extracted']
+            totals['review_flagged'] += extracted['review_flagged']
             totals['errors'] += extracted['errors']
         if auto_extract:
             _update_progress(task_id, {
@@ -487,6 +489,61 @@ def _run_edgar_refetch_8k(task_id: str, ticker: Optional[str]) -> None:
             _running_tasks.discard('edgar_refetch_8k')
 
 
+@bp.route('/api/ingest/edgar/refetch_xbrl', methods=['POST'])
+def ingest_edgar_refetch_xbrl():
+    """Re-fetch 10-Q/10-K reports stored as the EDGAR iXBRL viewer stub.
+
+    Strips the ix?doc= viewer wrapper from stored source_url, fetches the real
+    document, and updates raw_text/raw_html/parse_quality in-place. Also resets
+    extraction_status to 'pending' so the extraction pipeline will re-process them.
+
+    Optional body: {"ticker": "MARA"} to limit to one ticker.
+    Returns 202 with task_id.
+    """
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper() or None
+
+    with _tasks_lock:
+        if 'edgar_refetch_xbrl' in _running_tasks:
+            return jsonify({'success': False, 'error': {
+                'code': 'ALREADY_RUNNING', 'message': 'XBRL refetch already in progress'
+            }}), 409
+        _running_tasks.add('edgar_refetch_xbrl')
+
+    task_id = str(uuid.uuid4())
+    _update_progress(task_id, {'status': 'queued', 'source': 'edgar_refetch_xbrl'})
+    t = threading.Thread(
+        target=_run_edgar_refetch_xbrl, args=(task_id, ticker), daemon=True
+    )
+    t.start()
+    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
+
+
+def _run_edgar_refetch_xbrl(task_id: str, ticker: Optional[str]) -> None:
+    import requests as req_lib
+    from app_globals import get_db
+    from scrapers.edgar_connector import EdgarConnector
+
+    _update_progress(task_id, {'status': 'running', 'source': 'edgar_refetch_xbrl'})
+    try:
+        db = get_db()
+        session = req_lib.Session()
+        connector = EdgarConnector(db=db, session=session)
+        summary = connector.refetch_xbrl_viewer_reports(ticker=ticker)
+        _update_progress(task_id, {
+            'status': 'complete',
+            'source': 'edgar_refetch_xbrl',
+            'refetched': summary.reports_ingested,
+            'errors': summary.errors,
+        })
+    except Exception as e:
+        log.error("XBRL refetch failed: %s", e, exc_info=True)
+        _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
+    finally:
+        with _tasks_lock:
+            _running_tasks.discard('edgar_refetch_xbrl')
+
+
 @bp.route('/api/ingest/edgar/bridge', methods=['POST'])
 def ingest_edgar_bridge():
     """Trigger coverage bridge pass to fill monthly gaps from quarterly/annual filings."""
@@ -670,6 +727,23 @@ def ingest_reaudit():
     )
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id, 'status': 'queued'}}), 202
+
+
+@bp.route('/api/ingest/backfill_raw_html', methods=['POST'])
+def ingest_backfill_raw_html():
+    """Populate raw_html for archive_html reports that pre-date the v24 schema migration.
+
+    For each ``archive_html`` report where ``raw_html IS NULL``, reads the
+    original file from ``source_url`` (local path) and writes the HTML into
+    the ``raw_html`` column so the document viewer can render it.
+
+    Returns a summary of rows backfilled, skipped (file not found), and errors.
+    This is idempotent — rows that already have raw_html are unchanged.
+    """
+    from app_globals import get_db
+    db = get_db()
+    result = db.backfill_raw_html_from_disk()
+    return jsonify({'success': True, 'data': result})
 
 
 @bp.route('/api/ingest/raw', methods=['POST'])

@@ -272,6 +272,41 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 25")
                     version = 25
 
+                if version < 26:
+                    self._migrate_v26(conn)
+                    conn.execute("PRAGMA user_version = 26")
+                    version = 26
+
+                if version < 27:
+                    self._migrate_v27(conn)
+                    conn.execute("PRAGMA user_version = 27")
+                    version = 27
+
+                if version < 28:
+                    self._migrate_v28(conn)
+                    conn.execute("PRAGMA user_version = 28")
+                    version = 28
+
+                if version < 29:
+                    self._migrate_v29(conn)
+                    conn.execute("PRAGMA user_version = 29")
+                    version = 29
+
+                if version < 30:
+                    self._migrate_v30(conn)
+                    conn.execute("PRAGMA user_version = 30")
+                    version = 30
+
+                if version < 31:
+                    self._migrate_v31(conn)
+                    conn.execute("PRAGMA user_version = 31")
+                    version = 31
+
+                if version < 32:
+                    self._migrate_v32(conn)
+                    conn.execute("PRAGMA user_version = 32")
+                    version = 32
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1092,6 +1127,447 @@ class MinerDB:
                 ON final_data_points(metric);
         """)
 
+    def _migrate_v26(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v25 → v26: add search_keywords table.
+
+        Stores the canonical set of phrases used for:
+          1. EDGAR 8-K full-text search query construction.
+          2. LLM batch prompt preamble keyword hint injection.
+
+        Seeded with the 8 phrases previously hardcoded in edgar_connector._8K_SEARCH_TERMS.
+        INSERT OR IGNORE means re-runs and duplicate manual entries are safe no-ops.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS search_keywords (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                phrase     TEXT    NOT NULL,
+                active     INTEGER NOT NULL DEFAULT 1,
+                notes      TEXT,
+                created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(phrase)
+            );
+            CREATE INDEX IF NOT EXISTS idx_search_keywords_active
+                ON search_keywords(active);
+        """)
+        seed_phrases = [
+            ('"bitcoin production"',       'EDGAR 8-K discovery — core term'),
+            ('"BTC production"',           'EDGAR 8-K discovery — abbreviation variant'),
+            ('"bitcoin mined"',            'EDGAR 8-K discovery — past-tense production'),
+            ('"BTC mined"',               'EDGAR 8-K discovery — abbreviation variant'),
+            ('"mining operations update"', 'EDGAR 8-K discovery — operations report phrasing'),
+            ('"production and operations"','EDGAR 8-K discovery — combined ops report'),
+            ('"digital asset production"', 'EDGAR 8-K discovery — broader digital asset phrasing'),
+            ('"hash rate"',               'EDGAR 8-K discovery — hashrate reporting'),
+        ]
+        conn.executemany(
+            "INSERT OR IGNORE INTO search_keywords (phrase, notes) VALUES (?, ?)",
+            seed_phrases,
+        )
+
+    def _migrate_v27(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v26 → v27: add hit_count column to search_keywords."""
+        try:
+            conn.execute(
+                "ALTER TABLE search_keywords ADD COLUMN hit_count INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists (idempotent)
+
+    def _migrate_v28(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v27 → v28: add embedding_model column to document_chunks.
+
+        embedding (BLOB) and embedded_at (TEXT) already exist from v5.
+        embedding_model identifies which model produced the stored vector
+        (e.g. 'nomic-embed-text', 'text-embedding-3-small') so that stale
+        embeddings can be detected and recomputed when the model changes.
+        """
+        try:
+            conn.execute(
+                "ALTER TABLE document_chunks ADD COLUMN embedding_model TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists (idempotent)
+
+    def _migrate_v29(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v28 → v29: add btc_first_filing_date to companies.
+
+        Stores the earliest SEC filing date where any active search keyword was
+        found for this company.  Drives the EDGAR ingestion window so that all
+        filings after this date are ingested without a keyword content-filter.
+        """
+        try:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN btc_first_filing_date TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists (idempotent)
+
+    def _migrate_v30(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v29 → v30: add metric_keywords table; retire search_keywords.
+
+        metric_keywords replaces the global search_keywords table.  Each phrase
+        belongs to a specific metric_schema key so the LLM extraction prompt can
+        inject per-metric anchor terms and EDGAR first-filing detection can use
+        the same phrases.
+
+        search_keywords is kept (schema compat) but emptied so downstream callers
+        that still read it get an empty list rather than stale data.
+        """
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS metric_keywords (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                metric_key  TEXT    NOT NULL,
+                phrase      TEXT    NOT NULL,
+                active      INTEGER NOT NULL DEFAULT 1,
+                hit_count   INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                UNIQUE (metric_key, phrase)
+            )
+        """)
+        # Seed: 7 phrases for production_btc, 1 for hashrate_eh
+        seed_rows = [
+            ('production_btc', '"bitcoin produced"'),
+            ('production_btc', '"btc produced"'),
+            ('production_btc', '"bitcoin mined"'),
+            ('production_btc', '"btc mined"'),
+            ('production_btc', '"bitcoin production"'),
+            ('production_btc', '"mined bitcoin"'),
+            ('production_btc', '"self-mined bitcoin"'),
+            ('hashrate_eh', '"exahash"'),
+        ]
+        conn.executemany(
+            "INSERT OR IGNORE INTO metric_keywords (metric_key, phrase) VALUES (?, ?)",
+            seed_rows,
+        )
+        # Retire search_keywords: empty rows but keep the table
+        conn.execute("DELETE FROM search_keywords")
+
+    def _migrate_v31(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v30 → v31: add exclude_terms to metric_keywords.
+
+        exclude_terms is a comma-separated list of context phrases that, when
+        present near a keyword match, indicate a false positive.  For example,
+        the keyword "holdings" with exclude_terms="Digital Holdings" will not
+        count as a hit when the surrounding text contains "Digital Holdings"
+        (i.e. the company's legal name).  Empty string means no exclusions.
+        """
+        try:
+            conn.execute(
+                "ALTER TABLE metric_keywords ADD COLUMN exclude_terms TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists (idempotent)
+
+    def _migrate_v32(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v31 → v32: fold metric_keywords into metric_schema.keywords.
+
+        The separate metric_keywords table is dropped.  Each metric_schema row gains
+        a `keywords` JSON column storing the list of anchor phrases as objects:
+            [{"id": 1, "phrase": "...", "exclude_terms": "...", "active": 1, "hit_count": 0}]
+
+        Existing rows from metric_keywords are migrated into the JSON column.
+        The metric_keywords table is then dropped.
+        """
+        import json as _json
+
+        try:
+            conn.execute(
+                "ALTER TABLE metric_schema ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]'"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists (idempotent)
+
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+
+        if 'metric_keywords' in tables:
+            kw_rows = conn.execute(
+                "SELECT metric_key, id, phrase, exclude_terms, active, hit_count "
+                "FROM metric_keywords ORDER BY metric_key, id"
+            ).fetchall()
+            by_metric: dict = {}
+            for row in kw_rows:
+                mk = row[0]
+                if mk not in by_metric:
+                    by_metric[mk] = []
+                by_metric[mk].append({
+                    'id': row[1],
+                    'phrase': row[2],
+                    'exclude_terms': row[3] or '',
+                    'active': row[4] if row[4] is not None else 1,
+                    'hit_count': row[5] or 0,
+                })
+            for metric_key, kws in by_metric.items():
+                conn.execute(
+                    "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                    (_json.dumps(kws), metric_key),
+                )
+            conn.execute("DROP TABLE metric_keywords")
+
+    # ── BTC first-filing-date CRUD ─────────────────────────────────────────────
+
+    def get_btc_first_filing_date(self, ticker: str) -> Optional[str]:
+        """Return the stored btc_first_filing_date for ticker, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT btc_first_filing_date FROM companies WHERE ticker = ?", (ticker,)
+            ).fetchone()
+        if row is None:
+            return None
+        return row['btc_first_filing_date']
+
+    def set_btc_first_filing_date(self, ticker: str, date_str: str) -> None:
+        """Store the earliest BTC-related SEC filing date (YYYY-MM-DD) for ticker."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE companies SET btc_first_filing_date = ? WHERE ticker = ?",
+                (date_str, ticker),
+            )
+
+    # ── Search Keywords CRUD (legacy shim — table kept empty after v30) ───────────
+
+    def get_search_keywords(self, active_only: bool = True) -> list:
+        with self._get_connection() as conn:
+            if active_only:
+                rows = conn.execute(
+                    "SELECT * FROM search_keywords WHERE active=1 ORDER BY id"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM search_keywords ORDER BY id"
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_search_keyword(self, phrase: str, notes: str = None) -> int:
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "INSERT INTO search_keywords (phrase, notes) VALUES (?, ?)",
+                (phrase, notes),
+            )
+            return cur.lastrowid
+
+    def update_search_keyword(self, kw_id: int, active: int = None, notes: str = None) -> bool:
+        sets, params = [], []
+        if active is not None:
+            sets.append("active = ?")
+            params.append(int(active))
+        if notes is not None:
+            sets.append("notes = ?")
+            params.append(notes)
+        if not sets:
+            return False
+        sets.append("updated_at = datetime('now')")
+        params.append(kw_id)
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                f"UPDATE search_keywords SET {', '.join(sets)} WHERE id = ?", params
+            )
+        return cur.rowcount > 0
+
+    def delete_search_keyword(self, kw_id: int) -> bool:
+        with self._get_connection() as conn:
+            cur = conn.execute("DELETE FROM search_keywords WHERE id = ?", (kw_id,))
+        return cur.rowcount > 0
+
+    def bump_keyword_hit_counts(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE search_keywords SET hit_count = hit_count + 1 WHERE active = 1"
+            )
+
+    # ── Metric Keywords CRUD (v32: stored as JSON in metric_schema.keywords) ──────
+
+    def _kw_next_id(self, conn: sqlite3.Connection) -> int:
+        """Return the next globally-unique keyword ID across all metrics."""
+        import json as _json
+        rows = conn.execute("SELECT keywords FROM metric_schema").fetchall()
+        max_id = 0
+        for row in rows:
+            for k in _json.loads(row[0] or '[]'):
+                if k.get('id', 0) > max_id:
+                    max_id = k['id']
+        return max_id + 1
+
+    def get_metric_keywords(self, metric_key: str, active_only: bool = True) -> list:
+        """Return keywords for a specific metric, optionally filtered to active only."""
+        import json as _json
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT keywords FROM metric_schema WHERE key = ?", (metric_key,)
+            ).fetchone()
+        if row is None:
+            return []
+        kws = _json.loads(row[0] or '[]')
+        if active_only:
+            kws = [k for k in kws if k.get('active', 1)]
+        return [
+            {
+                'id': k['id'],
+                'metric_key': metric_key,
+                'phrase': k['phrase'],
+                'exclude_terms': k.get('exclude_terms', ''),
+                'active': k.get('active', 1),
+                'hit_count': k.get('hit_count', 0),
+            }
+            for k in kws
+        ]
+
+    def get_all_metric_keywords(self, active_only: bool = True) -> list:
+        """Return all metric keywords across all metrics, ordered by metric key."""
+        import json as _json
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT key, keywords FROM metric_schema ORDER BY key"
+            ).fetchall()
+        result = []
+        for row in rows:
+            metric_key = row[0]
+            for k in _json.loads(row[1] or '[]'):
+                if active_only and not k.get('active', 1):
+                    continue
+                result.append({
+                    'id': k['id'],
+                    'metric_key': metric_key,
+                    'phrase': k['phrase'],
+                    'exclude_terms': k.get('exclude_terms', ''),
+                    'active': k.get('active', 1),
+                    'hit_count': k.get('hit_count', 0),
+                })
+        return result
+
+    def add_metric_keyword(
+        self,
+        metric_key: str,
+        phrase: str,
+        exclude_terms: str = '',
+    ) -> int:
+        """Append a keyword phrase to metric_schema.keywords for metric_key.
+
+        Raises sqlite3.IntegrityError on duplicate phrase within the same metric.
+        Returns the new keyword ID.
+        """
+        import json as _json
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT keywords FROM metric_schema WHERE key = ?", (metric_key,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Unknown metric_key: {metric_key!r}")
+            kws = _json.loads(row[0] or '[]')
+            if any(k['phrase'] == phrase for k in kws):
+                raise sqlite3.IntegrityError(
+                    f"UNIQUE constraint failed: metric_keywords.phrase "
+                    f"(metric_key={metric_key!r}, phrase={phrase!r})"
+                )
+            new_id = self._kw_next_id(conn)
+            kws.append({
+                'id': new_id,
+                'phrase': phrase,
+                'exclude_terms': exclude_terms or '',
+                'active': 1,
+                'hit_count': 0,
+            })
+            conn.execute(
+                "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                (_json.dumps(kws), metric_key),
+            )
+        return new_id
+
+    def update_metric_keyword(
+        self,
+        kw_id: int,
+        active: Optional[int] = None,
+        phrase: Optional[str] = None,
+        exclude_terms: Optional[str] = None,
+    ) -> bool:
+        """Update active flag, phrase, and/or exclude_terms for a keyword by ID.
+
+        Scans all metric JSON arrays to find the keyword.
+        Returns True if found and updated; False if not found.
+        """
+        if active is None and phrase is None and exclude_terms is None:
+            return False
+        import json as _json
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT key, keywords FROM metric_schema"
+            ).fetchall()
+            for row in rows:
+                metric_key, kws_json = row[0], _json.loads(row[1] or '[]')
+                for k in kws_json:
+                    if k['id'] == kw_id:
+                        if active is not None:
+                            k['active'] = int(active)
+                        if phrase is not None:
+                            k['phrase'] = phrase.strip()
+                        if exclude_terms is not None:
+                            k['exclude_terms'] = exclude_terms
+                        conn.execute(
+                            "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                            (_json.dumps(kws_json), metric_key),
+                        )
+                        return True
+        return False
+
+    def delete_metric_keyword(self, kw_id: int) -> bool:
+        """Remove a keyword by ID from whichever metric owns it.
+
+        Returns True if a keyword was removed, False if not found.
+        """
+        import json as _json
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT key, keywords FROM metric_schema"
+            ).fetchall()
+            for row in rows:
+                metric_key, kws_json = row[0], _json.loads(row[1] or '[]')
+                new_kws = [k for k in kws_json if k['id'] != kw_id]
+                if len(new_kws) < len(kws_json):
+                    conn.execute(
+                        "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                        (_json.dumps(new_kws), metric_key),
+                    )
+                    return True
+        return False
+
+    def bump_metric_keyword_hit_counts(self, metric_key: Optional[str] = None) -> None:
+        """Increment hit_count for all active keyword JSON objects.
+
+        If metric_key is given, only bumps keywords for that metric.
+        """
+        import json as _json
+        with self._get_connection() as conn:
+            if metric_key:
+                row = conn.execute(
+                    "SELECT keywords FROM metric_schema WHERE key = ?", (metric_key,)
+                ).fetchone()
+                if row:
+                    kws = _json.loads(row[0] or '[]')
+                    for k in kws:
+                        if k.get('active', 1):
+                            k['hit_count'] = k.get('hit_count', 0) + 1
+                    conn.execute(
+                        "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                        (_json.dumps(kws), metric_key),
+                    )
+            else:
+                rows = conn.execute(
+                    "SELECT key, keywords FROM metric_schema"
+                ).fetchall()
+                for row in rows:
+                    kws = _json.loads(row[1] or '[]')
+                    if not any(k.get('active', 1) for k in kws):
+                        continue
+                    for k in kws:
+                        if k.get('active', 1):
+                            k['hit_count'] = k.get('hit_count', 0) + 1
+                    conn.execute(
+                        "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                        (_json.dumps(kws), row[0]),
+                    )
+
     def update_report_summary(self, report_id: int, summary: str) -> None:
         """Write the LLM-generated summary for a report."""
         with self._get_connection() as conn:
@@ -1660,20 +2136,78 @@ class MinerDB:
             return row is not None
 
     def update_report_raw_text(
-        self, report_id: int, raw_text: str, source_url: str = None
+        self, report_id: int, raw_text: str, source_url: str = None, raw_html: str = None
     ) -> None:
-        """Update raw_text (and optionally source_url) for an existing report."""
+        """Update raw_text (and optionally source_url / raw_html) for an existing report."""
+        now = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
-            if source_url is not None:
+            if source_url is not None and raw_html is not None:
+                conn.execute(
+                    "UPDATE reports SET raw_text=?, source_url=?, raw_html=?, parsed_at=? WHERE id=?",
+                    (raw_text, source_url, raw_html, now, report_id),
+                )
+            elif source_url is not None:
                 conn.execute(
                     "UPDATE reports SET raw_text=?, source_url=?, parsed_at=? WHERE id=?",
-                    (raw_text, source_url, datetime.now(timezone.utc).isoformat(), report_id),
+                    (raw_text, source_url, now, report_id),
+                )
+            elif raw_html is not None:
+                conn.execute(
+                    "UPDATE reports SET raw_text=?, raw_html=?, parsed_at=? WHERE id=?",
+                    (raw_text, raw_html, now, report_id),
                 )
             else:
                 conn.execute(
                     "UPDATE reports SET raw_text=?, parsed_at=? WHERE id=?",
-                    (raw_text, datetime.now(timezone.utc).isoformat(), report_id),
+                    (raw_text, now, report_id),
                 )
+
+    def backfill_raw_html_from_disk(self) -> dict:
+        """Populate raw_html for archive_html reports where it is NULL.
+
+        For each ``archive_html`` report with ``raw_html IS NULL``, the
+        ``source_url`` column holds the local file path.  This method reads
+        the file and writes the first 300 000 characters into ``raw_html``.
+
+        Returns a summary dict::
+
+            {
+                "candidates": int,   # rows with raw_html IS NULL
+                "backfilled":  int,  # successfully populated
+                "skipped_missing": int,  # source file not found on disk
+                "errors":      int,  # unexpected read/write errors
+            }
+        """
+        from pathlib import Path
+        from infra.text_utils import MAX_RAW_HTML
+
+        summary = {"candidates": 0, "backfilled": 0, "skipped_missing": 0, "errors": 0}
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, source_url FROM reports "
+                "WHERE source_type = 'archive_html' AND (raw_html IS NULL OR raw_html = '')"
+            ).fetchall()
+        summary["candidates"] = len(rows)
+
+        for row in rows:
+            report_id = row["id"]
+            source_url = row["source_url"] or ""
+            path = Path(source_url)
+            if not path.exists():
+                summary["skipped_missing"] += 1
+                continue
+            try:
+                raw_html = path.read_text(encoding="utf-8", errors="replace")[:MAX_RAW_HTML]
+                with self._get_connection() as conn:
+                    conn.execute(
+                        "UPDATE reports SET raw_html = ? WHERE id = ?",
+                        (raw_html, report_id),
+                    )
+                summary["backfilled"] += 1
+            except Exception:
+                summary["errors"] += 1
+
+        return summary
 
     def get_stale_8k_reports(self, ticker: str = None) -> list:
         """Return edgar_8k reports where raw_text is the EDGAR index page boilerplate."""
@@ -1690,6 +2224,26 @@ class MinerDB:
                     "SELECT id, ticker, report_date, source_url FROM reports "
                     "WHERE source_type='edgar_8k' "
                     "AND raw_text LIKE 'EDGAR Filing Documents%'"
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_xbrl_viewer_reports(self, ticker: str = None) -> list:
+        """Return 10-Q/10-K/etc. reports stored with parse_quality='xbrl_viewer'.
+
+        These contain only the EDGAR viewer shell instead of actual filing text.
+        Used by EdgarConnector.refetch_xbrl_viewer_reports() to fix bad records.
+        """
+        with self._get_connection() as conn:
+            if ticker:
+                rows = conn.execute(
+                    "SELECT id, ticker, report_date, source_type, source_url FROM reports "
+                    "WHERE parse_quality='xbrl_viewer' AND ticker=?",
+                    (ticker,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, ticker, report_date, source_type, source_url FROM reports "
+                    "WHERE parse_quality='xbrl_viewer'"
                 ).fetchall()
             return [dict(r) for r in rows]
 
@@ -1808,8 +2362,8 @@ class MinerDB:
     def purge_data_points(self, ticker: Optional[str] = None) -> int:
         """Delete all data_points (or for one ticker). Returns row count deleted.
 
-        Also resets reports.extracted_at = NULL for the affected ticker(s) so
-        reports can be re-extracted without the --force flag.
+        Also resets reports.extracted_at = NULL and extraction_status = 'pending'
+        for affected reports so get_unextracted_reports() picks them up again.
         """
         with self._get_connection() as conn:
             if ticker:
@@ -1818,12 +2372,15 @@ class MinerDB:
                 ).fetchone()[0]
                 conn.execute("DELETE FROM data_points WHERE ticker = ?", (ticker,))
                 conn.execute(
-                    "UPDATE reports SET extracted_at = NULL WHERE ticker = ?", (ticker,)
+                    "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"
+                    " WHERE ticker = ?", (ticker,)
                 )
             else:
                 count = conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0]
                 conn.execute("DELETE FROM data_points")
-                conn.execute("UPDATE reports SET extracted_at = NULL")
+                conn.execute(
+                    "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"
+                )
         log.info("purge_data_points: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
         return count
 
@@ -3670,6 +4227,57 @@ class MinerDB:
                 return None
             return self._deserialize_pipeline_run_row(dict(row))
 
+    def get_last_successful_pipeline_run(
+        self,
+        source: Optional[str] = None,
+        ticker: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return the most recent pipeline run with a successful status.
+
+        Args:
+            source: Accepted for API compatibility but unused — there is no
+                source column on pipeline_runs; all full pipeline runs include
+                EDGAR ingest.
+            ticker: When provided, only considers runs that targeted this
+                ticker (matched via pipeline_run_tickers).
+
+        Returns:
+            Decoded pipeline_runs row dict, or None if no successful run exists.
+        """
+        successful = ('complete', 'partial_complete')
+        with self._get_connection() as conn:
+            if ticker:
+                row = conn.execute(
+                    """
+                    SELECT pr.* FROM pipeline_runs pr
+                    JOIN pipeline_run_tickers prt
+                        ON prt.run_id = pr.id AND prt.ticker = ?
+                    WHERE pr.status IN ({})
+                    ORDER BY pr.id DESC LIMIT 1
+                    """.format(','.join('?' * len(successful))),
+                    (ticker, *successful),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM pipeline_runs WHERE status IN ({}) ORDER BY id DESC LIMIT 1".format(
+                        ','.join('?' * len(successful))
+                    ),
+                    successful,
+                ).fetchone()
+        if row is None:
+            return None
+        return self._deserialize_pipeline_run_row(dict(row))
+
+    def get_latest_pipeline_run(self) -> Optional[dict]:
+        """Return the most recently created pipeline run, or None if the table is empty."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM pipeline_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            return self._deserialize_pipeline_run_row(dict(row))
+
     def add_pipeline_run_event(
         self,
         run_id: int,
@@ -3782,6 +4390,45 @@ class MinerDB:
                     (sector,),
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def update_metric_schema(
+        self, row_id: int,
+        active: int = None,
+        label: str = None,
+        unit: str = None,
+    ) -> bool:
+        """Update active flag, label, and/or unit for a metric_schema row.
+
+        Returns True if a row was updated, False if row_id not found.
+        """
+        sets = []
+        params = []
+        if active is not None:
+            sets.append("active = ?")
+            params.append(int(active))
+        if label is not None:
+            sets.append("label = ?")
+            params.append(label)
+        if unit is not None:
+            sets.append("unit = ?")
+            params.append(unit)
+        if not sets:
+            return False
+        params.append(row_id)
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                f"UPDATE metric_schema SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+        return cur.rowcount > 0
+
+    def delete_metric_schema(self, row_id: int) -> bool:
+        """Permanently delete a metric_schema row by id. Returns True if deleted."""
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM metric_schema WHERE id = ?", (row_id,)
+            )
+        return cur.rowcount > 0
 
     def add_analyst_metric(self, key: str, label: str, unit: str, sector: str) -> dict:
         """Add an analyst-defined metric to the schema. Raises IntegrityError on duplicate key+sector."""

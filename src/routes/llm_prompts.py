@@ -2,6 +2,7 @@
 LLM prompt DB store API routes.
 
   GET  /api/llm_prompts           — list all active prompts
+  GET  /api/llm_prompts/preview   — render the full assembled batch prompt (no document body)
   GET  /api/llm_prompts/<metric>  — get active prompt for metric (404 if not set)
   POST /api/llm_prompts/<metric>  — upsert prompt for metric
 """
@@ -31,6 +32,51 @@ def list_llm_prompts():
         return jsonify({'success': True, 'data': {'prompts': prompts}})
     except Exception:
         log.error('Error listing LLM prompts', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/llm_prompts/preview')
+def preview_llm_prompt():
+    """Render the full assembled batch prompt exactly as the LLM receives it.
+
+    Uses a stub document body so the user can see the complete prompt structure —
+    preamble, company context hint, search term injection, per-metric instruction
+    blocks, and output format — without running a live extraction.
+
+    Query params:
+        ticker (optional): inject the per-ticker context hint if one is set.
+        metrics (optional): comma-separated metric keys to include; defaults to
+                            the three active core metrics.
+    """
+    try:
+        from app_globals import get_db
+        from interpreters.llm_interpreter import LLMInterpreter
+
+        db = get_db()
+        ticker = request.args.get('ticker') or None
+        metrics_param = request.args.get('metrics')
+        if metrics_param:
+            metrics = [m.strip() for m in metrics_param.split(',') if m.strip()]
+        else:
+            try:
+                rows = db.get_metric_schema('BTC-miners', active_only=True)
+                metrics = [r['key'] for r in rows] if rows else ['production_btc', 'hodl_btc', 'sold_btc']
+            except Exception:
+                log.warning('Could not load active metrics for preview', exc_info=True)
+                metrics = ['production_btc', 'hodl_btc', 'sold_btc']
+
+        import requests as req_lib
+        interpreter = LLMInterpreter(session=req_lib.Session(), db=db)
+        stub_doc = '[document text will appear here during extraction]'
+        prompt = interpreter._build_batch_prompt(stub_doc, metrics, ticker=ticker)
+
+        return jsonify({'success': True, 'data': {
+            'prompt': prompt,
+            'ticker': ticker,
+            'metrics': metrics,
+        }})
+    except Exception:
+        log.error('Error rendering prompt preview', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 

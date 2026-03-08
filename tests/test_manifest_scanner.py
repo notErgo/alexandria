@@ -70,10 +70,16 @@ def test_detect_ingest_state_dated_not_in_db():
 
 
 def test_detect_ingest_state_dated_in_db():
-    """File with inferrable period that IS in the DB → ('ingested', 'YYYY-MM-01')."""
+    """File with inferrable period that IS in the DB → ('ingested', 'YYYY-MM-01').
+
+    existing_report_dates must contain YYYY-MM prefixes (7 chars), not full dates.
+    This matches how scan_archive_directory builds the set from r['report_date'][:7].
+    A file dated 2024-06-01 matches a DB record stored as '2024-06-03' (same YYYY-MM).
+    """
     from scrapers.manifest_scanner import detect_ingest_state
     path = Path('/some/MARA MONTHLY/2024-06-01_mara_report.html')
-    state, period = detect_ingest_state(path, 'MARA', existing_report_dates={'2024-06-01'})
+    # Pass YYYY-MM prefix (as scan_archive_directory now builds it)
+    state, period = detect_ingest_state(path, 'MARA', existing_report_dates={'2024-06'})
     assert state == 'ingested'
     assert period == '2024-06-01'
 

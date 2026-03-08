@@ -154,3 +154,46 @@ class TestReviewRejectRoute:
             resp = c.post(f'/api/review/{item_id}/reject',
                          json={}, content_type='application/json')
             assert resp.status_code == 400
+
+
+class TestReextractTicker:
+    """reextract routes pass ticker context to LLM via extract_batch."""
+
+    def test_reextract_uses_extract_batch_with_ticker(self, app_with_review, monkeypatch):
+        """POST /api/review/<id>/reextract calls extract_batch with ticker from item."""
+        import app_globals
+        import interpreters.llm_interpreter as _llm_mod
+
+        captured = {}
+
+        class MockLLM:
+            def __init__(self, session, db):
+                pass
+
+            def check_connectivity(self):
+                return True
+
+            def extract(self, text, metric):
+                # Old path — must NOT be called
+                raise AssertionError("extract() must not be called; use extract_batch()")
+
+            def extract_batch(self, text, metrics, ticker=None):
+                captured['ticker'] = ticker
+                captured['metrics'] = list(metrics)
+                return {}
+
+        monkeypatch.setattr(_llm_mod, 'LLMInterpreter', MockLLM)
+
+        with app_with_review.test_client() as c:
+            resp = c.get('/api/review')
+            item_id = resp.get_json()['data']['items'][0]['id']
+
+            resp = c.post(
+                f'/api/review/{item_id}/reextract',
+                json={'selection': 'MARA mined 700 BTC in January 2024.'},
+                content_type='application/json',
+            )
+            assert resp.status_code == 200, resp.get_json()
+            assert captured.get('ticker') == 'MARA', (
+                f"extract_batch must receive ticker='MARA', got {captured.get('ticker')!r}"
+            )

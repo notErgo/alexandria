@@ -118,3 +118,70 @@ class TestLlmPromptRoutes:
         resp = client.get('/api/llm_prompts')
         data = resp.get_json()
         assert len(data['data']['prompts']) == 2
+
+    def test_preview_prompt_returns_assembled_text(self, client):
+        """GET /api/llm_prompts/preview returns the full assembled prompt string."""
+        resp = client.get('/api/llm_prompts/preview')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['success'] is True
+        prompt = data['data']['prompt']
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0
+        # Must contain all major structural sections
+        assert '=== METRIC:' in prompt
+        assert '=== OUTPUT FORMAT ===' in prompt
+
+    def test_preview_prompt_includes_active_keywords(self, client, db_with_company):
+        """Per-metric keywords from metric_keywords table appear in the rendered preview."""
+        import app_globals
+        db = app_globals.get_db()
+        db.add_metric_keyword('hashrate_eh', '"hashrate growth"')
+        resp = client.get('/api/llm_prompts/preview')
+        assert resp.status_code == 200
+        prompt = resp.get_json()['data']['prompt']
+        assert '"hashrate growth"' in prompt
+
+    def test_preview_prompt_accepts_ticker_param(self, client):
+        """?ticker=X is accepted and does not crash (hint may or may not be set)."""
+        resp = client.get('/api/llm_prompts/preview?ticker=MARA')
+        assert resp.status_code == 200
+        assert resp.get_json()['success'] is True
+
+    def test_preview_default_metrics_exclude_deprecated(self, client):
+        """Default preview must not include hashrate_eh (active=0 in schema)."""
+        import app_globals
+        db = app_globals.get_db()
+        with db._get_connection() as conn:
+            conn.execute("UPDATE metric_schema SET active = 0 WHERE key = 'hashrate_eh'")
+
+        resp = client.get('/api/llm_prompts/preview')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['success'] is True
+        assert 'hashrate_eh' not in data['data']['metrics'], (
+            "Deprecated metric hashrate_eh must not appear in default preview metrics"
+        )
+
+    def test_preview_default_metrics_include_core(self, client):
+        """Default preview must include production_btc and hodl_btc (active=1)."""
+        resp = client.get('/api/llm_prompts/preview')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['success'] is True
+        metrics = data['data']['metrics']
+        assert 'production_btc' in metrics, "production_btc must be in default preview metrics"
+        assert 'hodl_btc' in metrics, "hodl_btc must be in default preview metrics"
+
+    def test_preview_prompt_includes_target_metrics_block(self, client):
+        """Preview prompt must include a TARGET METRICS block with metric labels from metric_schema."""
+        resp = client.get('/api/llm_prompts/preview')
+        assert resp.status_code == 200
+        prompt = resp.get_json()['data']['prompt']
+        assert '=== TARGET METRICS ===' in prompt, (
+            "Extraction prompt must include TARGET METRICS block sourced from metric_schema"
+        )
+        # Must contain at least one metric label from the seeded metric_schema
+        assert 'BTC Produced' in prompt or 'BTC Holdings' in prompt, (
+            "TARGET METRICS block must include metric labels from the DB"
+        )

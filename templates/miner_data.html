@@ -195,12 +195,29 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   margin-left: 4px;
   vertical-align: middle;
 }
+.td-pending {
+  color: var(--theme-text-secondary, #94a3b8);
+  font-style: italic;
+}
+.badge-pending {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.35);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 .src-badge {
   font-size: 0.65rem;
   color: var(--theme-accent);
   margin-left: 4px;
 }
-.td-source-col { text-align: center; width: 50px; }
+.td-type-col { text-align: center; width: 46px; font-size: 0.75rem; white-space: nowrap; }
+.td-date-col { text-align: left; width: 88px; font-size: 0.77rem; white-space: nowrap; color: var(--theme-text-muted); }
 .src-icon { font-size: 0.75rem; }
 .src-icon.has-doc { color: var(--theme-accent); }
 .src-icon.no-doc { color: var(--theme-text-muted); }
@@ -761,7 +778,8 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
             <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);margin-bottom:.4rem;">Show columns</div>
             <!-- metric checkboxes injected by buildTableHeaders() -->
             <div id="col-vis-metrics"></div>
-            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="source" checked> Source</label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-type" checked> Type</label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-date" checked> Date</label>
           </div>
         </div>
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
@@ -772,7 +790,8 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
             <tr id="timeline-thead-row">
               <th data-sort="period">Period</th>
               <!-- metric columns injected by buildTableHeaders() -->
-              <th class="td-source-col" data-col="source">Src</th>
+              <th data-col="doc-type">Type</th>
+              <th data-col="doc-date">Date</th>
             </tr>
           </thead>
           <tbody id="timeline-tbody">
@@ -801,7 +820,8 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
               <tr id="sec-thead-row">
                 <th>Period</th>
                 <!-- columns injected by buildSecHeaders() -->
-                <th data-col="sec-source">Src</th>
+                <th data-col="sec-doc-type">Type</th>
+                <th data-col="sec-doc-date">Date</th>
               </tr>
             </thead>
             <tbody id="sec-timeline-tbody">
@@ -924,7 +944,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
   <div id="doc-panel" data-spec-id="MD5.2">
     <div class="doc-panel-header">
-      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Doc Panel</span> <span class="source-badge source-badge-data">DATA</span></div>
+      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
       <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open rendered HTML in new tab" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Rendered</button>
       <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
     </div>
@@ -946,11 +966,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
       <div class="pattern-form-row">
         <label>Metric</label>
         <select id="pattern-metric">
-          <option value="production_btc">production_btc</option>
-          <option value="hodl_btc">hodl_btc</option>
-          <option value="sold_btc">sold_btc</option>
-          <option value="hashrate_eh">hashrate_eh</option>
-          <option value="realization_rate">realization_rate</option>
+          <option value="">Loading metrics...</option>
         </select>
       </div>
       <div class="pattern-form-row">
@@ -980,14 +996,27 @@ let _rows = [];                   // full unfiltered row list from API
 let _selectedPeriod = null;       // period of the currently open doc panel
 let _currentDocText = '';         // raw text for pattern generator (set when doc is loaded)
 
-// Metric highlight colours — matches rule card left border colours
-const METRIC_COLORS = {
-  production_btc:   '#3b82f6',  // blue
-  hodl_btc:         '#8b5cf6',  // purple
-  sold_btc:         '#f59e0b',  // amber
-  hashrate_eh:      '#10b981',  // green
-  realization_rate: '#f97316',  // orange
+// Metric highlight colours — 5 known colours; extras assigned from a palette.
+const _METRIC_COLORS_KNOWN = {
+  production_btc:   '#3b82f6',
+  hodl_btc:         '#8b5cf6',
+  sold_btc:         '#f59e0b',
+  hashrate_eh:      '#10b981',
+  realization_rate: '#f97316',
 };
+const _METRIC_PALETTE = [
+  '#06b6d4', '#ec4899', '#84cc16', '#a78bfa', '#fb923c',
+  '#14b8a6', '#f43f5e', '#facc15', '#60a5fa', '#34d399',
+];
+let METRIC_COLORS = Object.assign({}, _METRIC_COLORS_KNOWN);
+
+function _assignMetricColor(key) {
+  if (!METRIC_COLORS[key]) {
+    const idx = Object.keys(METRIC_COLORS).length % _METRIC_PALETTE.length;
+    METRIC_COLORS[key] = _METRIC_PALETTE[idx];
+  }
+  return METRIC_COLORS[key];
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', boot);
@@ -1054,6 +1083,29 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function boot() {
+  // Load metric schema from SSOT — populates #pattern-metric and METRICS_ORDER fallback
+  try {
+    const mresp = await fetch('/api/metric_schema?sector=BTC-miners');
+    if (mresp.ok) {
+      const mbody = await mresp.json();
+      if (mbody.success && mbody.data && mbody.data.metrics) {
+        const metrics = mbody.data.metrics;
+        METRICS_ORDER = metrics.map(function(m) { return m.key; });
+        metrics.forEach(function(m) { _assignMetricColor(m.key); });
+        const sel = document.getElementById('pattern-metric');
+        sel.innerHTML = '';
+        metrics.forEach(function(m) {
+          const opt = document.createElement('option');
+          opt.value = m.key;
+          opt.textContent = m.key;
+          sel.appendChild(opt);
+        });
+      }
+    }
+  } catch (e) {
+    // Non-fatal: pattern-metric retains Loading placeholder
+  }
+
   // Load companies to build tab strip
   try {
     const resp = await fetch('/api/companies');
@@ -1122,7 +1174,8 @@ async function selectCompany(ticker) {
     _rows = data.rows;
 
     // Update dynamic metric list and rebuild table headers + col-vis checkboxes
-    METRICS_ORDER = data.metric_keys || ['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'];
+    // Fall back to METRICS_ORDER populated by boot() (from /api/metric_schema) if not in response.
+    METRICS_ORDER = data.metric_keys || METRICS_ORDER;
     buildTableHeaders(METRICS_ORDER, data.metric_labels || {}, data.metric_units || {});
 
     renderInfoCard(data.company, data.stats);
@@ -1215,8 +1268,9 @@ function applyFilters(rows) {
 }
 
 // ── Render table ──────────────────────────────────────────────────────────
-// METRICS_ORDER is populated dynamically by buildTableHeaders() when a company loads.
-let METRICS_ORDER = ['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'];
+// METRICS_ORDER is populated from GET /api/metric_schema in boot(), then updated by
+// buildTableHeaders() when company data arrives. Never hardcoded here.
+let METRICS_ORDER = [];
 let _metricLabelsCache = {};
 
 function fmtValue(m) {
@@ -1256,6 +1310,9 @@ function renderTable(allRows) {
       }
       if (m && m.value != null) {
         const formatted = escapeHtml(fmtValue(m) || '');
+        if (m.is_pending) {
+          return `<td class="td-pending">${formatted}<span class="badge-pending">pending</span></td>`;
+        }
         const methodBadge = m.extraction_method
           ? `<span class="method-badge">${escapeHtml(m.extraction_method)}</span>`
           : '';
@@ -1269,20 +1326,38 @@ function renderTable(allRows) {
       return `<td class="td-nodoc">—</td>`;
     });
 
-    // Source column
-    const srcCell = row.has_report
-      ? `<td class="td-source-col"><span class="src-icon has-doc" title="${escapeHtml(row.source_type || '')}">●</span></td>`
-      : `<td class="td-source-col"><span class="src-icon no-doc" title="no document">○</span></td>`;
+    // Type and Date columns
+    const typeLabel = srcTypeLabel(row.source_type);
+    const typeCell = `<td class="td-type-col" title="${escapeHtml(row.source_type || '')}">${escapeHtml(typeLabel)}</td>`;
+    const dateVal = row.report_date ? row.report_date.slice(0, 10) : '—';
+    const dateCell = `<td class="td-date-col">${escapeHtml(dateVal)}</td>`;
 
     parts.push(`
       <tr class="${rowClass}${selClass}" data-period="${escapeHtml(row.period)}">
         <td class="td-period">${escapeHtml(row.period_label)}</td>
         ${metricCells.join('')}
-        ${srcCell}
+        ${typeCell}${dateCell}
       </tr>`);
   }
   tbody.innerHTML = parts.join('');
   applyColVisibility();
+}
+
+// ── Source type → display label ────────────────────────────────────────────
+const _SOURCE_TYPE_LABELS = {
+  archive_pdf:      'PR',
+  archive_html:     'PR',
+  ir_press_release: 'IR',
+  edgar_8k:         '8-K',
+  edgar_10k:        '10-K',
+  edgar_10q:        '10-Q',
+  edgar_20f:        '20-F',
+  edgar_40f:        '40-F',
+  edgar_6k:         '6-K',
+};
+function srcTypeLabel(srcType) {
+  if (!srcType) return '—';
+  return _SOURCE_TYPE_LABELS[srcType] || srcType.replace(/^edgar_/, '').toUpperCase();
 }
 
 // ── Dynamic table headers + col-vis ───────────────────────────────────────
@@ -1296,11 +1371,12 @@ function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
 
   // ── Rebuild <thead> metric columns ─────────────────────────────────────
   const theadRow = document.getElementById('timeline-thead-row');
-  // Remove old metric ths (those with data-col but not "source")
+  // Remove old metric ths (all those with data-col except the fixed Type/Date headers)
+  const fixedCols = new Set(['doc-type', 'doc-date']);
   Array.from(theadRow.querySelectorAll('th[data-col]')).forEach(function(th) {
-    if (th.getAttribute('data-col') !== 'source') th.remove();
+    if (!fixedCols.has(th.getAttribute('data-col'))) th.remove();
   });
-  const srcTh = theadRow.querySelector('th[data-col="source"]');
+  const typeTh = theadRow.querySelector('th[data-col="doc-type"]');
   metricKeys.forEach(function(key) {
     const label = (metricLabels && metricLabels[key]) || key;
     const th = document.createElement('th');
@@ -1314,7 +1390,7 @@ function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
       `opacity:0.55;margin-left:3px;vertical-align:middle" ` +
       `onclick="event.stopPropagation()">⚙</a>`;
     th.innerHTML = escapeHtml(label) + gearLink;
-    theadRow.insertBefore(th, srcTh);
+    theadRow.insertBefore(th, typeTh);
   });
 
   // ── Rebuild col-vis metric checkboxes ──────────────────────────────────
@@ -1661,16 +1737,17 @@ async function loadSecData(ticker) {
 
 function buildSecHeaders(metricKeys, metricLabels) {
   const theadRow = document.getElementById('sec-thead-row');
+  const fixedSecCols = new Set(['sec-doc-type', 'sec-doc-date']);
   Array.from(theadRow.querySelectorAll('th[data-col]')).forEach(function(th) {
-    if (th.getAttribute('data-col') !== 'sec-source') th.remove();
+    if (!fixedSecCols.has(th.getAttribute('data-col'))) th.remove();
   });
-  const srcTh = theadRow.querySelector('th[data-col="sec-source"]');
+  const typeTh = theadRow.querySelector('th[data-col="sec-doc-type"]');
   metricKeys.forEach(function(key) {
     const label = (metricLabels && metricLabels[key]) || key;
     const th = document.createElement('th');
     th.setAttribute('data-col', 'sec-' + key);
     th.textContent = label;
-    theadRow.insertBefore(th, srcTh);
+    theadRow.insertBefore(th, typeTh);
   });
 }
 
@@ -1685,17 +1762,23 @@ function renderSecTable(rows) {
     const metricCells = _secMetricKeys.map(function(metric) {
       const m = row.metrics[metric];
       if (!m || m.value == null) return `<td class="td-empty">—</td>`;
+      if (m.is_pending) {
+        return `<td class="td-pending">${escapeHtml(fmtValue(m) || '')}<span class="badge-pending">pending</span></td>`;
+      }
       const finalBadge = m.is_finalized ? `<span class="badge-final">F</span>` : '';
       return `<td class="td-value">${escapeHtml(fmtValue(m) || '')}${finalBadge}</td>`;
     });
     const srcType = row.source_type || '';
     const srcUrl  = row.source_url  || '';
-    const srcCell = srcType
-      ? `<td class="td-source-col"><a href="${escapeHtml(srcUrl)}" target="_blank" rel="noopener" title="${escapeHtml(srcType)}" style="color:var(--theme-accent);text-decoration:none">●</a></td>`
-      : `<td class="td-source-col">—</td>`;
+    const typeLabel = srcTypeLabel(srcType);
+    const typeCellSec = srcUrl
+      ? `<td class="td-type-col"><a href="${escapeHtml(srcUrl)}" target="_blank" rel="noopener" title="${escapeHtml(srcType)}" style="color:var(--theme-accent);text-decoration:none">${escapeHtml(typeLabel)}</a></td>`
+      : `<td class="td-type-col">${escapeHtml(typeLabel)}</td>`;
+    const secDateVal = row.report_date ? row.report_date.slice(0, 10) : '—';
+    const dateCellSec = `<td class="td-date-col">${escapeHtml(secDateVal)}</td>`;
     parts.push(`<tr>
       <td class="td-period">${escapeHtml(row.period_label)}</td>
-      ${metricCells.join('')}${srcCell}
+      ${metricCells.join('')}${typeCellSec}${dateCellSec}
     </tr>`);
   }
   tbody.innerHTML = parts.join('');

@@ -127,6 +127,56 @@ def test_overnight_events_rejects_invalid_limit(client):
     assert 'limit must be an integer' in resp.get_json()['error']['message']
 
 
+def test_get_last_successful_pipeline_run_returns_none_when_no_runs(tmp_path):
+    db = MinerDB(str(tmp_path / 'test.db'))
+    result = db.get_last_successful_pipeline_run(source='edgar', ticker=None)
+    assert result is None
+
+
+def test_get_last_successful_pipeline_run_returns_completed_run(tmp_path):
+    db = MinerDB(str(tmp_path / 'test.db'))
+    run = db.create_pipeline_run(triggered_by='test', scope={}, config={})
+    db.update_pipeline_run(run['id'], status='complete')
+    result = db.get_last_successful_pipeline_run(source='edgar', ticker=None)
+    assert result is not None
+    assert result['id'] == run['id']
+
+
+def test_get_last_successful_pipeline_run_ignores_failed_runs(tmp_path):
+    db = MinerDB(str(tmp_path / 'test.db'))
+    run = db.create_pipeline_run(triggered_by='test', scope={}, config={})
+    db.update_pipeline_run(run['id'], status='failed')
+    result = db.get_last_successful_pipeline_run(source='edgar', ticker=None)
+    assert result is None
+
+
+def test_get_last_successful_pipeline_run_filters_by_ticker(tmp_path):
+    db = MinerDB(str(tmp_path / 'test.db'))
+    run = db.create_pipeline_run(triggered_by='test', scope={}, config={})
+    db.update_pipeline_run(run['id'], status='complete')
+    db.upsert_pipeline_run_ticker(run['id'], 'TICK_A')
+    assert db.get_last_successful_pipeline_run(source='edgar', ticker='TICK_A') is not None
+    assert db.get_last_successful_pipeline_run(source='edgar', ticker='TICK_B') is None
+
+
+def test_overnight_latest_returns_most_recent_run(client):
+    import app_globals
+    db = app_globals.get_db()
+    run1 = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['TICK_A']}, config={})
+    run2 = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['TICK_B']}, config={})
+
+    resp = client.get('/api/pipeline/overnight/latest')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    assert data['data']['run']['id'] == run2['id']
+
+
+def test_overnight_latest_returns_404_when_no_runs(client):
+    resp = client.get('/api/pipeline/overnight/latest')
+    assert resp.status_code == 404
+
+
 def test_overnight_cancel_sets_cancel_requested_flag(client):
     import app_globals
 

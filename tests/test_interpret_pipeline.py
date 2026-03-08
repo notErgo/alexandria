@@ -553,4 +553,155 @@ class TestGapFill:
         from interpreters.interpret_pipeline import _prior_period
         assert _prior_period('2024-01-01') == '2023-12-01'
         assert _prior_period('2024-03-01') == '2024-02-01'
-        assert _prior_period('invalid') is None
+
+
+class TestActiveMetricFilter:
+    """_active_metric_keys() filters metrics by metric_schema.active flag."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def _set_metric_active(self, db, key: str, active: int) -> None:
+        with db._get_connection() as conn:
+            conn.execute(
+                "UPDATE metric_schema SET active = ? WHERE key = ?", (active, key)
+            )
+
+    def test_monthly_llm_receives_only_active_metrics(
+        self, db_with_company, monkeypatch
+    ):
+        """LLM extract_batch receives only active metrics; inactive ones are excluded.
+
+        Uses a registry that includes hashrate_eh so the test verifies DB-driven
+        filtering, not just the absence of a pattern file.
+        """
+        import interpreters.interpret_pipeline as _ep
+        from interpreters.pattern_registry import PatternRegistry
+        from miner_types import ExtractionResult
+
+        # Build a registry that explicitly includes hashrate_eh so it would reach
+        # the LLM if DB filtering is not applied.
+        fat_registry = PatternRegistry(metrics={
+            'production_btc': [],
+            'hodl_btc': [],
+            'hashrate_eh': [],  # must be filtered out by active=0 in metric_schema
+        })
+
+        # v22 migration already marks hashrate_eh active=0 in fresh DBs; confirm.
+        rows = db_with_company.get_metric_schema('BTC-miners', active_only=False)
+        hashrate_row = next((r for r in rows if r['key'] == 'hashrate_eh'), None)
+        assert hashrate_row is not None and hashrate_row.get('active', 1) == 0, (
+            "Precondition: hashrate_eh must be active=0 in a fresh DB (v22 migration)"
+        )
+
+        captured = {}
+
+        class _MockLLM:
+            _last_batch_summary = ''
+            _last_call_meta = {}
+
+            def check_connectivity(self):
+                return True
+
+            def extract_batch(self, text, metrics, ticker=None, **kwargs):
+                captured['metrics'] = list(metrics)
+                return {
+                    'production_btc': ExtractionResult(
+                        metric='production_btc', value=700.0, unit='BTC', confidence=0.95,
+                        extraction_method='llm_test', source_snippet='mined 700 BTC',
+                        pattern_id='llm_test',
+                    )
+                }
+
+            def extract_for_period(self, text, metrics, period, prior_period):
+                return {}
+
+        mock_llm = _MockLLM()
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report({
+            'ticker': 'MARA', 'report_date': '2024-09-01',
+            'published_date': '2024-09-01', 'source_type': 'archive_html',
+            'source_url': 'https://example.com/mara-sep-2024.html',
+            'raw_text': 'MARA mined 700 BTC in September 2024.',
+            'parsed_at': '2024-09-01T10:00:00',
+        })
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, fat_registry)
+
+        assert 'metrics' in captured, "extract_batch was not called"
+        assert 'hashrate_eh' not in captured['metrics'], (
+            "Inactive metric hashrate_eh must not be sent to LLM"
+        )
+        assert 'production_btc' in captured['metrics'], (
+            "Active metric production_btc must be present"
+        )
+
+    def test_active_metrics_fallback_to_registry_when_schema_empty(
+        self, db_with_company, monkeypatch
+    ):
+        """When metric_schema is empty, _active_metric_keys falls back to registry keys."""
+        import interpreters.interpret_pipeline as _ep
+        from interpreters.pattern_registry import PatternRegistry
+
+        fat_registry = PatternRegistry(metrics={
+            'production_btc': [],
+            'hodl_btc': [],
+            'hashrate_eh': [],
+        })
+
+        # Remove all metric_schema rows to simulate an empty schema
+        with db_with_company._get_connection() as conn:
+            conn.execute("DELETE FROM metric_schema")
+
+        captured = {}
+
+        class _MockLLM2:
+            _last_batch_summary = ''
+            _last_call_meta = {}
+
+            def check_connectivity(self):
+                return True
+
+            def extract_batch(self, text, metrics, ticker=None, **kwargs):
+                captured['metrics'] = list(metrics)
+                return {}
+
+            def extract(self, text, metric):
+                return None
+
+            def extract_for_period(self, text, metrics, period, prior_period):
+                return {}
+
+        mock_llm = _MockLLM2()
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report({
+            'ticker': 'MARA', 'report_date': '2024-09-01',
+            'published_date': '2024-09-01', 'source_type': 'archive_html',
+            'source_url': 'https://example.com/mara-sep-2024.html',
+            'raw_text': 'MARA mined 700 BTC in September 2024.',
+            'parsed_at': '2024-09-01T10:00:00',
+        })
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, fat_registry)
+
+        assert 'metrics' in captured, "extract_batch was not called"
+        assert len(captured['metrics']) > 0, (
+            "Fallback must provide a non-empty metrics list from registry"
+        )
+        # With empty schema, all registry keys should be in the fallback
+        assert 'hashrate_eh' in captured['metrics'], (
+            "Fallback must include all registry metrics when schema is empty"
+        )

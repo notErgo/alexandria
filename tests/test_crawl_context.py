@@ -7,11 +7,12 @@ import pytest
 from unittest.mock import MagicMock
 
 
-def _make_db(earliest_period=None, covered=None, gaps=None):
+def _make_db(earliest_period=None, covered=None, gaps=None, btc_first_filing_date=None):
     db = MagicMock()
     db.get_earliest_bitcoin_report_period.return_value = earliest_period
     db.get_covered_periods.return_value = covered or []
     db.get_missing_periods.return_value = gaps or []
+    db.get_btc_first_filing_date.return_value = btc_first_filing_date
     return db
 
 

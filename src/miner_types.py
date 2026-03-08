@@ -56,11 +56,22 @@ class ReviewStatus(Enum):
 
 
 class Metric(Enum):
+    """All tracked metrics — mirrors metric_schema DB seed.
+    Add new metrics here AND in MinerDB._seed_metric_schema() together.
+    """
     PRODUCTION_BTC = "production_btc"
     HODL_BTC = "hodl_btc"
     LIQUIDATION_BTC = "sold_btc"
     HASHRATE_EH = "hashrate_eh"
     REALIZATION_RATE = "realization_rate"
+    AI_HPC_MW = "ai_hpc_mw"
+    ENCUMBERED_BTC = "encumbered_btc"
+    GPU_COUNT = "gpu_count"
+    HODL_BTC_RESTRICTED = "hodl_btc_restricted"
+    HODL_BTC_UNRESTRICTED = "hodl_btc_unrestricted"
+    HPC_REVENUE_USD = "hpc_revenue_usd"
+    MINING_MW = "mining_mw"
+    NET_BTC_BALANCE_CHANGE = "net_btc_balance_change"
 
 
 @dataclass
@@ -184,6 +195,7 @@ class ScanResult:
     newly_discovered: int = 0
     legacy_undated: int = 0
     failed: int = 0
+    drift_count: int = 0
     tickers_scanned: list = None
 
     def __post_init__(self):

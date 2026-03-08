@@ -16,6 +16,16 @@ bp = Blueprint('pipeline', __name__)
 _run_cancel_flags: dict[int, threading.Event] = {}
 _run_lock = threading.Lock()
 
+# UI contract: maps each user-facing pipeline parameter to the HTML element id
+# that reads and sends it.  test_pipeline_ui_params_wired enforces that every
+# entry here has a matching element in templates/ops.html.  Add a row here
+# whenever a new boolean/select is added to start_overnight_pipeline, so the
+# gap between backend capability and UI exposure is caught at test time.
+PIPELINE_UI_PARAMS: dict[str, str] = {
+    'include_ir':    'pipeline-include-ir',
+    'include_crawl': 'pipeline-include-crawl',
+}
+
 
 class _RunCancelled(Exception):
     """Internal signal for cooperative pipeline cancellation."""
@@ -243,87 +253,91 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
 
         _event(db, run_id, 'select_targets', 'stage_end', targeted=len(targets), failures=len(failures))
 
-        # Stage: deterministic probe + recommendation
+        # Stage: deterministic probe + recommendation (skipped when skip_probe=True)
+        skip_probe = bool(config.get('skip_probe', False))
         timeout = int(config.get('probe_timeout_seconds', 12))
-        for t in targets:
-            if _is_cancelled(run_id):
-                raise _RunCancelled()
-            try:
-                result = _run_bootstrap_probe_for_ticker(
-                    db,
-                    ticker=t,
-                    apply_mode=False,
-                    allow_apply_skip=False,
-                    timeout=timeout,
-                )
-                recommendations[t] = result.get('recommended_mode')
-                db.upsert_pipeline_run_ticker(run_id, t, probed=1)
-                _event(
-                    db, run_id, 'probe_verify', 'ticker_probe_done',
-                    ticker=t,
-                    recommended_mode=result.get('recommended_mode'),
-                    active_candidates=result.get('active_candidates', 0),
-                )
-            except Exception as e:
-                db.upsert_pipeline_run_ticker(run_id, t, failed_reason=str(e))
-                failures.append({'ticker': t, 'error': str(e)})
-                probe_failures.append({'ticker': t, 'error': str(e)})
-                _event(db, run_id, 'probe_verify', 'ticker_probe_failed', ticker=t, level='WARNING', error=str(e))
+        if skip_probe:
+            scrape_targets = list(targets)
+            _event(db, run_id, 'probe_verify', 'stage_skipped', reason='skip_probe=true', targets=len(targets))
+        else:
+            for t in targets:
+                if _is_cancelled(run_id):
+                    raise _RunCancelled()
+                try:
+                    result = _run_bootstrap_probe_for_ticker(
+                        db,
+                        ticker=t,
+                        apply_mode=False,
+                        allow_apply_skip=False,
+                        timeout=timeout,
+                    )
+                    recommendations[t] = result.get('recommended_mode')
+                    db.upsert_pipeline_run_ticker(run_id, t, probed=1)
+                    _event(
+                        db, run_id, 'probe_verify', 'ticker_probe_done',
+                        ticker=t,
+                        recommended_mode=result.get('recommended_mode'),
+                        active_candidates=result.get('active_candidates', 0),
+                    )
+                except Exception as e:
+                    db.upsert_pipeline_run_ticker(run_id, t, failed_reason=str(e))
+                    failures.append({'ticker': t, 'error': str(e)})
+                    probe_failures.append({'ticker': t, 'error': str(e)})
+                    _event(db, run_id, 'probe_verify', 'ticker_probe_failed', ticker=t, level='WARNING', error=str(e))
 
-        if bool(config.get('require_probe_success', True)) and probe_failures:
-            preflight_summary = {
-                'targeted_tickers': targets,
-                'recommendations': recommendations,
-                'probe_failures': probe_failures,
-                'failures': failures,
-                'aborted_stage': 'probe_verify',
-                'aborted_reason': 'probe_failures',
-            }
-            db.update_pipeline_run(
-                run_id,
-                status='failed_preflight',
-                ended_at=datetime.now(timezone.utc).isoformat(),
-                summary=preflight_summary,
-                error='probe_preflight_failed',
-            )
-            _event(
-                db, run_id, 'probe_verify', 'preflight_abort',
-                level='WARNING', failed=len(probe_failures), targeted=len(targets),
-            )
-            return
-
-        scrape_targets = list(targets)
-        if bool(config.get('require_non_skip_recommendation', True)):
-            scrape_targets = [t for t in targets if recommendations.get(t) and recommendations.get(t) != 'skip']
-            skipped_preflight = [t for t in targets if t not in scrape_targets]
-            for t in skipped_preflight:
-                db.upsert_pipeline_run_ticker(run_id, t, failed_reason='preflight_skip_recommendation')
-                _event(
-                    db, run_id, 'probe_verify', 'ticker_preflight_skipped',
-                    ticker=t, recommended_mode=recommendations.get(t),
-                )
-            if not scrape_targets:
+            if bool(config.get('require_probe_success', True)) and probe_failures:
                 preflight_summary = {
                     'targeted_tickers': targets,
                     'recommendations': recommendations,
+                    'probe_failures': probe_failures,
                     'failures': failures,
                     'aborted_stage': 'probe_verify',
-                    'aborted_reason': 'no_non_skip_recommendations',
+                    'aborted_reason': 'probe_failures',
                 }
                 db.update_pipeline_run(
                     run_id,
                     status='failed_preflight',
                     ended_at=datetime.now(timezone.utc).isoformat(),
                     summary=preflight_summary,
-                    error='probe_preflight_no_ready_targets',
+                    error='probe_preflight_failed',
                 )
                 _event(
                     db, run_id, 'probe_verify', 'preflight_abort',
-                    level='WARNING', reason='no_non_skip_recommendations', targeted=len(targets),
+                    level='WARNING', failed=len(probe_failures), targeted=len(targets),
                 )
                 return
-        else:
-            scrape_targets = list(targets)
+
+            if bool(config.get('require_non_skip_recommendation', True)):
+                scrape_targets = [t for t in targets if recommendations.get(t) and recommendations.get(t) != 'skip']
+                skipped_preflight = [t for t in targets if t not in scrape_targets]
+                for t in skipped_preflight:
+                    db.upsert_pipeline_run_ticker(run_id, t, failed_reason='preflight_skip_recommendation')
+                    _event(
+                        db, run_id, 'probe_verify', 'ticker_preflight_skipped',
+                        ticker=t, recommended_mode=recommendations.get(t),
+                    )
+                if not scrape_targets:
+                    preflight_summary = {
+                        'targeted_tickers': targets,
+                        'recommendations': recommendations,
+                        'failures': failures,
+                        'aborted_stage': 'probe_verify',
+                        'aborted_reason': 'no_non_skip_recommendations',
+                    }
+                    db.update_pipeline_run(
+                        run_id,
+                        status='failed_preflight',
+                        ended_at=datetime.now(timezone.utc).isoformat(),
+                        summary=preflight_summary,
+                        error='probe_preflight_no_ready_targets',
+                    )
+                    _event(
+                        db, run_id, 'probe_verify', 'preflight_abort',
+                        level='WARNING', reason='no_non_skip_recommendations', targeted=len(targets),
+                    )
+                    return
+            else:
+                scrape_targets = list(targets)
 
         # Optional stage: coverage scout (policy-gated)
         scout_mode = str(config.get('scout_mode') or 'auto').strip().lower()
@@ -391,6 +405,47 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                     _event(db, run_id, 'apply_modes', 'ticker_apply_failed', ticker=t, level='WARNING', error=str(e))
 
         include_ir = bool(config.get('include_ir', True))
+
+        # Stage: LLM crawl (optional — gated on include_crawl flag)
+        include_crawl = bool(config.get('include_crawl', False))
+        if include_crawl and scrape_targets:
+            import scrapers.llm_crawler as _crawler
+            crawl_provider = config.get('crawl_provider') or None
+            crawl_task_id = str(uuid.uuid4())
+            _event(db, run_id, 'crawl', 'stage_start', tickers=len(scrape_targets), provider=crawl_provider or 'default')
+            per_ticker = _crawler.start_crawl(
+                scrape_targets,
+                task_id=crawl_task_id,
+                provider=crawl_provider,
+                db=db,
+            )
+            # Poll until all ticker crawls reach a terminal state
+            _TERMINAL = {'complete', 'failed', 'stopped'}
+            crawl_timeout = int(config.get('crawl_timeout_seconds', 1800))
+            poll_start = time.monotonic()
+            while True:
+                if _is_cancelled(run_id):
+                    _crawler.stop_crawl(crawl_task_id)
+                    raise _RunCancelled()
+                task = _crawler.get_crawl_task(crawl_task_id) or {}
+                done = all(v.get('status') in _TERMINAL for v in task.values()) if task else True
+                if done:
+                    break
+                if time.monotonic() - poll_start > crawl_timeout:
+                    _crawler.stop_crawl(crawl_task_id)
+                    _event(db, run_id, 'crawl', 'stage_timeout', level='WARNING',
+                           timeout_seconds=crawl_timeout)
+                    break
+                time.sleep(5)
+            # Summarise results
+            task = _crawler.get_crawl_task(crawl_task_id) or {}
+            crawl_docs = sum(v.get('docs_stored', 0) for v in task.values())
+            crawl_errors = sum(1 for v in task.values() if v.get('status') == 'failed')
+            _event(db, run_id, 'crawl', 'stage_end',
+                   docs_stored=crawl_docs, ticker_errors=crawl_errors,
+                   tickers_completed=sum(1 for v in task.values() if v.get('status') == 'complete'))
+        else:
+            _event(db, run_id, 'crawl', 'stage_skipped', reason='include_crawl=false' if not include_crawl else 'no_targets')
 
         # Stage: ingest (IR + EDGAR, or EDGAR-only when include_ir=False)
         # Uses the same _run_ir_ingest / _run_edgar_ingest functions as individual UI buttons.
@@ -528,12 +583,16 @@ def start_overnight_pipeline():
     requested_tickers = [str(t).strip().upper() for t in tickers if str(t).strip()]
 
     config = {
+        'skip_probe': bool(body.get('skip_probe', False)),
         'apply_mode_changes': bool(body.get('apply_mode_changes', False)),
         'warm_model': bool(body.get('warm_model', True)),
         'probe_timeout_seconds': int(body.get('probe_timeout_seconds', 12)),
         'require_probe_success': bool(body.get('require_probe_success', True)),
         'require_non_skip_recommendation': bool(body.get('require_non_skip_recommendation', True)),
         'include_ir': bool(body.get('include_ir', True)),
+        'include_crawl': bool(body.get('include_crawl', False)),
+        'crawl_provider': body.get('crawl_provider') or None,
+        'crawl_timeout_seconds': int(body.get('crawl_timeout_seconds', 1800)),
         'scout_mode': str(body.get('scout_mode', 'auto')),
         'scout_metric': str(body.get('scout_metric', 'production_btc')),
         'scout_keywords': _normalize_keywords(body.get('scout_keywords')),
@@ -558,6 +617,25 @@ def start_overnight_pipeline():
     )
     t.start()
     return jsonify({'success': True, 'data': {'run_id': run_id, 'status': 'queued'}}), 202
+
+
+@bp.route('/api/pipeline/overnight/latest')
+def overnight_pipeline_latest():
+    """Return the most recently created overnight run (id + status).
+
+    Used by the UI on page load to restore the active run_id from the server
+    instead of relying solely on localStorage, which may be stale or missing.
+    """
+    from app_globals import get_db
+    db = get_db()
+    run = db.get_latest_pipeline_run()
+    if run is None:
+        return jsonify({'success': False, 'error': {'message': 'No runs found'}}), 404
+    return jsonify({'success': True, 'data': {
+        'run': run,
+        'tickers': db.list_pipeline_run_tickers(run['id']),
+        'cancel_requested': _is_cancelled(run['id']),
+    }})
 
 
 @bp.route('/api/pipeline/overnight/<int:run_id>/status')

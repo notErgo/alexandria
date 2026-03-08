@@ -525,6 +525,27 @@ tr:hover td { background: rgba(255,255,255,0.03); }
 .wf-legend-dot.wf-optional { background: #1e40af; }
 .wf-legend-dot.wf-later    { background: #065f46; }
 
+/* ── Off-critical-path collapsible sections ─────────────────────────────── */
+.offpath-details { margin: 1rem 0 0; }
+.offpath-details > summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--theme-text-muted);
+  padding: 0.4rem 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  user-select: none;
+  border-top: 1px solid var(--theme-border);
+}
+.offpath-details > summary::-webkit-details-marker { display: none; }
+.offpath-details > summary::before { content: "\25B6"; font-size: 0.6rem; color: var(--theme-text-muted); }
+.offpath-details[open] > summary::before { content: "\25BC"; }
+.offpath-details > summary:hover { color: var(--theme-text-primary); }
+.offpath-details > summary .offpath-label { font-weight: 600; }
+.offpath-details > summary .offpath-desc { font-size: 0.75rem; color: var(--theme-text-muted); }
+
 /* ── Section header row ─────────────────────────────────────────────────── */
 .section-header-row {
   display: flex;
@@ -630,3 +651,54 @@ tr:hover td { background: rgba(255,255,255,0.03); }
 }
 body.no-dev-mode .dev-tooltip,
 body.no-dev-mode .spec-id { display: none !important; }
+
+/* ── Dev-mode path filtering (driven by data-path attributes set from ui_spec.json) ── */
+
+/* Critical-only: hide optional and later sections, sub-tabs, and offpath details */
+body.path-filter-critical [data-path="optional"],
+body.path-filter-critical [data-path="later"],
+body.path-filter-critical .offpath-details { display: none !important; }
+
+/* Critical+optional: hide later sections only */
+body.path-filter-critical-optional [data-path="later"] { display: none !important; }
+
+/* Sub-tab buttons: hide by badge class on the button itself */
+body.path-filter-critical .pipeline-sub-tab[data-path="optional"],
+body.path-filter-critical .pipeline-sub-tab[data-path="later"],
+body.path-filter-critical .ops-tab[data-path="optional"],
+body.path-filter-critical .ops-tab[data-path="later"] { display: none !important; }
+
+body.path-filter-critical-optional .pipeline-sub-tab[data-path="later"],
+body.path-filter-critical-optional .ops-tab[data-path="later"] { display: none !important; }
+
+/* Dev-mode tooltip suppression: hide info-bubble elements */
+body.dev-no-tips .info-bubble { display: none !important; }
+
+/* Dev button visual state */
+#dev-mode-btn.path-active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
+
+/* Metric keyword chips (1.5.1 combined table) */
+.kw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  font-size: 0.74rem;
+  font-family: monospace;
+  background: var(--theme-bg-tertiary);
+  border: 1px solid var(--theme-border);
+  border-radius: 3px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.kw-chip-del {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--theme-text-muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 1px;
+}
+.kw-chip-del:hover { color: var(--theme-danger); }
+#metric-schema-table tbody tr:hover td { background: var(--theme-bg-hover); }

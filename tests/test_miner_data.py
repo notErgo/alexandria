@@ -180,7 +180,9 @@ class TestMinerTimeline:
         rows = body['data']['rows']
         feb_row = next((r for r in rows if r['period_label'] == '2022-02'), None)
         assert feb_row is not None
-        for metric in ('production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'):
+        # Only CORE_METRICS are always present; non-core (hashrate_eh, realization_rate)
+        # only appear when data exists for the ticker, so check only core metrics here.
+        for metric in ('production_btc', 'hodl_btc', 'sold_btc'):
             assert feb_row['metrics'][metric] is None, f'{metric} should be null in gap row'
 
     def test_row_includes_report_metadata(self, app_with_report):
@@ -459,3 +461,144 @@ class TestMinerFill:
         body = json.loads(resp.data)
         # Period in response is normalised to YYYY-MM-01
         assert body['data']['period'] == '2022-02-01'
+
+
+# ── Metric Schema CRUD routes ──────────────────────────────────────────────────
+
+class TestMetricSchemaRoutes:
+
+    def test_list_metric_schema_returns_13_rows(self, app):
+        """GET /api/metric_schema returns all 13 seeded metrics."""
+        import json
+        resp = app.get('/api/metric_schema?sector=BTC-miners')
+        assert resp.status_code == 200
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        assert len(body['data']) == 13
+
+    def test_list_metric_schema_active_only_filter(self, app):
+        """GET /api/metric_schema?active=true excludes deactivated metrics.
+        v22 migration marks 10 of 13 as active=0; only 3 are active by default.
+        Activating one more via PATCH should yield 4.
+        """
+        import json, app_globals
+        db = app_globals._db
+        # Find a metric that is currently inactive and activate it
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        inactive = next(r for r in rows if not r.get('active', 1))
+        app.patch(
+            f'/api/metric_schema/{inactive["id"]}',
+            data=json.dumps({'active': 1}),
+            content_type='application/json',
+        )
+        resp = app.get('/api/metric_schema?sector=BTC-miners&active=true')
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        # Was 3, now 4 after activating one
+        assert len(body['data']) == 4
+
+    def test_patch_metric_schema_toggles_active(self, app):
+        """PATCH /api/metric_schema/<id> with {active: 0} deactivates the metric."""
+        import json, app_globals
+        db = app_globals._db
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        # Use production_btc which is active=1 by default
+        target = next(r for r in rows if r['key'] == 'production_btc')
+        resp = app.patch(
+            f'/api/metric_schema/{target["id"]}',
+            data=json.dumps({'active': 0}),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        updated = db.get_metric_schema('BTC-miners', active_only=False)
+        row = next(r for r in updated if r['id'] == target['id'])
+        assert row['active'] == 0
+
+    def test_patch_metric_schema_updates_label(self, app):
+        """PATCH /api/metric_schema/<id> with {label: ...} updates the display label."""
+        import json, app_globals
+        db = app_globals._db
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        target = rows[0]
+        resp = app.patch(
+            f'/api/metric_schema/{target["id"]}',
+            data=json.dumps({'label': 'New Label'}),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200
+        updated = db.get_metric_schema('BTC-miners', active_only=False)
+        row = next(r for r in updated if r['id'] == target['id'])
+        assert row['label'] == 'New Label'
+
+    def test_patch_metric_schema_updates_unit(self, app):
+        """PATCH /api/metric_schema/<id> with {unit: ...} updates the unit."""
+        import json, app_globals
+        db = app_globals._db
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        target = rows[0]
+        resp = app.patch(
+            f'/api/metric_schema/{target["id"]}',
+            data=json.dumps({'unit': 'satoshi'}),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200
+        updated = db.get_metric_schema('BTC-miners', active_only=False)
+        row = next(r for r in updated if r['id'] == target['id'])
+        assert row['unit'] == 'satoshi'
+
+    def test_patch_metric_schema_404_for_unknown(self, app):
+        """PATCH /api/metric_schema/999999 returns 404."""
+        import json
+        resp = app.patch(
+            '/api/metric_schema/999999',
+            data=json.dumps({'active': 0}),
+            content_type='application/json',
+        )
+        assert resp.status_code == 404
+
+    def test_patch_seeded_metric_not_blocked(self, app):
+        """Seeded (non-analyst-defined) metrics can also be toggled active."""
+        import json, app_globals
+        db = app_globals._db
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        # production_btc is seeded (analyst_defined=0) — must still be patchable
+        prod = next(r for r in rows if r['key'] == 'production_btc')
+        resp = app.patch(
+            f'/api/metric_schema/{prod["id"]}',
+            data=json.dumps({'active': 0}),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200
+
+    def test_delete_metric_schema_removes_row(self, app):
+        """DELETE /api/metric_schema/<id> removes the row from the DB."""
+        import json, app_globals
+        db = app_globals._db
+        # Add a custom metric to delete
+        row = db.add_analyst_metric('temp_delete_me', 'Temp Metric', 'BTC', 'BTC-miners')
+        resp = app.delete(f'/api/metric_schema/{row["id"]}')
+        assert resp.status_code == 200
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        remaining = db.get_metric_schema('BTC-miners', active_only=False)
+        assert not any(r['id'] == row['id'] for r in remaining)
+
+    def test_delete_metric_schema_404_unknown(self, app):
+        """DELETE /api/metric_schema/999999 returns 404."""
+        import json
+        resp = app.delete('/api/metric_schema/999999')
+        assert resp.status_code == 404
+
+    def test_delete_seeded_metric_allowed(self, app):
+        """Seeded metrics can be deleted (hard delete, not just deactivated)."""
+        import json, app_globals
+        db = app_globals._db
+        rows = db.get_metric_schema('BTC-miners', active_only=False)
+        # Pick a non-core metric (one that is inactive by default)
+        target = next(r for r in rows if r['key'] == 'gpu_count')
+        resp = app.delete(f'/api/metric_schema/{target["id"]}')
+        assert resp.status_code == 200
+        remaining = db.get_metric_schema('BTC-miners', active_only=False)
+        assert not any(r['key'] == 'gpu_count' for r in remaining)

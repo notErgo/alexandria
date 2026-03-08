@@ -213,6 +213,26 @@ class TestUiSpec:
                 missing.append(f"{comp_id} missing data-spec-id in {template}")
         assert not missing, "Missing anchors:\n" + "\n".join(f"- {m}" for m in missing)
 
+    def test_pipeline_ui_params_wired(self):
+        """Every entry in pipeline.PIPELINE_UI_PARAMS must have a matching
+        element id in ops.html.  This catches backend params that were added
+        but never exposed in the UI (the 'include_crawl dead-end' class of bug).
+        """
+        import sys
+        sys.path.insert(0, str(ROOT / 'src'))
+        from routes.pipeline import PIPELINE_UI_PARAMS
+
+        ops_html = (TEMPLATES_DIR / 'ops.html').read_text(encoding='utf-8')
+        missing = []
+        for param, element_id in PIPELINE_UI_PARAMS.items():
+            if f'id="{element_id}"' not in ops_html:
+                missing.append(
+                    f"pipeline param '{param}' expects element id='{element_id}' in ops.html — not found"
+                )
+        assert not missing, (
+            "Pipeline UI contract broken:\n" + "\n".join(f"- {m}" for m in missing)
+        )
+
     def test_source_badges_present_for_data_and_config(self):
         data = load_spec()
         by_id = {c["id"]: c for c in data["components"]}

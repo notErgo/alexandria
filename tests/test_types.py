@@ -17,8 +17,9 @@ def test_extraction_result_has_confidence_field():
     assert isinstance(result.confidence, float)
 
 
-def test_metric_enum_has_five_members():
-    assert len(list(Metric)) == 5
+def test_metric_enum_has_thirteen_members():
+    """Metric enum mirrors metric_schema DB seed — 13 total metrics."""
+    assert len(list(Metric)) == 13
 
 
 def test_review_status_pending_is_default_string():

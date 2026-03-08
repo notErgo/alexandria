@@ -26,12 +26,21 @@ def build_crawl_context(ticker: str, db) -> dict:
     """Return a context dict describing known coverage for ticker.
 
     Keys:
-      lower_bound  -- earliest YYYY-MM-DD with a bitcoin-mention report, or None
-      gaps         -- list of YYYY-MM-DD periods between lower_bound and today
-                      that have no data_points
-      covered      -- list of YYYY-MM-DD periods that already have data_points
+      lower_bound          -- earliest YYYY-MM-DD with a bitcoin-mention report, or None
+      btc_first_filing_date -- authoritative first BTC SEC filing date from companies table, or None
+      gaps                 -- list of YYYY-MM-DD periods between lower_bound and today
+                              that have no data_points
+      covered              -- list of YYYY-MM-DD periods that already have data_points
     """
-    lower_bound = find_bitcoin_lower_bound(ticker, db)
+    # Prefer the stored btc_first_filing_date (derived from EDGAR keyword scan) as the
+    # authoritative lower bound; fall back to text-scan-based detection.
+    btc_first_filing_date = None
+    try:
+        btc_first_filing_date = db.get_btc_first_filing_date(ticker)
+    except Exception:
+        pass
+
+    lower_bound = btc_first_filing_date or find_bitcoin_lower_bound(ticker, db)
 
     if not lower_bound:
         return {'lower_bound': None, 'gaps': [], 'covered': []}
@@ -45,6 +54,7 @@ def build_crawl_context(ticker: str, db) -> dict:
 
     return {
         'lower_bound': lower_bound,
+        'btc_first_filing_date': btc_first_filing_date,
         'gaps': sorted(set(gaps)),
         'covered': sorted(covered),
     }
@@ -81,12 +91,20 @@ def format_context_block(ticker: str, ctx: dict) -> str:
 
     lb = ctx['lower_bound'][:7]  # YYYY-MM
     lines = [
-        '## Auto-detected Coverage Context',
-        '',
-        f'Bitcoin mining activity first detected in DB: {lb}',
-        f'Do not search for content dated before {lb}.',
+        '## Company BTC Mining History',
         '',
     ]
+
+    btc_first = ctx.get('btc_first_filing_date')
+    if btc_first:
+        lines.append(f'First BTC-related SEC filing: {btc_first}')
+        lines.append(f'Do not search for content dated before {btc_first}.')
+        lines.append(f'BTC activity window: {btc_first} to present')
+    else:
+        lines.append(f'Bitcoin mining activity first detected in DB: {lb}')
+        lines.append(f'Do not search for content dated before {lb}.')
+
+    lines.append('')
 
     gaps = ctx['gaps']
     if gaps:

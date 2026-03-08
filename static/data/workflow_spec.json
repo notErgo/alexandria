@@ -22,6 +22,14 @@
           "note": "Without a CIK the pipeline cannot acquire SEC filings. Without an IR URL the LLM crawl has no seed."
         },
         {
+          "spec_id": "1.1.6",
+          "label": "Add Search Keywords",
+          "nav": {"tab": "config", "sub_tab": "companies"},
+          "path": "critical",
+          "description": "Add active keywords that gate EDGAR 8-K discovery and are injected into every LLM extraction prompt.",
+          "note": "Without keywords EDGAR returns noise and the LLM has no anchor terms. Populate before any ingest or extraction run."
+        },
+        {
           "spec_id": "1.3",
           "label": "Settings",
           "nav": {"tab": "config", "sub_tab": "settings"},
@@ -77,6 +85,14 @@
       "tab": "interpret",
       "description": "Run LLM + regex extraction on all ingested documents. The LLM runs unconditionally; regex provides corroboration.",
       "steps": [
+        {
+          "spec_id": "1.3.P",
+          "label": "Verify Prompt",
+          "nav": {"tab": "interpret", "sub_tab": "extract"},
+          "path": "critical",
+          "description": "Review the assembled LLM prompt before running extraction. Confirms active keywords, company context hint, and per-metric instructions are correct.",
+          "note": "The prompt is assembled from: active keywords (1.1.6) + per-metric instructions (llm_prompts table) + company context hint. Refresh with a ticker selected to see the full context injection."
+        },
         {
           "spec_id": "3.1",
           "label": "Extract",

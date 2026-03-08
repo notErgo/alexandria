@@ -73,6 +73,29 @@ _8K_SEARCH_TERMS: list = [
 ]
 
 
+def _build_edgar_query(db=None) -> str:
+    """Build the EDGAR full-text search query from metric keywords (active only).
+
+    Reads per-metric keywords from metric_schema.keywords (v32+).
+    Falls back to the hardcoded _8K_SEARCH_TERMS list when db is None or no
+    keywords are configured.
+    """
+    if db is not None:
+        try:
+            rows = db.get_all_metric_keywords(active_only=True)
+            if rows:
+                return ' OR '.join(r['phrase'] for r in rows)
+        except Exception:
+            log.warning('Could not load metric keywords from DB; using hardcoded fallback', exc_info=True)
+        try:
+            rows = db.get_search_keywords(active_only=True)
+            if rows:
+                return ' OR '.join(r['phrase'] for r in rows)
+        except Exception:
+            log.warning('Could not load search keywords from DB; using hardcoded fallback', exc_info=True)
+    return ' OR '.join(_8K_SEARCH_TERMS)
+
+
 # ── Module-level helpers (public, used by tests) ──────────────────────────────
 
 def period_of_report_to_covering_period(period_of_report: str, form_type: str) -> str:
@@ -209,6 +232,31 @@ def _parse_exhibit_url_from_stale_source_url(source_url: str) -> Optional[str]:
     return f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{acc_no_clean}/{doc_name}"
 
 
+def _unwrap_ixbrl_url(url: str) -> str:
+    """Strip the EDGAR Inline XBRL viewer wrapper from a URL if present.
+
+    EDGAR wraps iXBRL documents in a viewer URL of the form:
+        https://www.sec.gov/ix?doc=/Archives/edgar/data/...
+        https://www.sec.gov/ix?doc=https://www.sec.gov/Archives/edgar/data/...
+
+    Fetching the wrapper URL without JavaScript returns only the viewer shell.
+    Fetching the underlying /Archives/... URL directly returns the full filing HTML.
+    """
+    if not url:
+        return url
+    # Match https://www.sec.gov/ix?doc=<path>
+    m = re.match(r'^https?://www\.sec\.gov/ix\?doc=(.+)$', url)
+    if not m:
+        return url
+    inner = m.group(1)
+    # inner may be an absolute URL or a root-relative path
+    if inner.startswith('https://') or inner.startswith('http://'):
+        return inner
+    if inner.startswith('/'):
+        return 'https://www.sec.gov' + inner
+    return 'https://www.sec.gov/' + inner
+
+
 def parse_filing_index_for_primary_doc(index_html: str) -> Optional[str]:
     """Parse an EDGAR filing index HTML page to find the primary document URL.
 
@@ -248,7 +296,7 @@ def parse_filing_index_for_primary_doc(index_html: str) -> Optional[str]:
                 continue
             if not href.startswith('http'):
                 href = 'https://www.sec.gov' + href if href.startswith('/') else href
-            return href
+            return _unwrap_ixbrl_url(href)
 
     return None
 
@@ -432,6 +480,9 @@ class EdgarConnector:
                 log.warning("No primary doc found for %s %s %s", ticker, form_type, acc_no)
                 return False
 
+        # Strip any EDGAR iXBRL viewer wrapper so we fetch the actual document
+        primary_url = _unwrap_ixbrl_url(primary_url)
+
         # Fetch and parse the primary document
         doc_html = self._edgar_get_text(primary_url)
         if not doc_html:
@@ -524,13 +575,71 @@ class EdgarConnector:
             )
             return False
 
-    def fetch_8k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
-        """Search EDGAR for 8-K filings mentioning 'bitcoin production' since since_date.
+    def detect_btc_first_filing_date(self, cik: str, ticker: str) -> Optional[str]:
+        """Find the earliest SEC filing date that mentions any active search keyword.
 
-        Fetches the EX-99.1 exhibit (press release), not the filing index page.
-        The full-text search _id is '{accession}:{doc_name}'; we parse it to build
-        the exhibit URL directly.  Falls back to index-page parsing when _id has
-        no embedded doc name.
+        Uses EDGAR full-text search sorted ascending, takes the first result.
+        Stores the result in companies.btc_first_filing_date if a match is found.
+        Returns ISO date string YYYY-MM-DD or None if no match found.
+
+        If btc_first_filing_date is already stored for this ticker, returns it
+        immediately without hitting EDGAR (idempotent).
+        """
+        # Return cached value if already detected
+        stored = self.db.get_btc_first_filing_date(ticker)
+        if stored:
+            return stored
+
+        query = _build_edgar_query(self.db)
+        if not query.strip():
+            log.warning("detect_btc_first_filing_date: no keywords available for %s", ticker)
+            return None
+
+        cik_entity = str(cik).lstrip('0') or '0'
+        params = {
+            'q': query,
+            'entity': cik_entity,
+            'dateRange': 'custom',
+            'startdt': '1993-01-01',
+            'forms': '8-K,8-K/A',
+            'hits.hits._source': 'file_date',
+            '_source': 'file_date',
+            'sort': 'file-date',
+            'order': 'asc',
+        }
+        data = self._edgar_request(EDGAR_BASE_URL, params)
+        if data is None:
+            log.warning("detect_btc_first_filing_date: no EDGAR response for %s", ticker)
+            return None
+
+        hits = data.get('hits', {}).get('hits', [])
+        if not hits:
+            log.info("detect_btc_first_filing_date: no keyword hits found for %s", ticker)
+            return None
+
+        filed_date = hits[0].get('_source', {}).get('file_date', '')
+        if not filed_date:
+            return None
+
+        # Normalise to YYYY-MM-DD (drop time suffix if present)
+        filed_date = filed_date[:10]
+        log.info(
+            "detect_btc_first_filing_date: earliest BTC filing for %s is %s",
+            ticker, filed_date,
+        )
+        self.db.set_btc_first_filing_date(ticker, filed_date)
+        return filed_date
+
+    def fetch_8k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+        """Fetch all 8-K filings for ticker since the company's BTC first-filing date.
+
+        Architecture: keywords answer ONE question — "when did this company first mention
+        BTC mining in SEC filings?" (detect_btc_first_filing_date).  After that date is
+        known, ALL 8-Ks are ingested with date-only filtering — no keyword content filter.
+
+        If btc_first_filing_date is not yet stored, detect_btc_first_filing_date() is
+        called first.  If detection finds nothing (no active keywords, no hits), falls
+        back to the legacy keyword-filtered fetch with a warning.
 
         Stores raw text only — no extraction performed.
         Returns IngestSummary with counts.
@@ -538,13 +647,38 @@ class EdgarConnector:
         from miner_types import IngestSummary
         summary = IngestSummary()
         cik_entity = str(cik).lstrip('0') or '0'
-        params = {
-            'q': ' OR '.join(_8K_SEARCH_TERMS),
-            'forms': '8-K',
-            'dateRange': 'custom',
-            'startdt': since_date.isoformat(),
-            'entity': cik_entity,
-        }
+
+        # Determine whether to use keyword filter or date-only fetch
+        btc_start = self.db.get_btc_first_filing_date(ticker)
+        if btc_start is None:
+            btc_start = self.detect_btc_first_filing_date(cik, ticker)
+
+        if btc_start is not None:
+            # Date-only fetch — no keyword filter; all 8-Ks from btc_start onward
+            params = {
+                'forms': '8-K',
+                'dateRange': 'custom',
+                'startdt': since_date.isoformat(),
+                'entity': cik_entity,
+            }
+            log.info(
+                "fetch_8k_filings: date-only mode for %s (btc_first_filing_date=%s)",
+                ticker, btc_start,
+            )
+        else:
+            # Fallback: keyword-filtered fetch (legacy behaviour)
+            log.warning(
+                "fetch_8k_filings: btc_first_filing_date not set for %s; "
+                "using keyword filter as fallback",
+                ticker,
+            )
+            params = {
+                'q': _build_edgar_query(self.db),
+                'forms': '8-K',
+                'dateRange': 'custom',
+                'startdt': since_date.isoformat(),
+                'entity': cik_entity,
+            }
         data = self._edgar_request(EDGAR_BASE_URL, params)
         if data is None:
             summary.errors += 1
@@ -554,6 +688,12 @@ class EdgarConnector:
         log.info("EDGAR returned %d 8-K hits for %s since %s", len(hits), ticker, since_date)
         self._emit('search_result', ticker=ticker, form_type='8-K',
                    total_hits=len(hits), since=since_date.isoformat())
+
+        # Track keyword participation: bump hit_count once per search run
+        try:
+            self.db.bump_metric_keyword_hit_counts()
+        except Exception:
+            log.debug('bump_metric_keyword_hit_counts failed (non-fatal)', exc_info=True)
 
         cik_numeric = cik.lstrip('0') or '0'
         skipped_non_target = 0
@@ -724,6 +864,89 @@ class EdgarConnector:
             log.info(
                 "Refetched exhibit for %s 8-K %s (report %d)",
                 report['ticker'], report['report_date'], report_id,
+            )
+
+        return summary
+
+    def refetch_xbrl_viewer_reports(self, ticker: str = None) -> 'IngestSummary':
+        """Re-fetch 10-Q/10-K reports that were stored as the XBRL viewer stub.
+
+        Finds all reports with parse_quality='xbrl_viewer', strips the ix?doc=
+        wrapper from their source_url, fetches the real document, and updates
+        raw_text, raw_html, and parse_quality in-place.
+
+        The extraction_status is reset to 'pending' so the extraction pipeline
+        will re-process them.
+
+        Returns IngestSummary where reports_ingested = number of records fixed.
+        """
+        from miner_types import IngestSummary
+        summary = IngestSummary()
+
+        stale = self.db.get_xbrl_viewer_reports(ticker=ticker)
+        log.info(
+            "Found %d xbrl_viewer reports to refetch (ticker=%s)", len(stale), ticker or 'all'
+        )
+
+        for report in stale:
+            report_id = report['id']
+            source_url = report.get('source_url') or ''
+
+            real_url = _unwrap_ixbrl_url(source_url)
+            if real_url == source_url and 'ix?doc=' not in source_url:
+                # URL is not a viewer wrapper — try fetching directly anyway
+                # (it may be a plain /Archives/ URL that just returned bad content)
+                pass
+            if not real_url:
+                log.warning("No resolvable URL for xbrl_viewer report %d", report_id)
+                summary.errors += 1
+                continue
+
+            doc_html = self._edgar_get_text(real_url)
+            if not doc_html:
+                log.warning(
+                    "Empty response for xbrl_viewer refetch %d: %s", report_id, real_url
+                )
+                summary.errors += 1
+                continue
+
+            if _is_xbrl_viewer_page(doc_html):
+                log.warning(
+                    "Still got xbrl_viewer page after unwrap for report %d: %s",
+                    report_id, real_url,
+                )
+                summary.errors += 1
+                continue
+
+            soup = BeautifulSoup(doc_html, 'lxml')
+            full_text = soup.get_text(separator=' ', strip=True)
+            form_type = report.get('source_type', '').replace('edgar_', '').upper()
+            text = _extract_mda_section(full_text, form_type) or full_text
+            text = text[:_MAX_FILING_TEXT_CHARS]
+
+            if not text.strip():
+                log.warning("No text after refetch for report %d", report_id)
+                summary.errors += 1
+                continue
+
+            text_len = len(text.strip())
+            new_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
+
+            self.db.update_report_raw_text(
+                report_id, text, source_url=real_url, raw_html=doc_html[:_MAX_RAW_HTML_CHARS]
+            )
+            self.db.set_report_parse_quality(report_id, new_quality)
+            # Reset extraction status so pipeline will re-process this report
+            with self.db._get_connection() as conn:
+                conn.execute(
+                    "UPDATE reports SET extraction_status='pending' WHERE id=?",
+                    (report_id,),
+                )
+
+            summary.reports_ingested += 1
+            log.info(
+                "Refetched xbrl_viewer report %d: %s %s (quality=%s, chars=%d)",
+                report_id, report['ticker'], report['report_date'], new_quality, text_len,
             )
 
         return summary
@@ -908,13 +1131,14 @@ class EdgarConnector:
 def _extract_mda_section(full_text: str, form_type: str) -> Optional[str]:
     """Try to extract the MD&A section from a 10-Q or 10-K filing text.
 
-    For 10-Q: looks for 'Item 2' (Management Discussion & Analysis).
-    For 10-K: looks for 'Item 7' (Management Discussion & Analysis).
+    For 10-Q / 6-K: looks for 'Item 2' (Management Discussion & Analysis).
+    For 10-K / 20-F / 40-F: looks for 'Item 7' (Management Discussion & Analysis).
 
     Returns the section text if found (up to 100K chars), or None to use full_text.
     """
-    item_label = 'Item 7' if form_type in ('10-K', '10-k') else 'Item 2'
-    next_item = 'Item 8' if form_type in ('10-K', '10-k') else 'Item 3'
+    _annual_forms = ('10-K', '10-k', '20-F', '20-F/A', '40-F', '40-F/A')
+    item_label = 'Item 7' if form_type in _annual_forms else 'Item 2'
+    next_item = 'Item 8' if form_type in _annual_forms else 'Item 3'
 
     # Case-insensitive search
     text_upper = full_text.upper()

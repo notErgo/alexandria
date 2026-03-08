@@ -56,6 +56,23 @@ _LLM_QUARTERLY_TEXT_MAX_CHARS = 40_000
 _QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
 _ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
 
+
+def _active_metric_keys(db, registry) -> list:
+    """Return the list of metric keys to send to the LLM.
+
+    Queries metric_schema for active=1 rows (sector='BTC-miners').
+    Falls back to all registry keys if the schema table is empty or unavailable,
+    so extraction always runs even on a fresh DB without a seeded schema.
+    """
+    try:
+        rows = db.get_metric_schema('BTC-miners', active_only=True)
+        keys = [r['key'] for r in rows] if rows else []
+        if keys:
+            return keys
+    except Exception as e:
+        log.warning("Could not load active metric schema — falling back to registry: %s", e)
+    return list(registry.metrics.keys())
+
 # Sentinel phrases that mark the start of boilerplate sections.
 # Only stripped when the match falls at or after the 40% mark of the document,
 # preventing false positives from titles like "Forward-Looking Statements Disclosure".
@@ -624,7 +641,7 @@ def _interpret_quarterly_report(
         db.reset_report_to_pending(report_id)
         return summary
 
-    all_metrics = list(registry.metrics.keys()) if registry.metrics else []
+    all_metrics = _active_metric_keys(db, registry) if registry.metrics else []
     if not all_metrics:
         log.warning("No metrics in registry for quarterly extraction %s %s", ticker, covering_period)
         db.mark_report_extraction_failed(report_id, 'no_metrics_in_registry')
@@ -775,7 +792,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         _ctx_windows = _ctx_selector.select_windows(report['id'], _clean_text, 'production_btc', db)
         llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_text[:_LLM_TEXT_MAX_CHARS]
 
-        all_metrics = list(registry.metrics.keys())
+        all_metrics = _active_metric_keys(db, registry)
         ticker = report.get('ticker')
 
         # Primary batch LLM call — pays prefill once for all metrics on window 0.

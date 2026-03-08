@@ -184,11 +184,17 @@ def reprompt(ticker: str):
                 continue
         except (TypeError, ValueError):
             continue
+        try:
+            conf = float(s.get('confidence') or 0.8)
+            if not math.isfinite(conf):
+                conf = 0.8
+        except (TypeError, ValueError):
+            conf = 0.8
         clean.append({
             'metric': m,
             'period': str(p),
             'value': v,
-            'confidence': float(s.get('confidence') or 0.8),
+            'confidence': conf,
             'rationale': str(s.get('rationale') or ''),
         })
 

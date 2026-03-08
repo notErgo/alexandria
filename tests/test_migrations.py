@@ -165,3 +165,123 @@ class TestSchemaV6:
             'hits_90', 'hits_80', 'hits_75',
         }
         assert expected.issubset(cols), f"Missing cols: {expected - cols}"
+
+
+class TestSchemaV28:
+    """Tests for schema migration version 28 (embedding_model on document_chunks)."""
+
+    def test_v28_schema_version_is_28(self, raw_conn):
+        """PRAGMA user_version must be at least 28 after fresh DB init."""
+        version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version >= 28
+
+    def test_v28_document_chunks_has_embedding_columns(self, raw_conn):
+        """document_chunks must have all three embedding columns."""
+        cols = _table_columns(raw_conn, 'document_chunks')
+        required = {'embedding', 'embedding_model', 'embedded_at'}
+        assert required.issubset(cols), f"Missing cols: {required - cols}"
+
+    def test_v28_embedding_model_defaults_to_null(self, raw_conn):
+        """embedding_model column must be nullable (no default constraint)."""
+        rows = raw_conn.execute(
+            "PRAGMA table_info(document_chunks)"
+        ).fetchall()
+        col_info = {row[1]: row for row in rows}
+        assert 'embedding_model' in col_info
+        # dflt_value (index 4) should be None — no default
+        assert col_info['embedding_model'][4] is None
+
+
+class TestV30MetricKeywords:
+    """v30 → v32: seed keywords for production_btc/hashrate_eh migrated to metric_schema.keywords JSON."""
+
+    def test_schema_version_is_at_least_30(self, raw_conn):
+        version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version >= 30
+
+    def test_metric_schema_has_keywords_column(self, raw_conn):
+        """v30 introduced metric_keywords table; v32 folded it into metric_schema.keywords."""
+        cols = _table_columns(raw_conn, 'metric_schema')
+        assert 'keywords' in cols, f"metric_schema missing keywords column, got: {cols}"
+
+    def test_production_btc_seeded_with_7_phrases(self, raw_conn):
+        import json
+        row = raw_conn.execute(
+            "SELECT keywords FROM metric_schema WHERE key = 'production_btc'"
+        ).fetchone()
+        assert row is not None
+        kws = json.loads(row[0] or '[]')
+        assert len(kws) == 7, f"Expected 7 keywords for production_btc, got {len(kws)}"
+
+    def test_hashrate_eh_seeded_with_1_phrase(self, raw_conn):
+        import json
+        row = raw_conn.execute(
+            "SELECT keywords FROM metric_schema WHERE key = 'hashrate_eh'"
+        ).fetchone()
+        assert row is not None
+        kws = json.loads(row[0] or '[]')
+        assert len(kws) == 1, f"Expected 1 keyword for hashrate_eh, got {len(kws)}"
+
+    def test_search_keywords_is_empty_after_v30(self, raw_conn):
+        """v30 empties search_keywords (table kept but rows deleted)."""
+        count = raw_conn.execute("SELECT COUNT(*) FROM search_keywords").fetchone()[0]
+        assert count == 0, f"search_keywords should be empty after v30, got {count} rows"
+
+
+class TestV31MetricKeywordsExclude:
+    """v31 → v32: exclude_terms field present in keyword JSON objects."""
+
+    def test_schema_version_is_at_least_31(self, raw_conn):
+        version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version >= 31
+
+    def test_keyword_json_objects_have_exclude_terms_field(self, raw_conn):
+        import json
+        row = raw_conn.execute(
+            "SELECT keywords FROM metric_schema WHERE key = 'production_btc'"
+        ).fetchone()
+        kws = json.loads(row[0] or '[]')
+        assert len(kws) > 0
+        for k in kws:
+            assert 'exclude_terms' in k, f"keyword object missing exclude_terms: {k}"
+
+    def test_seeded_exclude_terms_are_empty_string(self, raw_conn):
+        import json
+        rows = raw_conn.execute("SELECT keywords FROM metric_schema").fetchall()
+        for row in rows:
+            for k in json.loads(row[0] or '[]'):
+                assert k.get('exclude_terms') == '', \
+                    f"Seeded keywords should have empty exclude_terms, got: {k!r}"
+
+
+class TestV32KeywordsOnMetricSchema:
+    """v32: metric_keywords table dropped; keywords JSON column on metric_schema."""
+
+    def test_schema_version_is_at_least_32(self, raw_conn):
+        version = raw_conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version >= 32
+
+    def test_metric_keywords_table_dropped(self, raw_conn):
+        tables = {r[0] for r in raw_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        assert 'metric_keywords' not in tables, "metric_keywords table should be dropped at v32"
+
+    def test_keywords_json_objects_have_required_fields(self, raw_conn):
+        import json
+        row = raw_conn.execute(
+            "SELECT keywords FROM metric_schema WHERE key = 'production_btc'"
+        ).fetchone()
+        kws = json.loads(row[0] or '[]')
+        assert len(kws) > 0
+        first = kws[0]
+        assert {'id', 'phrase', 'exclude_terms', 'active', 'hit_count'}.issubset(first.keys())
+
+    def test_other_metrics_default_to_empty_keywords(self, raw_conn):
+        import json
+        row = raw_conn.execute(
+            "SELECT keywords FROM metric_schema WHERE key = 'sold_btc'"
+        ).fetchone()
+        assert row is not None
+        kws = json.loads(row[0] or '[]')
+        assert kws == [], f"sold_btc should have no seeded keywords, got: {kws}"

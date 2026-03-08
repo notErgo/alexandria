@@ -225,10 +225,9 @@ def _parse_pdf(path: str) -> str:
 def _parse_html(path: str) -> str:
     """Extract body text from an HTML file using BeautifulSoup. Returns '' on failure."""
     try:
-        from bs4 import BeautifulSoup
+        from infra.text_utils import html_to_plain
         with open(path, encoding="utf-8", errors="replace") as f:
-            soup = BeautifulSoup(f, "lxml")
-        return soup.get_text(separator=" ", strip=True)
+            return html_to_plain(f.read())
     except Exception as e:
         log.error("Failed to parse HTML %s: %s", path, e, exc_info=True)
         return ""
@@ -505,6 +504,8 @@ class ArchiveIngestor:
                             }
                             self.db.insert_review_item(review_item)
                             summary.review_flagged += 1
+                # Mark as done so get_unextracted_reports() doesn't pick it up again
+                self.db.mark_report_extracted(report_id)
             else:
                 # Monthly press release — delegate to shared extraction pipeline.
                 # Pipeline runs LLM+regex+agreement and marks the report extracted.

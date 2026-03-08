@@ -1,16 +1,22 @@
 # Miners Platform — UI/API Component Spec
 
-Version: 1.2
+Version: 1.4
 Port: 5004
 
 ## Convention
 
 | Level | Format | Meaning |
 |-------|--------|---------|
-| `X.0` | integer.0 | Page (route) |
-| `X.Y` | integer.integer | Tab or major section within a page |
+| `X.0` | integer.0 | Page (route) or top-level pane within ops.html |
+| `X.Y` | integer.integer | Sub-tab or major section within a pane |
 | `X.Y.Z` | integer.integer.integer | Panel, table, or form within a section |
-| `X.Y.Z.W` | integer.integer.integer.integer | Sub-component within a panel (e.g. ticker bar inside a sub-pane) |
+| `X.Y.Z.W` | integer.integer.integer.integer | Sub-component within a panel |
+
+**SSOT**: Machine-readable spec is `static/data/ui_spec.json`. `UI_SPEC.md` is the human-readable mirror. Tests in `tests/test_ui_spec.py` enforce that every `id` in `ui_spec.json` has a matching `data-spec-id` attribute in the template.
+
+**Ops page namespace**: The `/ops` page uses a flat internal namespace where the top-level panes are `1.X` (Track Config), `2.X` (Ingest), `3.X` (Interpret), `4.X` (Review), `5.X` (Data), `6.X` (Interrogate). The `/` landing page uses `1.X`, all other pages use prefixed IDs (R3.X, DE4.X, MD5.X, DB6.X, 7.X, 8.X, 9.X).
+
+**Critical path**: Each component has a `path` field in `ui_spec.json` (`critical` | `optional` | `later`). The ops.html template shows `wf-path-badge` labels on all sub-tab buttons and on individual cards in the Ingest pane. Off-critical-path cards within panes are wrapped in `<details class="offpath-details">` and collapsed by default.
 
 Data source key:
 - **CONFIG** — seeded from `companies.json`, pattern files, or `config.py` at server startup; survives purge + restart by design

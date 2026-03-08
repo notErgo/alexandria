@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from infra.text_utils import make_html_report_fields
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -270,8 +272,8 @@ class IRScraper:
                 summary.errors += 1
                 continue
 
-            text = BeautifulSoup(page.text, 'lxml').get_text(separator=" ", strip=True)
-            content_hash = simhash_text(text[:5000])
+            html_fields = make_html_report_fields(page.text)
+            content_hash = simhash_text(html_fields["raw_text"][:5000])
             dupes = self.db.find_near_duplicates(content_hash, ticker)
             if dupes:
                 log.warning(
@@ -286,8 +288,7 @@ class IRScraper:
                 "published_date": None,
                 "source_type": "ir_press_release",
                 "source_url": pr_url,
-                "raw_text": text[:50000],
-                "raw_html": page.text[:300_000],
+                **html_fields,
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
                 "content_simhash": content_hash,
                 "fetch_strategy": "rss",
@@ -297,7 +298,7 @@ class IRScraper:
                 summary.reports_ingested += 1
                 self._emit('url_ingested', ticker=ticker, period=period_str,
                            title=item["title"], pub_date=item.get("pub_date", ""),
-                           fetch_strategy='rss', text_chars=len(text), url=pr_url)
+                           fetch_strategy='rss', text_chars=len(html_fields["raw_text"]), url=pr_url)
             except Exception as e:
                 log.error("Failed to insert RSS report %s %s: %s", ticker, period_str, e, exc_info=True)
                 self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
@@ -345,11 +346,18 @@ class IRScraper:
         # the latest one already ingested (avoids N×HTTP for known-covered history).
         latest = self.db.latest_ir_period(ticker)
         if latest:
-            ly, lm = int(latest[:4]), int(latest[5:7])
-            start_from = date(ly, lm + 1, 1) if lm < 12 else date(ly + 1, 1, 1)
-            # Never go before pr_start_year — respect the configured floor
-            current = max(date(start_year, 1, 1), start_from)
-            log.info("%s: fast-forwarding to %s (latest IR: %s)", ticker, current, latest)
+            try:
+                ly, lm = int(latest[:4]), int(latest[5:7])
+                start_from = date(ly, lm + 1, 1) if lm < 12 else date(ly + 1, 1, 1)
+                # Never go before pr_start_year — respect the configured floor
+                current = max(date(start_year, 1, 1), start_from)
+                log.info("%s: fast-forwarding to %s (latest IR: %s)", ticker, current, latest)
+            except (ValueError, IndexError) as e:
+                log.warning(
+                    "%s: could not parse latest_ir_period %r (%s) — starting from %d",
+                    ticker, latest, e, start_year,
+                )
+                current = date(start_year, 1, 1)
         else:
             current = date(start_year, 1, 1)
 
@@ -374,8 +382,8 @@ class IRScraper:
                 current = _next_month(current)
                 continue
 
-            text = BeautifulSoup(resp.text, 'lxml').get_text(separator=" ", strip=True)
-            content_hash = simhash_text(text[:5000])
+            html_fields = make_html_report_fields(resp.text)
+            content_hash = simhash_text(html_fields["raw_text"][:5000])
             dupes = self.db.find_near_duplicates(content_hash, ticker)
             if dupes:
                 log.warning(
@@ -390,8 +398,7 @@ class IRScraper:
                 "published_date": None,
                 "source_type": "ir_press_release",
                 "source_url": url,
-                "raw_text": text[:50000],
-                "raw_html": resp.text[:300_000],
+                **html_fields,
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
                 "content_simhash": content_hash,
                 "fetch_strategy": "template",
@@ -401,7 +408,7 @@ class IRScraper:
                 summary.reports_ingested += 1
                 log.info("Ingested template PR: %s %s from %s", ticker, period_str, url)
                 self._emit('url_ingested', ticker=ticker, period=period_str,
-                           fetch_strategy='template', text_chars=len(text), url=url)
+                           fetch_strategy='template', text_chars=len(html_fields["raw_text"]), url=url)
             except Exception as e:
                 log.error("Failed to insert template report %s %s: %s", ticker, period_str, e, exc_info=True)
                 self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
@@ -479,8 +486,8 @@ class IRScraper:
                     summary.errors += 1
                     continue
 
-                text = BeautifulSoup(pr_resp.text, 'lxml').get_text(separator=" ", strip=True)
-                content_hash = simhash_text(text[:5000])
+                html_fields = make_html_report_fields(pr_resp.text)
+                content_hash = simhash_text(html_fields["raw_text"][:5000])
                 dupes = self.db.find_near_duplicates(content_hash, ticker)
                 if dupes:
                     log.warning(
@@ -495,8 +502,7 @@ class IRScraper:
                     "published_date": None,
                     "source_type": "ir_press_release",
                     "source_url": full_url,
-                    "raw_text": text[:50000],
-                    "raw_html": pr_resp.text[:300_000],
+                    **html_fields,
                     "parsed_at": datetime.now(timezone.utc).isoformat(),
                     "content_simhash": content_hash,
                     "fetch_strategy": "index",
@@ -506,7 +512,7 @@ class IRScraper:
                     summary.reports_ingested += 1
                     log.info("Ingested index PR: %s %s from %s", ticker, period_str, full_url)
                     self._emit('url_ingested', ticker=ticker, period=period_str,
-                               title=title, fetch_strategy='index', text_chars=len(text), url=full_url)
+                               title=title, fetch_strategy='index', text_chars=len(html_fields["raw_text"]), url=full_url)
                 except Exception as e:
                     log.error("Failed to insert IR report %s %s: %s", ticker, period_str, e, exc_info=True)
                     self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
@@ -591,9 +597,9 @@ class IRScraper:
 
                     page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
                     pr_html = page.content()
-                    text = BeautifulSoup(pr_html, "lxml").get_text(separator=" ", strip=True)
+                    html_fields = make_html_report_fields(pr_html)
                     period_str = period.strftime("%Y-%m-%d")
-                    content_hash = simhash_text(text[:5000])
+                    content_hash = simhash_text(html_fields["raw_text"][:5000])
                     dupes = self.db.find_near_duplicates(content_hash, ticker)
                     if dupes:
                         log.debug(
@@ -609,8 +615,7 @@ class IRScraper:
                         "published_date": None,
                         "source_type": "ir_press_release",
                         "source_url": full_url,
-                        "raw_text": text[:50000],
-                        "raw_html": pr_html[:300_000],
+                        **html_fields,
                         "parsed_at": datetime.now(timezone.utc).isoformat(),
                         "content_simhash": content_hash,
                         "fetch_strategy": "playwright",
@@ -620,7 +625,7 @@ class IRScraper:
                         summary.reports_ingested += 1
                         log.info("Ingested playwright PR: %s %s from %s", ticker, period_str, full_url)
                         self._emit('url_ingested', ticker=ticker, period=period_str,
-                                   title=title, fetch_strategy='playwright', text_chars=len(text), url=full_url)
+                                   title=title, fetch_strategy='playwright', text_chars=len(html_fields["raw_text"]), url=full_url)
                     except Exception as e:
                         log.error(
                             "Failed to insert playwright report %s %s: %s",

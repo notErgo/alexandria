@@ -16,8 +16,9 @@ log = logging.getLogger('miners.routes.miner')
 
 bp = Blueprint('miner', __name__)
 
-# Core metrics — always shown in the timeline table even when null.
-CORE_METRICS = ['production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate']
+# Core metrics — always shown in the timeline table even when no data exists.
+# hashrate_eh and realization_rate are NOT core: they only appear when data exists.
+CORE_METRICS = ['production_btc', 'hodl_btc', 'sold_btc']
 
 # All known metrics in canonical display order.
 # Non-core metrics appear as columns only when data exists for that ticker.
@@ -170,12 +171,77 @@ def get_miner_timeline(ticker: str):
                 limit=100000,
             )
 
+        import re as _re
+        _QUARTERLY_PERIOD_RE = _re.compile(r'^\d{4}-(Q\d|FY)$')
+
         # Build a set of finalized (period, metric) keys for is_finalized flag
         finals = db.get_final_data_points(ticker_upper)
         finalized_keys = {(f['period'], f['metric']) for f in finals}
 
+        # Build pivot dict: period → metric → cell dict
+        # Monthly source: normalize all periods to YYYY-MM-01 so that data points
+        # stored with non-standard dates (e.g. "2025-01-31" from 8-K filing dates)
+        # align with the monthly spine which always uses YYYY-MM-01.
+        pivot: dict = {}
+        for dp in all_dps:
+            period = dp['period']
+            if source == 'monthly' and len(period) >= 10:
+                period = period[:7] + '-01'
+            metric = dp['metric']
+            if period not in pivot:
+                pivot[period] = {}
+            pivot[period][metric] = {
+                'value':             dp['value'],
+                'unit':              dp.get('unit'),
+                'confidence':        dp['confidence'],
+                'extraction_method': dp.get('extraction_method'),
+                'is_finalized':      (period, metric) in finalized_keys,
+                'is_pending':        False,
+            }
+
+        # Merge PENDING review_queue items into pivot.
+        # These are extractions awaiting analyst approval — visible in the timeline
+        # with a distinct 'review_pending' extraction_method so the user can see
+        # which periods have candidate data that needs review.
+        # Monthly items have period = YYYY-MM-DD (from report_date).
+        # Quarterly items have period = YYYY-Qn / YYYY-FY (from covering_period).
+        pending_rq = db.get_review_items(ticker=ticker_upper, status='PENDING', limit=100000)
+        for rq in pending_rq:
+            rq_period = rq.get('period') or ''
+            is_quarterly_period = bool(_QUARTERLY_PERIOD_RE.match(rq_period))
+            if source == 'sec' and not is_quarterly_period:
+                continue
+            if source == 'monthly' and is_quarterly_period:
+                continue
+            if source == 'monthly' and len(rq_period) >= 10:
+                rq_period = rq_period[:7] + '-01'
+            metric = rq.get('metric')
+            if not metric or not rq_period:
+                continue
+            rq_value = (
+                rq.get('llm_value') if rq.get('llm_value') is not None
+                else rq.get('regex_value')
+            )
+            if rq_period not in pivot:
+                pivot[rq_period] = {}
+            if metric not in pivot[rq_period]:
+                pivot[rq_period][metric] = {
+                    'value':             rq_value,
+                    'unit':              None,
+                    'confidence':        rq.get('confidence') or 0.0,
+                    'extraction_method': 'review_pending',
+                    'is_finalized':      False,
+                    'is_pending':        True,
+                }
+
         empty_keys = CORE_METRICS[:]
-        if not all_dps:
+        if not pivot:
+            try:
+                _empty_schema = db.get_metric_schema(sector='BTC-miners', active_only=True)
+            except Exception:
+                _empty_schema = []
+            _e_labels = {r['key']: r['label'] for r in _empty_schema} if _empty_schema else METRIC_LABELS
+            _e_units  = {r['key']: r.get('unit', '') for r in _empty_schema} if _empty_schema else METRIC_UNITS
             return jsonify({
                 'success': True,
                 'data': {
@@ -195,32 +261,20 @@ def get_miner_timeline(ticker: str):
                         'last_period': None,
                     },
                     'metric_keys': empty_keys,
-                    'metric_labels': {k: METRIC_LABELS.get(k, k) for k in empty_keys},
-                    'metric_units': {k: METRIC_UNITS.get(k, '') for k in empty_keys},
+                    'metric_labels': {k: _e_labels.get(k, k) for k in empty_keys},
+                    'metric_units': {k: _e_units.get(k, '') for k in empty_keys},
                     'rows': [],
                 },
             })
 
-        # Build pivot dict: period → metric → cell dict
-        pivot: dict = {}
-        for dp in all_dps:
-            period = dp['period']
-            metric = dp['metric']
-            if period not in pivot:
-                pivot[period] = {}
-            pivot[period][metric] = {
-                'value':             dp['value'],
-                'unit':              dp.get('unit'),
-                'confidence':        dp['confidence'],
-                'extraction_method': dp.get('extraction_method'),
-                'is_finalized':      (period, metric) in finalized_keys,
-            }
-
         # Build report lookup: period key → {id, report_date, source_type, source_url}
+        # Indexed by YYYY-MM (from report_date) for monthly source, and also by
+        # covering_period (e.g. "2025-Q1", "2025-FY") for SEC source so that
+        # SEC spine rows can find their corresponding report.
         report_by_period: dict = {}
         with db._get_connection() as conn:
             report_rows = conn.execute(
-                """SELECT id, report_date, source_type, source_url
+                """SELECT id, report_date, source_type, source_url, covering_period
                    FROM reports
                    WHERE ticker = ?
                    ORDER BY report_date""",
@@ -228,16 +282,33 @@ def get_miner_timeline(ticker: str):
             ).fetchall()
         for row in report_rows:
             rd = row[1] or ''
-            # Monthly: key = YYYY-MM; SEC: key = full period string from data_points
             ym = rd[:7]  # YYYY-MM
-            report_by_period[ym] = {
+            entry = {
                 'id':          row[0],
                 'report_date': row[1],
                 'source_type': row[2],
                 'source_url':  row[3],
             }
+            report_by_period[ym] = entry
+            # Also index by covering_period for SEC rows ("2025-Q1", "2025-FY", etc.)
+            covering = row[4]
+            if covering and covering != ym:
+                report_by_period[covering] = entry
 
-        # Determine metric_keys
+        # Fetch metric_schema as SSOT for labels and units.
+        # Falls back to hardcoded dicts if DB table is empty.
+        try:
+            schema_rows = db.get_metric_schema(sector='BTC-miners', active_only=True)
+        except Exception:
+            schema_rows = []
+        if schema_rows:
+            _label_map = {r['key']: r['label'] for r in schema_rows}
+            _unit_map  = {r['key']: r.get('unit', '') for r in schema_rows}
+        else:
+            _label_map = METRIC_LABELS
+            _unit_map  = METRIC_UNITS
+
+        # Determine metric_keys: always include CORE_METRICS plus any metric with data.
         metrics_with_data: set = set()
         for period_data in pivot.values():
             metrics_with_data.update(period_data.keys())
@@ -261,15 +332,17 @@ def get_miner_timeline(ticker: str):
         # Build rows
         rows = []
         for period in spine:
-            # Report lookup key
+            # Report lookup key: monthly uses YYYY-MM prefix; SEC uses the full
+            # covering_period string (e.g. "2025-Q1") since that was indexed above.
             if source == 'monthly':
                 period_ym = period[:7]
             else:
-                period_ym = period[:7]  # still use YYYY-MM prefix for report join
+                period_ym = period  # covering_period key already indexed in report_by_period
 
             metrics_data = pivot.get(period, {})
             metric_cells = {metric: metrics_data.get(metric) for metric in metric_keys}
 
+            # A period is a gap only if no core metric has any value (accepted or pending)
             is_gap = all(metric_cells.get(m) is None for m in CORE_METRICS)
 
             report_info = report_by_period.get(period_ym)
@@ -318,8 +391,8 @@ def get_miner_timeline(ticker: str):
                     'last_period':   max_period[:7],
                 },
                 'metric_keys':    metric_keys,
-                'metric_labels':  {k: METRIC_LABELS.get(k, k) for k in metric_keys},
-                'metric_units':   {k: METRIC_UNITS.get(k, '') for k in metric_keys},
+                'metric_labels':  {k: _label_map.get(k, k) for k in metric_keys},
+                'metric_units':   {k: _unit_map.get(k, '') for k in metric_keys},
                 'rows':           rows,
             },
         })

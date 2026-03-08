@@ -24,6 +24,8 @@ except ImportError:
 import requests
 
 from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
+from interpreters.confidence import METRIC_VALID_RANGES
+from miner_types import ExtractionResult
 
 
 def _active_model(db=None) -> str:
@@ -40,8 +42,6 @@ def _active_model(db=None) -> str:
         except Exception:
             pass
     return LLM_MODEL_ID
-from interpreters.confidence import METRIC_VALID_RANGES
-from miner_types import ExtractionResult
 
 # Valid ranges for quarterly/annual aggregated values (3x the monthly bounds for flow metrics).
 # Snapshot metrics (hodl_btc, hashrate_eh, etc.) keep the same bounds since they are
@@ -615,6 +615,42 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch ticker hint for %s: %s", ticker, e)
 
+        # Per-metric anchor terms (from metric_keywords v31 SSOT, with exclude hints)
+        if self._db is not None:
+            try:
+                kw_rows = self._db.get_all_metric_keywords(active_only=True)
+                if kw_rows:
+                    lines.append("=== ANCHOR TERMS ===")
+                    lines.append(
+                        "Scan the document for these exact phrases and use them as anchor "
+                        "points to locate numeric values. When you find a passage containing "
+                        "one of these phrases, extract any numeric figures in the surrounding "
+                        "sentences before moving on. "
+                        "Do not skip a passage just because its phrasing is indirect."
+                    )
+                    for kw in kw_rows:
+                        entry = f"- {kw['phrase']}"
+                        excl = (kw.get('exclude_terms') or '').strip()
+                        if excl:
+                            entry += f" (ignore if surrounded by: {excl})"
+                        lines.append(entry)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch metric keywords for prompt: %s", e)
+
+        # Target metrics from metric_schema (SSOT — never hardcoded)
+        if self._db is not None:
+            try:
+                metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
+                if metric_rows:
+                    lines.append("=== TARGET METRICS ===")
+                    for m in metric_rows:
+                        lines.append(f"- {m['label']} ({m['key']}, unit: {m['unit']})")
+                    lines.append("Extract a numeric value for each metric if mentioned.")
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch metric schema for prompt: %s", e)
+
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")
             lines.append(self._get_prompt_instructions(metric))
@@ -905,6 +941,42 @@ class LLMInterpreter:
                     lines.append("===\n")
             except Exception as e:
                 log.warning("Could not fetch ticker hint for %s: %s", ticker, e)
+
+        # Per-metric anchor terms (from metric_keywords v31 SSOT, with exclude hints)
+        if self._db is not None:
+            try:
+                kw_rows = self._db.get_all_metric_keywords(active_only=True)
+                if kw_rows:
+                    lines.append("=== ANCHOR TERMS ===")
+                    lines.append(
+                        "Scan the document for these exact phrases and use them as anchor "
+                        "points to locate numeric values. When you find a passage containing "
+                        "one of these phrases, extract any numeric figures in the surrounding "
+                        "sentences before moving on. "
+                        "Do not skip a passage just because its phrasing is indirect."
+                    )
+                    for kw in kw_rows:
+                        entry = f"- {kw['phrase']}"
+                        excl = (kw.get('exclude_terms') or '').strip()
+                        if excl:
+                            entry += f" (ignore if surrounded by: {excl})"
+                        lines.append(entry)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch metric keywords for prompt: %s", e)
+
+        # Target metrics from metric_schema (SSOT — never hardcoded)
+        if self._db is not None:
+            try:
+                metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
+                if metric_rows:
+                    lines.append("=== TARGET METRICS ===")
+                    for m in metric_rows:
+                        lines.append(f"- {m['label']} ({m['key']}, unit: {m['unit']})")
+                    lines.append("Extract a numeric value for each metric if mentioned.")
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("Could not fetch metric schema for prompt: %s", e)
 
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")

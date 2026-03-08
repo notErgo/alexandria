@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
+from infra.text_utils import make_html_report_fields
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -576,8 +578,8 @@ class ScoutWorker:
                     page = self._fetch(link)
                     if page is None or page.status_code >= 400:
                         continue
+                    html_fields = make_html_report_fields(page.text)
                     soup = BeautifulSoup(page.text or "", "lxml")
-                    text = soup.get_text(separator=" ", strip=True)
                     h1 = soup.find("h1")
                     h1_text = (h1.get_text(" ", strip=True) if h1 else "") or ""
                     period = (
@@ -585,7 +587,7 @@ class ScoutWorker:
                         or self._infer_period_fallback(title, link)
                         or infer_period_from_pr_title(h1_text)
                         or self._infer_period_fallback(h1_text, link)
-                        or self._infer_period_from_body_text(text[:4000])
+                        or self._infer_period_from_body_text(html_fields["raw_text"][:4000])
                     )
                     if period is None:
                         continue
@@ -598,7 +600,7 @@ class ScoutWorker:
                         "published_date": None,
                         "source_type": source_type,
                         "source_url": link,
-                        "raw_text": text[:50000],
+                        **html_fields,
                         "parsed_at": _utc_now(),
                     })
                     ingested += 1
@@ -638,8 +640,8 @@ class ScoutWorker:
             page = self._fetch(full_url)
             if page is None or page.status_code >= 400:
                 continue
+            html_fields = make_html_report_fields(page.text)
             soup = BeautifulSoup(page.text or "", "lxml")
-            text = soup.get_text(separator=" ", strip=True)
             h1 = soup.find("h1")
             h1_text = (h1.get_text(" ", strip=True) if h1 else "") or ""
             period = (
@@ -647,7 +649,7 @@ class ScoutWorker:
                 or self._infer_period_fallback(title, full_url)
                 or infer_period_from_pr_title(h1_text)
                 or self._infer_period_fallback(h1_text, full_url)
-                or self._infer_period_from_body_text(text[:4000])
+                or self._infer_period_from_body_text(html_fields["raw_text"][:4000])
             )
             if period is None:
                 continue
@@ -660,7 +662,7 @@ class ScoutWorker:
                 "published_date": None,
                 "source_type": source_type,
                 "source_url": full_url,
-                "raw_text": text[:50000],
+                **html_fields,
                 "parsed_at": _utc_now(),
             })
             ingested += 1
@@ -703,14 +705,13 @@ class ScoutWorker:
                             continue
                         if page.status_code >= 400:
                             continue
-                        text = BeautifulSoup(page.text or "", "lxml").get_text(separator=" ", strip=True)
                         self.db.insert_report({
                             "ticker": ticker,
                             "report_date": period_str,
                             "published_date": None,
                             "source_type": "ir_press_release",
                             "source_url": full_url,
-                            "raw_text": text[:50000],
+                            **make_html_report_fields(page.text),
                             "parsed_at": _utc_now(),
                         })
                         ingested += 1
