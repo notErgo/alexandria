@@ -49,9 +49,6 @@ _LLM_AVAILABLE_CACHE_TTL: float = 300.0      # seconds
 # full raw_text, so no data is lost; the LLM just sees a shorter window.
 _LLM_TEXT_MAX_CHARS = 8000
 
-# Quarterly/annual filings are larger; send up to 40K chars to cover MD&A section.
-_LLM_QUARTERLY_TEXT_MAX_CHARS = 40_000
-
 # Source types that follow the quarterly/annual extraction path
 _QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
 _ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
@@ -629,7 +626,13 @@ def _interpret_quarterly_report(
         return summary
 
     _q_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
-    text = (report.get('raw_text') or '')[:_q_selector.char_budget]
+    raw_html = report.get('raw_html')
+    if raw_html:
+        from infra.text_utils import edgar_to_plain
+        full_text = edgar_to_plain(raw_html)
+    else:
+        full_text = report.get('raw_text') or ''
+    text = full_text[:_q_selector.char_budget]
 
     llm_interpreter = _get_llm_interpreter(db)
     llm_available = _check_llm_available(llm_interpreter)

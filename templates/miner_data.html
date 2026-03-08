@@ -901,7 +901,9 @@ tr.is-reviewed td { opacity: 0.65; }
         </select>
       </div>
       <button class="btn btn-primary btn-sm" id="reprompt-btn" onclick="doReprompt()">Reprompt LLM</button>
+      <button class="btn btn-secondary btn-sm" id="rerun-sec-btn" onclick="doRerunSec()" style="margin-left:0.5rem">Re-interpret SEC filings</button>
       <span id="reprompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      <span id="rerun-sec-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
     </div>
 
     <!-- Suggestion cards -->
@@ -982,7 +984,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <div id="doc-panel" data-spec-id="MD5.2">
     <div class="doc-panel-header">
       <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
-      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open rendered HTML in new tab" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Rendered</button>
+      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Source</button>
       <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
     </div>
     <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
@@ -1419,7 +1421,10 @@ async function selectCompany(ticker) {
 
     // If another view is active, also refresh it
     if (_currentView === 'sec') loadSecData(ticker);
-    if (_currentView === 'interpret') loadInterpretData(ticker);
+    if (_currentView === 'interpret') {
+      await loadSecData(ticker);
+      loadInterpretData(ticker);
+    }
 
   } catch (err) {
     document.getElementById('timeline-tbody').innerHTML =
@@ -1865,12 +1870,13 @@ async function saveGeneratedPattern() {
 // ── Open raw source in new tab ─────────────────────────────────────────────
 function openInNewTab() {
   if (!_ticker || !_selectedPeriod) return;
-  const periodParam = _selectedPeriod.slice(0, 7);
-  window.open(
-    `/api/miner/${encodeURIComponent(_ticker)}/${encodeURIComponent(periodParam)}/raw-source`,
-    '_blank',
-    'noopener'
-  );
+  const row = _rows.find(function(r) { return r.period === _selectedPeriod; });
+  const url = row && row.source_url;
+  if (url) {
+    window.open(url, '_blank', 'noopener');
+  } else {
+    showToast('No source URL for this report', true);
+  }
 }
 
 
@@ -1946,7 +1952,7 @@ let _secRows = [];
 let _stagedValues = [];   // [{period, metric, value, unit, analyst_note}]
 let _finalizedValues = [];
 
-function switchView(view) {
+async function switchView(view) {
   _currentView = view;
   document.querySelectorAll('.source-toggle-btn').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-view') === view);
@@ -1959,6 +1965,7 @@ function switchView(view) {
     loadSecData(_ticker);
   }
   if (view === 'interpret' && _ticker) {
+    if (_secRows.length === 0) await loadSecData(_ticker);
     loadInterpretData(_ticker);
   }
 }
@@ -2073,12 +2080,18 @@ function renderReconcileTable() {
   // Build a merged map: {period_metric: {period, metric, monthly_val, sec_val, final_val}}
   const map = {};
   function key(p, m) { return p + '|' + m; }
+  // Normalize a period to a stable map key:
+  // monthly "2024-07-01" -> "2024-07"; quarterly/annual "2024-Q3"/"2024-FY" kept as-is.
+  function periodKey(p) {
+    if (!p) return '';
+    return /^\d{4}-Q\d$|^\d{4}-FY$/.test(p) ? p : p.slice(0, 7);
+  }
   (_rows || []).forEach(function(row) {
     Object.keys(row.metrics || {}).forEach(function(metric) {
       const c = row.metrics[metric];
       if (!c || c.value == null) return;
-      const k = key(row.period_label, metric);
-      if (!map[k]) map[k] = {period: row.period_label, metric, monthly: null, sec: null, final: null};
+      const k = key(periodKey(row.period), metric);
+      if (!map[k]) map[k] = {period: periodKey(row.period), period_label: row.period_label, metric, monthly: null, sec: null, final: null};
       map[k].monthly = c.value;
     });
   });
@@ -2086,15 +2099,15 @@ function renderReconcileTable() {
     Object.keys(row.metrics || {}).forEach(function(metric) {
       const c = row.metrics[metric];
       if (!c || c.value == null) return;
-      const k = key(row.period_label, metric);
-      if (!map[k]) map[k] = {period: row.period_label, metric, monthly: null, sec: null, final: null};
+      const k = key(periodKey(row.period), metric);
+      if (!map[k]) map[k] = {period: periodKey(row.period), period_label: row.period_label, metric, monthly: null, sec: null, final: null};
       map[k].sec = c.value;
     });
   });
   (_finalizedValues || []).forEach(function(f) {
-    const p = f.period ? f.period.slice(0, 7) : '';
+    const p = periodKey(f.period);
     const k = key(p, f.metric);
-    if (!map[k]) map[k] = {period: p, metric: f.metric, monthly: null, sec: null, final: null};
+    if (!map[k]) map[k] = {period: p, period_label: p, metric: f.metric, monthly: null, sec: null, final: null};
     map[k].final = f.value;
   });
   const entries = Object.values(map).sort(function(a, b) {
@@ -2109,7 +2122,7 @@ function renderReconcileTable() {
       ? `<span class="badge-final">F</span> ${e.final.toLocaleString()}`
       : '—';
     return `<tr>
-      <td>${escapeHtml(e.period)}</td>
+      <td>${escapeHtml(e.period_label || e.period)}</td>
       <td>${escapeHtml(e.metric)}</td>
       <td>${e.monthly != null ? e.monthly.toLocaleString() : '—'}</td>
       <td>${e.sec != null ? e.sec.toLocaleString() : '—'}</td>
@@ -2170,6 +2183,36 @@ async function doReprompt() {
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
     showToast(`Reprompt failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doRerunSec() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  const btn = document.getElementById('rerun-sec-btn');
+  const statusEl = document.getElementById('rerun-sec-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Running…';
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/rerun-sec`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const d = body.data;
+    statusEl.textContent =
+      `Done: ${d.reports_processed} reports, ${d.data_points_extracted} data points` +
+      (d.errors > 0 ? `, ${d.errors} errors` : '');
+    // Refresh SEC and reconcile views with updated data
+    _secRows = [];
+    await loadSecData(_ticker);
+    loadInterpretData(_ticker);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    showToast(`Re-interpret failed: ${err.message}`, true);
   } finally {
     btn.disabled = false;
   }

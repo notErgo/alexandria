@@ -6,6 +6,7 @@ Endpoints:
   GET  /api/interpret/<ticker>/final      — read final_data_points for ticker
   DELETE /api/interpret/<ticker>/final    — clear final_data_points for ticker
   POST /api/interpret/final/purge         — bulk purge (all tickers or scoped)
+  POST /api/interpret/<ticker>/rerun-sec  — re-run interpret pipeline on stored EDGAR filings
 """
 import json
 import logging
@@ -417,3 +418,66 @@ def clear_all_reviewed(ticker: str):
     deleted = db.unset_all_reviewed(ticker_upper)
     log.info("event=clear_all_reviewed ticker=%s deleted=%d", ticker_upper, deleted)
     return jsonify({'success': True, 'data': {'deleted': deleted}})
+
+
+_EDGAR_SOURCE_TYPES = frozenset({
+    'edgar_10q', 'edgar_10k', 'edgar_6k', 'edgar_20f', 'edgar_40f',
+})
+
+
+@bp.route('/api/interpret/<ticker>/rerun-sec', methods=['POST'])
+def rerun_sec(ticker: str):
+    """Re-run the interpret pipeline on all stored EDGAR filings for a ticker.
+
+    Equivalent to `cli.py extract --ticker X --force` filtered to EDGAR source types.
+    Does not re-scrape; reads raw_html/raw_text already in the reports table.
+
+    Returns:
+        {"success": true, "data": {"reports_processed": N, "data_points_extracted": N,
+                                   "review_flagged": N, "errors": N}}
+    """
+    from app_globals import get_registry
+    from interpreters.interpret_pipeline import extract_report
+    from miner_types import ExtractionSummary
+
+    db = get_db()
+    ticker_upper = ticker.upper()
+    if not db.get_company(ticker_upper):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    registry = get_registry()
+    all_reports = db.get_all_reports_for_extraction(ticker=ticker_upper)
+    edgar_reports = [r for r in all_reports if r.get('source_type') in _EDGAR_SOURCE_TYPES]
+
+    log.info(
+        "event=rerun_sec_start ticker=%s total_reports=%d edgar_reports=%d",
+        ticker_upper, len(all_reports), len(edgar_reports),
+    )
+
+    total = ExtractionSummary()
+    for report in edgar_reports:
+        try:
+            s = extract_report(report, db, registry)
+            total.reports_processed += s.reports_processed
+            total.data_points_extracted += s.data_points_extracted
+            total.review_flagged += s.review_flagged
+            total.errors += s.errors
+        except Exception:
+            log.error(
+                "rerun_sec extraction failed report_id=%s", report.get('id'), exc_info=True
+            )
+            total.errors += 1
+
+    log.info(
+        "event=rerun_sec_end ticker=%s reports_processed=%d data_points=%d review=%d errors=%d",
+        ticker_upper, total.reports_processed, total.data_points_extracted,
+        total.review_flagged, total.errors,
+    )
+    return jsonify({'success': True, 'data': {
+        'reports_processed': total.reports_processed,
+        'data_points_extracted': total.data_points_extracted,
+        'review_flagged': total.review_flagged,
+        'errors': total.errors,
+    }})
