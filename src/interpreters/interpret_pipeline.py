@@ -276,16 +276,27 @@ def _check_llm_available(llm_interpreter) -> bool:
     return result
 
 
-def _build_regex_by_metric(text: str, registry, report_date: str = None) -> dict:
+def _build_regex_by_metric(text: str, registry, report_date: str = None,
+                            metric_rules_by_name: dict = None) -> dict:
     """Run regex extraction for all metrics. Returns best result per metric.
 
     Passes report_date to extract_all so temporally-scoped patterns are
-    filtered to those valid for this report's period.
+    filtered to those valid for this report's period. Passes valid_range from
+    metric_rules_by_name so DB-configured ceilings override hardcoded defaults.
     """
     from interpreters.regex_interpreter import extract_all
+    rules = metric_rules_by_name or {}
     regex_by_metric = {}
     for metric, patterns in registry.metrics.items():
-        results = extract_all(text, patterns, metric, report_date=report_date)
+        rule = rules.get(metric)
+        valid_range = None
+        if rule:
+            mn = rule.get('valid_range_min')
+            mx = rule.get('valid_range_max')
+            if mn is not None and mx is not None:
+                valid_range = (float(mn), float(mx))
+        results = extract_all(text, patterns, metric, report_date=report_date,
+                              valid_range=valid_range)
         if results:
             regex_by_metric[metric] = results[0]  # sorted confidence-desc; first = best
     return regex_by_metric
@@ -733,7 +744,19 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             return _interpret_quarterly_report(report, db, registry, summary, attribution)
 
         report_date = report.get('report_date')
-        regex_by_metric = _build_regex_by_metric(text, registry, report_date=report_date)
+
+        # Load per-metric rules before regex so valid_range overrides flow in
+        metric_rules_by_name = {}
+        try:
+            for row in db.get_metric_rules():
+                metric_rules_by_name[row['metric']] = row
+        except Exception as _mre:
+            log.debug("Could not load metric_rules (non-fatal): %s", _mre)
+
+        regex_by_metric = _build_regex_by_metric(
+            text, registry, report_date=report_date,
+            metric_rules_by_name=metric_rules_by_name,
+        )
 
         llm_interpreter = _get_llm_interpreter(db)
         llm_available = _check_llm_available(llm_interpreter)
@@ -816,14 +839,6 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                     ):
                         llm_by_metric[_fb_metric] = _fb_results[_fb_metric]
                         break
-
-        # Load per-metric rules from DB (keyed by metric name)
-        metric_rules_by_name = {}
-        try:
-            for row in db.get_metric_rules():
-                metric_rules_by_name[row['metric']] = row
-        except Exception as _mre:
-            log.debug("Could not load metric_rules (non-fatal): %s", _mre)
 
         for metric in all_metrics:
             regex_best = regex_by_metric.get(metric)

@@ -75,7 +75,7 @@ def _run_archive_ingest(task_id: str) -> None:
             _running_tasks.discard('archive')
 
 
-def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True) -> None:
+def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True, pipeline_run_id: int = None) -> None:
     import requests as req_lib
     from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
@@ -104,6 +104,7 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
         db = get_db()
         session = req_lib.Session()
         scraper = IRScraper(db=db, session=session)
+        scraper._pipeline_run_id = pipeline_run_id
         companies = db.get_companies(active_only=True)
         totals = {'reports_ingested': 0, 'data_points_extracted': 0,
                   'review_flagged': 0, 'errors': 0}
@@ -718,6 +719,7 @@ def ingest_raw():
                 'source_type': doc.get('source_type', 'wire_press_release'),
                 'source_url': source_url,
                 'raw_text': doc.get('raw_text', ''),
+                'raw_html': doc.get('raw_html') or None,
                 'parsed_at': datetime.now(timezone.utc).isoformat(),
                 'covering_period': doc.get('period'),
             }

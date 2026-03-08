@@ -165,7 +165,13 @@ def create_app() -> Flask:
 
     @app.route('/ops')
     def ops_page():
-        return render_template('ops.html')
+        from config import SOURCE_TYPE_DISPLAY
+        return render_template(
+            'ops.html',
+            current_sector='BTC-miners',
+            all_sectors=['BTC-miners'],
+            source_type_display=SOURCE_TYPE_DISPLAY,
+        )
 
     @app.route('/patterns')
     def patterns_page():

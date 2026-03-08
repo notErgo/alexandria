@@ -94,7 +94,12 @@ class ScrapeWorker(threading.Thread):
                     from datetime import date
                     edgar = EdgarConnector(db=self._db, session=_req.Session())
                     since = date(2019, 1, 1)
-                    edgar.fetch_all_filings(cik=cik, ticker=ticker, since_date=since)
+                    edgar.fetch_all_filings(
+                        cik=cik,
+                        ticker=ticker,
+                        since_date=since,
+                        filing_regime=company.get('filing_regime', 'domestic'),
+                    )
                     log.info("EDGAR fetch completed for %s", ticker)
                 except Exception as ex:
                     log.error("EDGAR fetch failed for %s: %s", ticker, ex, exc_info=True)

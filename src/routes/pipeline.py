@@ -213,7 +213,7 @@ def _run_coverage_scout_stage(
 def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[str]) -> None:
     from app_globals import get_db, get_registry
     from interpreters.interpret_pipeline import extract_report
-    from infra.ollama_warmup import warm_ollama_for_extraction
+    from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
     from routes.companies import _run_bootstrap_probe_for_ticker
     from routes.reports import _run_ir_ingest, _run_edgar_ingest
 
@@ -390,65 +390,16 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                     failures.append({'ticker': t, 'error': str(e)})
                     _event(db, run_id, 'apply_modes', 'ticker_apply_failed', ticker=t, level='WARNING', error=str(e))
 
-        # Stage: enqueue scrape jobs
-        job_by_ticker = {}
-        for t in scrape_targets:
-            if _is_cancelled(run_id):
-                raise _RunCancelled()
-            company = db.get_company(t)
-            mode = (company.get('scraper_mode') or 'skip').strip().lower() if company else 'skip'
-            if mode == 'skip':
-                _event(db, run_id, 'scrape_enqueue', 'ticker_skipped_mode_skip', ticker=t)
-                continue
-            try:
-                job = db.enqueue_scrape_job(t, 'historic')
-                job_by_ticker[t] = int(job['id'])
-                _event(db, run_id, 'scrape_enqueue', 'ticker_enqueued', ticker=t, job_id=job['id'])
-            except Exception as e:
-                failures.append({'ticker': t, 'error': str(e)})
-                _event(db, run_id, 'scrape_enqueue', 'ticker_enqueue_failed', ticker=t, level='WARNING', error=str(e))
+        include_ir = bool(config.get('include_ir', True))
 
-        # Stage: wait for scrape completion
-        max_wait = int(config.get('scrape_wait_timeout_seconds', 1800))
-        started = time.time()
-        pending = set(job_by_ticker.values())
-        while pending:
-            if _is_cancelled(run_id):
-                raise _RunCancelled()
-            if (time.time() - started) > max_wait:
-                for t, jid in job_by_ticker.items():
-                    if jid in pending:
-                        failures.append({'ticker': t, 'error': 'scrape_timeout'})
-                        _event(db, run_id, 'scrape_wait', 'ticker_scrape_timeout', ticker=t, level='WARNING', job_id=jid)
-                break
-            rows = db.get_scrape_queue_status()
-            by_id = {int(r['id']): r for r in rows}
-            done_now = []
-            for jid in list(pending):
-                row = by_id.get(jid)
-                if not row:
-                    continue
-                status = (row.get('status') or '').lower()
-                if status == 'done':
-                    done_now.append(jid)
-                elif status == 'error':
-                    pending.remove(jid)
-                    t = next((tk for tk, x in job_by_ticker.items() if x == jid), None)
-                    if t:
-                        failures.append({'ticker': t, 'error': row.get('error_msg') or 'scrape_error'})
-                        db.upsert_pipeline_run_ticker(run_id, t, failed_reason=row.get('error_msg') or 'scrape_error')
-                        _event(db, run_id, 'scrape_wait', 'ticker_scrape_failed', ticker=t, level='WARNING', error=row.get('error_msg'))
-            for jid in done_now:
-                pending.remove(jid)
-                t = next((tk for tk, x in job_by_ticker.items() if x == jid), None)
-                if t:
-                    db.upsert_pipeline_run_ticker(run_id, t, scraped=1)
-                    _event(db, run_id, 'scrape_wait', 'ticker_scrape_done', ticker=t, job_id=jid)
-            time.sleep(2)
-
-        # Stage: IR + EDGAR ingest
+        # Stage: ingest (IR + EDGAR, or EDGAR-only when include_ir=False)
+        # Uses the same _run_ir_ingest / _run_edgar_ingest functions as individual UI buttons.
+        # The scrape_queue / ScrapeWorker is for manual per-company triggers only.
         before_reports = _count_reports_for_tickers(db, scrape_targets)
-        _run_ir_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)))
+        if include_ir:
+            _run_ir_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)), pipeline_run_id=run_id)
+        else:
+            _event(db, run_id, 'ingest', 'ir_skipped', reason='include_ir=false')
         _run_edgar_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)))
         after_reports = _count_reports_for_tickers(db, scrape_targets)
         ingested_delta = max(0, after_reports - before_reports)
@@ -463,25 +414,55 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         for t in scrape_targets:
             reports.extend(db.get_unextracted_reports(ticker=t))
         if reports and bool(config.get('warm_model', True)):
-            warm_ollama_for_extraction(db=db, reason='pipeline_overnight_extract')
+            def _pipeline_ollama_log(msg: str) -> None:
+                _event(db, run_id, 'extract', 'ollama_status', message=msg)
+            ensure_ollama_running(log_fn=_pipeline_ollama_log)
+            warmup_result = warm_ollama_for_extraction(db=db, reason='pipeline_overnight_extract', force=True)
+            _event(db, run_id, 'extract', 'ollama_warmup',
+                   warmed=int(bool(warmup_result.get('warmed'))),
+                   model=warmup_result.get('model', ''),
+                   reason=warmup_result.get('reason', ''))
+            if warmup_result.get('warmed'):
+                # Invalidate the LLM availability cache so the first extract_report
+                # call gets a fresh check (not a stale False from a prior failed run).
+                try:
+                    import interpreters.interpret_pipeline as _ipl
+                    _ipl._llm_available_cache_time = 0.0
+                except Exception:
+                    pass
+        total_reports = len(reports)
         processed = data_points = errors = 0
         extracted_tickers = set()
-        for report in reports:
+        _event(db, run_id, 'extract', 'stage_start', total_reports=total_reports)
+        for i, report in enumerate(reports):
             if _is_cancelled(run_id):
                 raise _RunCancelled()
+            ticker = report.get('ticker', '')
+            period = report.get('report_date', '')
+            source_type = report.get('source_type', '')
             try:
                 summary = extract_report(report, db, registry)
                 processed += summary.reports_processed
-                data_points += summary.data_points_extracted
+                dp_delta = summary.data_points_extracted
+                rv_delta = summary.review_flagged
+                data_points += dp_delta
                 errors += summary.errors
-                extracted_tickers.add(report.get('ticker'))
+                extracted_tickers.add(ticker)
+                _event(
+                    db, run_id, 'extract', 'report_done',
+                    ticker=ticker, period=period, source_type=source_type,
+                    data_points=dp_delta, review_flagged=rv_delta,
+                    progress=i + 1, total=total_reports,
+                    running_total_dp=data_points,
+                )
             except Exception as e:
                 errors += 1
-                failures.append({'ticker': report.get('ticker'), 'error': str(e)})
+                failures.append({'ticker': ticker, 'error': str(e)})
                 _event(
                     db, run_id, 'extract', 'report_extract_failed',
-                    ticker=report.get('ticker'), level='WARNING',
-                    report_id=report.get('id'), error=str(e),
+                    ticker=ticker, level='WARNING',
+                    report_id=report.get('id'), period=period,
+                    source_type=source_type, error=str(e),
                 )
         for t in extracted_tickers:
             db.upsert_pipeline_run_ticker(run_id, t, extracted=1)
@@ -548,9 +529,9 @@ def start_overnight_pipeline():
         'apply_mode_changes': bool(body.get('apply_mode_changes', False)),
         'warm_model': bool(body.get('warm_model', True)),
         'probe_timeout_seconds': int(body.get('probe_timeout_seconds', 12)),
-        'scrape_wait_timeout_seconds': int(body.get('scrape_wait_timeout_seconds', 1800)),
         'require_probe_success': bool(body.get('require_probe_success', True)),
         'require_non_skip_recommendation': bool(body.get('require_non_skip_recommendation', True)),
+        'include_ir': bool(body.get('include_ir', True)),
         'scout_mode': str(body.get('scout_mode', 'auto')),
         'scout_metric': str(body.get('scout_metric', 'production_btc')),
         'scout_keywords': _normalize_keywords(body.get('scout_keywords')),

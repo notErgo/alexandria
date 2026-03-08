@@ -47,13 +47,14 @@ class TestCompanyCRUD:
         assert db.get_company('UNKNOWN') is None
 
     def test_insert_company_idempotent(self, db):
-        c = {'ticker': 'RIOT', 'name': 'Riot', 'tier': 1,
+        # Use a ticker not in companies.json so auto-sync does not pre-populate it
+        c = {'ticker': 'XTEST', 'name': 'Test Corp', 'tier': 1,
              'ir_url': 'https://example.com', 'pr_base_url': None,
-             'cik': '0001167419', 'active': 1}
+             'cik': '0000000001', 'active': 1}
         db.insert_company(c)
         db.insert_company(c)  # second insert is ignored
         companies = db.get_companies()
-        assert len([x for x in companies if x['ticker'] == 'RIOT']) == 1
+        assert len([x for x in companies if x['ticker'] == 'XTEST']) == 1
 
     def test_sync_companies_prefers_scraper_mode_over_legacy_scrape_mode(self, tmp_path):
         db = MinerDB(str(tmp_path / 'test.db'))

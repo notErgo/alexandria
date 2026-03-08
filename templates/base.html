@@ -221,13 +221,33 @@ function makeSortable(tableId) {
       .catch(function() {});
   }
 
+  function applyDevMode(on) {
+    document.body.classList.toggle('no-dev-mode', !on);
+    if (chip) chip.style.display = on ? '' : 'none';
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
     ensureChip();
     loadSpec();
     document.addEventListener('mousemove', onHover, true);
     document.addEventListener('scroll', function() { hideChip(); clearHighlight(); }, true);
+    // Apply saved dev mode state (default ON)
+    applyDevMode(localStorage.getItem('devMode') !== 'false');
   });
 })();
+
+// ── Dev Mode toggle ──────────────────────────────────────────────────────────
+function toggleDevMode() {
+  const on = document.body.classList.contains('no-dev-mode');
+  document.body.classList.toggle('no-dev-mode', !on);
+  localStorage.setItem('devMode', on ? 'true' : 'false');
+}
+document.addEventListener('keydown', function(e) {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+    e.preventDefault();
+    toggleDevMode();
+  }
+});
 
 </script>
 

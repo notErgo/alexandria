@@ -81,6 +81,27 @@ def update_metric_rule(metric: str):
     if notes is not None:
         notes = str(notes)[:500]
 
+    vrmin = body.get('valid_range_min')
+    vrmax = body.get('valid_range_max')
+    if vrmin is not None:
+        try:
+            vrmin = float(vrmin)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_PARAM', 'message': 'valid_range_min must be a number',
+            }}), 400
+    if vrmax is not None:
+        try:
+            vrmax = float(vrmax)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_PARAM', 'message': 'valid_range_max must be a number',
+            }}), 400
+    if vrmin is not None and vrmax is not None and vrmin >= vrmax:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_PARAM', 'message': 'valid_range_min must be less than valid_range_max',
+        }}), 400
+
     db = get_db()
     try:
         row = db.upsert_metric_rule(
@@ -90,6 +111,8 @@ def update_metric_rule(metric: str):
             outlier_min_history=min_hist,
             enabled=enabled,
             notes=notes,
+            valid_range_min=vrmin,
+            valid_range_max=vrmax,
         )
     except Exception as e:
         log.error("upsert_metric_rule failed for %s: %s", metric, e, exc_info=True)
@@ -156,6 +179,27 @@ def create_metric_rule():
     if notes is not None:
         notes = str(notes)[:500]
 
+    vrmin = body.get('valid_range_min')
+    vrmax = body.get('valid_range_max')
+    if vrmin is not None:
+        try:
+            vrmin = float(vrmin)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_PARAM', 'message': 'valid_range_min must be a number',
+            }}), 400
+    if vrmax is not None:
+        try:
+            vrmax = float(vrmax)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_PARAM', 'message': 'valid_range_max must be a number',
+            }}), 400
+    if vrmin is not None and vrmax is not None and vrmin >= vrmax:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_PARAM', 'message': 'valid_range_min must be less than valid_range_max',
+        }}), 400
+
     db = get_db()
     try:
         row = db.upsert_metric_rule(
@@ -165,6 +209,8 @@ def create_metric_rule():
             outlier_min_history=min_hist,
             enabled=enabled,
             notes=notes,
+            valid_range_min=vrmin,
+            valid_range_max=vrmax,
         )
     except Exception as e:
         log.error("create metric_rule failed for %s: %s", metric, e, exc_info=True)

@@ -229,6 +229,27 @@ SOURCE_TYPES: dict = {
     'manual':            'Manual entry',
 }
 
+# --- Source Type Display Labels ---
+# Single source of truth for human-readable labels shown in the UI.
+# archive_html and archive_pdf both map to "IR Press Release" because they are
+# press release documents stored locally — same content, different storage format.
+SOURCE_TYPE_DISPLAY: dict = {
+    'edgar_8k':                    'SEC 8-K',
+    'edgar_10q':                   'SEC 10-Q',
+    'edgar_10k':                   'SEC 10-K',
+    'edgar_20f':                   'SEC 20-F',
+    'edgar_6k':                    'SEC 6-K',
+    'edgar_40f':                   'SEC 40-F',
+    'ir_press_release':            'IR Press Release',
+    'archive_html':                'IR Press Release',
+    'archive_pdf':                 'IR Press Release',
+    'prnewswire':                  'PRNewswire',
+    'prnewswire_press_release':    'PRNewswire',
+    'globenewswire_press_release': 'GlobeNewswire',
+    'wire_press_release':          'Wire',
+    'manual':                      'Manual Entry',
+}
+
 # --- Quarterly/Annual Metric Classification ---
 # Metrics where quarterly total = sum of monthly values (can infer missing month from remainder)
 FLOW_METRICS: frozenset = frozenset({

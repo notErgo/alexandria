@@ -281,6 +281,11 @@ def purge_data():
             'message': f'Ticker {ticker!r} not recognized',
         }}), 400
 
+    log.info(
+        "event=purge_start route=/api/data/purge purge_mode=%s ticker=%s "
+        "suppress_auto_sync=%s reason=%r",
+        purge_mode, ticker or 'ALL', suppress_auto_sync, reason,
+    )
     try:
         counts = db.purge_all(
             ticker=ticker,
@@ -289,11 +294,18 @@ def purge_data():
             suppress_auto_sync=(suppress_auto_sync and purge_mode == 'hard_delete' and not ticker),
         )
     except Exception as e:
-        log.error("Purge failed: %s", e, exc_info=True)
+        log.error(
+            "event=purge_error route=/api/data/purge purge_mode=%s ticker=%s error=%r",
+            purge_mode, ticker or 'ALL', str(e), exc_info=True,
+        )
         return jsonify({'success': False, 'error': {
             'code': 'PURGE_ERROR', 'message': 'Internal error during purge',
         }}), 500
 
+    log.info(
+        "event=purge_complete route=/api/data/purge purge_mode=%s ticker=%s counts=%s",
+        purge_mode, ticker or 'ALL', counts,
+    )
     return jsonify({'success': True, 'data': {
         'counts': counts,
         'ticker': ticker or 'ALL',

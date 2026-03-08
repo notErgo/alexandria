@@ -7,7 +7,7 @@ Score = pattern_weight × distance_factor × range_factor, clamped to [0.0, 1.0]
 - distance_factor: decays linearly as match context distance increases (0 → 1.0, 500 → 0.0)
 - range_factor: 1.0 if value is within the metric's valid range; 0.0 if outside
 """
-from typing import Optional
+from typing import Optional, Tuple
 
 # Valid value ranges per metric (inclusive bounds)
 METRIC_VALID_RANGES: dict = {
@@ -36,6 +36,7 @@ def score_extraction(
     context_distance: int,
     value: float,
     metric: str,
+    valid_range: Optional[Tuple[float, float]] = None,
 ) -> float:
     """
     Compute a confidence score in [0.0, 1.0] for an extraction result.
@@ -44,7 +45,9 @@ def score_extraction(
         pattern_weight: Intrinsic weight of the regex pattern that matched.
         context_distance: Characters between the keyword context and numeric match.
         value: The extracted and normalized numeric value.
-        metric: Metric name (used to look up valid range).
+        metric: Metric name (used to look up valid range when valid_range is None).
+        valid_range: Optional (min, max) override from DB metric_rules. Takes
+                     priority over the hardcoded METRIC_VALID_RANGES dict.
 
     Returns:
         Confidence score clamped to [0.0, 1.0].
@@ -52,8 +55,8 @@ def score_extraction(
     # Distance penalty: linear decay, bottoms out at 0 when distance >= MAX_DISTANCE
     distance_factor = max(0.0, 1.0 - context_distance / _MAX_DISTANCE)
 
-    # Range check: value must be within the metric's valid range
-    bounds = METRIC_VALID_RANGES.get(metric)
+    # Range check: caller-supplied range takes priority over hardcoded dict
+    bounds = valid_range if valid_range is not None else METRIC_VALID_RANGES.get(metric)
     if bounds is not None:
         lo, hi = bounds
         range_factor = 1.0 if lo <= value <= hi else 0.0

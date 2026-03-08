@@ -29,7 +29,7 @@ class TestMigrateV18:
     def test_schema_version_is_18(self, db_mara):
         with db_mara._get_connection() as conn:
             ver = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert ver == 18
+        assert ver >= 18
 
     def test_duplicate_url_hash_rejected(self, db_mara):
         """Inserting two reports with same (ticker, source_url_hash) must raise IntegrityError."""

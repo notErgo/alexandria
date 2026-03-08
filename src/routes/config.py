@@ -42,16 +42,10 @@ _DEFAULT_KEYWORD_DICTIONARY = {
     'active_pack': 'btc_activity',
     'packs': {
         'btc_activity': [
-            'bitcoin', 'btc', 'mined', 'production', 'hodl', 'holdings',
-            'sold', 'treasury', 'encumbered', 'hashrate'
-        ],
-        'miners_deployed': [
-            'miners', 'deployed', 'fleet', 'machines', 'rigs',
-            'energized', 'installed', 'asic', 'efficiency', 'j/th'
-        ],
-        'ai_hpc_compute': [
-            'ai', 'hpc', 'gpu', 'compute', 'cluster', 'hosting',
-            'capacity', 'data center', 'megawatt', 'mw'
+            'bitcoin', 'btc', 'mined', 'produced', 'earned', 'production',
+            'hodl', 'holdings', 'total holdings', 'sold', 'liquidated',
+            'treasury', 'encumbered', 'pledged', 'restricted', 'unrestricted',
+            'self-mined', 'balance sheet'
         ],
     },
 }

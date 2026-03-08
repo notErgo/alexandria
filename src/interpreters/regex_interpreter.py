@@ -75,7 +75,8 @@ def _pattern_in_scope(pattern_dict: dict, report_date: Optional[str]) -> bool:
     return True
 
 
-def _apply_pattern(text: str, pattern_dict: dict, metric: str) -> Optional[ExtractionResult]:
+def _apply_pattern(text: str, pattern_dict: dict, metric: str,
+                   valid_range=None) -> Optional[ExtractionResult]:
     """
     Apply a single pattern dict to text using finditer.
 
@@ -118,6 +119,7 @@ def _apply_pattern(text: str, pattern_dict: dict, metric: str) -> Optional[Extra
             context_distance=0,
             value=value,
             metric=metric,
+            valid_range=valid_range,
         )
         snippet = _extract_context_window(text, m.start(), m.end())
         result = ExtractionResult(
@@ -151,7 +153,8 @@ def _resolve_conflicts(results: list) -> list:
 
 
 def extract_all(text: str, patterns: list, metric: str,
-                report_date: Optional[str] = None) -> list:
+                report_date: Optional[str] = None,
+                valid_range=None) -> list:
     """
     Run all patterns against text, resolve conflicts, and return sorted results.
 
@@ -171,7 +174,7 @@ def extract_all(text: str, patterns: list, metric: str,
     for pattern_dict in patterns:
         if not _pattern_in_scope(pattern_dict, report_date):
             continue
-        result = _apply_pattern(text, pattern_dict, metric)
+        result = _apply_pattern(text, pattern_dict, metric, valid_range=valid_range)
         if result is not None:
             raw_results.append(result)
 

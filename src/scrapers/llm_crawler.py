@@ -94,6 +94,9 @@ class CrawlProgress:
         self.error: Optional[str] = None
         self.started_at: Optional[str] = None
         self.finished_at: Optional[str] = None
+        self.api_calls: int = 0
+        self.ctx_tokens: int = 0
+        self.ctx_limit: int = 0
         self._logs: deque = deque(maxlen=150)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -122,6 +125,9 @@ class CrawlProgress:
                 'error': self.error,
                 'started_at': self.started_at,
                 'finished_at': self.finished_at,
+                'api_calls': self.api_calls,
+                'ctx_tokens': self.ctx_tokens,
+                'ctx_limit': self.ctx_limit,
                 'log': list(self._logs),
             }
 
@@ -392,6 +398,7 @@ class LLMCrawler:
         self._session = _requests.Session()
         self._seen_urls: set = set()    # URLs passed to store_document (dedup guard)
         self._fetched_urls: set = set() # URLs passed to fetch_url (re-fetch detection)
+        self._raw_html_cache: dict = {}  # url → raw HTML for viewer storage
         self._prev_tool_sigs: set = set()  # tool signatures from previous iteration
         self._tool_repeat_streak: int = 0  # consecutive iterations with repeated calls
         self._session.headers.update({
@@ -516,6 +523,7 @@ class LLMCrawler:
         try:
             resp = self._session.get(url, timeout=20)
             resp.raise_for_status()
+            self._raw_html_cache[url] = resp.text[:300_000]
             soup = BeautifulSoup(resp.text, 'lxml')
             for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
                 tag.decompose()
@@ -571,6 +579,7 @@ class LLMCrawler:
                     'ticker': ticker.upper(),
                     'source_url': url,
                     'raw_text': text,
+                    'raw_html': self._raw_html_cache.get(url),
                     'source_type': source_type,
                 }]
             }
@@ -794,6 +803,9 @@ class LLMCrawler:
                 self._prune_old_fetches_anthropic(messages, fetch_tool_ids, iteration)
                 ctx_chars, ctx_tokens = _estimate_ctx(messages)
                 ctx_pct = ctx_tokens / self._num_ctx if self._num_ctx else 0
+                self._progress.api_calls = iteration + 1
+                self._progress.ctx_tokens = ctx_tokens
+                self._progress.ctx_limit = self._num_ctx
                 self._progress.add_log(
                     f'API call #{iteration + 1} | '
                     f'ctx {ctx_chars // 1000}k chars ~{ctx_tokens:,} tokens'
@@ -945,6 +957,9 @@ class LLMCrawler:
                 self._prune_old_fetches(messages, fetch_indices)
                 ctx_chars, ctx_tokens = _estimate_ctx(messages)
                 ctx_pct = ctx_tokens / self._num_ctx if self._num_ctx else 0
+                self._progress.api_calls = iteration + 1
+                self._progress.ctx_tokens = ctx_tokens
+                self._progress.ctx_limit = self._num_ctx
                 self._progress.add_log(
                     f'Ollama API call #{iteration + 1} | '
                     f'ctx {ctx_chars // 1000}k chars ~{ctx_tokens:,} tokens '

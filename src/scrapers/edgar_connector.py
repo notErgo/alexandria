@@ -33,6 +33,16 @@ _DATE_PATTERN = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 # Maximum characters of filing text stored (10-Q/10-K can be very long)
 _MAX_FILING_TEXT_CHARS = 100_000
 
+# Maximum characters of raw HTML stored for the document viewer
+_MAX_RAW_HTML_CHARS = 300_000
+
+_XBRL_VIEWER_MARKER = 'Please enable JavaScript to use the EDGAR Inline XBRL Viewer'
+
+
+def _is_xbrl_viewer_page(html: str) -> bool:
+    """Return True if the fetched page is the EDGAR XBRL viewer wrapper (not the filing itself)."""
+    return _XBRL_VIEWER_MARKER in html
+
 # 8-K full-text search terms (OR-joined). Covers all known production PR phrasings.
 _8K_SEARCH_TERMS: list = [
     '"bitcoin production"',
@@ -394,6 +404,31 @@ class EdgarConnector:
             log.warning("Empty primary document for %s %s %s", ticker, form_type, acc_no)
             return False
 
+        if _is_xbrl_viewer_page(doc_html):
+            log.warning(
+                "XBRL viewer page returned for %s %s %s — attempting fallback",
+                ticker, form_type, acc_no,
+            )
+            # Try the primary_doc name from submissions JSON as an alternate URL
+            fallback_url = None
+            primary_doc = filing.get('primary_doc', '')
+            if primary_doc and primary_url and not primary_url.endswith(primary_doc):
+                fallback_url = (
+                    f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/"
+                    f"{acc_no_clean}/{primary_doc}"
+                )
+            if fallback_url and fallback_url != primary_url:
+                alt_html = self._edgar_get_text(fallback_url)
+                if alt_html and not _is_xbrl_viewer_page(alt_html):
+                    doc_html = alt_html
+                    primary_url = fallback_url
+                    log.info("XBRL fallback succeeded for %s %s", ticker, acc_no)
+                else:
+                    log.warning(
+                        "XBRL fallback also failed for %s %s — storing viewer page",
+                        ticker, acc_no,
+                    )
+
         soup = BeautifulSoup(doc_html, 'lxml')
 
         # For 10-Q/10-K, try to extract the MD&A section (Item 2 or Item 7)
@@ -406,7 +441,10 @@ class EdgarConnector:
             return False
 
         text_len = len(text.strip())
-        parse_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
+        if _is_xbrl_viewer_page(doc_html):
+            parse_quality = 'xbrl_viewer'
+        else:
+            parse_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
 
         report = {
             'ticker':            ticker,
@@ -415,6 +453,7 @@ class EdgarConnector:
             'source_type':       source_type,
             'source_url':        primary_url,
             'raw_text':          text,
+            'raw_html':          doc_html[:300_000],
             'parsed_at':         datetime.now(timezone.utc).isoformat(),
             'covering_period':   filing.get('covering_period'),
             'accession_number':  acc_no or None,
@@ -544,6 +583,7 @@ class EdgarConnector:
                 'source_type':      'edgar_8k',
                 'source_url':       exhibit_url,
                 'raw_text':         text,
+                'raw_html':         doc_html[:_MAX_RAW_HTML_CHARS],
                 'parsed_at':        datetime.now(timezone.utc).isoformat(),
                 'covering_period':  None,
                 'accession_number': accession_number or None,

@@ -16,6 +16,18 @@ from typing import Optional
 
 log = logging.getLogger('miners.infra.db')
 
+_SIMHASH_MASK = 0xFFFFFFFFFFFFFFFF
+
+
+def _to_signed64(v: Optional[int]) -> Optional[int]:
+    """Convert an unsigned 64-bit simhash to a signed int64 for SQLite storage."""
+    if v is None:
+        return None
+    v = int(v) & _SIMHASH_MASK
+    if v >= (1 << 63):
+        v -= (1 << 64)
+    return v
+
 
 class MinerDB:
     """SQLite store for all miner data."""
@@ -239,6 +251,21 @@ class MinerDB:
                     self._migrate_v21(conn)
                     conn.execute("PRAGMA user_version = 21")
                     version = 21
+
+                if version < 22:
+                    self._migrate_v22(conn)
+                    conn.execute("PRAGMA user_version = 22")
+                    version = 22
+
+                if version < 23:
+                    self._migrate_v23(conn)
+                    conn.execute("PRAGMA user_version = 23")
+                    version = 23
+
+                if version < 24:
+                    self._migrate_v24(conn)
+                    conn.execute("PRAGMA user_version = 24")
+                    version = 24
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -975,6 +1002,63 @@ class MinerDB:
         if 'llm_summary' not in existing:
             conn.execute("ALTER TABLE reports ADD COLUMN llm_summary TEXT")
 
+    def _migrate_v22(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v21 → v22: add active column to metric_schema.
+
+        Marks metrics as active (1) or deprecated (0). The 3 primary BTC
+        production metrics (production_btc, hodl_btc, sold_btc) remain active.
+        All others are marked deprecated and hidden from UI surfaces; their DB
+        rows are preserved for re-enable via direct DB update.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(metric_schema)").fetchall()}
+        if 'active' not in existing:
+            conn.execute("ALTER TABLE metric_schema ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        # Mark non-core metrics as deprecated
+        deprecated = (
+            'hashrate_eh', 'realization_rate', 'ai_hpc_mw', 'gpu_count',
+            'hpc_revenue_usd', 'mining_mw', 'encumbered_btc',
+            'hodl_btc_restricted', 'hodl_btc_unrestricted', 'net_btc_balance_change',
+        )
+        conn.execute(
+            "UPDATE metric_schema SET active = 0 WHERE key IN ({})".format(
+                ','.join('?' * len(deprecated))
+            ),
+            deprecated,
+        )
+
+    def _migrate_v23(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v22 → v23: add valid_range_min/max to metric_rules.
+
+        Exposes per-metric value ceilings/floors in the UI so they can be edited
+        without a code deploy. Values outside this range receive range_factor=0.0
+        in confidence scoring and are discarded. Seeded from METRIC_VALID_RANGES.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(metric_rules)").fetchall()}
+        if 'valid_range_min' not in existing:
+            conn.execute("ALTER TABLE metric_rules ADD COLUMN valid_range_min REAL")
+        if 'valid_range_max' not in existing:
+            conn.execute("ALTER TABLE metric_rules ADD COLUMN valid_range_max REAL")
+        from interpreters.confidence import METRIC_VALID_RANGES
+        for metric, (lo, hi) in METRIC_VALID_RANGES.items():
+            conn.execute(
+                """UPDATE metric_rules
+                   SET valid_range_min = ?, valid_range_max = ?
+                   WHERE metric = ? AND valid_range_min IS NULL""",
+                (lo, hi, metric),
+            )
+
+    def _migrate_v24(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v23 → v24: add raw_html column to reports.
+
+        Stores the original HTML source of each document alongside the
+        stripped raw_text used by the extraction pipeline. Enables the
+        cell-detail viewer to render properly structured HTML with
+        highlighted extraction snippets.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
+        if 'raw_html' not in existing:
+            conn.execute("ALTER TABLE reports ADD COLUMN raw_html TEXT")
+
     def update_report_summary(self, report_id: int, summary: str) -> None:
         """Write the LLM-generated summary for a report."""
         with self._get_connection() as conn:
@@ -1161,12 +1245,12 @@ class MinerDB:
             cursor = conn.execute(
                 """INSERT INTO reports
                    (ticker, report_date, published_date, source_type, source_url, raw_text,
-                    parsed_at, covering_period,
+                    raw_html, parsed_at, covering_period,
                     accession_number, source_url_hash, source_channel, form_type,
                     amends_accession_number,
                     fetch_strategy, render_mode, fetch_timing_ms, content_simhash)
                    VALUES (:ticker, :report_date, :published_date, :source_type,
-                           :source_url, :raw_text, :parsed_at, :covering_period,
+                           :source_url, :raw_text, :raw_html, :parsed_at, :covering_period,
                            :accession_number, :source_url_hash, :source_channel, :form_type,
                            :amends_accession_number,
                            :fetch_strategy, :render_mode, :fetch_timing_ms, :content_simhash)""",
@@ -1178,10 +1262,11 @@ class MinerDB:
                     'source_channel':          report.get('source_channel'),
                     'form_type':               report.get('form_type'),
                     'amends_accession_number': report.get('amends_accession_number'),
+                    'raw_html':                report.get('raw_html'),
                     'fetch_strategy':          report.get('fetch_strategy'),
                     'render_mode':             report.get('render_mode'),
                     'fetch_timing_ms':         report.get('fetch_timing_ms'),
-                    'content_simhash':         report.get('content_simhash'),
+                    'content_simhash':         _to_signed64(report.get('content_simhash')),
                 },
             )
             return cursor.lastrowid
@@ -1198,9 +1283,11 @@ class MinerDB:
                 "WHERE ticker=? AND content_simhash IS NOT NULL",
                 (ticker,),
             ).fetchall()
+        mask = _SIMHASH_MASK
+        sh2 = int(simhash) & mask
         return [
             dict(r) for r in rows
-            if bin(r['content_simhash'] ^ simhash).count('1') <= threshold
+            if bin((r['content_simhash'] & mask) ^ sh2).count('1') <= threshold
         ]
 
     def get_reports_with_text(self) -> list:
@@ -1938,11 +2025,8 @@ class MinerDB:
             counts['archive_batch_id'] = archive_batch_id
 
         log.info(
-            "purge_all: mode=%s counts=%s (ticker=%s suppress_auto_sync=%s)",
-            mode,
-            counts,
-            ticker or 'ALL',
-            suppress_auto_sync,
+            "event=purge_complete source=db purge_mode=%s ticker=%s suppress_auto_sync=%s counts=%s",
+            mode, ticker or 'ALL', suppress_auto_sync, counts,
         )
         return counts
 
@@ -2395,16 +2479,20 @@ class MinerDB:
         outlier_min_history: int,
         enabled: int = 1,
         notes: Optional[str] = None,
+        valid_range_min: Optional[float] = None,
+        valid_range_max: Optional[float] = None,
     ) -> dict:
         """Insert or replace a metric_rules row. Returns the updated row."""
         with self._get_connection() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO metric_rules
                    (metric, agreement_threshold, outlier_threshold,
-                    outlier_min_history, enabled, notes, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                    outlier_min_history, enabled, notes,
+                    valid_range_min, valid_range_max, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
                 (metric, agreement_threshold, outlier_threshold,
-                 outlier_min_history, enabled, notes),
+                 outlier_min_history, enabled, notes,
+                 valid_range_min, valid_range_max),
             )
             row = conn.execute(
                 "SELECT * FROM metric_rules WHERE metric = ?", (metric,)
@@ -3521,13 +3609,23 @@ class MinerDB:
 
     # ── Phase III: metric_schema CRUD ─────────────────────────────────────────
 
-    def get_metric_schema(self, sector: str) -> list:
-        """Return all metric schema rows for a sector, ordered by key."""
+    def get_metric_schema(self, sector: str, active_only: bool = False) -> list:
+        """Return metric schema rows for a sector, ordered by key.
+
+        When active_only=True, only rows with active=1 are returned.
+        Rows without the active column (pre-v22 DBs) default to active=1.
+        """
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM metric_schema WHERE sector = ? ORDER BY key ASC",
-                (sector,),
-            ).fetchall()
+            if active_only:
+                rows = conn.execute(
+                    "SELECT * FROM metric_schema WHERE sector = ? AND COALESCE(active, 1) = 1 ORDER BY key ASC",
+                    (sector,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM metric_schema WHERE sector = ? ORDER BY key ASC",
+                    (sector,),
+                ).fetchall()
             return [dict(r) for r in rows]
 
     def add_analyst_metric(self, key: str, label: str, unit: str, sector: str) -> dict:

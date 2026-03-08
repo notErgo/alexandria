@@ -105,7 +105,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 style="font-size:1.3rem;font-weight:600;margin:1rem 0 0.25rem" data-spec-id="3.0"><span class="spec-id">3.0</span>Review Queue</h1>
+<h1 style="font-size:1.3rem;font-weight:600;margin:1rem 0 0.25rem" data-spec-id="R3.0"><span class="spec-id">3.0</span>Review Queue</h1>
 <p style="color:var(--theme-text-muted);font-size:0.85rem;margin:0">
   Extraction items requiring analyst review. Click a row to view the full document.
   <span class="kbd-hint"><kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> approve · <kbd>R</kbd> focus reject</span>
@@ -113,13 +113,13 @@
 
 <div class="review-layout">
   <!-- Left: item list -->
-  <div class="review-panel" data-spec-id="3.2">
+  <div class="review-panel" data-spec-id="R3.2">
     <div class="panel-header">
       <span class="spec-id">3.2</span>Pending Items <span class="source-badge source-badge-data">DATA</span>
       <span id="total-badge" style="font-size:0.75rem;background:var(--theme-bg-tertiary);padding:2px 8px;border-radius:10px;color:var(--theme-text-secondary)">—</span>
     </div>
 
-    <div data-spec-id="3.1">
+    <div data-spec-id="R3.1">
       <div class="filter-row">
         <span class="spec-id">3.1</span>
         <label>Status:</label>
@@ -147,7 +147,7 @@
     <!-- Bulk actions (shown when ≥1 checkbox checked) -->
     <div class="bulk-actions-row" id="bulk-actions-row">
       <span id="selected-count" style="font-weight:600"></span>
-      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="3.7">Approve Selected (regex value)</button>
+      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="R3.7">Approve Selected (regex value)</button>
       <button class="btn btn-secondary btn-sm" id="btn-deselect-all">Deselect All</button>
       <span id="bulk-progress" style="color:var(--theme-text-muted)"></span>
     </div>
@@ -172,11 +172,11 @@
   </div>
 
   <!-- Right: document viewer (ReviewPanel) -->
-  <div class="review-panel" id="doc-panel" data-spec-id="3.3">
+  <div class="review-panel" id="doc-panel" data-spec-id="R3.3">
     <div class="panel-header" id="doc-panel-header"><span class="spec-id">3.3</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
-    <div style="display:none" data-spec-id="3.4"></div>
-    <div style="display:none" data-spec-id="3.5"></div>
-    <div style="display:none" data-spec-id="3.6"></div>
+    <div style="display:none" data-spec-id="R3.4"></div>
+    <div style="display:none" data-spec-id="R3.5"></div>
+    <div style="display:none" data-spec-id="R3.6"></div>
     <div id="review-doc-panel"></div>
   </div>
 </div>

@@ -7,9 +7,9 @@ sliding character windows (sliding path) when chunks are absent.
 from config import CONTEXT_CHAR_BUDGET, CONTEXT_CHAR_BUDGET_QUARTERLY
 
 _METRIC_KEYWORDS = {
-    'production_btc':   ['produced', 'mined', 'mining', 'btc', 'bitcoin', 'production'],
-    'hodl_btc':         ['held', 'holdings', 'hodl', 'treasury', 'balance', 'btc'],
-    'sold_btc':         ['sold', 'sale', 'proceeds', 'liquidated', 'btc'],
+    'production_btc':   ['produced', 'mined', 'mining', 'btc', 'bitcoin', 'production', 'earned', 'self-mined'],
+    'hodl_btc':         ['held', 'holdings', 'hodl', 'treasury', 'balance', 'btc', 'restricted', 'unrestricted', 'pledged'],
+    'sold_btc':         ['sold', 'sale', 'proceeds', 'liquidated', 'divested', 'btc'],
     'hashrate_eh':      ['hashrate', 'hash rate', 'eh/s', 'exahash', 'deployed', 'energized'],
     'realization_rate': ['realized', 'realization', 'revenue', 'price', 'usd'],
 }
@@ -53,10 +53,23 @@ class ContextWindowSelector:
     """Select the best text window(s) from a document for a given metric."""
 
     def __init__(self, doc_type: str = 'ir_press_release'):
-        if doc_type in _QUARTERLY_SOURCES:
-            self.char_budget = CONTEXT_CHAR_BUDGET_QUARTERLY
-        else:
-            self.char_budget = CONTEXT_CHAR_BUDGET
+        self._is_quarterly = doc_type in _QUARTERLY_SOURCES
+        # Defaults from config constants; overridden at runtime by DB setting
+        self.char_budget = CONTEXT_CHAR_BUDGET_QUARTERLY if self._is_quarterly else CONTEXT_CHAR_BUDGET
+
+    def _read_char_budget(self, db) -> int:
+        """Read live char_budget from DB config_settings, falling back to init-time default."""
+        if db is not None:
+            try:
+                key = 'context_char_budget_quarterly' if self._is_quarterly else 'context_char_budget'
+                val = db.get_config(key)
+                if isinstance(val, (str, int, float)) and val:
+                    parsed = int(val)
+                    if parsed > 0:
+                        return parsed
+            except Exception:
+                pass
+        return self.char_budget
 
     def select_windows(self, report_id: int, raw_text: str, metric: str, db) -> list:
         """Return up to 3 window dicts, each with keys: text, source, window_index.
@@ -70,6 +83,8 @@ class ContextWindowSelector:
         except Exception:
             chunks = []
 
+        # Read live budget from DB (overrides compile-time default if set in Settings)
+        self.char_budget = self._read_char_budget(db)
         max_windows = _get_max_windows(db)
         if chunks:
             return self._chunk_windows(chunks, metric, max_windows)

@@ -349,6 +349,13 @@ class ArchiveIngestor:
             # Parse text early — needed for period offset correction (Phase 1)
             # and for quarterly month discovery (Phase 2).
             text = _parse_pdf(str(file_path)) if suffix == ".pdf" else _parse_html(str(file_path))
+            raw_html: Optional[str] = None
+            if suffix == ".html":
+                try:
+                    with open(str(file_path), encoding="utf-8", errors="replace") as _fh:
+                        raw_html = _fh.read(300_000)
+                except OSError:
+                    pass
             if not text.strip():
                 log.warning("Empty text extracted from %s", file_path)
                 summary.errors += 1
@@ -429,6 +436,7 @@ class ArchiveIngestor:
                 "source_type": source_type,
                 "source_url": str(file_path),
                 "raw_text": text[:50000],
+                "raw_html": raw_html,
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
             }
             try:
