@@ -1,0 +1,232 @@
+// Module dependency DAG — OffChain/miners
+// Generated: 2026-03-08
+// Edge direction: A -> B means "A imports B"
+// Render: dot -Tsvg dag.dot -o dag.svg
+// Cycle check: python3 scripts/check_dag.py docs/architecture/dag.json
+//
+// Layer legend (proximity to IO):
+//   L0 = pure domain (no IO)
+//   L1 = infrastructure IO (DB, network primitives)
+//   L2 = parsing and extraction (document IO, regex, LLM)
+//   L3 = orchestration
+//   L4 = singletons (app_globals)
+//   L5 = routes (user-facing IO)
+
+digraph miners_dag {
+    rankdir=TB;
+    node [shape=box, fontname="Helvetica", fontsize=10];
+    edge [fontsize=9];
+
+    // -------------------------------------------------------------------------
+    // L0 — Pure Domain
+    // -------------------------------------------------------------------------
+    subgraph cluster_L0 {
+        label="L0 — Pure Domain";
+        style=filled;
+        fillcolor="#f0f4ff";
+        color="#aabbdd";
+
+        miner_types         [label="miner_types"];
+        config              [label="config", tooltip="load_companies() does file IO — L1 candidate"];
+        period_utils        [label="period_utils"];
+        coverage_logic      [label="coverage_logic"];
+    }
+
+    // -------------------------------------------------------------------------
+    // L1 — Infrastructure IO
+    // -------------------------------------------------------------------------
+    subgraph cluster_L1 {
+        label="L1 — Infrastructure IO";
+        style=filled;
+        fillcolor="#fff8e6";
+        color="#ddbb88";
+
+        infra_db            [label="infra.db"];
+        infra_text_utils    [label="infra.text_utils"];
+        infra_logging_config[label="infra.logging_config"];
+        infra_ollama_warmup [label="infra.ollama_warmup"];
+        scrapers_dedup      [label="scrapers.dedup"];
+        scrapers_fetch_policy[label="scrapers.fetch_policy"];
+        scrapers_source_contract[label="scrapers.source_contract"];
+        scrapers_crawl_context[label="scrapers.crawl_context"];
+        scrapers_llm_crawler[label="scrapers.llm_crawler"];
+        analysis_coverage   [label="analysis.coverage"];
+    }
+
+    // -------------------------------------------------------------------------
+    // L2 — Parsing & Extraction
+    // -------------------------------------------------------------------------
+    subgraph cluster_L2 {
+        label="L2 — Parsing & Extraction";
+        style=filled;
+        fillcolor="#f0fff0";
+        color="#88cc88";
+
+        parsers_annual      [label="parsers.annual_report_parser"];
+        parsers_press       [label="parsers.press_release_parser",
+                             tooltip="imports annual_report_parser — sibling coupling"];
+        parsers_document    [label="parsers.document_parser"];
+
+        interp_pattern_reg  [label="interpreters.pattern_registry"];
+        interp_unit_norm    [label="interpreters.unit_normalizer"];
+        interp_confidence   [label="interpreters.confidence"];
+        interp_context_win  [label="interpreters.context_window"];
+        interp_agreement    [label="interpreters.agreement"];
+        interp_regex        [label="interpreters.regex_interpreter"];
+        interp_table        [label="interpreters.table_interpreter"];
+        interp_llm          [label="interpreters.llm_interpreter"];
+        interp_broad        [label="interpreters.broad_interpreter"];
+        interp_pipeline     [label="interpreters.interpret_pipeline"];
+
+        scrapers_archive    [label="scrapers.archive_ingestor"];
+        scrapers_manifest   [label="scrapers.manifest_scanner"];
+        scrapers_ir         [label="scrapers.ir_scraper"];
+        scrapers_edgar      [label="scrapers.edgar_connector"];
+        scrapers_html_dl    [label="scrapers.html_downloader"];
+    }
+
+    // -------------------------------------------------------------------------
+    // L3 — Orchestration
+    // -------------------------------------------------------------------------
+    subgraph cluster_L3 {
+        label="L3 — Orchestration";
+        style=filled;
+        fillcolor="#fff0f8";
+        color="#cc88bb";
+
+        scrapers_prim_reg   [label="scrapers.primitive_registry"];
+        scrapers_prim_fb    [label="scrapers.primitive_feedback"];
+        scrapers_observer   [label="scrapers.observer_swarm",
+                             tooltip="5+ internal deps — monitor for growth"];
+        scrapers_worker     [label="scrapers.scrape_worker"];
+        orchestration       [label="orchestration"];
+        coverage_bridge     [label="coverage_bridge"];
+    }
+
+    // -------------------------------------------------------------------------
+    // L4 — Singletons
+    // -------------------------------------------------------------------------
+    subgraph cluster_L4 {
+        label="L4 — Singletons";
+        style=filled;
+        fillcolor="#fdf0ff";
+        color="#bb88dd";
+
+        app_globals         [label="app_globals",
+                             tooltip="lazy init + threading.Lock; imports deferred to first call"];
+    }
+
+    // -------------------------------------------------------------------------
+    // L5 — Routes (user-facing IO)
+    // -------------------------------------------------------------------------
+    subgraph cluster_L5 {
+        label="L5 — Routes";
+        style=filled;
+        fillcolor="#fff8f8";
+        color="#dd8888";
+
+        r_benchmark     [label="routes.benchmark"];
+        r_companies     [label="routes.companies"];
+        r_config        [label="routes.config"];
+        r_coverage      [label="routes.coverage"];
+        r_crawl         [label="routes.crawl"];
+        r_dashboard     [label="routes.dashboard"];
+        r_data_points   [label="routes.data_points"];
+        r_diagnostics   [label="routes.diagnostics"];
+        r_explorer      [label="routes.explorer"];
+        r_facilities    [label="routes.facilities"];
+        r_interpret     [label="routes.interpret"];
+        r_keywords      [label="routes.keywords"];
+        r_llm_prompts   [label="routes.llm_prompts"];
+        r_metric_rules  [label="routes.metric_rules"];
+        r_miner         [label="routes.miner",
+                          tooltip="direct import of interpreters.regex_interpreter — inconsistent with other routes"];
+        r_operations    [label="routes.operations"];
+        r_patterns      [label="routes.patterns"];
+        r_pipeline      [label="routes.pipeline"];
+        r_qc            [label="routes.qc"];
+        r_regime        [label="routes.regime"];
+        r_reports       [label="routes.reports"];
+        r_review        [label="routes.review"];
+        r_scrape        [label="routes.scrape"];
+        r_themes        [label="routes.themes"];
+        r_timeseries    [label="routes.timeseries"];
+    }
+
+    // =========================================================================
+    // EDGES
+    // =========================================================================
+
+    // L1 internal
+    infra_ollama_warmup -> config;
+
+    // L2 parsers
+    parsers_annual      -> miner_types;
+    parsers_press       -> miner_types;
+    parsers_press       -> parsers_annual      [color="#cc4444", tooltip="sibling coupling"];
+    parsers_document    -> parsers_annual;
+    parsers_document    -> parsers_press;
+
+    // L2 interpreters
+    interp_context_win  -> config;
+    interp_agreement    -> config;
+    interp_agreement    -> miner_types;
+    interp_regex        -> config;
+    interp_regex        -> miner_types;
+    interp_regex        -> interp_confidence;
+    interp_regex        -> interp_unit_norm;
+    interp_table        -> miner_types;
+    interp_table        -> interp_confidence;
+    interp_table        -> interp_unit_norm;
+    interp_llm          -> config;
+    interp_llm          -> miner_types;
+    interp_llm          -> interp_confidence;
+    interp_broad        -> config;
+    interp_pipeline     -> interp_context_win;
+
+    // L2 scrapers
+    scrapers_archive    -> config;
+    scrapers_manifest   -> config;
+    scrapers_manifest   -> miner_types;
+    scrapers_ir         -> config;
+    scrapers_ir         -> infra_text_utils;
+    scrapers_ir         -> scrapers_dedup;
+    scrapers_ir         -> scrapers_fetch_policy;
+    scrapers_edgar      -> config;
+    scrapers_edgar      -> scrapers_fetch_policy;
+    scrapers_html_dl    -> config;
+
+    // L3
+    scrapers_prim_reg   -> config;
+    scrapers_prim_fb    -> scrapers_prim_reg;
+    scrapers_observer   -> config;
+    scrapers_observer   -> infra_db;
+    scrapers_observer   -> infra_text_utils;
+    scrapers_observer   -> scrapers_ir;
+    scrapers_observer   -> scrapers_prim_fb;
+    scrapers_observer   -> scrapers_prim_reg;
+    scrapers_observer   -> scrapers_source_contract;
+    scrapers_worker     -> infra_db;
+    coverage_bridge     -> config;
+    coverage_bridge     -> miner_types;
+
+    // L4
+    app_globals         -> infra_db;
+    app_globals         -> config;
+    app_globals         -> interp_pattern_reg;
+    app_globals         -> scrapers_worker;
+
+    // L5 routes
+    r_companies         -> config;
+    r_data_points       -> app_globals;
+    r_diagnostics       -> config;
+    r_explorer          -> app_globals;
+    r_explorer          -> coverage_logic;
+    r_interpret         -> app_globals;
+    r_interpret         -> config;
+    r_miner             -> app_globals;
+    r_miner             -> interp_regex        [color="#cc4444",
+                            tooltip="direct interpreter import — bypasses app_globals boundary"];
+    r_regime            -> app_globals;
+    r_scrape            -> app_globals;
+}

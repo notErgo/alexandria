@@ -85,7 +85,7 @@ OffChain/miners/
 │       └── operations.py       GET /api/operations/queue, POST /api/operations/extract|assign_period
 ├── config/
 │   ├── companies.json          13 companies with CIKs
-│   └── patterns/               5 metric pattern JSON files
+│   └── patterns/               Active pattern JSON files (hodl_btc, production_btc, sold_btc); others archived under patterns/archived/
 └── tests/
     └── 532 passing unit tests (T3)
 ```
