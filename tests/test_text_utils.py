@@ -189,6 +189,72 @@ class TestObserverSwarmStoresRawHtml:
         assert call_args["raw_html"] is not None, "raw_html must not be None"
 
 
+class TestEdgarToPlain:
+    """Tests for edgar_to_plain() — EDGAR HTML → clean plain text."""
+
+    def test_strips_head_title(self):
+        from infra.text_utils import edgar_to_plain
+        html = "<html><head><title>10-Q filing</title></head><body><p>Content</p></body></html>"
+        result = edgar_to_plain(html)
+        assert "10-Q filing" not in result
+        assert "Content" in result
+
+    def test_strips_xbrl_preamble(self):
+        from infra.text_utils import edgar_to_plain
+        preamble = "0001507605 us-gaap:CommonStockMember 2024-06-30\n" * 5
+        body = "UNITED STATES SECURITIES AND EXCHANGE COMMISSION\nFORM 10-Q\nBTC mined: 700"
+        html = f"<html><body><p>{preamble}</p><p>{body}</p></body></html>"
+        result = edgar_to_plain(html)
+        assert result.startswith("UNITED STATES")
+        assert "0001507605" not in result
+
+    def test_strips_head_and_xbrl_together(self):
+        from infra.text_utils import edgar_to_plain
+        preamble_line = "0001507605 us-gaap:CommonStockMember 2024-06-30"
+        html = (
+            "<html><head><title>10-Q</title></head>"
+            f"<body><p>{preamble_line}</p>"
+            "<p>UNITED STATES SECURITIES AND EXCHANGE COMMISSION</p>"
+            "<p>BTC mined: 700</p></body></html>"
+        )
+        result = edgar_to_plain(html)
+        assert "10-Q" not in result
+        assert "0001507605" not in result
+        assert "UNITED STATES" in result
+        assert "700" in result
+
+    def test_preserves_pipe_table_structure(self):
+        from infra.text_utils import edgar_to_plain
+        html = (
+            "<html><body>"
+            "<table><tr><th>Metric</th><th>Value</th></tr>"
+            "<tr><td>BTC Mined</td><td>700</td></tr></table>"
+            "</body></html>"
+        )
+        result = edgar_to_plain(html)
+        assert "BTC Mined | 700" in result
+
+    def test_no_op_on_clean_edgar(self):
+        """Filing without preamble is returned as-is (after head strip)."""
+        from infra.text_utils import edgar_to_plain
+        html = (
+            "<html><head><title>10-Q</title></head>"
+            "<body><p>UNITED STATES SECURITIES AND EXCHANGE COMMISSION</p>"
+            "<p>Item 2. BTC mined: 700</p></body></html>"
+        )
+        result = edgar_to_plain(html)
+        assert "UNITED STATES" in result
+        assert "700" in result
+
+    def test_empty_returns_empty(self):
+        from infra.text_utils import edgar_to_plain
+        assert edgar_to_plain("") == ""
+
+    def test_none_returns_empty(self):
+        from infra.text_utils import edgar_to_plain
+        assert edgar_to_plain(None) == ""  # type: ignore[arg-type]
+
+
 class TestStripPressReleaseBoilerplate:
     """Tests for strip_press_release_boilerplate() — IR nav and footer removal."""
 

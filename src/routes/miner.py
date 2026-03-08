@@ -563,17 +563,22 @@ def get_miner_raw_text(ticker: str, period: str):
         if report_info is None:
             return jsonify({'success': False, 'error': {'message': 'No report for this period'}}), 404
 
+        source_type = report_info.get('source_type', '')
         raw_html = db.get_report_raw_html(report_info['id'])
         if raw_html:
-            from infra.text_utils import html_to_plain
-            content = html_to_plain(raw_html)
+            if source_type in ('edgar_10q', 'edgar_10k', 'edgar_8k', 'edgar_6k',
+                               'edgar_20f', 'edgar_40f'):
+                from infra.text_utils import edgar_to_plain
+                content = edgar_to_plain(raw_html)
+            else:
+                from infra.text_utils import html_to_plain
+                content = html_to_plain(raw_html)
         else:
             content = db.get_report_raw_text(report_info['id'])
 
         if not content:
             return jsonify({'success': False, 'error': {'message': 'Report has no stored content'}}), 404
 
-        source_type = report_info.get('source_type', '')
         if source_type in ('ir_press_release', 'wire_press_release'):
             from infra.text_utils import strip_press_release_boilerplate
             content = strip_press_release_boilerplate(content)

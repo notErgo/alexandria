@@ -118,6 +118,32 @@ def strip_press_release_boilerplate(text: str | None) -> str:
     return '\n'.join(lines[start_idx:end_idx]).strip()
 
 
+def edgar_to_plain(html: str | None) -> str:
+    """Convert EDGAR HTML filing to clean plain text.
+
+    Extends ``html_to_plain`` with two EDGAR-specific steps:
+
+    1. Removes the ``<head>`` element before extraction — prevents the
+       ``<title>`` (e.g. "10-Q") from landing at the start of the text and
+       blocking ``_strip_xbrl_preamble``'s CIK-prefix guard.
+    2. Calls ``_strip_xbrl_preamble()`` to discard the iXBRL context block
+       (CIK + taxonomy namespace lines) that precedes the SEC cover page in
+       modern EDGAR inline XBRL filings.
+
+    Safe on ``None`` or empty input — returns ``""`` in both cases.
+    """
+    if not html:
+        return ""
+    from bs4 import BeautifulSoup
+    from parsers.annual_report_parser import convert_tables_to_pipe_text, _strip_xbrl_preamble
+    soup = BeautifulSoup(html, "lxml")
+    if soup.head:
+        soup.head.decompose()
+    convert_tables_to_pipe_text(soup)
+    text = soup.get_text(separator="\n", strip=True)
+    return _strip_xbrl_preamble(text)
+
+
 def html_to_plain(html: str | None, separator: str = "\n") -> str:
     """Strip markup from *html* and return plain text.
 
