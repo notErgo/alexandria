@@ -58,6 +58,7 @@ const ReviewPanel = (function () {
       <span class="rp-source-meta"></span>
     </div>
     <div class="rp-doc-placeholder">Select a row to view the document.</div>
+    <iframe class="rp-doc-iframe" src="about:blank" style="display:none;width:100%;min-height:500px;border:none;background:#fff"></iframe>
     <pre class="rp-doc-text" style="display:none"></pre>
     <div class="rp-reprompt-bar" style="display:none">
       <span class="rp-hint">Highlight a value in the text above, select which metric it is, then click Re-extract to run regex + LLM on it:</span>
@@ -297,9 +298,27 @@ const ReviewPanel = (function () {
 
   async function _fetchRawSource(ticker, period) {
     const p = period.slice(0, 7);
-    const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/raw-source');
+    // /raw-text returns clean plain text (extracted from raw_html when available)
+    // for the highlight panel; /raw-source serves the full HTML for the iframe.
+    const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/raw-text');
     if (!resp.ok) return '';
     return await resp.text();
+  }
+
+  function _loadIframe(ticker, period) {
+    const iframe = _el('rp-doc-iframe');
+    if (!iframe) return;
+    const p = period.slice(0, 7);
+    const src = '/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/raw-source';
+    iframe.src = src;
+    iframe.style.display = '';
+  }
+
+  function _unloadIframe() {
+    const iframe = _el('rp-doc-iframe');
+    if (!iframe) return;
+    iframe.src = 'about:blank';
+    iframe.style.display = 'none';
   }
 
   // ── Render doc text ─────────────────────────────────────────────────────────
@@ -549,7 +568,8 @@ const ReviewPanel = (function () {
     if (cardsEl) cardsEl.style.display = 'none';
     _setStatus('', false);
 
-    // Show placeholder while loading
+    // Show placeholder while loading; clear iframe (review items use text only)
+    _unloadIframe();
     const placeholder = _el('rp-doc-placeholder');
     if (placeholder) { placeholder.textContent = 'Loading...'; placeholder.style.display = ''; }
     const docEl = _el('rp-doc-text');
@@ -677,6 +697,8 @@ const ReviewPanel = (function () {
       ]);
 
       if (placeholder) placeholder.style.display = 'none';
+      // Load rendered HTML in iframe (raw-source serves raw_html when available)
+      _loadIframe(ticker, period);
       _renderDocText(rawText, matches);
 
       // Populate fill dropdown
@@ -715,6 +737,7 @@ const ReviewPanel = (function () {
 
     const docEl = _el('rp-doc-text');
     if (docEl) { docEl.innerHTML = ''; docEl.style.display = 'none'; }
+    _unloadIframe();
 
     const repromptBar = _el('rp-reprompt-bar');
     if (repromptBar) repromptBar.style.display = 'none';

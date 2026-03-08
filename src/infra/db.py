@@ -1879,6 +1879,14 @@ class MinerDB:
             ).fetchone()
             return row[0] if row else None
 
+    def get_report_raw_html(self, report_id: int) -> Optional[str]:
+        """Return the raw_html for a report, or None if not stored."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT raw_html FROM reports WHERE id = ?", (report_id,)
+            ).fetchone()
+            return row[0] if row else None
+
     def data_point_exists(self, ticker: str, period: str, metric: str) -> bool:
         """Return True if a data_point already exists for the given ticker/period/metric."""
         with self._get_connection() as conn:

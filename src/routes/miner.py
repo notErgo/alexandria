@@ -515,17 +515,43 @@ def get_miner_analysis(ticker: str, period: str):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+def _find_report_for_raw(db, ticker_upper: str, period: str):
+    period_normalized = (period + '-01') if len(period) == 7 else period[:10]
+    return db.find_report_for_period(ticker_upper, period_normalized)
+
+
 @bp.route('/api/miner/<ticker>/<period>/raw-source')
 def get_miner_raw_source(ticker: str, period: str):
-    """
-    Serve the raw HTML for a report period with no sanitization.
+    """Serve raw HTML for a report period — used by the inline iframe and the
+    'Rendered' new-tab button.  Prefers raw_html; falls back to raw_text."""
+    try:
+        db = get_db()
+        ticker_upper = ticker.upper()
+        if db.get_company(ticker_upper) is None:
+            return jsonify({'success': False, 'error': {'message': 'Unknown ticker'}}), 404
 
-    Unlike /api/gaps/<ticker>/<period>/source which strips scripts and styles
-    for safe srcdoc embedding, this endpoint returns content as-is so that
-    inline charts, styles, and scripts render correctly when loaded via
-    iframe.src with sandbox="allow-scripts allow-same-origin".
+        report_info = _find_report_for_raw(db, ticker_upper, period)
+        if report_info is None:
+            return jsonify({'success': False, 'error': {'message': 'No report for this period'}}), 404
 
-    Only called by the miner-data page document viewer.
+        content = db.get_report_raw_html(report_info['id']) or db.get_report_raw_text(report_info['id'])
+        if not content:
+            return jsonify({'success': False, 'error': {'message': 'Report has no stored content'}}), 404
+
+        return Response(content, mimetype='text/html; charset=utf-8')
+
+    except Exception as e:
+        log.error("get_miner_raw_source failed for %s/%s: %s", ticker, period, e, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/miner/<ticker>/<period>/raw-text')
+def get_miner_raw_text(ticker: str, period: str):
+    """Serve plain text for a report period — used by the highlight panel.
+
+    When raw_html is available, extracts clean text from it (giving better
+    quality than the 50 k-truncated raw_text stored at ingest time).
+    Falls back to raw_text when raw_html is absent.
     """
     try:
         db = get_db()
@@ -533,19 +559,24 @@ def get_miner_raw_source(ticker: str, period: str):
         if db.get_company(ticker_upper) is None:
             return jsonify({'success': False, 'error': {'message': 'Unknown ticker'}}), 404
 
-        period_normalized = (period + '-01') if len(period) == 7 else period[:10]
-        report_info = db.find_report_for_period(ticker_upper, period_normalized)
+        report_info = _find_report_for_raw(db, ticker_upper, period)
         if report_info is None:
             return jsonify({'success': False, 'error': {'message': 'No report for this period'}}), 404
 
-        raw_text = db.get_report_raw_text(report_info['id'])
-        if not raw_text:
+        raw_html = db.get_report_raw_html(report_info['id'])
+        if raw_html:
+            from infra.text_utils import html_to_plain
+            content = html_to_plain(raw_html)
+        else:
+            content = db.get_report_raw_text(report_info['id'])
+
+        if not content:
             return jsonify({'success': False, 'error': {'message': 'Report has no stored content'}}), 404
 
-        return Response(raw_text, mimetype='text/html; charset=utf-8')
+        return Response(content, mimetype='text/plain; charset=utf-8')
 
     except Exception as e:
-        log.error("get_miner_raw_source failed for %s/%s: %s", ticker, period, e, exc_info=True)
+        log.error("get_miner_raw_text failed for %s/%s: %s", ticker, period, e, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
