@@ -14,8 +14,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Optional
 
+import warnings
+
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 from config import (
     EDGAR_BASE_URL,
@@ -37,11 +41,24 @@ _MAX_FILING_TEXT_CHARS = 100_000
 _MAX_RAW_HTML_CHARS = 300_000
 
 _XBRL_VIEWER_MARKER = 'Please enable JavaScript to use the EDGAR Inline XBRL Viewer'
+# Inline XBRL (iXBRL) documents declare this namespace; the viewer marker appears
+# only in a <noscript> fallback but the full filing content is still present.
+_IXBRL_NAMESPACE_MARKER = 'xmlns:ix='
 
 
 def _is_xbrl_viewer_page(html: str) -> bool:
-    """Return True if the fetched page is the EDGAR XBRL viewer wrapper (not the filing itself)."""
-    return _XBRL_VIEWER_MARKER in html
+    """Return True if the page is a pure EDGAR viewer wrapper (no inline filing content).
+
+    Inline XBRL (iXBRL) documents contain the viewer marker in a <noscript> block
+    but also carry the full filing text tagged with XBRL namespaces.  Those documents
+    are NOT viewer wrappers — BeautifulSoup can extract their text normally.
+    """
+    if _XBRL_VIEWER_MARKER not in html:
+        return False
+    # If the document also declares the iXBRL namespace it is the actual filing.
+    if _IXBRL_NAMESPACE_MARKER in html:
+        return False
+    return True
 
 # 8-K full-text search terms (OR-joined). Covers all known production PR phrasings.
 _8K_SEARCH_TERMS: list = [
@@ -273,6 +290,23 @@ class EdgarConnector:
     """
     db: object              # MinerDB
     session: requests.Session
+    _pipeline_run_id: Optional[int] = None
+
+    def _emit(self, event: str, ticker: str = None, level: str = 'INFO', **details) -> None:
+        """Write a pipeline event if running inside a pipeline run."""
+        if not self._pipeline_run_id:
+            return
+        try:
+            self.db.add_pipeline_run_event(
+                self._pipeline_run_id,
+                stage='edgar_ingest',
+                event=event,
+                ticker=ticker,
+                level=level,
+                details=details or {},
+            )
+        except Exception as _e:
+            log.debug("pipeline event emit failed (non-fatal): %s", _e)
 
     def _edgar_request(self, url: str, params: dict = None) -> Optional[dict]:
         """Make a rate-limited GET request to EDGAR. Returns JSON or None.
@@ -466,11 +500,27 @@ class EdgarConnector:
                 "Stored %s filing: %s %s (covering %s, quality=%s)",
                 source_type, ticker, period, filing.get('covering_period'), parse_quality,
             )
+            self._emit(
+                'url_ingested', ticker=ticker,
+                form_type=form_type,
+                period=period,
+                covering_period=filing.get('covering_period'),
+                filing_date=filing.get('filing_date', ''),
+                accession=acc_no,
+                quality=parse_quality,
+                text_chars=text_len,
+                url=primary_url,
+            )
             return True
         except Exception as e:
             log.error(
                 "Failed to insert %s report %s %s: %s",
                 source_type, ticker, period, e, exc_info=True,
+            )
+            self._emit(
+                'url_error', ticker=ticker, level='WARNING',
+                form_type=form_type, period=period,
+                accession=acc_no, url=primary_url, error=str(e),
             )
             return False
 
@@ -502,6 +552,8 @@ class EdgarConnector:
 
         hits = data.get('hits', {}).get('hits', [])
         log.info("EDGAR returned %d 8-K hits for %s since %s", len(hits), ticker, since_date)
+        self._emit('search_result', ticker=ticker, form_type='8-K',
+                   total_hits=len(hits), since=since_date.isoformat())
 
         cik_numeric = cik.lstrip('0') or '0'
         skipped_non_target = 0
@@ -592,9 +644,22 @@ class EdgarConnector:
             try:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
+                self._emit(
+                    'url_ingested', ticker=ticker,
+                    form_type='8-K',
+                    period=period_str,
+                    filing_date=period_str,
+                    accession=accession_number,
+                    url=exhibit_url,
+                )
             except Exception as e:
                 log.error(
                     "Failed to insert 8-K report %s %s: %s", ticker, period_str, e, exc_info=True
+                )
+                self._emit(
+                    'url_error', ticker=ticker, level='WARNING',
+                    form_type='8-K', period=period_str,
+                    accession=accession_number, url=exhibit_url, error=str(e),
                 )
                 summary.errors += 1
 

@@ -140,6 +140,8 @@ class ExtractionSummary:
     data_points_extracted: int = 0
     review_flagged: int = 0
     errors: int = 0
+    prompt_tokens: int = 0
+    response_tokens: int = 0
 
 
 class IngestState(str, Enum):

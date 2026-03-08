@@ -400,7 +400,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             _run_ir_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)), pipeline_run_id=run_id)
         else:
             _event(db, run_id, 'ingest', 'ir_skipped', reason='include_ir=false')
-        _run_edgar_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)))
+        _run_edgar_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)), pipeline_run_id=run_id)
         after_reports = _count_reports_for_tickers(db, scrape_targets)
         ingested_delta = max(0, after_reports - before_reports)
         _event(db, run_id, 'ingest', 'stage_end', before_reports=before_reports, after_reports=after_reports, ingested_delta=ingested_delta)
@@ -454,6 +454,8 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                     data_points=dp_delta, review_flagged=rv_delta,
                     progress=i + 1, total=total_reports,
                     running_total_dp=data_points,
+                    prompt_tokens=summary.prompt_tokens,
+                    response_tokens=summary.response_tokens,
                 )
             except Exception as e:
                 errors += 1

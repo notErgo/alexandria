@@ -204,6 +204,10 @@ class IRScraper:
         from miner_types import IngestSummary
         # Support both legacy config key (scrape_mode) and DB/API key (scraper_mode).
         mode = (company.get("scraper_mode") or company.get("scrape_mode") or "skip").strip().lower()
+        ticker = company.get("ticker", "")
+        if mode != "skip":
+            self._emit('scrape_start', ticker=ticker, mode=mode,
+                       ir_url=company.get("ir_url") or company.get("rss_url") or "")
         if mode == "rss":
             return self._scrape_rss(company)
         elif mode == "template":
@@ -291,10 +295,13 @@ class IRScraper:
             try:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
-                self._emit('url_ingested', ticker=ticker, period=period_str, url=pr_url)
+                self._emit('url_ingested', ticker=ticker, period=period_str,
+                           title=item["title"], pub_date=item.get("pub_date", ""),
+                           fetch_strategy='rss', text_chars=len(text), url=pr_url)
             except Exception as e:
                 log.error("Failed to insert RSS report %s %s: %s", ticker, period_str, e, exc_info=True)
-                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str, url=pr_url, error=str(e))
+                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                           fetch_strategy='rss', url=pr_url, error=str(e))
                 summary.errors += 1
 
         return summary
@@ -393,10 +400,12 @@ class IRScraper:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
                 log.info("Ingested template PR: %s %s from %s", ticker, period_str, url)
-                self._emit('url_ingested', ticker=ticker, period=period_str, url=url)
+                self._emit('url_ingested', ticker=ticker, period=period_str,
+                           fetch_strategy='template', text_chars=len(text), url=url)
             except Exception as e:
                 log.error("Failed to insert template report %s %s: %s", ticker, period_str, e, exc_info=True)
-                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str, url=url, error=str(e))
+                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                           fetch_strategy='template', url=url, error=str(e))
                 summary.errors += 1
 
             current = _next_month(current)
@@ -496,10 +505,12 @@ class IRScraper:
                     self.db.insert_report(report)
                     summary.reports_ingested += 1
                     log.info("Ingested index PR: %s %s from %s", ticker, period_str, full_url)
-                    self._emit('url_ingested', ticker=ticker, period=period_str, url=full_url)
+                    self._emit('url_ingested', ticker=ticker, period=period_str,
+                               title=title, fetch_strategy='index', text_chars=len(text), url=full_url)
                 except Exception as e:
                     log.error("Failed to insert IR report %s %s: %s", ticker, period_str, e, exc_info=True)
-                    self._emit('url_error', ticker=ticker, level='WARNING', period=period_str, url=full_url, error=str(e))
+                    self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                               title=title, fetch_strategy='index', url=full_url, error=str(e))
                     summary.errors += 1
 
             if new_count == 0 and production_links:
@@ -608,13 +619,15 @@ class IRScraper:
                         self.db.insert_report(report)
                         summary.reports_ingested += 1
                         log.info("Ingested playwright PR: %s %s from %s", ticker, period_str, full_url)
-                        self._emit('url_ingested', ticker=ticker, period=period_str, url=full_url)
+                        self._emit('url_ingested', ticker=ticker, period=period_str,
+                                   title=title, fetch_strategy='playwright', text_chars=len(text), url=full_url)
                     except Exception as e:
                         log.error(
                             "Failed to insert playwright report %s %s: %s",
                             ticker, period_str, e, exc_info=True,
                         )
-                        self._emit('url_error', ticker=ticker, level='WARNING', period=period_str, url=full_url, error=str(e))
+                        self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                                   title=title, fetch_strategy='playwright', url=full_url, error=str(e))
                         summary.errors += 1
 
         except Exception as e:

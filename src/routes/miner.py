@@ -88,20 +88,40 @@ def _build_monthly_spine(min_period: str, max_period: str) -> list:
     return spine
 
 
+def _period_label_sec(period: str) -> str:
+    """Convert YYYY-Qn / YYYY-FY to a readable label."""
+    import re as _re
+    q = _re.match(r'^(\d{4})-Q(\d)$', period)
+    if q:
+        return f"Q{q.group(2)} {q.group(1)}"
+    fy = _re.match(r'^(\d{4})-FY$', period)
+    if fy:
+        return f"FY {fy.group(1)}"
+    return period[:7]
+
+
 @bp.route('/api/miner/<ticker>/timeline')
 def get_miner_timeline(ticker: str):
     """
     Return a pivoted timeline of all periods for a ticker.
 
-    Each row represents one calendar month between the company's first and last
-    data point. Metric columns are null when no extraction exists. Gap rows
+    Query params:
+      source: 'monthly' (default) | 'sec'
+        - monthly: monthly YYYY-MM-01 spine with gap rows.
+        - sec: quarterly/annual periods only, no spine padding.
+
+    Each row for monthly represents one calendar month. Gap rows
     (all metrics null) are flagged with is_gap=True.
+
+    Metric cells include is_finalized=True when a final_data_points row
+    exists for that (ticker, period, metric).
 
     Response shape:
       {
         "success": true,
         "data": {
           "ticker": "MARA",
+          "source": "monthly",
           "company": {ticker, name, ir_url, pr_base_url, cik},
           "stats": {total_periods, gap_periods, first_period, last_period},
           "rows": [
@@ -110,11 +130,13 @@ def get_miner_timeline(ticker: str):
               "period_label": "2022-07",
               "has_report": bool,
               "report_id": int|null,
+              "report_date": str|null,
               "source_type": str|null,
               "source_url": str|null,
               "is_gap": bool,
               "metrics": {
-                "production_btc": {value, unit, confidence, extraction_method} | null,
+                "production_btc": {value, unit, confidence, extraction_method,
+                                   is_finalized} | null,
                 ...
               }
             }
@@ -129,15 +151,36 @@ def get_miner_timeline(ticker: str):
         if company is None:
             return jsonify({'success': False, 'error': {'message': f'Unknown ticker: {ticker}'}}), 404
 
-        # Fetch all data points for this ticker (all metrics, all periods)
-        all_dps = db.query_data_points(ticker=ticker_upper, limit=100000)
+        source = request.args.get('source', 'monthly').lower()
+        if source not in ('monthly', 'sec'):
+            return jsonify({'success': False, 'error': {
+                'message': "source must be 'monthly' or 'sec'"}}), 400
 
+        # Fetch data points for the requested source
+        if source == 'sec':
+            all_dps = db.query_data_points(
+                ticker=ticker_upper,
+                source_period_types=['quarterly', 'annual'],
+                limit=100000,
+            )
+        else:
+            all_dps = db.query_data_points(
+                ticker=ticker_upper,
+                source_period_types=['monthly'],
+                limit=100000,
+            )
+
+        # Build a set of finalized (period, metric) keys for is_finalized flag
+        finals = db.get_final_data_points(ticker_upper)
+        finalized_keys = {(f['period'], f['metric']) for f in finals}
+
+        empty_keys = CORE_METRICS[:]
         if not all_dps:
-            empty_keys = CORE_METRICS[:]
             return jsonify({
                 'success': True,
                 'data': {
                     'ticker': ticker_upper,
+                    'source': source,
                     'company': {
                         'ticker': company['ticker'],
                         'name': company['name'],
@@ -158,7 +201,7 @@ def get_miner_timeline(ticker: str):
                 },
             })
 
-        # Build pivot dict: period → metric → {value, unit, confidence, extraction_method}
+        # Build pivot dict: period → metric → cell dict
         pivot: dict = {}
         for dp in all_dps:
             period = dp['period']
@@ -166,13 +209,14 @@ def get_miner_timeline(ticker: str):
             if period not in pivot:
                 pivot[period] = {}
             pivot[period][metric] = {
-                'value': dp['value'],
-                'unit': dp.get('unit'),
-                'confidence': dp['confidence'],
+                'value':             dp['value'],
+                'unit':              dp.get('unit'),
+                'confidence':        dp['confidence'],
                 'extraction_method': dp.get('extraction_method'),
+                'is_finalized':      (period, metric) in finalized_keys,
             }
 
-        # Build report lookup: period → {id, source_type, source_url}
+        # Build report lookup: period key → {id, report_date, source_type, source_url}
         report_by_period: dict = {}
         with db._get_connection() as conn:
             report_rows = conn.execute(
@@ -183,21 +227,17 @@ def get_miner_timeline(ticker: str):
                 (ticker_upper,),
             ).fetchall()
         for row in report_rows:
-            ym = row[1][:7]  # YYYY-MM
+            rd = row[1] or ''
+            # Monthly: key = YYYY-MM; SEC: key = full period string from data_points
+            ym = rd[:7]  # YYYY-MM
             report_by_period[ym] = {
-                'id': row[0],
+                'id':          row[0],
+                'report_date': row[1],
                 'source_type': row[2],
-                'source_url': row[3],
+                'source_url':  row[3],
             }
 
-        # Build monthly spine from min to max period across all data points
-        all_periods = sorted(pivot.keys())
-        min_period = all_periods[0]
-        max_period = all_periods[-1]
-        spine = _build_monthly_spine(min_period, max_period)
-
-        # Compute metric_keys: core metrics + any with data in this ticker's DB,
-        # ordered by the canonical ALL_METRICS_ORDER list.
+        # Determine metric_keys
         metrics_with_data: set = set()
         for period_data in pivot.values():
             metrics_with_data.update(period_data.keys())
@@ -207,35 +247,54 @@ def get_miner_timeline(ticker: str):
         if not metric_keys:
             metric_keys = CORE_METRICS[:]
 
+        all_periods_sorted = sorted(pivot.keys())
+        min_period = all_periods_sorted[0]
+        max_period = all_periods_sorted[-1]
+
+        # Build spine
+        if source == 'monthly':
+            spine = _build_monthly_spine(min_period, max_period)
+        else:
+            # SEC: no padding — only periods with actual data
+            spine = all_periods_sorted
+
         # Build rows
         rows = []
         for period in spine:
-            period_ym = period[:7]  # YYYY-MM
-            metrics_data = pivot.get(period, {})
+            # Report lookup key
+            if source == 'monthly':
+                period_ym = period[:7]
+            else:
+                period_ym = period[:7]  # still use YYYY-MM prefix for report join
 
-            # Build metric cells for all active metric_keys
+            metrics_data = pivot.get(period, {})
             metric_cells = {metric: metrics_data.get(metric) for metric in metric_keys}
 
-            # is_gap = all core metrics are null (non-core absence doesn't make a gap)
             is_gap = all(metric_cells.get(m) is None for m in CORE_METRICS)
 
-            # Report metadata
             report_info = report_by_period.get(period_ym)
             has_report = report_info is not None
 
+            if source == 'sec':
+                period_label = _period_label_sec(period)
+            else:
+                period_label = period[:7]
+
             rows.append({
-                'period': period,
-                'period_label': period_ym,
-                'has_report': has_report,
-                'report_id': report_info['id'] if report_info else None,
+                'period':      period,
+                'period_label': period_label,
+                'has_report':  has_report,
+                'report_id':   report_info['id'] if report_info else None,
+                'report_date': report_info['report_date'] if report_info else None,
                 'source_type': report_info['source_type'] if report_info else None,
-                'source_url': report_info['source_url'] if report_info else None,
-                'is_gap': is_gap,
-                'metrics': metric_cells,
+                'source_url':  report_info['source_url'] if report_info else None,
+                'is_gap':      is_gap,
+                'metrics':     metric_cells,
             })
 
         # Sort descending (most recent first)
-        rows.sort(key=lambda r: r['period'], reverse=True)
+        from routes.data_points import _period_sort_key
+        rows.sort(key=lambda r: _period_sort_key(r['period']), reverse=True)
 
         total_periods = len(spine)
         gap_periods = sum(1 for r in rows if r['is_gap'])
@@ -243,24 +302,25 @@ def get_miner_timeline(ticker: str):
         return jsonify({
             'success': True,
             'data': {
-                'ticker': ticker_upper,
+                'ticker':  ticker_upper,
+                'source':  source,
                 'company': {
-                    'ticker': company['ticker'],
-                    'name': company['name'],
-                    'ir_url': company.get('ir_url'),
+                    'ticker':      company['ticker'],
+                    'name':        company['name'],
+                    'ir_url':      company.get('ir_url'),
                     'pr_base_url': company.get('pr_base_url'),
-                    'cik': company.get('cik'),
+                    'cik':         company.get('cik'),
                 },
                 'stats': {
                     'total_periods': total_periods,
-                    'gap_periods': gap_periods,
-                    'first_period': min_period[:7],
-                    'last_period': max_period[:7],
+                    'gap_periods':   gap_periods,
+                    'first_period':  min_period[:7],
+                    'last_period':   max_period[:7],
                 },
-                'metric_keys': metric_keys,
-                'metric_labels': {k: METRIC_LABELS.get(k, k) for k in metric_keys},
-                'metric_units': {k: METRIC_UNITS.get(k, '') for k in metric_keys},
-                'rows': rows,
+                'metric_keys':    metric_keys,
+                'metric_labels':  {k: METRIC_LABELS.get(k, k) for k in metric_keys},
+                'metric_units':   {k: METRIC_UNITS.get(k, '') for k in metric_keys},
+                'rows':           rows,
             },
         })
 

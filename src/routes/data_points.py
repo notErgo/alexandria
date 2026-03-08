@@ -195,39 +195,122 @@ def export_csv():
     return response
 
 
+def _period_sort_key(period: str) -> tuple:
+    """Convert a period string to a (year, month) tuple for correct cross-type sorting.
+
+    Monthly  '2025-01-01' → (2025, 1)
+    Quarterly '2025-Q3'   → (2025, 9)   end-month of the quarter
+    Annual    '2024-FY'   → (2024, 12)
+    """
+    import re as _re
+    if not period:
+        return (0, 0)
+    m = _re.match(r'^(\d{4})-(\d{2})-\d{2}$', period)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    q = _re.match(r'^(\d{4})-Q(\d)$', period)
+    if q:
+        return (int(q.group(1)), int(q.group(2)) * 3)
+    fy = _re.match(r'^(\d{4})-FY$', period)
+    if fy:
+        return (int(fy.group(1)), 12)
+    return (0, 0)
+
+
+def _latest_per_metric(dps: list, metrics: list) -> dict:
+    """Return {metric: dp_dict} keeping the most recent period per metric."""
+    best = {}
+    for dp in dps:
+        m = dp.get('metric')
+        if m not in metrics:
+            continue
+        if m not in best or _period_sort_key(dp['period']) > _period_sort_key(best[m]['period']):
+            best[m] = dp
+    return best
+
+
+def _is_sec_period(period: str) -> bool:
+    """Return True for quarterly (YYYY-Qn) or annual (YYYY-FY) periods."""
+    import re as _re
+    return bool(_re.match(r'^\d{4}-Q\d$', period or '') or
+                _re.match(r'^\d{4}-FY$', period or ''))
+
+
 @bp.route('/api/scorecard')
 def scorecard():
-    """Return latest known value for 7 scorecard metrics per company."""
+    """Return latest monthly and latest SEC value per metric per company.
+
+    Reads final_data_points first (analyst layer); falls back to raw
+    data_points for metrics not yet finalized.
+
+    Response shape:
+      data.companies[ticker] = {
+        name, scraper_status,
+        monthly: { metric: {value, period, confidence, is_finalized} | null },
+        sec:     { metric: {value, period, confidence, is_finalized} | null },
+      }
+    """
     from app_globals import get_db
     db = get_db()
     SCORECARD_METRICS = [
-        'hodl_btc', 'encumbered_btc', 'hodl_btc_unrestricted',
-        'production_btc', 'sold_btc', 'hashrate_eh', 'ai_hpc_mw',
+        'production_btc', 'sold_btc', 'hashrate_eh',
+        'hodl_btc', 'hodl_btc_unrestricted', 'encumbered_btc', 'ai_hpc_mw',
     ]
     companies = db.get_companies(active_only=False)
-    result = []
+    result = {}
     for company in companies:
         ticker = company['ticker']
-        metrics = {}
-        for metric in SCORECARD_METRICS:
-            dps = db.query_data_points(ticker=ticker, metric=metric, limit=1)
-            dps_sorted = sorted(dps, key=lambda d: d.get('period', ''), reverse=True)
-            if dps_sorted:
-                dp = dps_sorted[0]
-                metrics[metric] = {
-                    'value': dp.get('value'),
-                    'period': dp.get('period'),
-                    'confidence': dp.get('confidence'),
-                }
-            else:
-                metrics[metric] = None
-        result.append({
-            'ticker': ticker,
-            'name': company.get('name'),
+
+        dps_monthly = db.query_data_points(
+            ticker=ticker,
+            source_period_types=['monthly'],
+            limit=500,
+        )
+        dps_sec = db.query_data_points(
+            ticker=ticker,
+            source_period_types=['quarterly', 'annual'],
+            limit=200,
+        )
+
+        monthly_best = _latest_per_metric(dps_monthly, SCORECARD_METRICS)
+        sec_best = _latest_per_metric(dps_sec, SCORECARD_METRICS)
+
+        # Analyst layer: prefer final_data_points where available
+        finals = db.get_final_data_points(ticker)
+        final_monthly = _latest_per_metric(
+            [f for f in finals if not _is_sec_period(f['period'])], SCORECARD_METRICS
+        )
+        final_sec = _latest_per_metric(
+            [f for f in finals if _is_sec_period(f['period'])], SCORECARD_METRICS
+        )
+
+        def _cell(dp, is_finalized=False):
+            if dp is None:
+                return None
+            return {
+                'value':              dp.get('value'),
+                'period':             dp.get('period'),
+                'confidence':         dp.get('confidence'),
+                'source_period_type': dp.get('source_period_type'),
+                'is_finalized':       is_finalized,
+            }
+
+        result[ticker] = {
+            'name':           company.get('name'),
             'scraper_status': company.get('scraper_status'),
-            'metrics': metrics,
-        })
-    return jsonify({'success': True, 'data': result})
+            'monthly': {
+                m: _cell(final_monthly[m], True) if m in final_monthly
+                   else _cell(monthly_best.get(m), False)
+                for m in SCORECARD_METRICS
+            },
+            'sec': {
+                m: _cell(final_sec[m], True) if m in final_sec
+                   else _cell(sec_best.get(m), False)
+                for m in SCORECARD_METRICS
+            },
+        }
+
+    return jsonify({'success': True, 'data': {'companies': result, 'metrics': SCORECARD_METRICS}})
 
 
 @bp.route('/api/data/purge', methods=['POST'])

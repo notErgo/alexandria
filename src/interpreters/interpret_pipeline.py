@@ -815,6 +815,9 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             except Exception as _bench_err:
                 log.debug("Benchmark write failed (non-fatal): %s", _bench_err)
 
+            summary.prompt_tokens += _batch_meta.get('prompt_tokens', 0)
+            summary.response_tokens += _batch_meta.get('response_tokens', 0)
+
             # Per-metric fallback: each metric that still needs higher confidence gets
             # its own select_windows call so the context window is metric-appropriate.
             _needs_fallback = [

@@ -267,6 +267,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 24")
                     version = 24
 
+                if version < 25:
+                    self._migrate_v25(conn)
+                    conn.execute("PRAGMA user_version = 25")
+                    version = 25
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1059,6 +1064,34 @@ class MinerDB:
         if 'raw_html' not in existing:
             conn.execute("ALTER TABLE reports ADD COLUMN raw_html TEXT")
 
+    def _migrate_v25(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v24 → v25: add final_data_points table.
+
+        Stores analyst-promoted values that the scorecard reads first.
+        The pipeline never writes to this table — raw extraction goes to
+        data_points and analyst finalization goes here.
+        """
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS final_data_points (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker       TEXT NOT NULL,
+                period       TEXT NOT NULL,
+                metric       TEXT NOT NULL,
+                value        REAL NOT NULL,
+                unit         TEXT NOT NULL DEFAULT '',
+                confidence   REAL NOT NULL DEFAULT 1.0,
+                analyst_note TEXT,
+                source_ref   TEXT,
+                created_at   TEXT DEFAULT (datetime('now')),
+                updated_at   TEXT DEFAULT (datetime('now')),
+                UNIQUE(ticker, period, metric)
+            );
+            CREATE INDEX IF NOT EXISTS idx_fdp_ticker_period
+                ON final_data_points(ticker, period);
+            CREATE INDEX IF NOT EXISTS idx_fdp_metric
+                ON final_data_points(metric);
+        """)
+
     def update_report_summary(self, report_id: int, summary: str) -> None:
         """Write the LLM-generated summary for a report."""
         with self._get_connection() as conn:
@@ -1727,6 +1760,7 @@ class MinerDB:
         from_period: Optional[str] = None,
         to_period: Optional[str] = None,
         min_confidence: Optional[float] = None,
+        source_period_types: Optional[list] = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> list:
@@ -1754,6 +1788,10 @@ class MinerDB:
         if min_confidence is not None:
             clauses.append("confidence >= ?")
             params.append(min_confidence)
+        if source_period_types:
+            placeholders = ','.join('?' * len(source_period_types))
+            clauses.append(f"source_period_type IN ({placeholders})")
+            params.extend(source_period_types)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.extend([limit, offset])
         with self._get_connection() as conn:
@@ -2029,6 +2067,123 @@ class MinerDB:
             mode, ticker or 'ALL', suppress_auto_sync, counts,
         )
         return counts
+
+    # ── Final data points (analyst layer) ────────────────────────────────────
+
+    def get_final_data_points(self, ticker: str) -> list:
+        """Return all final_data_points rows for a ticker, ordered by period DESC."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM final_data_points
+                   WHERE ticker = ?
+                   ORDER BY period DESC""",
+                (ticker,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def upsert_final_data_point(
+        self,
+        ticker: str,
+        period: str,
+        metric: str,
+        value: float,
+        unit: str = '',
+        confidence: float = 1.0,
+        analyst_note: Optional[str] = None,
+        source_ref: Optional[str] = None,
+    ) -> int:
+        """INSERT OR REPLACE into final_data_points. Returns the row id."""
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                """INSERT INTO final_data_points
+                       (ticker, period, metric, value, unit, confidence,
+                        analyst_note, source_ref, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                   ON CONFLICT(ticker, period, metric) DO UPDATE SET
+                       value        = excluded.value,
+                       unit         = excluded.unit,
+                       confidence   = excluded.confidence,
+                       analyst_note = excluded.analyst_note,
+                       source_ref   = excluded.source_ref,
+                       updated_at   = datetime('now')""",
+                (ticker, period, metric, value, unit, confidence,
+                 analyst_note, source_ref),
+            )
+            return int(cur.lastrowid)
+
+    def delete_final_data_point(self, ticker: str, period: str, metric: str) -> int:
+        """Remove a single finalized value. Returns rows deleted (0 or 1)."""
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM final_data_points WHERE ticker=? AND period=? AND metric=?",
+                (ticker, period, metric),
+            )
+            return cur.rowcount
+
+    def purge_final_data_points(
+        self,
+        ticker: Optional[str] = None,
+        mode: str = 'clear',
+        reason: Optional[str] = None,
+    ) -> dict:
+        """Delete final_data_points rows (ticker-scoped or all).
+
+        mode='archive': copies rows to purge_archive.db before deleting.
+        Returns { 'deleted': N, 'archive_batch_id': int|None }.
+        """
+        valid_modes = {'clear', 'archive'}
+        if mode not in valid_modes:
+            raise ValueError(f"mode must be one of {sorted(valid_modes)}")
+
+        archive_batch_id = None
+        archive_conn = None
+        if mode == 'archive':
+            archive_batch_id = self._create_purge_archive_batch(
+                mode=mode,
+                ticker_scope=ticker or 'ALL',
+                reason=reason,
+            )
+            archive_conn = self._get_archive_connection()
+
+        try:
+            with self._get_connection() as conn:
+                if archive_conn is not None:
+                    archive_conn.execute('BEGIN')
+                    where = 'ticker = ?' if ticker else ''
+                    params: tuple = (ticker,) if ticker else ()
+                    self._archive_table_rows(
+                        archive_conn=archive_conn,
+                        batch_id=archive_batch_id,
+                        data_conn=conn,
+                        table='final_data_points',
+                        where=where,
+                        params=params,
+                    )
+
+                if ticker:
+                    n = conn.execute(
+                        "SELECT COUNT(*) FROM final_data_points WHERE ticker=?", (ticker,)
+                    ).fetchone()[0]
+                    conn.execute(
+                        "DELETE FROM final_data_points WHERE ticker=?", (ticker,)
+                    )
+                else:
+                    n = conn.execute(
+                        "SELECT COUNT(*) FROM final_data_points"
+                    ).fetchone()[0]
+                    conn.execute("DELETE FROM final_data_points")
+
+                if archive_conn is not None:
+                    archive_conn.commit()
+        except Exception:
+            if archive_conn is not None:
+                archive_conn.rollback()
+            raise
+        finally:
+            if archive_conn is not None:
+                archive_conn.close()
+
+        return {'deleted': n, 'archive_batch_id': archive_batch_id}
 
     def get_trailing_data_points(
         self, ticker: str, metric: str, before_period: str, limit: int = 3

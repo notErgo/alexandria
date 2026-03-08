@@ -159,6 +159,7 @@ def _run_edgar_ingest(
     auto_extract: bool = False,
     warm_model: bool = True,
     tickers: Optional[list] = None,
+    pipeline_run_id: int = None,
 ) -> None:
     import requests as req_lib
     from datetime import date
@@ -176,6 +177,7 @@ def _run_edgar_ingest(
         db = get_db()
         session = req_lib.Session()
         connector = EdgarConnector(db=db, session=session)
+        connector._pipeline_run_id = pipeline_run_id
         all_companies = db.get_companies(active_only=True)
         ticker_filter = {t.upper() for t in tickers} if tickers else None
         companies = [c for c in all_companies if ticker_filter is None or c['ticker'].upper() in ticker_filter]
