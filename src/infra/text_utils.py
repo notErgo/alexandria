@@ -37,8 +37,13 @@ MAX_RAW_HTML: int = 300_000
 MAX_RAW_TEXT: int = 50_000
 
 
-def html_to_plain(html: str | None, separator: str = " ") -> str:
+def html_to_plain(html: str | None, separator: str = "\n") -> str:
     """Strip markup from *html* and return plain text.
+
+    Tables are first converted to pipe-delimited rows
+    (``cell1 | cell2 | cell3``) so label-value associations survive
+    ``get_text()`` flattening.  This mirrors the behaviour of
+    ``PressReleaseParser._parse_html()`` and ``AnnualReportParser.parse_html()``.
 
     Safe on ``None`` or empty input — returns ``""`` in both cases.
     Uses BeautifulSoup with the lxml parser (same parser used everywhere
@@ -47,7 +52,10 @@ def html_to_plain(html: str | None, separator: str = " ") -> str:
     if not html:
         return ""
     from bs4 import BeautifulSoup
-    return BeautifulSoup(html, "lxml").get_text(separator=separator, strip=True)
+    from parsers.annual_report_parser import convert_tables_to_pipe_text
+    soup = BeautifulSoup(html, "lxml")
+    convert_tables_to_pipe_text(soup)
+    return soup.get_text(separator=separator, strip=True)
 
 
 def make_html_report_fields(

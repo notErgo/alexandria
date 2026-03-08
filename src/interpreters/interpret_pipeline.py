@@ -735,7 +735,16 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     # Cleared to 'pending' on startup if the process crashes mid-extraction.
     db.mark_report_extraction_running(report['id'])
 
-    text = report.get('raw_text') or ''
+    # Prefer fresh table-aware extraction from raw_html when available.
+    # raw_text was stored at ingest time via plain get_text() (no table conversion);
+    # re-deriving from raw_html applies convert_tables_to_pipe_text so label-value
+    # associations in HTML tables survive flattening.
+    raw_html = report.get('raw_html')
+    if raw_html:
+        from infra.text_utils import html_to_plain
+        text = html_to_plain(raw_html)
+    else:
+        text = report.get('raw_text') or ''
 
     if not text.strip():
         log.warning(
