@@ -81,6 +81,8 @@ _BOILERPLATE_SENTINELS = [
     re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
+    re.compile(r'^Recent Announcements\s*$', re.MULTILINE),
+    re.compile(r'^Investor Notice\s*$', re.MULTILINE),
     re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list
         r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
         r'BIT\s+DIGITAL|HIVE|HUT\s+8|ARGO|STRONGHOLD|TERAWULF|IRIS)\b',
@@ -745,6 +747,14 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         text = html_to_plain(raw_html)
     else:
         text = report.get('raw_text') or ''
+
+    # Strip IR website navigation headers and boilerplate footer sections
+    # (investor notices, forward-looking disclaimers, about/contact blocks)
+    # before regex and LLM extraction to reduce noise and token usage.
+    _src = report.get('source_type', '')
+    if _src in ('ir_press_release', 'wire_press_release'):
+        from infra.text_utils import strip_press_release_boilerplate
+        text = strip_press_release_boilerplate(text)
 
     if not text.strip():
         log.warning(

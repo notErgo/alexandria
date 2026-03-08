@@ -189,6 +189,140 @@ class TestObserverSwarmStoresRawHtml:
         assert call_args["raw_html"] is not None, "raw_html must not be None"
 
 
+class TestStripPressReleaseBoilerplate:
+    """Tests for strip_press_release_boilerplate() — IR nav and footer removal."""
+
+    # Minimal simulated Equisolve/ir.mara.com style press release plain text
+    _NAV_HEADER = (
+        "Marathon Digital Holdings Announces Bitcoin Production : MARA (MARA)\n"
+        "Skip to main content\n"
+        "Skip to section navigation\n"
+        "Skip to footer\n"
+        "Stock Information\n"
+        "Back to Mara.com\n"
+        "Investor Relations\n"
+        "Overview\n"
+        "News & Events\n"
+        "Press Releases\n"
+        "IR Calendar\n"
+        "Email Alerts\n"
+        "News & Events\n"
+        "Overview\n"
+        "Press Releases\n"
+        "IR Calendar\n"
+        "Email Alerts\n"
+    )
+    _ARTICLE_HEADLINE = "Marathon Digital Holdings Announces Bitcoin Production for April 2024\n"
+    _DATE_LINE = "May 03, 2024 8:30 am EDT\n"
+    _CONTENT = (
+        "Download as PDF\n"
+        "- Bitcoin Produced: 850 BTC\n"
+        "- Average Operational Hash Rate: 21.1 EH/s\n"
+        "\n"
+        "Bitcoin Produced | 850 | 702 | 21 | %\n"
+        "Avg Hash Rate | 21.1 | 10.6 | 99 | %\n"
+        "\n"
+        "As of April 30, 2024 the Company holds 17,631 unrestricted BTC.\n"
+    )
+    _RECENT_ANNOUNCEMENTS = (
+        "Recent Announcements\n"
+        "April 25 - Increases 2024 hash rate target to 50 exahash\n"
+        "April 24 - Schedules conference call\n"
+    )
+    _INVESTOR_NOTICE = (
+        "Investor Notice\n"
+        "Investing in our securities involves a high degree of risk.\n"
+    )
+    _FWD_LOOKING = (
+        "Forward-Looking Statements\n"
+        "This press release contains forward-looking statements.\n"
+    )
+    _ABOUT = (
+        "About Marathon Digital Holdings\n"
+        "Marathon is a digital asset technology company.\n"
+    )
+    _FOOTER = (
+        "Source: Marathon Digital Holdings Inc.\n"
+        "Released May 3, 2024\n"
+        "email\n"
+        "Email Alerts\n"
+        "© 2024 MARA Holdings, Inc. All Rights Reserved.\n"
+    )
+
+    def _full_pr(self):
+        return (
+            self._NAV_HEADER
+            + self._ARTICLE_HEADLINE
+            + self._DATE_LINE
+            + self._CONTENT
+            + self._RECENT_ANNOUNCEMENTS
+            + self._INVESTOR_NOTICE
+            + self._FWD_LOOKING
+            + self._ABOUT
+            + self._FOOTER
+        )
+
+    def test_strips_nav_header(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Skip to main content" not in result
+        assert "Back to Mara.com" not in result
+        assert "Investor Relations" not in result
+        assert "Email Alerts" not in result
+
+    def test_preserves_article_headline(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Marathon Digital Holdings Announces Bitcoin Production for April 2024" in result
+
+    def test_preserves_content_and_tables(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Bitcoin Produced: 850 BTC" in result
+        assert "Bitcoin Produced | 850 | 702 | 21 | %" in result
+        assert "17,631 unrestricted BTC" in result
+
+    def test_strips_recent_announcements(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Recent Announcements" not in result
+
+    def test_strips_investor_notice(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Investor Notice" not in result
+
+    def test_strips_forward_looking_statements(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Forward-Looking Statements" not in result
+
+    def test_strips_about_section(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "About Marathon Digital Holdings" not in result
+
+    def test_strips_source_and_footer(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        result = strip_press_release_boilerplate(self._full_pr())
+        assert "Source: Marathon Digital Holdings Inc." not in result
+        assert "© 2024" not in result
+
+    def test_no_op_on_clean_text(self):
+        """Text without IR nav/footer is returned unchanged (after strip)."""
+        from infra.text_utils import strip_press_release_boilerplate
+        clean = "Bitcoin Produced | 850 | 702\nHodl BTC | 17631\n"
+        assert strip_press_release_boilerplate(clean) == clean.strip()
+
+    def test_no_op_on_empty_string(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        assert strip_press_release_boilerplate("") == ""
+
+    def test_no_op_on_none(self):
+        from infra.text_utils import strip_press_release_boilerplate
+        assert strip_press_release_boilerplate(None) == ""  # type: ignore[arg-type]
+
+
 def _mock_resp(status_code, text):
     from unittest.mock import MagicMock
     r = MagicMock()

@@ -573,6 +573,11 @@ def get_miner_raw_text(ticker: str, period: str):
         if not content:
             return jsonify({'success': False, 'error': {'message': 'Report has no stored content'}}), 404
 
+        source_type = report_info.get('source_type', '')
+        if source_type in ('ir_press_release', 'wire_press_release'):
+            from infra.text_utils import strip_press_release_boilerplate
+            content = strip_press_release_boilerplate(content)
+
         return Response(content, mimetype='text/plain; charset=utf-8')
 
     except Exception as e:

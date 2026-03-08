@@ -32,9 +32,90 @@ Usage
     db.insert_report(report)
 """
 from __future__ import annotations
+import re as _re
 
 MAX_RAW_HTML: int = 300_000
 MAX_RAW_TEXT: int = 50_000
+
+# ---------------------------------------------------------------------------
+# IR press-release boilerplate stripping
+# ---------------------------------------------------------------------------
+
+# Matches the date/time line that opens an Equisolve/GlobeNewswire-style
+# article: "May 03, 2024 8:30 am EDT" or plain "March 5, 2024"
+_IR_DATE_LINE_RE = _re.compile(
+    r'^(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+    r'Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
+    r'\s+\d{1,2},?\s+\d{4}',
+    _re.IGNORECASE,
+)
+
+# Boilerplate section headers — cut everything from the first matching line onward.
+# Specific IR markers (Recent Announcements, Investor Notice, Source:) are matched
+# unconditionally.  Generic headers (About, Forward-Looking) are only matched at
+# or beyond the 40 % mark to avoid false positives in article content.
+_PR_FOOTER_UNCONDITIONAL = [
+    _re.compile(r'^Recent Announcements\s*$'),
+    _re.compile(r'^Investor Notice\s*$'),
+    _re.compile(r'^Source:\s+[A-Z]'),
+    _re.compile(r'^email\s*$', _re.IGNORECASE),   # Equisolve footer icon label
+    _re.compile(r'©\s*\d{4}'),                     # copyright line
+]
+_PR_FOOTER_CONDITIONAL = [
+    _re.compile(r'^Forward-Looking Statements?\s*$', _re.IGNORECASE),
+    _re.compile(r'^Cautionary Statements?\s*$', _re.IGNORECASE),
+    _re.compile(r'^About [A-Z][A-Za-z]'),
+    _re.compile(r'^For more information,?\s+visit\s*$', _re.IGNORECASE),
+]
+
+
+def strip_press_release_boilerplate(text: str | None) -> str:
+    """Remove IR website navigation and boilerplate footer from plain-text PRs.
+
+    **Header**: identifies the article headline as the last non-empty line
+    before the first date line (``Month DD, YYYY ...``) and discards
+    everything above it.  If no date line is found the header is untouched.
+
+    **Footer**: truncates at the first occurrence of a recognised boilerplate
+    sentinel.  Unconditional sentinels (``Recent Announcements``,
+    ``Investor Notice``, ``Source:``, copyright) are matched anywhere past
+    the article start.  Generic sentinels (``Forward-Looking Statements``,
+    ``About [Company]``) require the match to be past the 40 % mark so they
+    do not fire on legitimate in-article references.
+
+    Safe on ``None`` or empty input — returns ``""`` in both cases.
+    """
+    if not text:
+        return ""
+
+    lines = text.split('\n')
+
+    # --- Strip navigation header ---
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if _IR_DATE_LINE_RE.match(line.strip()) and i >= 2:
+            # Walk back to find the last non-empty line (the headline)
+            for j in range(i - 1, max(i - 8, -1), -1):
+                if lines[j].strip():
+                    start_idx = j
+                    break
+            break
+
+    # --- Strip footer boilerplate ---
+    end_idx = len(lines)
+    body_len = len(lines) - start_idx
+    threshold_40pct = start_idx + int(body_len * 0.4)
+
+    for i in range(start_idx, len(lines)):
+        s = lines[i].strip()
+        if any(p.match(s) for p in _PR_FOOTER_UNCONDITIONAL):
+            end_idx = i
+            break
+        if i >= threshold_40pct and any(p.match(s) for p in _PR_FOOTER_CONDITIONAL):
+            end_idx = i
+            break
+
+    return '\n'.join(lines[start_idx:end_idx]).strip()
 
 
 def html_to_plain(html: str | None, separator: str = "\n") -> str:
