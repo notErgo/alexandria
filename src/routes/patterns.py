@@ -222,7 +222,7 @@ def apply_pattern():
 
     try:
         from app_globals import get_db
-        from extractors.extractor import extract_all
+        from interpreters.regex_interpreter import extract_all
         from config import CONFIDENCE_REVIEW_THRESHOLD
 
         db = get_db()
@@ -444,7 +444,7 @@ def generate_pattern():
     match_count = 0
     if doc_text:
         try:
-            from extractors.unit_normalizer import normalize_value
+            from interpreters.unit_normalizer import normalize_value
         except ImportError:
             normalize_value = None
 
@@ -487,7 +487,7 @@ def test_pattern():
     except re.error as e:
         return jsonify({'success': False, 'error': {'message': f'Invalid regex: {e}'}}), 400
     try:
-        from extractors.unit_normalizer import normalize_value
+        from interpreters.unit_normalizer import normalize_value
         matches = []
         for m in compiled.finditer(text):
             raw = m.group(0)

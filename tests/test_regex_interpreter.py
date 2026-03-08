@@ -6,7 +6,7 @@ mode). The inline patterns exercise the extractor mechanics independently of
 whatever patterns happen to be deployed.
 """
 import pytest
-from extractors.extractor import extract_all
+from interpreters.regex_interpreter import extract_all
 from miner_types import ExtractionResult
 
 

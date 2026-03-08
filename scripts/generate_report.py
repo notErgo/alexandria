@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from infra.logging_config import setup_logging
 setup_logging()
 
-from config import DATA_DIR
+from config import DATA_DIR, get_all_tickers as _get_all_tickers
 
 log = logging.getLogger('miners.generate_report')
 
@@ -56,9 +56,8 @@ COLOR_INACTIVE  = '#1e1e1e'   # near-black
 COLOR_ACCENT    = '#3b82f6'   # blue
 COLOR_DANGER    = '#ef4444'   # red
 
-# All tickers in display order (tier 1 first)
-DISPLAY_ORDER = ['MARA', 'RIOT', 'CLSK', 'CORZ', 'BITF', 'HUT8', 'IREN', 'WULF',
-                 'BTBT', 'BTDR', 'CIFR', 'HIVE', 'ARBK', 'ABTC', 'SDIG']
+# All tickers in display order — derived from config/companies.json (AP-043)
+DISPLAY_ORDER = _get_all_tickers()
 
 STANDARD_METRICS = [
     'production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh',

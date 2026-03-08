@@ -16,6 +16,26 @@ log = logging.getLogger('miners.parsers.annual_report_parser')
 _EDGAR_ITEM_RE = re.compile(r'(?i)\bitem\s+(\d+[a-z]?)\b')
 
 
+def convert_tables_to_pipe_text(soup) -> None:
+    """Replace HTML <table> elements with pipe-delimited plain text rows, in-place.
+
+    Converts each <tr> to "cell1 | cell2 | cell3" so label-value associations
+    are preserved after get_text() flattening.  Processes tables in document
+    order; nested tables are absorbed naturally because find_all('tr') is
+    recursive — the outer conversion captures inner content before the inner
+    table tag itself is processed.
+    """
+    for table in soup.find_all('table'):
+        rows = []
+        for row in table.find_all('tr'):
+            cells = [cell.get_text(' ', strip=True) for cell in row.find_all(['td', 'th'])]
+            non_empty = [c for c in cells if c]
+            if non_empty:
+                rows.append(' | '.join(non_empty))
+        if rows:
+            table.replace_with('\n' + '\n'.join(rows) + '\n')
+
+
 def detect_parse_quality(text: str, page_count: int) -> str:
     """Determine quality of parsed text.
 
@@ -49,7 +69,8 @@ class AnnualReportParser:
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(html, 'lxml')
-        full_text = soup.get_text(separator=' ', strip=True)
+        convert_tables_to_pipe_text(soup)
+        full_text = soup.get_text(separator='\n', strip=True)
         quality = detect_parse_quality(full_text, page_count=0)
 
         # Find all Item header positions

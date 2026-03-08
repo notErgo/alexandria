@@ -132,11 +132,11 @@ class TestHTMLPriorityOverPDF:
         """
         from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
-        from extractors.llm_extractor import LLMExtractor
+        from interpreters.pattern_registry import PatternRegistry
+        from interpreters.llm_interpreter import LLMInterpreter
         import os
 
-        monkeypatch.setattr(LLMExtractor, 'check_connectivity', lambda self: False)
+        monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -177,7 +177,7 @@ class TestTwoPassHTMLExtraction:
     def test_table_result_preferred_over_prose(self):
         """Table extraction (269) beats prose reference to prior month value (286)."""
         from bs4 import BeautifulSoup
-        from extractors.table_extractor import extract_from_tables
+        from interpreters.table_interpreter import interpret_from_tables
 
         html = """<html><body>
         <table>
@@ -188,7 +188,7 @@ class TestTwoPassHTMLExtraction:
         </body></html>"""
 
         soup = BeautifulSoup(html, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc from table"
         assert prod[0].value == pytest.approx(269.0, abs=0.1), (
@@ -212,11 +212,11 @@ class TestBestResultPerMetric:
         Uses an inline test registry with two patterns so the extraction pipeline
         produces two candidate values from the test HTML.
         """
-        import extractors.extraction_pipeline as _ep_mod
-        monkeypatch.setattr(_ep_mod, '_get_llm_extractor', lambda db: None)
+        import interpreters.interpret_pipeline as _ep_mod
+        monkeypatch.setattr(_ep_mod, '_get_llm_interpreter', lambda db: None)
 
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -374,7 +374,7 @@ class TestQuarterlyIngestorIntegration:
         """
         import sqlite3
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -417,7 +417,7 @@ class TestQuarterlyIngestorIntegration:
     def test_quarterly_filing_produces_multiple_data_points(self, db):
         """A 10-Q file mentioning 3 months should produce data_points for each month."""
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -460,11 +460,11 @@ class TestForceReingest:
         Uses an inline test registry so the extraction pipeline can produce a
         data_point from the test HTML content.
         """
-        import extractors.extraction_pipeline as _ep_mod
-        monkeypatch.setattr(_ep_mod, '_get_llm_extractor', lambda db: None)
+        import interpreters.interpret_pipeline as _ep_mod
+        monkeypatch.setattr(_ep_mod, '_get_llm_interpreter', lambda db: None)
 
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -500,7 +500,7 @@ class TestForceReingest:
     def test_force_false_is_default(self, db):
         """ingest_all() with no arguments must not force-reingest."""
         from scrapers.archive_ingestor import ArchiveIngestor
-        from extractors.pattern_registry import PatternRegistry
+        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -553,5 +553,5 @@ class TestParseEdgarHit:
         with open(config_path) as f:
             companies = json.load(f)
         tickers_with_cik = [c for c in companies if c.get('cik')]
-        # Original 13 + BTDR (0001899123) + ABTC (0001755953) = 15
-        assert len(tickers_with_cik) == 15
+        # Original 13 + BTDR (0001899123) + ABTC (0001755953) + APLD (0001144879) = 16
+        assert len(tickers_with_cik) == 16

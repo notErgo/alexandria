@@ -117,8 +117,8 @@ def test_pipeline_observability_includes_counts_and_config_health(client):
 # ── Operations extract ────────────────────────────────────────────────────────
 
 def test_extract_missing_ticker_runs_all(client):
-    """POST /api/operations/extract with no ticker starts ALL extraction run."""
-    resp = client.post('/api/operations/extract', json={})
+    """POST /api/operations/interpret with no ticker starts ALL extraction run."""
+    resp = client.post('/api/operations/interpret', json={})
     assert resp.status_code in (200, 409)
     if resp.status_code == 200:
         data = resp.get_json()
@@ -128,12 +128,12 @@ def test_extract_missing_ticker_runs_all(client):
 
 
 def test_extract_returns_task_id(client, monkeypatch):
-    """POST /api/operations/extract with valid ticker returns task_id."""
+    """POST /api/operations/interpret with valid ticker returns task_id."""
     import routes.operations as ops_mod
     # Mock: prevent real extraction thread from starting
     monkeypatch.setattr(ops_mod, '_active_tickers', set())
 
-    resp = client.post('/api/operations/extract', json={'ticker': 'MARA'})
+    resp = client.post('/api/operations/interpret', json={'ticker': 'MARA'})
     # Either 200 (task started) or 409 (already running)
     assert resp.status_code in (200, 409)
     if resp.status_code == 200:
@@ -188,6 +188,6 @@ def test_assign_period_valid(client, tmp_path):
 # ── Operations progress ───────────────────────────────────────────────────────
 
 def test_progress_unknown_task_returns_404(client):
-    """GET /api/operations/extract/<task_id>/progress for unknown task returns 404."""
-    resp = client.get('/api/operations/extract/nonexistent-task-id/progress')
+    """GET /api/operations/interpret/<task_id>/progress for unknown task returns 404."""
+    resp = client.get('/api/operations/interpret/nonexistent-task-id/progress')
     assert resp.status_code == 404

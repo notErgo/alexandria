@@ -5,8 +5,8 @@ Operations panel API routes.
   GET  /api/operations/pipeline_observability      — end-to-end ingest/extract counts + config health
   POST /api/operations/observer_swarm/start        — trigger observer swarm discovery/scrape run
   GET  /api/operations/observer_swarm/<id>/status  — observer swarm run status
-  POST /api/operations/extract                     — trigger extraction for a ticker
-  GET  /api/operations/extract/<task_id>/progress  — extraction progress
+  POST /api/operations/interpret                     — trigger extraction for a ticker
+  GET  /api/operations/interpret/<task_id>/progress  — extraction progress
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
@@ -328,7 +328,7 @@ def operations_observer_swarm_status(task_id: str):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
-@bp.route('/api/operations/extract', methods=['POST'])
+@bp.route('/api/operations/interpret', methods=['POST'])
 def operations_extract():
     """Trigger background extraction for a ticker (or all tickers). Returns task_id."""
     try:
@@ -356,6 +356,7 @@ def operations_extract():
                 'reports_total': 0,
                 'data_points': 0,
                 'errors': 0,
+                'logs': [],
             }
 
         log.info(
@@ -366,8 +367,8 @@ def operations_extract():
         def _run():
             try:
                 from app_globals import get_db
-                from extractors.extraction_pipeline import extract_report
-                from extractors.pattern_registry import PatternRegistry
+                from interpreters.interpret_pipeline import extract_report
+                from interpreters.pattern_registry import PatternRegistry
                 from app_globals import get_registry
                 from infra.ollama_warmup import warm_ollama_for_extraction
 
@@ -383,18 +384,48 @@ def operations_extract():
                 if warm_model and reports:
                     warm_ollama_for_extraction(db=db, reason='operations_extract')
 
+                from datetime import datetime, timezone
                 for i, report in enumerate(reports):
+                    r_ticker = report.get('ticker', '?')
+                    r_period = report.get('covering_period') or report.get('report_date') or '?'
+                    r_type = report.get('source_type', '?')
                     try:
                         summary = extract_report(report, db, registry)
+                        pts = summary.data_points_extracted
+                        rev = summary.review_flagged
+                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                        line = f'[{ts}] {r_ticker} {r_period} ({r_type}) -> {pts} pts, {rev} review'
+                        if summary.errors:
+                            line += f', {summary.errors} err'
+                        llm_summary = report.get('llm_summary') or ''
+                        if not llm_summary:
+                            # Freshly written — re-read from DB
+                            try:
+                                fresh = db.get_report(report['id'])
+                                llm_summary = (fresh or {}).get('llm_summary') or ''
+                            except Exception:
+                                pass
+                        if llm_summary:
+                            line += f' | {llm_summary[:120]}'
                         with _progress_lock:
                             _extraction_progress[task_id]['reports_processed'] = i + 1
-                            _extraction_progress[task_id]['data_points'] += summary.data_points_extracted
+                            _extraction_progress[task_id]['data_points'] += pts
                             _extraction_progress[task_id]['errors'] += summary.errors
+                            logs = _extraction_progress[task_id]['logs']
+                            logs.append(line)
+                            if len(logs) > 200:
+                                logs.pop(0)
                         log.info("Task %s: processed report %d/%d for %s", task_id, i + 1, len(reports), ticker or 'ALL')
                     except Exception as e:
+                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                        line = f'[{ts}] {r_ticker} {r_period} ERROR: {type(e).__name__}'
                         log.error("Task %s: error on report %d: %s", task_id, report.get('id'), e, exc_info=True)
                         with _progress_lock:
                             _extraction_progress[task_id]['errors'] += 1
+                            logs = _extraction_progress[task_id]['logs']
+                            logs.append(line)
+                            if len(logs) > 200:
+                                logs.pop(0)
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'
@@ -417,7 +448,7 @@ def operations_extract():
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
-@bp.route('/api/operations/extract/<task_id>/progress')
+@bp.route('/api/operations/interpret/<task_id>/progress')
 def operations_extract_progress(task_id: str):
     """Return extraction task progress."""
     try:

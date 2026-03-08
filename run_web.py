@@ -19,7 +19,15 @@ setup_logging()
 import logging
 from flask import Flask, render_template, jsonify, request
 
-from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG
+from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG, validate_companies_config
+
+_config_errors = validate_companies_config()
+if _config_errors:
+    _log = logging.getLogger('miners.config')
+    for _e in _config_errors:
+        _log.error('companies.json: %s', _e)
+    raise SystemExit('companies.json failed schema validation — fix config before starting')
+
 from routes.data_points import bp as data_points_bp
 from routes.companies import bp as companies_bp
 from routes.reports import bp as reports_bp
@@ -41,6 +49,9 @@ from routes.regime import bp as regime_bp
 from routes.explorer import bp as explorer_bp
 from routes.metric_rules import bp as metric_rules_bp
 from routes.pipeline import bp as pipeline_bp
+from routes.qc import bp as qc_bp
+from routes.crawl import bp as crawl_bp
+from routes.interpret import bp as interpret_bp
 
 log = logging.getLogger('miners.web')
 
@@ -99,6 +110,9 @@ def create_app() -> Flask:
     app.register_blueprint(explorer_bp)
     app.register_blueprint(metric_rules_bp)
     app.register_blueprint(pipeline_bp)
+    app.register_blueprint(qc_bp)
+    app.register_blueprint(crawl_bp)
+    app.register_blueprint(interpret_bp)
 
     @app.errorhandler(404)
     def not_found(e):
@@ -153,7 +167,13 @@ def create_app() -> Flask:
 
     @app.route('/ops')
     def ops_page():
-        return render_template('ops.html')
+        from config import SOURCE_TYPE_DISPLAY
+        return render_template(
+            'ops.html',
+            current_sector='BTC-miners',
+            all_sectors=['BTC-miners'],
+            source_type_display=SOURCE_TYPE_DISPLAY,
+        )
 
     @app.route('/patterns')
     def patterns_page():
@@ -165,7 +185,8 @@ def create_app() -> Flask:
 
     @app.route('/dashboard')
     def dashboard_page():
-        return render_template('dashboard.html')
+        from config import get_all_tickers
+        return render_template('dashboard.html', all_tickers=get_all_tickers())
 
     @app.route('/review')
     def review_page():

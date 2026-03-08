@@ -1,4 +1,5 @@
 """Company and metric schema API routes."""
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -13,6 +14,25 @@ bp = Blueprint('companies', __name__)
 
 _VALID_SCRAPER_MODES = {'rss', 'index', 'template', 'skip'}
 _VALID_SOURCE_TYPES = {'IR_PRIMARY', 'RSS', 'TEMPLATE', 'EDGAR', 'PRNEWSWIRE', 'GLOBENEWSWIRE'}
+
+
+def _companies_json_path() -> Path:
+    """Return the canonical path to companies.json."""
+    return Path(__file__).parent.parent.parent / 'config' / 'companies.json'
+
+
+def _write_active_to_companies_json(ticker: str, active: bool) -> None:
+    """Update the active field for one ticker in companies.json.
+
+    Single writer: PUT /api/companies/<ticker> via companies.py route.
+    """
+    path = _companies_json_path()
+    companies = json.loads(path.read_text())
+    for c in companies:
+        if c.get('ticker', '').upper() == ticker.upper():
+            c['active'] = active
+            break
+    path.write_text(json.dumps(companies, indent=2))
 
 
 def _normalize_optional_text(body: dict, key: str) -> str | None:
@@ -147,7 +167,9 @@ def _probe_candidate_url(source_type: str, url: str, timeout: int = 12) -> dict:
 def list_companies():
     from app_globals import get_db
     db = get_db()
-    companies = db.get_companies(active_only=False)
+    active_param = request.args.get('active', 'true').strip().lower()
+    active_only = active_param not in ('false', '0', 'no')
+    companies = db.get_companies(active_only=active_only)
     return jsonify({'success': True, 'data': companies})
 
 
@@ -535,6 +557,8 @@ def create_company():
             skip_reason=skip_reason,
             sandbox_note=sandbox_note,
         )
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'error': {'message': f'Company {ticker!r} already exists'}}), 409
     except Exception:
         log.error("Failed to create company %s", ticker, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
@@ -588,8 +612,14 @@ def update_company(ticker):
         'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
         'rss_url', 'prnewswire_url', 'globenewswire_url',
         'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
+        'active',
     }
     kwargs = {k: v for k, v in body.items() if k in allowed}
+    # Normalize active flag: coerce to bool, then to 0/1 for the DB
+    new_active = None
+    if 'active' in kwargs:
+        new_active = bool(kwargs.pop('active'))
+        kwargs['active'] = 1 if new_active else 0
     for key in ('name', 'ir_url', 'pr_base_url', 'scraper_issues_log', 'cik', 'sector',
                 'rss_url', 'prnewswire_url', 'globenewswire_url', 'url_template',
                 'skip_reason', 'sandbox_note'):
@@ -625,6 +655,16 @@ def update_company(ticker):
     except Exception:
         log.error("Failed to update company %s", ticker, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+    # Write active flag back to companies.json so startup sync respects it.
+    # Only write when the caller explicitly supplied the active field.
+    if new_active is not None:
+        try:
+            _write_active_to_companies_json(ticker, new_active)
+        except Exception:
+            log.error("Failed to write active flag to companies.json for %s", ticker, exc_info=True)
+            # Non-fatal: DB is updated; JSON write failure is logged only.
+
     return jsonify({'success': True, 'data': company})
 
 
@@ -635,7 +675,9 @@ def list_metric_schema():
     from app_globals import get_db
     db = get_db()
     sector = request.args.get('sector', 'BTC-miners')
-    rows = db.get_metric_schema(sector)
+    active_param = request.args.get('active', '').lower()
+    active_only = active_param in ('true', '1', 'yes')
+    rows = db.get_metric_schema(sector, active_only=active_only)
     return jsonify({'success': True, 'data': rows})
 
 

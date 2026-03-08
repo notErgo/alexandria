@@ -15,6 +15,12 @@ import json
 import logging
 from typing import Optional
 
+try:
+    import json_repair as _json_repair
+    _HAS_JSON_REPAIR = True
+except ImportError:
+    _HAS_JSON_REPAIR = False
+
 import requests
 
 from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
@@ -34,7 +40,7 @@ def _active_model(db=None) -> str:
         except Exception:
             pass
     return LLM_MODEL_ID
-from extractors.confidence import METRIC_VALID_RANGES
+from interpreters.confidence import METRIC_VALID_RANGES
 from miner_types import ExtractionResult
 
 # Valid ranges for quarterly/annual aggregated values (3x the monthly bounds for flow metrics).
@@ -44,7 +50,7 @@ _QUARTERLY_VALID_RANGES = {
     k: (lo, hi * 3) for k, (lo, hi) in METRIC_VALID_RANGES.items()
 }
 
-log = logging.getLogger('miners.extractors.llm_extractor')
+log = logging.getLogger('miners.interpreters.llm_interpreter')
 
 # Hardcoded default prompts per metric.
 # Stored as DB overrides (llm_prompts table) take priority when available.
@@ -358,12 +364,12 @@ _DEFAULT_BATCH_PREAMBLE = (
 )
 
 
-class LLMExtractor:
+class LLMInterpreter:
     """
     Calls Ollama to extract a named metric from document text.
 
     Usage:
-        extractor = LLMExtractor(session=requests.Session(), db=miner_db)
+        extractor = LLMInterpreter(session=requests.Session(), db=miner_db)
         result = extractor.extract(text, 'production_btc')
         # Returns ExtractionResult or None
     """
@@ -371,7 +377,8 @@ class LLMExtractor:
     def __init__(self, session: requests.Session, db=None) -> None:
         self._session = session
         self._db = db  # Optional MinerDB for prompt lookup
-        self._last_call_meta: dict = {}  # Populated by _call_ollama with timing fields
+        self._last_call_meta: dict = {}     # Populated by _call_ollama with timing fields
+        self._last_batch_summary: str = ''  # Populated by _parse_batch_response
 
     @staticmethod
     def get_default_prompt(metric: str) -> str:
@@ -623,6 +630,7 @@ class LLMExtractor:
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
                 f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
             )
+        lines.append('  "summary": "<one sentence: document type, company, period, and key figures found — max 150 chars>"')
         lines.append("}")
         lines.append("")
         lines.append("Document:")
@@ -688,8 +696,18 @@ class LLMExtractor:
         try:
             data = json.loads(raw[start:end])
         except (json.JSONDecodeError, ValueError) as e:
-            log.debug("Could not parse LLM batch JSON: %s", e)
-            return {}
+            if _HAS_JSON_REPAIR:
+                try:
+                    data = json.loads(_json_repair.repair_json(raw[start:end]))
+                    log.debug("LLM batch JSON repaired (original error: %s)", e)
+                except Exception:
+                    log.debug("Could not parse LLM batch JSON: %s", e)
+                    return {}
+            else:
+                log.debug("Could not parse LLM batch JSON: %s", e)
+                return {}
+
+        self._last_batch_summary = str(data.get('summary') or '').strip()[:200]
 
         results = {}
         for metric in metrics:
@@ -757,6 +775,23 @@ class LLMExtractor:
         # Generic fallback for unknown metrics
         return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
 
+    def _extract_num_ctx(self) -> int:
+        """Return the num_ctx to use for extraction Ollama calls.
+
+        Extraction prompts are a single document + preamble, typically 3-4k tokens.
+        8192 is sufficient and avoids over-allocating VRAM with the model's default
+        (often 32768).  Configurable via 'extract_num_ctx' in config_settings.
+        """
+        default = 8192
+        if self._db is not None:
+            try:
+                v = self._db.get_config('extract_num_ctx')
+                if v:
+                    return int(v)
+            except Exception:
+                pass
+        return default
+
     def _call_ollama(self, prompt: str) -> Optional[str]:
         """
         POST to Ollama /api/generate. Returns the response text or None on failure.
@@ -774,6 +809,7 @@ class LLMExtractor:
             "options": {
                 "temperature": 0.0,   # Deterministic output for structured JSON
                 "num_predict": 400,   # Batch JSON response is ~200-300 tokens; cap prevents runaway
+                "num_ctx": self._extract_num_ctx(),  # KV cache size; extraction prompts are ~3-4k tokens
             },
         }
         try:
@@ -848,6 +884,14 @@ class LLMExtractor:
         _QUARTERLY_PROMPTS instructions (which omit 'REJECT: quarterly' language).
         """
         preamble = _ANNUAL_BATCH_PREAMBLE if period_type == 'annual' else _QUARTERLY_BATCH_PREAMBLE
+        if self._db is not None:
+            db_key = 'llm_annual_batch_preamble' if period_type == 'annual' else 'llm_quarterly_batch_preamble'
+            try:
+                db_preamble = self._db.get_config(db_key)
+                if db_preamble:
+                    preamble = db_preamble
+            except Exception as e:
+                log.warning("Could not fetch %s from DB: %s", db_key, e)
 
         lines = [preamble]
 
@@ -904,8 +948,16 @@ class LLMExtractor:
         try:
             data = json.loads(raw[start:end])
         except (json.JSONDecodeError, ValueError) as e:
-            log.debug("Could not parse LLM quarterly batch JSON: %s", e)
-            return {}
+            if _HAS_JSON_REPAIR:
+                try:
+                    data = json.loads(_json_repair.repair_json(raw[start:end]))
+                    log.debug("LLM quarterly batch JSON repaired (original error: %s)", e)
+                except Exception:
+                    log.debug("Could not parse LLM quarterly batch JSON: %s", e)
+                    return {}
+            else:
+                log.debug("Could not parse LLM quarterly batch JSON: %s", e)
+                return {}
 
         # Quarterly/annual data gets wider valid ranges for flow metrics
         valid_ranges = _QUARTERLY_VALID_RANGES if period_type in ('quarterly', 'annual') else METRIC_VALID_RANGES

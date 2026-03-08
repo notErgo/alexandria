@@ -23,10 +23,8 @@ _ALL_METRICS = [
     'net_btc_balance_change', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
 ]
-_ALL_TICKERS = [
-    'ARBK', 'BITF', 'BTBT', 'CIFR', 'CLSK', 'CORZ',
-    'HIVE', 'HUT8', 'IREN', 'MARA', 'RIOT', 'SDIG', 'WULF',
-]
+from config import get_all_tickers as _get_all_tickers
+_ALL_TICKERS = _get_all_tickers()
 _METRIC_LABELS = {
     'production_btc':         'Production',
     'hodl_btc':               'Holdings',

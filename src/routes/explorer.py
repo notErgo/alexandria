@@ -115,13 +115,15 @@ def explorer_cell(ticker, period, metric):
     period_manifest = [m for m in manifest if m.get('period') == period]
     has_manifest = bool(period_manifest)
 
-    # Fetch raw document text from the first associated report
+    # Fetch raw document text and HTML from the first associated report
     raw_text = None
+    raw_html = None
     report = None
     if period_manifest and period_manifest[0].get('report_id'):
         report = db.get_report(period_manifest[0]['report_id'])
         if report:
             raw_text = report.get('raw_text', '')
+            raw_html = report.get('raw_html') or None
 
     state = compute_cell_state_v2(
         is_analyst_gap=has_analyst_gap,
@@ -157,6 +159,7 @@ def explorer_cell(ticker, period, metric):
         'extraction_method': best_dp.get('extraction_method') if best_dp else None,
         'source_snippet': best_dp.get('source_snippet') if best_dp else None,
         'raw_text': raw_text,
+        'raw_html': raw_html,
         'matches': matches,
         'review_item': best_rq,
         'all_data_points': dps,
@@ -238,7 +241,7 @@ def explorer_reextract():
     candidates = []
     try:
         registry = get_registry()
-        from extractors.extractor import extract_all
+        from interpreters.regex_interpreter import extract_all
         metrics = db.get_metric_schema('BTC-miners')
         for m in metrics:
             if not m.get('has_extraction_pattern'):

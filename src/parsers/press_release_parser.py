@@ -16,12 +16,18 @@ class PressReleaseParser:
     """Parser for monthly production press releases (archive HTML and PDF)."""
 
     def _parse_html(self, path: Path) -> str:
-        """Extract text from HTML using BeautifulSoup."""
+        """Extract text from HTML using BeautifulSoup.
+
+        Tables are converted to pipe-delimited rows before flattening so that
+        label-value associations (e.g. 'BTC Produced | 1,247') survive get_text().
+        """
         try:
             from bs4 import BeautifulSoup
+            from parsers.annual_report_parser import convert_tables_to_pipe_text
             with open(str(path), encoding='utf-8', errors='replace') as f:
                 soup = BeautifulSoup(f, 'lxml')
-            return soup.get_text(separator=' ', strip=True)
+            convert_tables_to_pipe_text(soup)
+            return soup.get_text(separator='\n', strip=True)
         except OSError as e:
             log.error("Cannot read HTML file %s: %s", path, e)
             return ''

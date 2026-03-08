@@ -15,6 +15,7 @@ Template placeholders (case-sensitive):
   {Month}  → titlecase month name  (e.g. "March")
   {year}   → 4-digit year          (e.g. "2025")
 """
+import hashlib
 import re
 import time
 import logging
@@ -27,6 +28,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import IR_REQUEST_DELAY_SECONDS
+from scrapers.dedup import canonical_url, simhash_text
+from scrapers.fetch_policy import DEFAULT_RETRY_POLICY, CircuitOpenError
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
 
 log = logging.getLogger('miners.scrapers.ir_scraper')
 
@@ -145,7 +153,7 @@ def _fetch_with_rate_limit(
     """
     time.sleep(IR_REQUEST_DELAY_SECONDS)
     try:
-        resp = session.get(url, timeout=15, headers=_HEADERS)
+        resp = DEFAULT_RETRY_POLICY.execute(session.get, url, timeout=15, headers=_HEADERS)
         if resp.status_code in (400, 404):
             # 400: bad request (template month not published in this form)
             # 404: page not found (template month simply doesn't exist)
@@ -154,6 +162,9 @@ def _fetch_with_rate_limit(
             return None
         resp.raise_for_status()
         return resp
+    except CircuitOpenError as e:
+        log.warning("Circuit open, skipping fetch for %s: %s", url, e)
+        return None
     except requests.Timeout:
         log.warning("Timeout fetching %s", url)
         return None
@@ -167,6 +178,23 @@ class IRScraper:
     """Fetches and parses live IR press releases for a company."""
     db: object          # MinerDB
     session: requests.Session
+    _pipeline_run_id: Optional[int] = None
+
+    def _emit(self, event: str, ticker: str = None, level: str = 'INFO', **details) -> None:
+        """Write a pipeline event if this scraper is running inside a pipeline run."""
+        if not self._pipeline_run_id:
+            return
+        try:
+            self.db.add_pipeline_run_event(
+                self._pipeline_run_id,
+                stage='ir_scrape',
+                event=event,
+                ticker=ticker,
+                level=level,
+                details=details or None,
+            )
+        except Exception:
+            pass  # never let event logging crash the scraper
 
     def scrape_company(self, company: dict):
         """
@@ -176,12 +204,18 @@ class IRScraper:
         from miner_types import IngestSummary
         # Support both legacy config key (scrape_mode) and DB/API key (scraper_mode).
         mode = (company.get("scraper_mode") or company.get("scrape_mode") or "skip").strip().lower()
+        ticker = company.get("ticker", "")
+        if mode != "skip":
+            self._emit('scrape_start', ticker=ticker, mode=mode,
+                       ir_url=company.get("ir_url") or company.get("rss_url") or "")
         if mode == "rss":
             return self._scrape_rss(company)
         elif mode == "template":
             return self._scrape_template(company)
         elif mode == "index":
             return self._scrape_index(company)
+        elif mode == "playwright":
+            return self._scrape_playwright(company)
         elif mode == "skip":
             log.info("Skipping %s: %s", company["ticker"], company.get("skip_reason", "no reason given"))
             return IngestSummary()
@@ -224,30 +258,50 @@ class IRScraper:
                 continue
             period_str = period.strftime("%Y-%m-%d")
 
-            if self.db.report_exists(ticker, period_str, "ir_press_release"):
-                log.debug("Already ingested RSS PR: %s %s", ticker, period_str)
+            pr_url = canonical_url(item["link"])
+            url_hash = hashlib.sha256(pr_url.encode()).hexdigest()
+            if self.db.report_exists_by_url_hash(url_hash, ticker):
+                log.debug("Already ingested RSS PR by URL: %s %s", ticker, pr_url)
+                self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=pr_url, period=period_str)
                 continue
 
-            page = _fetch_with_rate_limit(item["link"], self.session)
+            page = _fetch_with_rate_limit(pr_url, self.session)
             if page is None:
                 summary.errors += 1
                 continue
 
             text = BeautifulSoup(page.text, 'lxml').get_text(separator=" ", strip=True)
+            content_hash = simhash_text(text[:5000])
+            dupes = self.db.find_near_duplicates(content_hash, ticker)
+            if dupes:
+                log.warning(
+                    "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                    ticker, dupes[0]["id"],
+                )
+                self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=pr_url, period=period_str, matched_id=dupes[0]['id'])
+                continue
             report = {
                 "ticker": ticker,
                 "report_date": period_str,
                 "published_date": None,
                 "source_type": "ir_press_release",
-                "source_url": item["link"],
+                "source_url": pr_url,
                 "raw_text": text[:50000],
+                "raw_html": page.text[:300_000],
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "content_simhash": content_hash,
+                "fetch_strategy": "rss",
             }
             try:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
+                self._emit('url_ingested', ticker=ticker, period=period_str,
+                           title=item["title"], pub_date=item.get("pub_date", ""),
+                           fetch_strategy='rss', text_chars=len(text), url=pr_url)
             except Exception as e:
                 log.error("Failed to insert RSS report %s %s: %s", ticker, period_str, e, exc_info=True)
+                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                           fetch_strategy='rss', url=pr_url, error=str(e))
                 summary.errors += 1
 
         return summary
@@ -306,8 +360,11 @@ class IRScraper:
             period_str = current.strftime("%Y-%m-%d")
             url = expand_url_template(url_template, current)
 
-            if self.db.report_exists(ticker, period_str, "ir_press_release"):
-                log.debug("Already ingested template PR: %s %s", ticker, period_str)
+            url = canonical_url(url)
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
+            if self.db.report_exists_by_url_hash(url_hash, ticker):
+                log.debug("Already ingested template PR by URL: %s %s", ticker, url)
+                self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=url, period=period_str)
                 current = _next_month(current)
                 continue
 
@@ -318,6 +375,15 @@ class IRScraper:
                 continue
 
             text = BeautifulSoup(resp.text, 'lxml').get_text(separator=" ", strip=True)
+            content_hash = simhash_text(text[:5000])
+            dupes = self.db.find_near_duplicates(content_hash, ticker)
+            if dupes:
+                log.warning(
+                    "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                    ticker, dupes[0]["id"],
+                )
+                current = _next_month(current)
+                continue
             report = {
                 "ticker": ticker,
                 "report_date": period_str,
@@ -325,14 +391,21 @@ class IRScraper:
                 "source_type": "ir_press_release",
                 "source_url": url,
                 "raw_text": text[:50000],
+                "raw_html": resp.text[:300_000],
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "content_simhash": content_hash,
+                "fetch_strategy": "template",
             }
             try:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
                 log.info("Ingested template PR: %s %s from %s", ticker, period_str, url)
+                self._emit('url_ingested', ticker=ticker, period=period_str,
+                           fetch_strategy='template', text_chars=len(text), url=url)
             except Exception as e:
                 log.error("Failed to insert template report %s %s: %s", ticker, period_str, e, exc_info=True)
+                self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                           fetch_strategy='template', url=url, error=str(e))
                 summary.errors += 1
 
             current = _next_month(current)
@@ -359,6 +432,7 @@ class IRScraper:
         page = 1
         while True:
             page_url = ir_url if page == 1 else f"{ir_url}?page={page}"
+            self._emit('page_fetch', ticker=ticker, url=page_url, page=page)
             resp = _fetch_with_rate_limit(page_url, self.session)
             if resp is None:
                 if page == 1:
@@ -379,15 +453,24 @@ class IRScraper:
                 if period is None:
                     log.debug("Could not infer period from PR title: %s", title)
                     continue
-                full_url = href if href.startswith("http") else (pr_base_url + href)
+                if not href.startswith("http"):
+                    if not pr_base_url:
+                        log.debug("Skipping relative href with empty pr_base_url: %s", href)
+                        continue
+                    full_url = pr_base_url + href
+                else:
+                    full_url = href
                 production_links.append((title, full_url, period))
 
             new_count = 0
             for title, full_url, period in production_links:
                 period_str = period.strftime("%Y-%m-%d")
 
-                if self.db.report_exists(ticker, period_str, "ir_press_release"):
-                    log.debug("Already ingested IR PR: %s %s", ticker, period_str)
+                full_url = canonical_url(full_url)
+                url_hash = hashlib.sha256(full_url.encode()).hexdigest()
+                if self.db.report_exists_by_url_hash(url_hash, ticker):
+                    log.debug("Already ingested IR PR by URL: %s %s", ticker, full_url)
+                    self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period_str)
                     continue
 
                 new_count += 1
@@ -397,6 +480,15 @@ class IRScraper:
                     continue
 
                 text = BeautifulSoup(pr_resp.text, 'lxml').get_text(separator=" ", strip=True)
+                content_hash = simhash_text(text[:5000])
+                dupes = self.db.find_near_duplicates(content_hash, ticker)
+                if dupes:
+                    log.warning(
+                        "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                        ticker, dupes[0]["id"],
+                    )
+                    self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
+                    continue
                 report = {
                     "ticker": ticker,
                     "report_date": period_str,
@@ -404,14 +496,21 @@ class IRScraper:
                     "source_type": "ir_press_release",
                     "source_url": full_url,
                     "raw_text": text[:50000],
+                    "raw_html": pr_resp.text[:300_000],
                     "parsed_at": datetime.now(timezone.utc).isoformat(),
+                    "content_simhash": content_hash,
+                    "fetch_strategy": "index",
                 }
                 try:
                     self.db.insert_report(report)
                     summary.reports_ingested += 1
                     log.info("Ingested index PR: %s %s from %s", ticker, period_str, full_url)
+                    self._emit('url_ingested', ticker=ticker, period=period_str,
+                               title=title, fetch_strategy='index', text_chars=len(text), url=full_url)
                 except Exception as e:
                     log.error("Failed to insert IR report %s %s: %s", ticker, period_str, e, exc_info=True)
+                    self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                               title=title, fetch_strategy='index', url=full_url, error=str(e))
                     summary.errors += 1
 
             if new_count == 0 and production_links:
@@ -428,5 +527,111 @@ class IRScraper:
             if not has_next:
                 break
             page += 1
+
+        return summary
+
+    def _scrape_playwright(self, company: dict):
+        """
+        Use Playwright (headless Chromium) to render the IR index page, then
+        download production PR pages. Intended for JS-heavy IR sites.
+        Stores raw text only — extraction is handled by the extraction pipeline.
+        Returns IngestSummary.
+        """
+        from miner_types import IngestSummary
+
+        summary = IngestSummary()
+        ticker = company["ticker"]
+        ir_url = company.get("ir_url", "")
+        pr_base_url = company.get("pr_base_url", "")
+
+        if not ir_url:
+            log.error("%s: ir_url not set for playwright scraper", ticker)
+            summary.errors += 1
+            return summary
+
+        if sync_playwright is None:
+            log.error("%s: playwright is not installed; cannot use playwright scraper mode", ticker)
+            summary.errors += 1
+            return summary
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                context = browser.new_context(extra_http_headers=_HEADERS)
+                page = context.new_page()
+                page.goto(ir_url, wait_until="domcontentloaded", timeout=30000)
+                html = page.content()
+
+                soup = BeautifulSoup(html, "lxml")
+                links = soup.find_all("a", href=True)
+
+                for link in links:
+                    title = link.get_text(separator=" ", strip=True)
+                    href = link["href"]
+                    if not is_production_pr(title):
+                        continue
+                    period = infer_period_from_pr_title(title)
+                    if period is None:
+                        log.debug("Could not infer period from PR title: %s", title)
+                        continue
+
+                    if not href.startswith("http"):
+                        if not pr_base_url:
+                            log.debug("Skipping relative href with empty pr_base_url: %s", href)
+                            continue
+                        full_url = canonical_url(pr_base_url + href)
+                    else:
+                        full_url = canonical_url(href)
+
+                    url_hash = hashlib.sha256(full_url.encode()).hexdigest()
+                    if self.db.report_exists_by_url_hash(url_hash, ticker):
+                        log.debug("Already ingested playwright PR by URL: %s %s", ticker, full_url)
+                        self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period.strftime("%Y-%m-%d"))
+                        continue
+
+                    page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
+                    pr_html = page.content()
+                    text = BeautifulSoup(pr_html, "lxml").get_text(separator=" ", strip=True)
+                    period_str = period.strftime("%Y-%m-%d")
+                    content_hash = simhash_text(text[:5000])
+                    dupes = self.db.find_near_duplicates(content_hash, ticker)
+                    if dupes:
+                        log.debug(
+                            "Near-duplicate content detected for %s, skipping playwright insert "
+                            "(matched report id=%s)",
+                            ticker, dupes[0]["id"],
+                        )
+                        self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
+                        continue
+                    report = {
+                        "ticker": ticker,
+                        "report_date": period_str,
+                        "published_date": None,
+                        "source_type": "ir_press_release",
+                        "source_url": full_url,
+                        "raw_text": text[:50000],
+                        "raw_html": pr_html[:300_000],
+                        "parsed_at": datetime.now(timezone.utc).isoformat(),
+                        "content_simhash": content_hash,
+                        "fetch_strategy": "playwright",
+                    }
+                    try:
+                        self.db.insert_report(report)
+                        summary.reports_ingested += 1
+                        log.info("Ingested playwright PR: %s %s from %s", ticker, period_str, full_url)
+                        self._emit('url_ingested', ticker=ticker, period=period_str,
+                                   title=title, fetch_strategy='playwright', text_chars=len(text), url=full_url)
+                    except Exception as e:
+                        log.error(
+                            "Failed to insert playwright report %s %s: %s",
+                            ticker, period_str, e, exc_info=True,
+                        )
+                        self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                                   title=title, fetch_strategy='playwright', url=full_url, error=str(e))
+                        summary.errors += 1
+
+        except Exception as e:
+            log.error("%s: playwright scrape failed: %s", ticker, e, exc_info=True)
+            summary.errors += 1
 
         return summary

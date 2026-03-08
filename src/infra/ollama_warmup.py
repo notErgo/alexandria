@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import requests
 
@@ -15,6 +16,57 @@ log = logging.getLogger('miners.infra.ollama_warmup')
 
 _last_warm_at_by_model: dict[str, float] = {}
 _warm_lock = threading.Lock()
+
+
+def ensure_ollama_running(
+    base_url: str = LLM_BASE_URL,
+    log_fn: Optional[Callable[[str], None]] = None,
+    start_timeout: int = 30,
+) -> bool:
+    """Ensure the Ollama server is running, starting it if necessary.
+
+    Args:
+        base_url: Ollama API base URL.
+        log_fn: Optional callable for progress messages (in addition to logger).
+        start_timeout: Seconds to wait for server to come up after launch.
+
+    Returns:
+        True if server is up (already was or just started), False if failed.
+    """
+    def _emit(msg: str) -> None:
+        log.info(msg)
+        if log_fn:
+            log_fn(msg)
+
+    def _is_up() -> bool:
+        try:
+            return requests.get(f'{base_url}/api/tags', timeout=3).ok
+        except Exception:
+            return False
+
+    if _is_up():
+        _emit('event=ollama_check status=already_running')
+        return True
+
+    _emit('event=ollama_start status=starting')
+    try:
+        subprocess.Popen(
+            ['ollama', 'serve'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        _emit('event=ollama_start status=not_found error=ollama not found on PATH')
+        return False
+
+    for i in range(start_timeout):
+        time.sleep(1)
+        if _is_up():
+            _emit(f'event=ollama_start status=ready elapsed_seconds={i + 1}')
+            return True
+
+    _emit(f'event=ollama_start status=timeout elapsed_seconds={start_timeout}')
+    return False
 
 
 def _active_model_name(db=None) -> str:
@@ -63,6 +115,19 @@ def warm_ollama_for_extraction(
                 'model': model,
                 'reason': 'ttl_cache',
             }
+
+    if not ensure_ollama_running():
+        log.warning(
+            "event=ollama_warmup_end model=%s warmed=0 reason=server_start_failed trigger=%s",
+            model, reason or 'n/a',
+        )
+        return {
+            'attempted': True,
+            'warmed': False,
+            'skipped': False,
+            'model': model,
+            'reason': 'server_start_failed',
+        }
 
     try:
         log.info(

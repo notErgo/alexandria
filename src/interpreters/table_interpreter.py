@@ -16,10 +16,10 @@ from typing import Optional
 from bs4 import BeautifulSoup
 
 from miner_types import ExtractionResult
-from extractors.unit_normalizer import normalize_value
-from extractors.confidence import score_extraction
+from interpreters.unit_normalizer import normalize_value
+from interpreters.confidence import score_extraction
 
-log = logging.getLogger('miners.extractors.table_extractor')
+log = logging.getLogger('miners.interpreters.table_interpreter')
 
 # Known label aliases for each metric.
 # Labels are normalised before matching (lowercase, punctuation → space,
@@ -143,7 +143,7 @@ def _extract_cell_value(cell_text: str, metric: str) -> Optional[tuple[float, st
     return None
 
 
-def extract_from_tables(
+def interpret_from_tables(
     soup: BeautifulSoup,
     period_hint: Optional[str] = None,
 ) -> list:

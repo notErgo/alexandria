@@ -16,7 +16,7 @@ MARA_COMPANY = {
     'tier': 1,
     'ir_url': 'https://www.marathondh.com/news',
     'pr_base_url': 'https://www.marathondh.com',
-    'cik': '0001437491',
+    'cik': '0001507605',
     'active': 1,
 }
 
@@ -229,7 +229,7 @@ class TestMinerTimeline:
         company = body['data']['company']
         assert company['ticker'] == 'MARA'
         assert company['name'] == 'MARA Holdings, Inc.'
-        assert company['cik'] == '0001437491'
+        assert company['cik'] == '0001507605'
 
     def test_response_includes_stats(self, app_with_mara):
         """Response includes stats: total_periods, gap_periods, first_period, last_period."""

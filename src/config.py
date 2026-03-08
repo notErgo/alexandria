@@ -8,12 +8,17 @@ Infrastructure probe results (2026-03-01):
   IR URL status: RIOT=200, HIVE=200; others had 404/timeout/SSL issues — scraper handles gracefully
   RIOT CIK confirmed from EDGAR probe: 0001167419
 """
+import json as _json
 from pathlib import Path
+from typing import List
 import os as _os
 
 # --- Extraction thresholds ---
 # Extractions below this confidence route to review_queue for analyst approval.
 CONFIDENCE_REVIEW_THRESHOLD: float = 0.75
+
+# Reports that fail extraction this many times are promoted to dead_letter and skipped.
+MAX_EXTRACTION_ATTEMPTS: int = 5
 
 # --- Paths ---
 # Investigation data (sessions, results): backed up, not in project tree
@@ -23,6 +28,87 @@ DATA_DIR: str = str(Path(
 
 # Config files (companies.json, patterns/): relative to this file's parent
 CONFIG_DIR: str = str(Path(__file__).parent.parent / "config")
+
+def load_companies() -> List[dict]:
+    """Return the full company list from config/companies.json.
+
+    This is the single canonical source of all tickers. Never maintain a
+    hardcoded ticker list elsewhere — call this function instead.
+    """
+    path = Path(CONFIG_DIR) / "companies.json"
+    return _json.loads(path.read_text())
+
+def get_all_tickers() -> List[str]:
+    """Return sorted list of all ticker symbols from config/companies.json."""
+    return sorted(c["ticker"] for c in load_companies())
+
+
+_VALID_SCRAPER_MODES: frozenset = frozenset({
+    'rss', 'template', 'index', 'skip', 'playwright',
+})
+
+_VALID_FILING_REGIMES: frozenset = frozenset({
+    'domestic', 'canadian', 'foreign',
+})
+
+_COMPANY_REQUIRED_FIELDS: tuple = (
+    'ticker', 'name', 'tier', 'active', 'scraper_mode',
+    'filing_regime', 'fiscal_year_end_month',
+)
+
+
+def validate_companies_config(companies: List[dict] = None) -> List[str]:
+    """Validate shape and mode contracts for companies.json entries.
+
+    Returns a list of error strings. Empty list means valid.
+    Does not raise — caller decides severity.
+    """
+    if companies is None:
+        companies = load_companies()
+    errors: List[str] = []
+    seen: set = set()
+    for i, c in enumerate(companies):
+        label = c.get('ticker', f'entry[{i}]')
+        if label in seen:
+            errors.append(f'{label}: duplicate ticker')
+        seen.add(label)
+
+        for field in _COMPANY_REQUIRED_FIELDS:
+            if field not in c:
+                errors.append(f'{label}: missing required field "{field}"')
+
+        tier = c.get('tier')
+        if not isinstance(tier, int) or tier not in (1, 2, 3):
+            errors.append(f'{label}: tier must be int 1, 2, or 3, got {tier!r}')
+
+        if not isinstance(c.get('active'), bool):
+            errors.append(f'{label}: active must be a boolean')
+
+        fye = c.get('fiscal_year_end_month')
+        if not isinstance(fye, int) or isinstance(fye, bool) or not (1 <= fye <= 12):
+            errors.append(f'{label}: fiscal_year_end_month must be int 1-12, got {fye!r}')
+
+        mode = c.get('scraper_mode')
+        if mode not in _VALID_SCRAPER_MODES:
+            errors.append(
+                f'{label}: unknown scraper_mode {mode!r}'
+                f' (valid: {sorted(_VALID_SCRAPER_MODES)})'
+            )
+        elif mode == 'rss' and not c.get('rss_url'):
+            errors.append(f'{label}: scraper_mode="rss" requires rss_url')
+        elif mode == 'template' and not c.get('url_template'):
+            errors.append(f'{label}: scraper_mode="template" requires url_template')
+        elif mode == 'skip' and not c.get('skip_reason'):
+            errors.append(f'{label}: scraper_mode="skip" requires skip_reason')
+
+        regime = c.get('filing_regime')
+        if regime not in _VALID_FILING_REGIMES:
+            errors.append(
+                f'{label}: unknown filing_regime {regime!r}'
+                f' (valid: {sorted(_VALID_FILING_REGIMES)})'
+            )
+
+    return errors
 
 # Archive of historical PDFs and HTMLs (OffChain/Miner/)
 ARCHIVE_DIR: str = str(Path(__file__).parent.parent.parent / "Miner")
@@ -49,6 +135,8 @@ EDGAR_COMPANY_URL: str = "https://www.sec.gov/cgi-bin/browse-edgar"
 EDGAR_SUBMISSIONS_URL: str = "https://data.sec.gov/submissions/CIK{cik}.json"
 # Probed 2026-03-01: 0.1s between requests works without 429; conservative floor
 EDGAR_REQUEST_DELAY_SECONDS: float = 0.1
+# Base backoff sleep (seconds) when EDGAR returns 429 Too Many Requests
+EDGAR_RETRY_BACKOFF_BASE: float = 60.0
 
 # --- IR Scraper ---
 # 3.0s between requests: respectful crawl rate for public IR pages
@@ -65,13 +153,24 @@ EXTRACTION_CONTEXT_WINDOW: int = 500
 # Maximum source_snippet length stored in DB
 MAX_SOURCE_SNIPPET_LEN: int = 1000
 
-# --- LLM Extractor (Ollama) ---
-# Probed on Apple Silicon 32GB+ with Q4_K_M: ~30–50 tok/s, 262K context.
-# Confirm model tag with `ollama list` before running ingest.
-# Model: qwen3.5:35b-a3b (confirmed ready 2026-03-03)
+# --- LLM Interpreter (Ollama) — Stage 2 metric extraction ---
+# Used by interpreters/llm_interpreter.py for metric extraction from stored documents.
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:35b-a3b")
-LLM_TIMEOUT_SECONDS: int = 300  # 35B @ Q4_K_M: cold-start load can exceed 180s; 300s gives headroom
+LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:27b")
+LLM_TIMEOUT_SECONDS: int = 300
+
+# --- Crawl LLM (Ollama or Anthropic) — Stage 1 IR navigation ---
+# qwen3.5:9b is used for crawling: fast enough for link navigation, avoids
+# the 300s timeout that qwen3.5:27b hits when message history fills with page text.
+ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
+CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
+CRAWL_OLLAMA_MODEL: str = _os.environ.get("CRAWL_OLLAMA_MODEL", "qwen3.5:9b")
+CRAWL_PROVIDER: str = _os.environ.get("CRAWL_PROVIDER", "ollama")
+
+# Context window budgets for ContextWindowSelector
+CONTEXT_CHAR_BUDGET = 8_000          # monthly press releases
+CONTEXT_CHAR_BUDGET_QUARTERLY = 24_000  # EDGAR 10-Q / 10-K
+
 # Deprecated: replaced by METRIC_AGREEMENT_THRESHOLDS. Kept for backward compatibility.
 LLM_AGREEMENT_THRESHOLD: float = 0.02
 
@@ -128,6 +227,27 @@ SOURCE_TYPES: dict = {
     'edgar_10q':         'SEC EDGAR 10-Q filing',
     'edgar_10k':         'SEC EDGAR 10-K filing',
     'manual':            'Manual entry',
+}
+
+# --- Source Type Display Labels ---
+# Single source of truth for human-readable labels shown in the UI.
+# archive_html and archive_pdf both map to "IR Press Release" because they are
+# press release documents stored locally — same content, different storage format.
+SOURCE_TYPE_DISPLAY: dict = {
+    'edgar_8k':                    'SEC 8-K',
+    'edgar_10q':                   'SEC 10-Q',
+    'edgar_10k':                   'SEC 10-K',
+    'edgar_20f':                   'SEC 20-F',
+    'edgar_6k':                    'SEC 6-K',
+    'edgar_40f':                   'SEC 40-F',
+    'ir_press_release':            'IR Press Release',
+    'archive_html':                'IR Press Release',
+    'archive_pdf':                 'IR Press Release',
+    'prnewswire':                  'PRNewswire',
+    'prnewswire_press_release':    'PRNewswire',
+    'globenewswire_press_release': 'GlobeNewswire',
+    'wire_press_release':          'Wire',
+    'manual':                      'Manual Entry',
 }
 
 # --- Quarterly/Annual Metric Classification ---

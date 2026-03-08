@@ -1,6 +1,6 @@
 # Miners Platform — UI/API Component Spec
 
-Version: 1.1
+Version: 1.2
 Port: 5004
 
 ## Convention
@@ -10,11 +10,30 @@ Port: 5004
 | `X.0` | integer.0 | Page (route) |
 | `X.Y` | integer.integer | Tab or major section within a page |
 | `X.Y.Z` | integer.integer.integer | Panel, table, or form within a section |
+| `X.Y.Z.W` | integer.integer.integer.integer | Sub-component within a panel (e.g. ticker bar inside a sub-pane) |
 
 Data source key:
 - **CONFIG** — seeded from `companies.json`, pattern files, or `config.py` at server startup; survives purge + restart by design
 - **DATA** — created by scraping/extraction pipeline; cleared by Purge All
 - **n/a** — stateless UI element (filter, button, form)
+
+## Canonical Derivation Requirement
+
+Any UI component that lists companies or tickers must derive that list from the
+canonical chain — never from a hardcoded local constant (AP-043 / CHK-046):
+
+```
+config/companies.json
+  → config.py::get_all_tickers()
+    → Python (scrapers, routes)
+      → GET /api/companies
+        → render_template(all_tickers=get_all_tickers())
+          → {{ all_tickers | tojson }} in template JS
+```
+
+Adding a company to `companies.json` must be sufficient to make it appear in
+every ticker-bearing component — companies table, ticker bars, dashboard
+checkboxes, diagnostics, manifest scanner — with zero additional code changes.
 
 ---
 
@@ -43,9 +62,8 @@ Template: `ops.html`
 | 2.1.5 | Add Company form + bulk spreadsheet paste | n/a | `POST /api/companies` · `PUT /api/companies/<ticker>` · `GET /api/companies` | Single-add includes explicit `CIK` and description fields. Bulk paste accepts TSV/CSV headers (Ticker, Name, Investor Relations Base URL, CIK, Description, PRNewswire, GlobeNewswire) and upserts by ticker. Mode contract remains enforced at API boundary: `rss -> rss_url OR prnewswire_url OR globenewswire_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
 | 2.1.5a | Scraper governance + discovery probes | n/a | `GET /api/companies/scraper_governance` · `POST /api/companies/bootstrap_probe_all` (optional `tickers[]`) · `POST /api/companies/<ticker>/discovery_candidates` · `GET /api/companies/<ticker>/discovery_candidates` · `POST /api/companies/<ticker>/bootstrap_probe` | Agent-proposed source candidates are probed deterministically, written to `source_audit`, and produce governed mode recommendations per ticker or batch |
 | 2.1.6 | Sync Config button     | n/a     | `POST /api/companies/sync` | `db.sync_companies_from_config()` |
-| 2.1.7 | Data acquisition controls | n/a  | `POST /api/ingest/archive` · `POST /api/ingest/ir` · `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | Unified manual acquisition controls in `/ops`; optional `auto_extract` chains IR/EDGAR ingest into extraction in the same background task |
-| 2.1.8 | LLM extraction run monitor | DATA | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress and log feed without manual refresh |
-| 2.1.9 | Pipeline observability panel | DATA | `GET /api/operations/pipeline_observability` | Global and per-ticker discovered/ingested/parsed/extracted counts + scraper mode configuration health |
+
+**Note:** 2.1.7–2.1.9 (Data Acquisition, Extraction Monitor, Pipeline Observability) moved to Research tab (2.7) in v1.2.
 
 **Note on 2.1.1:** Full purge now clears the companies table for an immediate empty UI baseline. Companies rows reappear after server restart because `_init_db()` calls `sync_companies_from_config()`, or immediately via Sync Config.
 
@@ -77,6 +95,57 @@ Template: `ops.html`
 ### 2.5  Review Queue tab
 
 Redirects to 3.0.
+
+### 2.6  Pipeline Guide tab  (`/ops?tab=guide`)
+
+Static reference panel — no API calls, no data source.
+
+| ID    | Component           | Source | API endpoint(s) | Script(s) |
+|-------|---------------------|--------|-----------------|-----------|
+| 2.6.1 | Pipeline flow diagram | n/a  | — | — |
+| 2.6.2 | Source-type reference table | n/a | — | — |
+
+### 2.7  Research tab  (`/ops?tab=research`)
+
+Three sub-tabs: **Input** (configure) → **Crawl** (acquire) → **Interpret** (extract + observe).
+
+#### 2.7.1  Input sub-pane
+
+| ID      | Component          | Source | API endpoint(s) | Script(s) |
+|---------|--------------------|--------|-----------------|-----------|
+| 2.7.1.1 | Ticker selector bar | n/a   | — | Reads `_companies` in-memory; populated by `loadCompanies()` |
+| 2.7.1.2 | Model provider selector | n/a | — | Sets `crawl-provider` value used by `startCrawlAll()` |
+| 2.7.1.3 | Crawl prompt editor | CONFIG | `GET /api/crawl/prompt/<ticker>` | Loads per-ticker `scripts/crawl_prompts/{TICKER}_crawl.md`; falls back to master template |
+
+#### 2.7.2  Crawl sub-pane
+
+| ID      | Component              | Source | API endpoint(s) | Script(s) |
+|---------|------------------------|--------|-----------------|-----------|
+| 2.7.2.1 | Outside acquisition panel | n/a | `POST /api/crawl/start` · `POST /api/ingest/ir` · `POST /api/ingest/archive` · `GET /api/ingest/<id>/progress` | LLM Crawl All + Acquire IR + Acquire Archive; shared `acq-status`/`acq-log` for deterministic acquires |
+| 2.7.2.2 | LLM crawl status grid  | DATA   | `GET /api/crawl/status` | Per-ticker cards polled every 2 s while running |
+| 2.7.2.3 | LLM crawl log panel    | DATA   | `GET /api/crawl/<task_id>/progress` | Shown on ticker card click; closed by Close button |
+| 2.7.2.4 | SEC EDGAR panel        | n/a    | `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | Acquire EDGAR button + auto-extract checkbox |
+
+#### 2.7.3  Interpret sub-pane
+
+| ID      | Component                  | Source | API endpoint(s) | Script(s) |
+|---------|----------------------------|--------|-----------------|-----------|
+| 2.7.3.1 | LLM extraction run monitor | DATA   | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress; model selector calls `saveOllamaModel()` |
+| 2.7.3.2 | Pipeline observability card | DATA  | `GET /api/operations/pipeline_observability` | Auto-loaded on Interpret sub-tab activate |
+| 2.7.3.3 | Pipeline table             | DATA   | `GET /api/operations/pipeline_observability` | Per-ticker discovered/ingested/parsed/extracted counts + scraper config health |
+
+### 2.8  Settings tab  (`/ops?tab=settings`)
+
+| ID    | Component             | Source | API endpoint(s) | Script(s) |
+|-------|-----------------------|--------|-----------------|-----------|
+| 2.8.1 | Config settings form  | CONFIG | `GET /api/config/settings` · `POST /api/config/settings` | Grouped editable config: extraction thresholds, LLM params, crawl limits, pipeline paths |
+
+### 2.9  QC / Pipeline tab  (`/ops?tab=qc`)
+
+| ID    | Component           | Source | API endpoint(s) | Script(s) |
+|-------|---------------------|--------|-----------------|-----------|
+| 2.9.1 | QC snapshot table   | DATA   | `GET /api/qc/summary` | `src/routes/qc.py`; snapshots written by `POST /api/qc/snapshot` |
+| 2.9.2 | Pipeline run controls | n/a  | `POST /api/pipeline/run` | Trigger full pipeline run with ticker/date-range scope |
 
 ---
 

@@ -21,23 +21,11 @@ MONTH_MAP: dict = {
     "september": 9, "october": 10, "november": 11, "december": 12,
 }
 
-# Tickers recognized in directory names (e.g. "MARA MONTHLY")
-_KNOWN_TICKERS = [
-    # Original 13
-    "MARA", "RIOT", "CLSK", "CORZ", "BITF", "BTBT", "CIFR",
-    "HIVE", "HUT8", "ARBK", "SDIG", "WULF", "IREN",
-    # Registry expansion (Phase III 2026-03)
-    "BTDR",   # Bitdeer Technologies — active monthly reporter
-    "ABTC",   # American Bitcoin (HUT8 spin-out) — quarterly only, skip
-    "APLD",   # Applied Digital — pivoted to AI/HPC, skip
-    "GRDI",   # GRIID Infrastructure — acquired by CLSK Oct 2024, skip
-    "MIGI",   # Mawson Infrastructure — negligible BTC, skip
-    "GREE",   # Greenidge Generation — quarterly only, skip
-]
-
-# Public alias for test imports (underscore-prefixed names are not importable
-# across modules that follow "no private API" convention in test code).
-KNOWN_TICKERS = _KNOWN_TICKERS
+# Tickers recognized in directory names (e.g. "MARA MONTHLY").
+# Loaded from config/companies.json — the single canonical source.
+from config import get_all_tickers as _get_all_tickers
+_KNOWN_TICKERS = _get_all_tickers()
+KNOWN_TICKERS = _KNOWN_TICKERS  # public alias for test imports
 
 _ISO_DATE_PATTERN = re.compile(r"^(\d{4})-(\d{2})-\d{2}")
 _ISO_DATE_ANYWHERE = re.compile(r"(\d{4})-(\d{2})-\d{2}")
@@ -206,7 +194,7 @@ def _extract_quarterly_data_points(text: str, registry, report_id: int, ticker: 
 
     Returns dict mapping period (date) → list of ExtractionResult.
     """
-    from extractors.extractor import extract_all
+    from interpreters.regex_interpreter import extract_all
 
     results_by_period: dict = {}
     for period_date in periods:
@@ -300,7 +288,7 @@ class ArchiveIngestor:
         """
         from miner_types import IngestSummary
         from config import CONFIDENCE_REVIEW_THRESHOLD
-        from extractors.extraction_pipeline import extract_report
+        from interpreters.interpret_pipeline import extract_report
         from scrapers.manifest_scanner import scan_archive_directory
 
         summary = IngestSummary()
@@ -361,6 +349,13 @@ class ArchiveIngestor:
             # Parse text early — needed for period offset correction (Phase 1)
             # and for quarterly month discovery (Phase 2).
             text = _parse_pdf(str(file_path)) if suffix == ".pdf" else _parse_html(str(file_path))
+            raw_html: Optional[str] = None
+            if suffix == ".html":
+                try:
+                    with open(str(file_path), encoding="utf-8", errors="replace") as _fh:
+                        raw_html = _fh.read(300_000)
+                except OSError:
+                    pass
             if not text.strip():
                 log.warning("Empty text extracted from %s", file_path)
                 summary.errors += 1
@@ -441,6 +436,7 @@ class ArchiveIngestor:
                 "source_type": source_type,
                 "source_url": str(file_path),
                 "raw_text": text[:50000],
+                "raw_html": raw_html,
                 "parsed_at": datetime.now(timezone.utc).isoformat(),
             }
             try:

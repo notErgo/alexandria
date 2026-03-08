@@ -5,6 +5,7 @@ Tests should FAIL before manifest_scanner.py is created.
 """
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 
 # ── detect_ticker_from_path ──────────────────────────────────────────────────
@@ -85,3 +86,66 @@ def test_detect_ingest_state_undated():
     state, period = detect_ingest_state(path, 'RIOT', existing_report_dates=set())
     assert state == 'legacy_undated'
     assert period is None
+
+
+# ── Drift detection (schema v15) ─────────────────────────────────────────────
+
+def _make_mara_archive(tmp_path, content="<html>MARA report</html>"):
+    """Create a minimal Miner Monthly structure with one MARA HTML file."""
+    miner_monthly = tmp_path / "Miner Monthly" / "MARA MONTHLY"
+    miner_monthly.mkdir(parents=True)
+    p = miner_monthly / "2024-01_mara_report.html"
+    p.write_text(content)
+    return tmp_path, p
+
+
+def _mock_db_for_scan(manifest_id=1, stored_checksum=None):
+    db = MagicMock()
+    db.get_all_reports_for_extraction.return_value = []
+    db.upsert_asset_manifest.return_value = manifest_id
+    db.get_asset_manifest_by_id.return_value = {
+        'id': manifest_id,
+        'file_checksum': stored_checksum,
+    }
+    db.get_all_asset_manifests.return_value = []
+    return db
+
+
+def test_scan_ok_on_unchanged_file(tmp_path):
+    """When stored checksum matches current checksum, drift_status='ok' is set."""
+    from scrapers.manifest_scanner import scan_archive_directory, compute_file_checksum
+    archive_root, path = _make_mara_archive(tmp_path)
+    checksum = compute_file_checksum(path)
+    db = _mock_db_for_scan(stored_checksum=checksum)
+
+    scan_archive_directory(archive_root, db)
+
+    statuses = [c.args[1] for c in db.set_manifest_drift_status.call_args_list]
+    assert 'ok' in statuses, f"Expected 'ok' in drift status calls, got: {statuses}"
+
+
+def test_scan_detects_checksum_change(tmp_path):
+    """When stored checksum differs from current checksum, drift_status='checksum_changed'."""
+    from scrapers.manifest_scanner import scan_archive_directory
+    archive_root, _path = _make_mara_archive(tmp_path)
+    db = _mock_db_for_scan(stored_checksum='aaaa0000deadbeef00000000000000000000000000000000000000000000000000')
+
+    scan_archive_directory(archive_root, db)
+
+    statuses = [c.args[1] for c in db.set_manifest_drift_status.call_args_list]
+    assert 'checksum_changed' in statuses, f"Expected 'checksum_changed', got: {statuses}"
+
+
+def test_scan_marks_missing_file(tmp_path):
+    """Manifest entry whose file_path no longer exists is marked drift_status='file_missing'."""
+    from scrapers.manifest_scanner import scan_archive_directory
+    (tmp_path / "Miner Monthly").mkdir()  # empty dir — no files to scan
+    db = MagicMock()
+    db.get_all_reports_for_extraction.return_value = []
+    db.get_all_asset_manifests.return_value = [
+        {'id': 42, 'file_path': str(tmp_path / 'ghost_file.html')},
+    ]
+
+    scan_archive_directory(tmp_path, db)
+
+    db.set_manifest_drift_status.assert_called_with(42, 'file_missing')

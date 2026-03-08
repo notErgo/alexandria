@@ -3,7 +3,7 @@ EDGAR ingestion for ALL companies with CIKs — including inactive/quarterly-onl
 
 Runs 10-Q and 10-K fetching for every company in companies.json that has a CIK,
 regardless of active status. Designed to fill in quarterly data for companies
-that have stopped monthly reporting (CORZ, HUT8, WULF, IREN, ABTC, SDIG, etc.)
+that have stopped monthly reporting (CORZ, HUT8, WULF, IREN, ABTC, SDIG, etc.)  # canonical-sources: noqa — docstring example, not a ticker list
 
 Usage:
     cd OffChain/miners
@@ -28,8 +28,8 @@ setup_logging()
 from infra.db import MinerDB
 from config import DATA_DIR, CONFIG_DIR
 from scrapers.edgar_connector import EdgarConnector
-from extractors.extraction_pipeline import extract_report
-from extractors.pattern_registry import PatternRegistry
+from interpreters.extraction_pipeline import extract_report
+from interpreters.pattern_registry import PatternRegistry
 
 import requests as req_lib
 
@@ -77,7 +77,8 @@ def run_edgar_for_company(
     for attempt in range(3):
         try:
             summary = connector.fetch_all_filings(
-                cik=cik, ticker=ticker, since_date=since
+                cik=cik, ticker=ticker, since_date=since,
+                filing_regime=company.get('filing_regime', 'domestic'),
             )
             result = {
                 'ticker': ticker,

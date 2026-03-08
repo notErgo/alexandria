@@ -2,7 +2,7 @@
 import pytest
 from bs4 import BeautifulSoup
 
-from extractors.table_extractor import extract_from_tables
+from interpreters.table_interpreter import interpret_from_tables
 
 BITF_TABLE_HTML = """<table>
 <tr><th>Key Performance Indicators</th><th>April 2024</th><th>March 2024</th></tr>
@@ -30,7 +30,7 @@ CLSK_TABLE_HTML = """<table>
 class TestExtractFromTables:
     def test_bitf_btc_earned_extracts_current_month(self):
         soup = BeautifulSoup(BITF_TABLE_HTML, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc from 'Total BTC earned'"
         assert prod[0].value == pytest.approx(269.0, abs=0.1)
@@ -38,14 +38,14 @@ class TestExtractFromTables:
 
     def test_bitf_hashrate_extracts_eh(self):
         soup = BeautifulSoup(BITF_TABLE_HTML, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         hr = [r for r in results if r.metric == "hashrate_eh"]
         assert hr, "Should extract hashrate_eh from 'Month End Operating EH/s'"
         assert hr[0].value == pytest.approx(7.0, abs=0.1)
 
     def test_clsk_section_table_three_metrics(self):
         soup = BeautifulSoup(CLSK_TABLE_HTML, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         metrics_found = {r.metric for r in results}
         assert "production_btc" in metrics_found
         assert "hashrate_eh" in metrics_found
@@ -53,12 +53,12 @@ class TestExtractFromTables:
 
     def test_no_table_returns_empty(self):
         soup = BeautifulSoup("<p>No tables here.</p>", "lxml")
-        assert extract_from_tables(soup) == []
+        assert interpret_from_tables(soup) == []
 
     def test_unknown_row_label_ignored(self):
         html = "<table><tr><td>Operating Capacity (MW)</td><td>240</td></tr></table>"
         soup = BeautifulSoup(html, "lxml")
-        assert extract_from_tables(soup) == []
+        assert interpret_from_tables(soup) == []
 
     def test_squished_label_spaces_preserved(self):
         """Table cells with HTML sub-elements (e.g. <span>Bitcoin</span><span>Produced</span>)
@@ -68,7 +68,7 @@ class TestExtractFromTables:
 <tr><td><span>Bitcoin</span><span>Produced</span></td><td>255</td><td>215</td></tr>
 </table>"""
         soup = BeautifulSoup(html, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc even when label spans have no whitespace"
         assert prod[0].value == pytest.approx(255.0, abs=0.1)
@@ -81,7 +81,7 @@ class TestExtractFromTables:
 <tr><td></td><td>Bitcoin Held</td><td></td><td>8067</td><td>7648</td></tr>
 </table>"""
         soup = BeautifulSoup(html, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc from format-3 RIOT table"
         assert prod[0].value == pytest.approx(418.0, abs=0.1), (
@@ -92,7 +92,7 @@ class TestExtractFromTables:
         """RIOT tables have an empty spacer column at index 1.
         The extractor must skip it and read the first non-empty data column."""
         soup = BeautifulSoup(RIOT_TABLE_HTML, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc from RIOT table despite spacer column"
         assert prod[0].value == pytest.approx(676.0, abs=0.1), (
@@ -102,7 +102,7 @@ class TestExtractFromTables:
     def test_current_column_not_prior_month(self):
         """Leftmost data column (current month, index 1) wins over prior month."""
         soup = BeautifulSoup(BITF_TABLE_HTML, "lxml")
-        results = extract_from_tables(soup)
+        results = interpret_from_tables(soup)
         prod = [r for r in results if r.metric == "production_btc"]
         assert prod, "Should extract production_btc"
         assert prod[0].value == pytest.approx(269.0, abs=0.1), (

@@ -18,7 +18,9 @@ import re
 import threading
 from typing import Optional
 
-log = logging.getLogger('miners.extractors.extraction_pipeline')
+from interpreters.context_window import ContextWindowSelector
+
+log = logging.getLogger('miners.interpreters.interpret_pipeline')
 
 # Protected extraction methods — data points with these methods are never overwritten
 _PROTECTED_METHODS = frozenset({
@@ -26,8 +28,8 @@ _PROTECTED_METHODS = frozenset({
 })
 
 # Module-level LLM extractor singleton (lazy init — avoids import at module load)
-_llm_extractor_instance = None
-_llm_extractor_lock = threading.Lock()
+_llm_interpreter_instance = None
+_llm_interpreter_lock = threading.Lock()
 
 # Cached connectivity result — checked once at batch start, reused for 5 min.
 # Avoids 2 HTTP round-trips to Ollama on every report in a batch run.
@@ -51,8 +53,8 @@ _LLM_TEXT_MAX_CHARS = 8000
 _LLM_QUARTERLY_TEXT_MAX_CHARS = 40_000
 
 # Source types that follow the quarterly/annual extraction path
-_QUARTERLY_SOURCES = frozenset({'edgar_10q'})
-_ANNUAL_SOURCES    = frozenset({'edgar_10k'})
+_QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
+_ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
 
 # Sentinel phrases that mark the start of boilerplate sections.
 # Only stripped when the match falls at or after the 40% mark of the document,
@@ -62,7 +64,7 @@ _BOILERPLATE_SENTINELS = [
     re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
     re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
-    re.compile(
+    re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list
         r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
         r'BIT\s+DIGITAL|HIVE|HUT\s+8|ARGO|STRONGHOLD|TERAWULF|IRIS)\b',
         re.IGNORECASE,
@@ -148,7 +150,7 @@ def _get_missing_metrics(db, ticker: str, period: str, all_metrics: list) -> lis
 def _try_gap_fill(
     report: dict,
     db,
-    llm_extractor,
+    llm_interpreter,
     llm_text: str,
     all_metrics: list,
     confidence_threshold: float,
@@ -178,14 +180,14 @@ def _try_gap_fill(
         "Gap fill: checking prior period %s for %s (missing: %s)", prior, ticker, missing
     )
     try:
-        results = llm_extractor.extract_for_period(llm_text, missing, period_str, prior)
+        results = llm_interpreter.extract_for_period(llm_text, missing, period_str, prior)
     except Exception as e:
         log.error("Gap fill failed for %s %s: %s", ticker, prior, e, exc_info=True)
         return
 
     try:
-        _gf_meta = dict(llm_extractor._last_call_meta)
-        from extractors.llm_extractor import _active_model
+        _gf_meta = dict(llm_interpreter._last_call_meta)
+        from interpreters.llm_interpreter import _active_model
         gf_hits = lambda t: sum(1 for r in results.values() if r is not None and r.confidence >= t)
         db.insert_benchmark_run({
             'model': _active_model(db),
@@ -231,24 +233,24 @@ def _try_gap_fill(
         )
 
 
-def _get_llm_extractor(db):
-    """Return a module-level LLMExtractor singleton, or None if unavailable."""
-    global _llm_extractor_instance
-    with _llm_extractor_lock:
-        if _llm_extractor_instance is None:
+def _get_llm_interpreter(db):
+    """Return a module-level LLMInterpreter singleton, or None if unavailable."""
+    global _llm_interpreter_instance
+    with _llm_interpreter_lock:
+        if _llm_interpreter_instance is None:
             try:
                 import requests
-                from extractors.llm_extractor import LLMExtractor
+                from interpreters.llm_interpreter import LLMInterpreter
                 session = requests.Session()
-                _llm_extractor_instance = LLMExtractor(session=session, db=db)
+                _llm_interpreter_instance = LLMInterpreter(session=session, db=db)
                 log.debug("LLM extractor initialized")
             except Exception as e:
                 log.warning("Could not initialize LLM extractor: %s", e)
                 return None
-        return _llm_extractor_instance
+        return _llm_interpreter_instance
 
 
-def _check_llm_available(llm_extractor) -> bool:
+def _check_llm_available(llm_interpreter) -> bool:
     """Return cached LLM availability, refreshing every 5 min.
 
     Calling check_connectivity() on every report wastes 2 HTTP round-trips each
@@ -259,57 +261,68 @@ def _check_llm_available(llm_extractor) -> bool:
     see a fresh check — they are different Python objects from the real singleton.
     """
     global _llm_available_cache, _llm_available_cache_time, _llm_available_cache_extractor_id
-    if llm_extractor is None:
+    if llm_interpreter is None:
         return False
     now = _time.monotonic()
-    extractor_id = id(llm_extractor)
+    extractor_id = id(llm_interpreter)
     with _llm_cache_lock:
         if (extractor_id == _llm_available_cache_extractor_id
                 and now - _llm_available_cache_time < _LLM_AVAILABLE_CACHE_TTL):
             return _llm_available_cache
-        result = llm_extractor.check_connectivity()
+        result = llm_interpreter.check_connectivity()
         _llm_available_cache = result
         _llm_available_cache_time = now
         _llm_available_cache_extractor_id = extractor_id
     return result
 
 
-def _build_regex_by_metric(text: str, registry, report_date: str = None) -> dict:
+def _build_regex_by_metric(text: str, registry, report_date: str = None,
+                            metric_rules_by_name: dict = None) -> dict:
     """Run regex extraction for all metrics. Returns best result per metric.
 
     Passes report_date to extract_all so temporally-scoped patterns are
-    filtered to those valid for this report's period.
+    filtered to those valid for this report's period. Passes valid_range from
+    metric_rules_by_name so DB-configured ceilings override hardcoded defaults.
     """
-    from extractors.extractor import extract_all
+    from interpreters.regex_interpreter import extract_all
+    rules = metric_rules_by_name or {}
     regex_by_metric = {}
     for metric, patterns in registry.metrics.items():
-        results = extract_all(text, patterns, metric, report_date=report_date)
+        rule = rules.get(metric)
+        valid_range = None
+        if rule:
+            mn = rule.get('valid_range_min')
+            mx = rule.get('valid_range_max')
+            if mn is not None and mx is not None:
+                valid_range = (float(mn), float(mx))
+        results = extract_all(text, patterns, metric, report_date=report_date,
+                              valid_range=valid_range)
         if results:
             regex_by_metric[metric] = results[0]  # sorted confidence-desc; first = best
     return regex_by_metric
 
 
-def _run_llm_batch(llm_extractor, text: str, metrics: list, ticker: str = None) -> tuple:
+def _run_llm_batch(llm_interpreter, text: str, metrics: list, ticker: str = None) -> tuple:
     """
     Try batch extraction first (1 Ollama call for all metrics).
     Falls back to per-metric extract() if batch returns empty.
 
     Returns (results: dict, meta: dict) where meta contains timing info from
-    llm_extractor._last_call_meta (populated by _call_ollama).
+    llm_interpreter._last_call_meta (populated by _call_ollama).
     """
-    result = llm_extractor.extract_batch(text, metrics, ticker=ticker)
-    meta = dict(llm_extractor._last_call_meta)
+    result = llm_interpreter.extract_batch(text, metrics, ticker=ticker)
+    meta = dict(llm_interpreter._last_call_meta)
     if result:
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
         return result, meta
     log.warning("  LLM batch empty — falling back to per-metric (%d calls)", len(metrics))
     fallback = {}
     for metric in metrics:
-        r = llm_extractor.extract(text, metric)
+        r = llm_interpreter.extract(text, metric)
         if r is not None:
             fallback[metric] = r
         # Update meta with the last per-metric call (best-effort; final call wins)
-        meta = dict(llm_extractor._last_call_meta)
+        meta = dict(llm_interpreter._last_call_meta)
     return fallback, meta
 
 
@@ -323,7 +336,8 @@ def _apply_agreement(
     confidence_threshold: float,
     summary,
     attribution: Optional[str] = None,
-    llm_extractor=None,
+    llm_interpreter=None,
+    metric_rule: Optional[dict] = None,
 ) -> None:
     """Apply the agreement engine for one metric in one report. Writes to DB.
 
@@ -331,10 +345,10 @@ def _apply_agreement(
     stored in data_points so the source agent is recorded. Analyst-protected
     methods are never overwritten regardless.
 
-    llm_extractor is passed so the self-correction pass can make a targeted
+    llm_interpreter is passed so the self-correction pass can make a targeted
     retry call when disagreement or outlier is detected.
     """
-    from extractors.agreement import evaluate_agreement
+    from interpreters.agreement import evaluate_agreement
 
     ticker = report['ticker']
     period_str = report['report_date']
@@ -353,7 +367,10 @@ def _apply_agreement(
                 return
 
     if llm_available:
-        decision = evaluate_agreement(regex_best, llm_result, metric=metric)
+        # Use metric_rule overrides only when the rule is enabled
+        active_rule = metric_rule if (metric_rule and metric_rule.get('enabled', 1)) else None
+        agreement_threshold = active_rule['agreement_threshold'] if active_rule else None
+        decision = evaluate_agreement(regex_best, llm_result, metric=metric, threshold=agreement_threshold)
 
         # Outlier detection: if AUTO_ACCEPT, check against trailing data points
         # (also used by self-correction pass below — initialize here for both uses)
@@ -362,11 +379,18 @@ def _apply_agreement(
         outlier_threshold = 1.0
         if decision.decision == 'AUTO_ACCEPT' and decision.accepted_value is not None:
             from config import OUTLIER_THRESHOLDS, OUTLIER_MIN_HISTORY
-            from extractors.agreement import detect_outlier
-            outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
+            from interpreters.agreement import detect_outlier
+            if active_rule and 'outlier_threshold' in active_rule:
+                outlier_threshold = active_rule['outlier_threshold']
+            else:
+                outlier_threshold = OUTLIER_THRESHOLDS.get(metric, 1.0)
+            history_limit = (
+                active_rule.get('outlier_min_history', OUTLIER_MIN_HISTORY)
+                if active_rule else OUTLIER_MIN_HISTORY
+            )
             try:
                 trailing_rows = db.get_trailing_data_points(
-                    ticker, period_str, metric, limit=OUTLIER_MIN_HISTORY
+                    ticker, period_str, metric, limit=history_limit
                 )
                 trailing_vals = [r['value'] for r in trailing_rows]
                 is_outlier, trailing_avg = detect_outlier(
@@ -394,15 +418,15 @@ def _apply_agreement(
         # monthly reports; quarterly/annual use a different path).
         if decision.decision == 'REVIEW_QUEUE':
             raw_text = report.get('raw_text') or ''
-            if raw_text and llm_result is not None and llm_extractor is not None:
+            if raw_text and llm_result is not None and llm_interpreter is not None:
                 try:
                     concern = _build_concern_context(decision, metric, trailing_avg if is_outlier else None)
                     llm_text = _clean_for_llm(raw_text)[:_LLM_TEXT_MAX_CHARS]
-                    corrected = llm_extractor.extract_with_correction(
+                    corrected = llm_interpreter.extract_with_correction(
                         llm_text, metric, llm_result.value, concern, ticker=ticker
                     )
                     if corrected is not None and corrected.value is not None:
-                        from extractors.agreement import detect_outlier
+                        from interpreters.agreement import detect_outlier
                         re_decision = evaluate_agreement(regex_best, corrected, metric=metric)
                         if re_decision.decision == 'AUTO_ACCEPT':
                             # Check outlier again on corrected value
@@ -472,6 +496,7 @@ def _apply_agreement(
                 summary.data_points_extracted += 1
             else:
                 db.insert_review_item({
+                    "report_id": report_id,
                     "data_point_id": None,
                     "ticker": ticker,
                     "period": period_str,
@@ -502,6 +527,7 @@ def _apply_agreement(
                 else decision.decision
             )
             db.insert_review_item({
+                "report_id": report_id,
                 "data_point_id": None,
                 "ticker": ticker,
                 "period": period_str,
@@ -537,6 +563,7 @@ def _apply_agreement(
             summary.data_points_extracted += 1
         else:
             db.insert_review_item({
+                "report_id": report_id,
                 "data_point_id": None,
                 "ticker": ticker,
                 "period": period_str,
@@ -552,7 +579,7 @@ def _apply_agreement(
             summary.review_flagged += 1
 
 
-def _extract_quarterly_report(
+def _interpret_quarterly_report(
     report: dict,
     db,
     registry,
@@ -582,34 +609,36 @@ def _extract_quarterly_report(
         summary.errors += 1
         return summary
 
-    text = (report.get('raw_text') or '')[:_LLM_QUARTERLY_TEXT_MAX_CHARS]
+    _q_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
+    text = (report.get('raw_text') or '')[:_q_selector.char_budget]
 
-    llm_extractor = _get_llm_extractor(db)
-    llm_available = _check_llm_available(llm_extractor)
+    llm_interpreter = _get_llm_interpreter(db)
+    llm_available = _check_llm_available(llm_interpreter)
 
     if not llm_available:
         log.warning(
-            "LLM not available for quarterly report id=%s ticker=%s %s — skipping",
+            "LLM not available for quarterly report id=%s ticker=%s %s — will retry when LLM is up",
             report_id, ticker, covering_period,
         )
-        db.mark_report_extracted(report_id)
+        # Transient failure: reset to 'pending' so this process can retry without waiting for next boot.
+        db.reset_report_to_pending(report_id)
         return summary
 
     all_metrics = list(registry.metrics.keys()) if registry.metrics else []
     if not all_metrics:
         log.warning("No metrics in registry for quarterly extraction %s %s", ticker, covering_period)
-        db.mark_report_extracted(report_id)
+        db.mark_report_extraction_failed(report_id, 'no_metrics_in_registry')
         return summary
 
     try:
-        llm_results = llm_extractor.extract_quarterly_batch(
+        llm_results = llm_interpreter.extract_quarterly_batch(
             text, all_metrics, ticker=ticker, period_type=period_type
         )
     except Exception as e:
         log.error(
             "Quarterly LLM extraction failed for %s %s: %s", ticker, covering_period, e, exc_info=True
         )
-        db.mark_report_extracted(report_id)
+        db.mark_report_extraction_failed(report_id, str(e)[:500])
         summary.errors += 1
         return summary
 
@@ -661,6 +690,7 @@ def _extract_quarterly_report(
                 'llm_value':      result.value,
                 'regex_value':    None,
                 'agreement_status': 'LLM_ONLY',
+                'report_id':      report_id,
             })
             summary.review_flagged += 1
 
@@ -683,6 +713,11 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     from config import CONFIDENCE_REVIEW_THRESHOLD
 
     summary = ExtractionSummary()
+
+    # Mark in-flight immediately so concurrent workers skip this report.
+    # Cleared to 'pending' on startup if the process crashes mid-extraction.
+    db.mark_report_extraction_running(report['id'])
+
     text = report.get('raw_text') or ''
 
     if not text.strip():
@@ -706,13 +741,25 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # Route quarterly and annual SEC filings to the dedicated extraction path.
         # These do not use regex extraction — LLM only with wider text window.
         if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES:
-            return _extract_quarterly_report(report, db, registry, summary, attribution)
+            return _interpret_quarterly_report(report, db, registry, summary, attribution)
 
         report_date = report.get('report_date')
-        regex_by_metric = _build_regex_by_metric(text, registry, report_date=report_date)
 
-        llm_extractor = _get_llm_extractor(db)
-        llm_available = _check_llm_available(llm_extractor)
+        # Load per-metric rules before regex so valid_range overrides flow in
+        metric_rules_by_name = {}
+        try:
+            for row in db.get_metric_rules():
+                metric_rules_by_name[row['metric']] = row
+        except Exception as _mre:
+            log.debug("Could not load metric_rules (non-fatal): %s", _mre)
+
+        regex_by_metric = _build_regex_by_metric(
+            text, registry, report_date=report_date,
+            metric_rules_by_name=metric_rules_by_name,
+        )
+
+        llm_interpreter = _get_llm_interpreter(db)
+        llm_available = _check_llm_available(llm_interpreter)
 
         if not llm_available:
             log.debug(
@@ -722,21 +769,30 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
         # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],
         # etc.) from the back of the document before sending to LLM. Regex extraction
-        # still runs on the full raw_text. Truncate after stripping.
-        llm_text = _clean_for_llm(text)[:_LLM_TEXT_MAX_CHARS]
+        # still runs on the full raw_text. Use ContextWindowSelector to budget the window.
+        _clean_text = _clean_for_llm(text)
+        _ctx_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
+        _ctx_windows = _ctx_selector.select_windows(report['id'], _clean_text, 'production_btc', db)
+        llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_text[:_LLM_TEXT_MAX_CHARS]
 
         all_metrics = list(registry.metrics.keys())
         ticker = report.get('ticker')
 
-        # Single batch LLM call (pays prefill once for all metrics).
-        # Falls back to per-metric if batch returns empty.
+        # Primary batch LLM call — pays prefill once for all metrics on window 0.
+        # Falls back to per-metric extract() if batch returns empty.
         llm_by_metric = {}
         if llm_available:
             llm_by_metric, _batch_meta = _run_llm_batch(
-                llm_extractor, llm_text, all_metrics, ticker=ticker
+                llm_interpreter, llm_text, all_metrics, ticker=ticker
             )
+            _batch_summary = getattr(llm_interpreter, '_last_batch_summary', '')
+            if _batch_summary:
+                try:
+                    db.update_report_summary(report['id'], _batch_summary)
+                except Exception as _sum_err:
+                    log.debug("Summary write failed (non-fatal): %s", _sum_err)
             try:
-                from extractors.llm_extractor import _active_model
+                from interpreters.llm_interpreter import _active_model
                 hits = lambda t: sum(1 for r in llm_by_metric.values() if r.confidence >= t)
                 db.insert_benchmark_run({
                     'model': _active_model(db),
@@ -759,6 +815,34 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             except Exception as _bench_err:
                 log.debug("Benchmark write failed (non-fatal): %s", _bench_err)
 
+            summary.prompt_tokens += _batch_meta.get('prompt_tokens', 0)
+            summary.response_tokens += _batch_meta.get('response_tokens', 0)
+
+            # Per-metric fallback: each metric that still needs higher confidence gets
+            # its own select_windows call so the context window is metric-appropriate.
+            _needs_fallback = [
+                m for m in all_metrics
+                if _ctx_selector.needs_fallback(llm_by_metric.get(m), db)
+            ]
+            for _fb_metric in _needs_fallback:
+                _fb_windows = _ctx_selector.select_windows(
+                    report['id'], _clean_text, _fb_metric, db
+                )
+                for _fb_window in _fb_windows[1:]:
+                    log.debug(
+                        "Fallback window %d: retrying %s for %s %s",
+                        _fb_window['window_index'], _fb_metric,
+                        ticker, report.get('report_date'),
+                    )
+                    _fb_results, _ = _run_llm_batch(
+                        llm_interpreter, _fb_window['text'], [_fb_metric], ticker=ticker
+                    )
+                    if _fb_metric in _fb_results and not _ctx_selector.needs_fallback(
+                        _fb_results[_fb_metric], db
+                    ):
+                        llm_by_metric[_fb_metric] = _fb_results[_fb_metric]
+                        break
+
         for metric in all_metrics:
             regex_best = regex_by_metric.get(metric)
             # Skip metrics with no data from either source when LLM not available
@@ -775,13 +859,14 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 confidence_threshold=CONFIDENCE_REVIEW_THRESHOLD,
                 summary=summary,
                 attribution=attribution,
-                llm_extractor=llm_extractor,
+                llm_interpreter=llm_interpreter,
+                metric_rule=metric_rules_by_name.get(metric),
             )
 
         # Second-pass: try to fill prior-period gaps if LLM found figures for last month
         if llm_available:
             _try_gap_fill(
-                report, db, llm_extractor, llm_text, all_metrics,
+                report, db, llm_interpreter, llm_text, all_metrics,
                 CONFIDENCE_REVIEW_THRESHOLD, summary,
             )
 
@@ -793,8 +878,9 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             report.get('id'), report.get('ticker'), e, exc_info=True,
         )
         summary.errors += 1
+        db.mark_report_extraction_failed(report['id'], str(e)[:500])
+        return summary
 
-    finally:
-        db.mark_report_extracted(report['id'])
+    db.mark_report_extracted(report['id'])
 
     return summary

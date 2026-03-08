@@ -3,118 +3,231 @@
 
 {% block styles %}
 <style>
-.scorecard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
-.scorecard-card { background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 1rem; }
-.scorecard-ticker { font-weight: 700; font-size: 1rem; color: var(--theme-accent); }
-.scorecard-name   { font-size: 0.78rem; color: var(--theme-text-muted); margin-bottom: 0.5rem; }
-.scorecard-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.scorecard-metric { }
-.scorecard-metric-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--theme-text-muted); }
-.scorecard-metric-value { font-size: 0.9rem; font-weight: 600; color: var(--theme-text-primary); font-family: ui-monospace, monospace; }
-.scorecard-metric-period { font-size: 0.65rem; color: var(--theme-text-muted); }
-
 .summary-strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 1rem; }
 .summary-box { background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 12px 16px; min-width: 120px; }
 .summary-label { font-size: 0.7rem; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 .summary-value { font-size: 1.4rem; font-weight: 600; color: var(--theme-text-primary); }
+
+/* Split scorecard table */
+.scorecard-wrap { overflow-x: auto; }
+.scorecard-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; table-layout: fixed; }
+.scorecard-table th, .scorecard-table td { padding: 5px 8px; border-bottom: 1px solid var(--theme-border); white-space: nowrap; }
+.scorecard-table thead th { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--theme-text-muted); font-weight: 600; background: var(--theme-bg-secondary); }
+
+/* Source group headers */
+.th-source-monthly { background: #0d2b1a; color: #4ade80; border-bottom: 2px solid #4ade80; text-align: center; }
+.th-source-sec     { background: #0d1f3b; color: #60a5fa; border-bottom: 2px solid #60a5fa; text-align: center; }
+
+/* Column divider between the two halves */
+.col-divider { border-left: 2px solid var(--theme-border); }
+
+/* Ticker column */
+.td-ticker { font-weight: 700; color: var(--theme-accent); width: 64px; }
+.td-name   { font-size: 0.72rem; color: var(--theme-text-muted); width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Value cells */
+.sc-val { font-family: ui-monospace, monospace; font-weight: 600; color: var(--theme-text-primary); }
+.sc-per { font-size: 0.63rem; color: var(--theme-text-muted); }
+.sc-empty { color: var(--theme-text-muted); }
+.sc-stale .sc-val { color: var(--theme-text-muted); }
+.sc-stale .sc-per { color: #854d0e; }
+
+/* Alternating rows */
+.scorecard-table tbody tr:nth-child(even) td { background: var(--theme-bg-secondary); }
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem" data-spec-id="1.0">
-  <h1 class="page-title" style="margin:0"><span class="spec-id">1.0</span>BTC Miners - Sector Scorecard</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+  <h1 class="page-title" style="margin:0">BTC Miners - Sector Scorecard</h1>
   <a href="/ops" class="btn btn-secondary btn-sm">Operations →</a>
 </div>
 
 <div id="summary-strip" class="summary-strip">
-  <div class="summary-box">
-    <div class="summary-label">Companies</div>
-    <div class="summary-value" id="stat-companies">—</div>
-  </div>
-  <div class="summary-box">
-    <div class="summary-label">Data Points</div>
-    <div class="summary-value" id="stat-datapoints">—</div>
-  </div>
-  <div class="summary-box">
-    <div class="summary-label">Pending Review</div>
-    <div class="summary-value" id="stat-review">—</div>
-  </div>
-  <div class="summary-box">
-    <div class="summary-label">Coverage</div>
-    <div class="summary-value" id="stat-coverage">—</div>
-  </div>
+  <div class="summary-box"><div class="summary-label">Companies</div><div class="summary-value" id="stat-companies">—</div></div>
+  <div class="summary-box"><div class="summary-label">Data Points</div><div class="summary-value" id="stat-datapoints">—</div></div>
+  <div class="summary-box"><div class="summary-label">Pending Review</div><div class="summary-value" id="stat-review">—</div></div>
+  <div class="summary-box"><div class="summary-label">Coverage</div><div class="summary-value" id="stat-coverage">—</div></div>
 </div>
 
-<div data-spec-id="1.1" style="margin-bottom:0.5rem">
-  <div style="font-size:0.9rem;font-weight:600">
-    <span class="spec-id">1.1</span>Scorecard Table <span class="source-badge source-badge-data">DATA</span>
-  </div>
-</div>
-
-<div id="scorecard-grid" class="scorecard-grid" data-spec-id="1.1">
-  {% for c in companies %}
-  <div class="scorecard-card" data-ticker="{{ c.ticker | e }}">
-    <div class="scorecard-ticker">{{ c.ticker }}</div>
-    <div class="scorecard-name">{{ c.name }}</div>
-    <div class="scorecard-metrics" id="metrics-{{ c.ticker | e }}">
-      <div style="font-size:0.78rem;color:var(--theme-text-muted);grid-column:span 2">Loading…</div>
-    </div>
-  </div>
-  {% endfor %}
+<div class="scorecard-wrap" data-spec-id="1.1">
+  <span class="spec-id" style="display:none">1.1</span>
+  <span class="source-badge source-badge-data" style="display:none">DATA</span>
+  <table class="scorecard-table" id="scorecard-table">
+    <thead>
+      <tr id="thead-sources">
+        <th colspan="2"></th>
+        <!-- source group headers injected by JS -->
+      </tr>
+      <tr id="thead-metrics">
+        <th class="td-ticker">Ticker</th>
+        <th class="td-name">Company</th>
+        <!-- metric headers injected by JS -->
+      </tr>
+    </thead>
+    <tbody id="scorecard-body">
+      <tr><td colspan="20" style="color:var(--theme-text-muted);padding:1rem">Loading…</td></tr>
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const METRIC_LABELS = {
+  production_btc:        'Production',
+  sold_btc:              'Sold',
+  hashrate_eh:           'Hashrate',
+  hodl_btc:              'HODL',
+  hodl_btc_unrestricted: 'HODL (unenc.)',
+  encumbered_btc:        'Encumbered',
+  ai_hpc_mw:             'AI/HPC MW',
+};
+
+// How many months back before a value is considered stale (per source type)
+const STALE_MONTHS = { monthly: 3, sec: 6 };
+
 document.addEventListener('DOMContentLoaded', function() {
   loadStatus();
   loadScorecards();
 });
 
 async function loadStatus() {
-  const resp = await fetch('/api/status');
-  if (!resp.ok) return;
-  const data = await resp.json();
-  const d = data.data || {};
+  const r = await fetch('/api/status');
+  if (!r.ok) return;
+  const d = (await r.json()).data || {};
   document.getElementById('stat-companies').textContent  = d.companies ?? '—';
   document.getElementById('stat-datapoints').textContent = d.data_points != null ? d.data_points.toLocaleString() : '—';
   document.getElementById('stat-review').textContent     = d.pending_review ?? '—';
+  fetch('/api/coverage/summary')
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data?.success) return;
+      const total = data.data.total_cells || 0, filled = data.data.data_cells || 0;
+      if (total > 0) document.getElementById('stat-coverage').textContent = Math.round(100 * filled / total) + '%';
+    }).catch(() => {});
+}
+
+function formatPeriod(p) {
+  if (!p) return '';
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let m;
+  m = p.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (m) return MONTHS[parseInt(m[2]) - 1] + ' ' + m[1];
+  m = p.match(/^(\d{4})-Q(\d)$/);
+  if (m) return 'Q' + m[2] + ' ' + m[1];
+  m = p.match(/^(\d{4})-FY$/);
+  if (m) return 'FY ' + m[1];
+  return p;
+}
+
+function periodAge(p) {
+  // Returns age in months relative to today. Null if unparseable.
+  if (!p) return null;
+  let year, month;
+  let m;
+  m = p.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (m) { year = +m[1]; month = +m[2]; }
+  m = p.match(/^(\d{4})-Q(\d)$/);
+  if (m) { year = +m[1]; month = +m[2] * 3; }
+  m = p.match(/^(\d{4})-FY$/);
+  if (m) { year = +m[1]; month = 12; }
+  if (!year) return null;
+  const now = new Date();
+  return (now.getFullYear() - year) * 12 + (now.getMonth() + 1 - month);
+}
+
+function fmtValue(v) {
+  if (v == null) return '—';
+  if (Math.abs(v) >= 1000) return v.toLocaleString(undefined, {maximumFractionDigits: 0});
+  return v.toLocaleString(undefined, {maximumFractionDigits: 2});
+}
+
+function cellHtml(dp, staleMonths) {
+  if (!dp || dp.value == null) return '<span class="sc-empty">—</span>';
+  const age = periodAge(dp.period);
+  const stale = age != null && age > staleMonths;
+  const cls = stale ? 'sc-stale' : '';
+  return '<div class="' + cls + '">'
+    + '<span class="sc-val">' + escapeHtml(fmtValue(dp.value)) + '</span>'
+    + '<br><span class="sc-per">' + escapeHtml(formatPeriod(dp.period)) + '</span>'
+    + '</div>';
 }
 
 async function loadScorecards() {
-  // Load coverage summary for coverage % stat
-  fetch('/api/coverage/summary')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
-      if (!data || !data.success) return;
-      const total = data.data.total_cells || 0;
-      const filled = data.data.data_cells || 0;
-      if (total > 0) {
-        document.getElementById('stat-coverage').textContent = Math.round(100 * filled / total) + '%';
-      }
-    })
-    .catch(function() {});
+  const r = await fetch('/api/scorecard');
+  if (!r.ok) return;
+  const payload = await r.json();
+  const companies = payload.data?.companies || {};
+  const metrics   = payload.data?.metrics   || [];
 
-  // Load latest scorecard data for each company
-  const resp = await fetch('/api/scorecard');
-  if (!resp.ok) return;
-  const data = await resp.json();
-  const cards = data.data?.companies || {};
-  Object.keys(cards).forEach(function(ticker) {
-    const el = document.getElementById('metrics-' + ticker);
-    if (!el) return;
-    const metrics = cards[ticker];
-    if (!metrics || !metrics.length) {
-      el.innerHTML = '<div style="font-size:0.75rem;color:var(--theme-text-muted);grid-column:span 2">No data</div>';
-      return;
-    }
-    el.innerHTML = metrics.map(function(m) {
-      return '<div class="scorecard-metric">'
-        + '<div class="scorecard-metric-label">' + escapeHtml(m.label || m.metric) + '</div>'
-        + '<div class="scorecard-metric-value">' + (m.value != null ? escapeHtml(m.unit ? m.value + ' ' + m.unit : String(m.value)) : '—') + '</div>'
-        + '<div class="scorecard-metric-period">' + escapeHtml(m.period || '') + '</div>'
-        + '</div>';
-    }).join('');
+  // Build header rows
+  const srcRow = document.getElementById('thead-sources');
+  const metRow = document.getElementById('thead-metrics');
+
+  // Monthly group header
+  const thMonthly = document.createElement('th');
+  thMonthly.colSpan = metrics.length;
+  thMonthly.className = 'th-source-monthly col-divider';
+  thMonthly.textContent = 'Monthly Press Releases / 8-K';
+  srcRow.appendChild(thMonthly);
+
+  // SEC group header
+  const thSec = document.createElement('th');
+  thSec.colSpan = metrics.length;
+  thSec.className = 'th-source-sec col-divider';
+  thSec.textContent = 'SEC Filings (10-Q / 10-K)';
+  srcRow.appendChild(thSec);
+
+  // Metric sub-headers — monthly
+  metrics.forEach((m, i) => {
+    const th = document.createElement('th');
+    th.textContent = METRIC_LABELS[m] || m;
+    if (i === 0) th.className = 'col-divider';
+    metRow.appendChild(th);
+  });
+  // Metric sub-headers — SEC
+  metrics.forEach((m, i) => {
+    const th = document.createElement('th');
+    th.textContent = METRIC_LABELS[m] || m;
+    if (i === 0) th.className = 'col-divider';
+    metRow.appendChild(th);
+  });
+
+  // Body rows
+  const tbody = document.getElementById('scorecard-body');
+  tbody.innerHTML = '';
+  const tickers = Object.keys(companies).sort();
+  if (!tickers.length) {
+    tbody.innerHTML = '<tr><td colspan="20" style="color:var(--theme-text-muted);padding:1rem">No data</td></tr>';
+    return;
+  }
+
+  tickers.forEach(ticker => {
+    const co = companies[ticker];
+    const tr = document.createElement('tr');
+
+    // Ticker + name
+    tr.innerHTML = '<td class="td-ticker">' + escapeHtml(ticker) + '</td>'
+      + '<td class="td-name" title="' + escapeHtml(co.name || '') + '">' + escapeHtml(co.name || '') + '</td>';
+
+    // Monthly cells
+    metrics.forEach((m, i) => {
+      const td = document.createElement('td');
+      if (i === 0) td.className = 'col-divider';
+      td.innerHTML = cellHtml(co.monthly?.[m], STALE_MONTHS.monthly);
+      tr.appendChild(td);
+    });
+
+    // SEC cells
+    metrics.forEach((m, i) => {
+      const td = document.createElement('td');
+      if (i === 0) td.className = 'col-divider';
+      td.innerHTML = cellHtml(co.sec?.[m], STALE_MONTHS.sec);
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
   });
 }
 </script>

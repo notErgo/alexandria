@@ -544,12 +544,169 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   color: var(--theme-text-muted);
   min-height: 1em;
 }
+
+/* ── Source toggle strip ──────────────────────────────────────────────────── */
+.source-toggle {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--theme-border);
+  padding-bottom: 0.4rem;
+}
+.source-toggle-btn {
+  padding: 0.28rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid var(--theme-border);
+  background: transparent;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: background 0.1s, color 0.1s;
+}
+.source-toggle-btn:hover { background: var(--theme-bg-secondary); color: var(--theme-text-primary); }
+.source-toggle-btn.active {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: #fff;
+}
+
+/* ── Finalized badge ─────────────────────────────────────────────────────── */
+.badge-final {
+  display: inline-block;
+  background: var(--theme-success, #10b981);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 0 0.28rem;
+  border-radius: 3px;
+  margin-left: 3px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+
+/* ── Interpret tab ──────────────────────────────────────────────────────── */
+#view-interpret {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.interp-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.4rem;
+}
+#interp-reconcile-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+#interp-reconcile-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+#interp-reconcile-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+}
+.interp-commentary {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.82rem;
+  resize: vertical;
+  min-height: 60px;
+}
+.suggestion-card {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.suggestion-card .sug-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.suggestion-card .sug-rationale {
+  color: var(--theme-text-secondary);
+  font-size: 0.78rem;
+}
+.suggestion-card .sug-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+#staging-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+#staging-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+#staging-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+}
+.danger-zone {
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+.danger-zone summary {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-danger, #ef4444);
+  cursor: pointer;
+  user-select: none;
+}
+.danger-zone .dz-body {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.danger-zone .dz-confirm-input {
+  padding: 0.2rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.8rem;
+  width: 200px;
+}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="md-page">
-  <h1 class="page-title" style="margin:0" data-spec-id="5.0"><span class="spec-id">5.0</span>Miner Data</h1>
+  <h1 class="page-title" style="margin:0" data-spec-id="MD5.0"><span class="spec-id">5.0</span>Miner Data</h1>
 
   <!-- ── Company tabs ─────────────────────────────────────────────────── -->
   <div id="company-tabs" class="md-tabs">
@@ -558,6 +715,15 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
     </span>
   </div>
 
+  <!-- ── Source toggle strip ─────────────────────────────────────────── -->
+  <div class="source-toggle">
+    <button class="source-toggle-btn active" data-view="monthly" onclick="switchView('monthly')">Monthly PRs / 8-K</button>
+    <button class="source-toggle-btn" data-view="sec" onclick="switchView('sec')">SEC Filings (10-Q / 10-K)</button>
+    <button class="source-toggle-btn" data-view="interpret" onclick="switchView('interpret')">Interpret</button>
+  </div>
+
+  <!-- ── Monthly view ─────────────────────────────────────────────────── -->
+  <div id="view-monthly">
   <!-- ── Upper area ──────────────────────────────────────────────────── -->
   <div class="md-upper">
 
@@ -567,7 +733,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
     </div>
 
     <!-- Right: filters + table -->
-    <div class="md-table-panel" data-spec-id="5.1">
+    <div class="md-table-panel" data-spec-id="MD5.1">
       <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
         <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
       </div>
@@ -617,9 +783,146 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
     </div>
 
   </div><!-- /.md-upper -->
+  </div><!-- /#view-monthly -->
+
+  <!-- ── SEC view ────────────────────────────────────────────────────── -->
+  <div id="view-sec" style="display:none">
+    <div class="md-upper">
+      <div class="md-info-card" id="sec-info-card" style="font-size:0.82rem;color:var(--theme-text-secondary)">
+        <div class="md-info-placeholder">Select a company to load SEC data.</div>
+      </div>
+      <div class="md-table-panel">
+        <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+          SEC Filings <span class="source-badge source-badge-data">10-Q / 10-K</span>
+        </div>
+        <div class="md-table-scroll">
+          <table id="sec-timeline-table">
+            <thead>
+              <tr id="sec-thead-row">
+                <th>Period</th>
+                <!-- columns injected by buildSecHeaders() -->
+                <th data-col="sec-source">Src</th>
+              </tr>
+            </thead>
+            <tbody id="sec-timeline-tbody">
+              <tr><td colspan="10" class="md-table-empty">Select a company to load SEC data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div><!-- /#view-sec -->
+
+  <!-- ── Interpret view ──────────────────────────────────────────────── -->
+  <div id="view-interpret" style="display:none">
+
+    <!-- Side-by-side reconciliation summary -->
+    <div>
+      <div class="interp-section-title">Reconciliation Summary</div>
+      <div id="interp-reconcile-wrap" style="overflow-x:auto">
+        <table id="interp-reconcile-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Metric</th>
+              <th>Monthly Value</th><th>SEC Value</th><th>Finalized</th>
+            </tr>
+          </thead>
+          <tbody id="interp-reconcile-tbody">
+            <tr><td colspan="5" class="md-table-empty">Select a company and switch to this tab.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Analyst commentary -->
+    <div>
+      <div class="interp-section-title">Analyst Commentary</div>
+      <textarea id="interp-commentary" class="interp-commentary"
+        placeholder="Add context or reconciliation notes for the LLM prompt…"></textarea>
+    </div>
+
+    <!-- LLM reprompt -->
+    <div>
+      <button class="btn btn-primary btn-sm" id="reprompt-btn" onclick="doReprompt()">Reprompt LLM</button>
+      <span id="reprompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+    </div>
+
+    <!-- Suggestion cards -->
+    <div id="suggestions-area" style="display:none">
+      <div class="interp-section-title">Suggestions</div>
+      <div id="suggestion-cards" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+    </div>
+
+    <!-- Staging list -->
+    <div id="staging-area" style="display:none">
+      <div class="interp-section-title">Staged for Finalization</div>
+      <table id="staging-table">
+        <thead>
+          <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody id="staging-tbody"></tbody>
+      </table>
+      <div style="margin-top:0.5rem">
+        <button class="btn btn-primary btn-sm" onclick="finalizeSelected()">Finalize Selected</button>
+        <span id="finalize-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      </div>
+    </div>
+
+    <!-- Already-finalized values -->
+    <div>
+      <div class="interp-section-title">Finalized Values</div>
+      <div id="finalized-list-wrap" style="overflow-x:auto">
+        <table id="finalized-table">
+          <thead>
+            <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th>Updated</th><th></th></tr>
+          </thead>
+          <tbody id="finalized-tbody">
+            <tr><td colspan="7" class="md-table-empty">No finalized values.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <details class="danger-zone">
+      <summary>Danger Zone</summary>
+      <div class="dz-body">
+        <div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for <span id="dz-ticker-label">—</span></div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Removes all finalized values for this ticker. Raw pipeline data is untouched.
+            Type <code id="dz-confirm-word">CLEAR_FINAL_TICKER</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="text" class="dz-confirm-input" id="dz-ticker-confirm-input"
+              placeholder="Type confirmation word">
+            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Clear Ticker Final</button>
+            <span id="dz-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="dz-purge-mode" style="padding:0.2rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem">
+              <option value="clear">clear</option>
+              <option value="archive">archive</option>
+            </select>
+            <input type="text" class="dz-confirm-input" id="dz-global-confirm-input"
+              placeholder="CLEAR_FINAL_ALL">
+            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Purge All</button>
+            <span id="dz-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+  </div><!-- /#view-interpret -->
 
   <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
-  <div id="doc-panel" data-spec-id="5.2">
+  <div id="doc-panel" data-spec-id="MD5.2">
     <div class="doc-panel-header">
       <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Doc Panel</span> <span class="source-badge source-badge-data">DATA</span></div>
       <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open rendered HTML in new tab" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Rendered</button>
@@ -790,6 +1093,11 @@ async function selectCompany(ticker) {
   localStorage.setItem('miner-data-ticker', ticker);
   closeDocPanel();
 
+  // Reset cached SEC + finalized data on company switch
+  _secRows = [];
+  _finalizedValues = [];
+  _stagedValues = [];
+
   // Highlight active tab
   document.querySelectorAll('.md-tab').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-ticker') === ticker);
@@ -802,7 +1110,7 @@ async function selectCompany(ticker) {
     `<div class="md-info-placeholder"><span class="spin"></span> Loading…</div>`;
 
   try {
-    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/timeline`);
+    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/timeline?source=monthly`);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${resp.status}`);
@@ -820,6 +1128,10 @@ async function selectCompany(ticker) {
     renderInfoCard(data.company, data.stats);
     renderTable(_rows);
     makeSortable('timeline-table');
+
+    // If another view is active, also refresh it
+    if (_currentView === 'sec') loadSecData(ticker);
+    if (_currentView === 'interpret') loadInterpretData(ticker);
 
   } catch (err) {
     document.getElementById('timeline-tbody').innerHTML =
@@ -944,10 +1256,11 @@ function renderTable(allRows) {
       }
       if (m && m.value != null) {
         const formatted = escapeHtml(fmtValue(m) || '');
-        const badge = m.extraction_method
+        const methodBadge = m.extraction_method
           ? `<span class="method-badge">${escapeHtml(m.extraction_method)}</span>`
           : '';
-        return `<td class="td-value">${formatted}${badge}</td>`;
+        const finalBadge = m.is_finalized ? `<span class="badge-final">F</span>` : '';
+        return `<td class="td-value">${formatted}${methodBadge}${finalBadge}</td>`;
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
@@ -1295,6 +1608,416 @@ function pollIngestProgress(taskId, source) {
       document.querySelectorAll('.btn-ingest').forEach(function(b) { b.disabled = false; });
     }
   }, 1500);
+}
+
+// ── Source view switching ─────────────────────────────────────────────────
+let _currentView = 'monthly';
+let _secRows = [];
+let _stagedValues = [];   // [{period, metric, value, unit, analyst_note}]
+let _finalizedValues = [];
+
+function switchView(view) {
+  _currentView = view;
+  document.querySelectorAll('.source-toggle-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-view') === view);
+  });
+  document.getElementById('view-monthly').style.display = view === 'monthly' ? '' : 'none';
+  document.getElementById('view-sec').style.display = view === 'sec' ? '' : 'none';
+  document.getElementById('view-interpret').style.display = view === 'interpret' ? '' : 'none';
+
+  if (view === 'sec' && _ticker && _secRows.length === 0) {
+    loadSecData(_ticker);
+  }
+  if (view === 'interpret' && _ticker) {
+    loadInterpretData(_ticker);
+  }
+}
+
+// ── SEC view ──────────────────────────────────────────────────────────────
+let _secMetricKeys = [];
+
+async function loadSecData(ticker) {
+  document.getElementById('sec-timeline-tbody').innerHTML =
+    `<tr><td colspan="10" class="md-table-empty"><span class="spin"></span> Loading…</td></tr>`;
+  try {
+    const resp = await fetch(`/api/miner/${encodeURIComponent(ticker)}/timeline?source=sec`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const data = body.data;
+    _secRows = data.rows || [];
+    _secMetricKeys = data.metric_keys || [];
+    buildSecHeaders(_secMetricKeys, data.metric_labels || {});
+    renderSecTable(_secRows);
+    // Update info card
+    document.getElementById('sec-info-card').innerHTML =
+      `<div class="md-info-name">${escapeHtml(data.company.name)}</div>` +
+      `<div class="md-info-row"><span class="md-info-label">Periods</span><span class="md-info-value">${data.stats.total_periods}</span></div>`;
+  } catch (err) {
+    document.getElementById('sec-timeline-tbody').innerHTML =
+      `<tr><td colspan="10" class="md-table-empty" style="color:var(--theme-danger)">Error: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function buildSecHeaders(metricKeys, metricLabels) {
+  const theadRow = document.getElementById('sec-thead-row');
+  Array.from(theadRow.querySelectorAll('th[data-col]')).forEach(function(th) {
+    if (th.getAttribute('data-col') !== 'sec-source') th.remove();
+  });
+  const srcTh = theadRow.querySelector('th[data-col="sec-source"]');
+  metricKeys.forEach(function(key) {
+    const label = (metricLabels && metricLabels[key]) || key;
+    const th = document.createElement('th');
+    th.setAttribute('data-col', 'sec-' + key);
+    th.textContent = label;
+    theadRow.insertBefore(th, srcTh);
+  });
+}
+
+function renderSecTable(rows) {
+  const tbody = document.getElementById('sec-timeline-tbody');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${_secMetricKeys.length + 2}" class="md-table-empty">No SEC data found.</td></tr>`;
+    return;
+  }
+  const parts = [];
+  for (const row of rows) {
+    const metricCells = _secMetricKeys.map(function(metric) {
+      const m = row.metrics[metric];
+      if (!m || m.value == null) return `<td class="td-empty">—</td>`;
+      const finalBadge = m.is_finalized ? `<span class="badge-final">F</span>` : '';
+      return `<td class="td-value">${escapeHtml(fmtValue(m) || '')}${finalBadge}</td>`;
+    });
+    const srcType = row.source_type || '';
+    const srcUrl  = row.source_url  || '';
+    const srcCell = srcType
+      ? `<td class="td-source-col"><a href="${escapeHtml(srcUrl)}" target="_blank" rel="noopener" title="${escapeHtml(srcType)}" style="color:var(--theme-accent);text-decoration:none">●</a></td>`
+      : `<td class="td-source-col">—</td>`;
+    parts.push(`<tr>
+      <td class="td-period">${escapeHtml(row.period_label)}</td>
+      ${metricCells.join('')}${srcCell}
+    </tr>`);
+  }
+  tbody.innerHTML = parts.join('');
+}
+
+// ── Interpret tab ─────────────────────────────────────────────────────────
+async function loadInterpretData(ticker) {
+  // Load finalized values
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(ticker)}/final`);
+    if (resp.ok) {
+      const body = await resp.json();
+      if (body.success) {
+        _finalizedValues = body.data || [];
+        renderFinalizedTable();
+        renderReconcileTable();
+      }
+    }
+  } catch(e) {}
+  // Update danger zone confirmation word
+  const word = `CLEAR_FINAL_${ticker}`;
+  const label = document.getElementById('dz-ticker-label');
+  const confWord = document.getElementById('dz-confirm-word');
+  if (label) label.textContent = ticker;
+  if (confWord) confWord.textContent = word;
+  // Restore commentary from localStorage
+  const key = `interp-commentary-${ticker}`;
+  const saved = localStorage.getItem(key);
+  const ta = document.getElementById('interp-commentary');
+  if (ta && saved !== null) ta.value = saved;
+  if (ta) {
+    ta.oninput = function() { localStorage.setItem(key, ta.value); };
+  }
+}
+
+function renderReconcileTable() {
+  const tbody = document.getElementById('interp-reconcile-tbody');
+  // Build a merged map: {period_metric: {period, metric, monthly_val, sec_val, final_val}}
+  const map = {};
+  function key(p, m) { return p + '|' + m; }
+  (_rows || []).forEach(function(row) {
+    Object.keys(row.metrics || {}).forEach(function(metric) {
+      const c = row.metrics[metric];
+      if (!c || c.value == null) return;
+      const k = key(row.period_label, metric);
+      if (!map[k]) map[k] = {period: row.period_label, metric, monthly: null, sec: null, final: null};
+      map[k].monthly = c.value;
+    });
+  });
+  (_secRows || []).forEach(function(row) {
+    Object.keys(row.metrics || {}).forEach(function(metric) {
+      const c = row.metrics[metric];
+      if (!c || c.value == null) return;
+      const k = key(row.period_label, metric);
+      if (!map[k]) map[k] = {period: row.period_label, metric, monthly: null, sec: null, final: null};
+      map[k].sec = c.value;
+    });
+  });
+  (_finalizedValues || []).forEach(function(f) {
+    const p = f.period ? f.period.slice(0, 7) : '';
+    const k = key(p, f.metric);
+    if (!map[k]) map[k] = {period: p, metric: f.metric, monthly: null, sec: null, final: null};
+    map[k].final = f.value;
+  });
+  const entries = Object.values(map).sort(function(a, b) {
+    return b.period.localeCompare(a.period) || a.metric.localeCompare(b.metric);
+  });
+  if (entries.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="md-table-empty">No data to reconcile.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = entries.map(function(e) {
+    const finalCell = e.final != null
+      ? `<span class="badge-final">F</span> ${e.final.toLocaleString()}`
+      : '—';
+    return `<tr>
+      <td>${escapeHtml(e.period)}</td>
+      <td>${escapeHtml(e.metric)}</td>
+      <td>${e.monthly != null ? e.monthly.toLocaleString() : '—'}</td>
+      <td>${e.sec != null ? e.sec.toLocaleString() : '—'}</td>
+      <td>${finalCell}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderFinalizedTable() {
+  const tbody = document.getElementById('finalized-tbody');
+  if (!_finalizedValues || _finalizedValues.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="md-table-empty">No finalized values.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = _finalizedValues.map(function(f, i) {
+    const updated = (f.updated_at || f.created_at || '').slice(0, 10);
+    return `<tr>
+      <td>${escapeHtml(f.period ? f.period.slice(0,7) : '')}</td>
+      <td>${escapeHtml(f.metric)}</td>
+      <td>${f.value != null ? f.value.toLocaleString() : ''}</td>
+      <td>${escapeHtml(f.unit || '')}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(f.analyst_note || '')}</td>
+      <td>${escapeHtml(updated)}</td>
+      <td><button class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:0.15rem 0.4rem"
+        onclick="unfinalize(${i})">Revise</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function doReprompt() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  const commentary = document.getElementById('interp-commentary').value.trim();
+  const btn = document.getElementById('reprompt-btn');
+  const statusEl = document.getElementById('reprompt-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Calling LLM…';
+  document.getElementById('suggestions-area').style.display = 'none';
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reprompt`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({commentary}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const suggestions = body.data.suggestions || [];
+    if (suggestions.length === 0) {
+      statusEl.textContent = 'No suggestions returned.';
+    } else {
+      statusEl.textContent = `${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'}`;
+      renderSuggestions(suggestions);
+      document.getElementById('suggestions-area').style.display = '';
+    }
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    showToast(`Reprompt failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderSuggestions(suggestions) {
+  const container = document.getElementById('suggestion-cards');
+  container.innerHTML = suggestions.map(function(s, i) {
+    const periodLabel = s.period ? s.period.slice(0, 7) : s.period;
+    return `<div class="suggestion-card" id="sug-card-${i}">
+      <div class="sug-header">
+        <span>${escapeHtml(s.metric)}</span>
+        <span style="color:var(--theme-text-muted)">${escapeHtml(periodLabel)}</span>
+        <span style="color:var(--theme-accent);font-weight:700">${(s.value || 0).toLocaleString()}</span>
+        <span style="color:var(--theme-text-muted);font-size:0.75rem">(conf: ${(s.confidence || 0).toFixed(2)})</span>
+      </div>
+      <div class="sug-rationale">${escapeHtml(s.rationale || '')}</div>
+      <div class="sug-actions">
+        <button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem"
+          onclick="acceptSuggestion(${i})">Accept</button>
+        <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem"
+          onclick="document.getElementById('sug-card-${i}').style.opacity='0.4'">Skip</button>
+      </div>
+    </div>`;
+  }).join('');
+  // Store suggestions for accept callbacks
+  container._suggestions = suggestions;
+}
+
+function acceptSuggestion(idx) {
+  const container = document.getElementById('suggestion-cards');
+  const suggestions = container._suggestions || [];
+  const s = suggestions[idx];
+  if (!s) return;
+  _stagedValues.push({
+    period: s.period,
+    metric: s.metric,
+    value:  s.value,
+    unit:   '',
+    analyst_note: '',
+    source_ref: '',
+  });
+  document.getElementById(`sug-card-${idx}`).style.opacity = '0.4';
+  renderStagingTable();
+  document.getElementById('staging-area').style.display = '';
+}
+
+function renderStagingTable() {
+  const tbody = document.getElementById('staging-tbody');
+  if (_stagedValues.length === 0) {
+    tbody.innerHTML = '';
+    document.getElementById('staging-area').style.display = 'none';
+    return;
+  }
+  tbody.innerHTML = _stagedValues.map(function(v, i) {
+    return `<tr>
+      <td>${escapeHtml(v.period ? v.period.slice(0,7) : '')}</td>
+      <td>${escapeHtml(v.metric)}</td>
+      <td><input type="number" value="${v.value}" step="any"
+        style="width:90px;padding:0.15rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text-primary);font-size:0.8rem"
+        onchange="_stagedValues[${i}].value = parseFloat(this.value)"></td>
+      <td><input type="text" value="${escapeHtml(v.unit)}" placeholder="BTC"
+        style="width:55px;padding:0.15rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text-primary);font-size:0.8rem"
+        onchange="_stagedValues[${i}].unit = this.value"></td>
+      <td><input type="text" value="${escapeHtml(v.analyst_note)}" placeholder="Note"
+        style="width:160px;padding:0.15rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text-primary);font-size:0.8rem"
+        onchange="_stagedValues[${i}].analyst_note = this.value"></td>
+      <td><button class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:0.15rem 0.4rem"
+        onclick="removeStaged(${i})">Remove</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function removeStaged(i) {
+  _stagedValues.splice(i, 1);
+  renderStagingTable();
+}
+
+async function finalizeSelected() {
+  if (!_ticker || _stagedValues.length === 0) return;
+  const btn = document.querySelector('#staging-area button.btn-primary');
+  const statusEl = document.getElementById('finalize-status');
+  if (btn) btn.disabled = true;
+  statusEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: _stagedValues}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const count = body.data.count;
+    showToast(`Finalized ${count} value${count !== 1 ? 's' : ''}`);
+    statusEl.textContent = `${count} saved`;
+    _stagedValues = [];
+    renderStagingTable();
+    loadInterpretData(_ticker);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    showToast(`Finalize failed: ${err.message}`, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function unfinalize(idx) {
+  const f = _finalizedValues[idx];
+  if (!f) return;
+  // Move into staged values for editing
+  _stagedValues.push({
+    period: f.period,
+    metric: f.metric,
+    value:  f.value,
+    unit:   f.unit || '',
+    analyst_note: f.analyst_note || '',
+    source_ref: f.source_ref || '',
+  });
+  renderStagingTable();
+  document.getElementById('staging-area').style.display = '';
+}
+
+async function clearFinalTicker() {
+  if (!_ticker) return;
+  const expectedWord = `CLEAR_FINAL_${_ticker}`;
+  const input = document.getElementById('dz-ticker-confirm-input').value.trim();
+  const statusEl = document.getElementById('dz-ticker-status');
+  if (input !== expectedWord) {
+    statusEl.textContent = `Type "${expectedWord}" to confirm`;
+    statusEl.style.color = 'var(--theme-danger)';
+    return;
+  }
+  statusEl.textContent = 'Clearing…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/final`, {
+      method: 'DELETE',
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const n = body.data.deleted;
+    statusEl.textContent = `Cleared ${n} rows`;
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('dz-ticker-confirm-input').value = '';
+    _finalizedValues = [];
+    renderFinalizedTable();
+    renderReconcileTable();
+    showToast(`Cleared ${n} finalized values for ${_ticker}`);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
+}
+
+async function purgeAllFinal() {
+  const input = document.getElementById('dz-global-confirm-input').value.trim();
+  const statusEl = document.getElementById('dz-global-status');
+  if (input !== 'CLEAR_FINAL_ALL') {
+    statusEl.textContent = 'Type CLEAR_FINAL_ALL to confirm';
+    statusEl.style.color = 'var(--theme-danger)';
+    return;
+  }
+  const mode = document.getElementById('dz-purge-mode').value;
+  statusEl.textContent = 'Purging…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch('/api/interpret/final/purge', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, mode}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const n = body.data.deleted;
+    statusEl.textContent = `Purged ${n} rows`;
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('dz-global-confirm-input').value = '';
+    _finalizedValues = [];
+    renderFinalizedTable();
+    renderReconcileTable();
+    showToast(`Purged ${n} finalized values`);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
 }
 
 async function applyPatternToArchive() {

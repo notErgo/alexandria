@@ -60,7 +60,14 @@ const ReviewPanel = (function () {
     <div class="rp-doc-placeholder">Select a row to view the document.</div>
     <pre class="rp-doc-text" style="display:none"></pre>
     <div class="rp-reprompt-bar" style="display:none">
-      <span class="rp-hint">Select text above, then:</span>
+      <span class="rp-hint">Highlight a value in the text above, select which metric it is, then click Re-extract to run regex + LLM on it:</span>
+      <select class="rp-reprompt-metric">
+        <option value="production_btc">production_btc</option>
+        <option value="hodl_btc">hodl_btc</option>
+        <option value="sold_btc">sold_btc</option>
+        <option value="hashrate_eh">hashrate_eh</option>
+        <option value="realization_rate">realization_rate</option>
+      </select>
       <button class="rp-btn rp-btn-reprompt" data-spec-id="3.6" disabled>Re-extract / LLM Reprompt</button>
     </div>
   </div>
@@ -316,7 +323,6 @@ const ReviewPanel = (function () {
   // ── Internal actions ────────────────────────────────────────────────────────
 
   async function _doReprompt() {
-    if (_currentItemId == null) return;
     const sel = window.getSelection()?.toString().trim();
     if (!sel) return;
 
@@ -324,10 +330,21 @@ const ReviewPanel = (function () {
     if (btn) { btn.disabled = true; btn.textContent = 'Extracting...'; }
 
     try {
-      const resp = await fetch('/api/review/' + _currentItemId + '/reextract', {
+      let url, body;
+      if (_currentItemId != null) {
+        url  = '/api/review/' + _currentItemId + '/reextract';
+        body = {selection: sel};
+      } else {
+        const metricSel = _el('rp-reprompt-metric');
+        const metric = (metricSel && metricSel.value) || _currentMetric;
+        if (!metric) { _setStatus('Choose a metric first.', true); return; }
+        url  = '/api/review/reextract_selection';
+        body = {metric: metric, selection: sel};
+      }
+      const resp = await fetch(url, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({selection: sel}),
+        body: JSON.stringify(body),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(function () { return {}; });
@@ -494,9 +511,7 @@ const ReviewPanel = (function () {
     const btn = _el('rp-btn-reprompt');
     if (!btn) return;
     const sel = window.getSelection();
-    const hasText = sel && sel.toString().trim().length > 0;
-    // Only enable when we have an item ID to reprompt against
-    btn.disabled = !hasText || _currentItemId == null;
+    btn.disabled = !(sel && sel.toString().trim().length > 0);
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -577,6 +592,12 @@ const ReviewPanel = (function () {
       // Pre-fill corrected value
       if (correctedEl) {
         if (doc.regex_value != null) correctedEl.value = doc.regex_value;
+      }
+
+      // Pre-select metric in reprompt dropdown
+      if (doc.metric) {
+        const metricSel = _el('rp-reprompt-metric');
+        if (metricSel) metricSel.value = doc.metric;
       }
 
       // Render doc

@@ -1,0 +1,78 @@
+{
+  "metric": "production_btc",
+  "valid_range": [0, 5000],
+  "unit": "BTC",
+  "conflict_resolution": "highest_confidence",
+  "patterns": [
+    {
+      "id": "prod_1_btc_produced_table",
+      "regex": "(?i)\\bBTC\\s+Produced\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.95,
+      "priority": 0,
+      "_note": "Table row: 'BTC Produced | 713' or 'BTC Produced  2,070'. Optional 1-2 digit PDF footnote guard before value."
+    },
+    {
+      "id": "prod_2_bitcoin_produced_table",
+      "regex": "(?i)\\bBitcoin\\s+Produced\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.95,
+      "priority": 0,
+      "_note": "Table row: 'Bitcoin Produced | 1,202'."
+    },
+    {
+      "id": "prod_3_btc_earned_table",
+      "regex": "(?i)\\bBTC\\s+Earned\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.92,
+      "priority": 0,
+      "_note": "Table row: 'BTC Earned | 269'. Used by CLSK and others."
+    },
+    {
+      "id": "prod_4_bitcoin_mined_table",
+      "regex": "(?i)\\bBitcoin\\s+[Mm]ined\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.90,
+      "priority": 1,
+      "_note": "Table row or label: 'Bitcoin mined: 450'."
+    },
+    {
+      "id": "prod_5_mined_x_btc",
+      "regex": "(?i)\\bmined\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Prose: 'mined 2,070 Bitcoin in July'. No footnote guard needed in prose."
+    },
+    {
+      "id": "prod_6_produced_x_btc",
+      "regex": "(?i)\\bproduced\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Prose: 'produced 1,202 bitcoin in October'."
+    },
+    {
+      "id": "prod_7_x_btc_produced",
+      "regex": "(?i)([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\s+produced\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Inverted form: '713 BTC produced'."
+    },
+    {
+      "id": "prod_8_earned_x_btc",
+      "regex": "(?i)\\bearned\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.83,
+      "priority": 2,
+      "_note": "Prose: 'earned 500 BTC during the month'."
+    },
+    {
+      "id": "prod_9_self_mined_x_btc",
+      "regex": "(?i)\\bself[-\\s]mined\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)?\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Prose: 'self-mined 713 bitcoin'."
+    },
+    {
+      "id": "prod_10_x_self_mined_bitcoin",
+      "regex": "(?i)([\\d,]+(?:\\.\\d+)?)\\s+self[-\\s]mined\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Inverted form: 'produced 1,202 self-mined bitcoin'."
+    }
+  ]
+}

@@ -172,3 +172,168 @@ class TestScrapeModeDispatch:
         with patch.object(scraper, "_scrape_index", return_value="ok") as idx:
             assert scraper.scrape_company(company) == "ok"
             idx.assert_called_once_with(company)
+
+    def test_dispatch_playwright_mode(self):
+        scraper = IRScraper(db=MagicMock(), session=MagicMock())
+        company = {"ticker": "HUT8", "scraper_mode": "playwright", "ir_url": "https://hut8.com/news"}
+        with patch.object(scraper, "_scrape_playwright", return_value="ok") as pw:
+            assert scraper.scrape_company(company) == "ok"
+            pw.assert_called_once_with(company)
+
+
+class TestPlaywrightScraper:
+
+    def _make_company(self, **kwargs):
+        base = {
+            "ticker": "HUT8",
+            "scraper_mode": "playwright",
+            "ir_url": "https://hut8.com/news",
+            "pr_base_url": "https://hut8.com",
+        }
+        base.update(kwargs)
+        return base
+
+    def _make_scraper(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        return IRScraper(db=db, session=MagicMock())
+
+    def test_missing_ir_url_returns_error(self):
+        """playwright mode with no ir_url returns summary with errors=1."""
+        scraper = self._make_scraper()
+        company = self._make_company(ir_url="")
+        result = scraper._scrape_playwright(company)
+        assert result.errors == 1
+        assert result.reports_ingested == 0
+
+    def test_playwright_not_installed_returns_error(self):
+        """If playwright is not installed, returns summary with errors=1 (no crash)."""
+        scraper = self._make_scraper()
+        company = self._make_company()
+        with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
+            result = scraper._scrape_playwright(company)
+        assert result.errors == 1
+        assert result.reports_ingested == 0
+
+    def test_playwright_ingests_production_pr(self):
+        """With mocked Playwright, a matching PR link gets ingested."""
+        scraper = self._make_scraper()
+        company = self._make_company()
+
+        index_html = """<html><body>
+            <a href="/news/hut8-announces-march-2025-bitcoin-production-update">
+                HUT 8 Announces March 2025 Bitcoin Production Update
+            </a>
+        </body></html>"""
+        pr_html = "<html><body><p>March 2025 production: 500 BTC mined.</p></body></html>"
+
+        mock_page = MagicMock()
+        mock_page.content.side_effect = [index_html, pr_html]
+        mock_browser = MagicMock()
+        mock_browser.new_context.return_value.__enter__ = MagicMock()
+        mock_context = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser.new_context.return_value = mock_context
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+
+        with patch("scrapers.ir_scraper.sync_playwright", return_value=mock_pw):
+            result = scraper._scrape_playwright(company)
+
+        assert result.reports_ingested == 1
+        assert result.errors == 0
+        scraper.db.insert_report.assert_called_once()
+        call_kwargs = scraper.db.insert_report.call_args[0][0]
+        assert call_kwargs["ticker"] == "HUT8"
+        assert call_kwargs["source_type"] == "ir_press_release"
+
+    def test_playwright_skips_already_ingested(self):
+        """URLs already in DB are skipped without re-inserting."""
+        scraper = self._make_scraper()
+        scraper.db.report_exists_by_url_hash.return_value = True
+        company = self._make_company()
+
+        index_html = """<html><body>
+            <a href="https://hut8.com/news/hut8-march-2025-bitcoin-production">
+                HUT 8 Announces March 2025 Bitcoin Production Update
+            </a>
+        </body></html>"""
+
+        mock_page = MagicMock()
+        mock_page.content.return_value = index_html
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser.new_context.return_value = mock_context
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+
+        with patch("scrapers.ir_scraper.sync_playwright", return_value=mock_pw):
+            result = scraper._scrape_playwright(company)
+
+        assert result.reports_ingested == 0
+        scraper.db.insert_report.assert_not_called()
+
+    def test_playwright_skips_relative_href_with_empty_base_url(self):
+        """Relative hrefs must be skipped (not concatenated) when pr_base_url is empty."""
+        scraper = self._make_scraper()
+        company = self._make_company(pr_base_url='')
+
+        index_html = """<html><body>
+            <a href="/news/hut8-march-2025-bitcoin-production">
+                HUT 8 Announces March 2025 Bitcoin Production Update
+            </a>
+        </body></html>"""
+
+        mock_page = MagicMock()
+        mock_page.content.return_value = index_html
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser.new_context.return_value = mock_context
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+
+        with patch("scrapers.ir_scraper.sync_playwright", return_value=mock_pw):
+            result = scraper._scrape_playwright(company)
+
+        assert result.reports_ingested == 0
+        scraper.db.insert_report.assert_not_called()
+
+    def test_playwright_filters_non_production_links(self):
+        """Links that are not production PRs are not ingested."""
+        scraper = self._make_scraper()
+        company = self._make_company()
+
+        index_html = """<html><body>
+            <a href="/news/hut8-q3-2025-financial-results">HUT 8 Q3 2025 Financial Results</a>
+            <a href="/news/hut8-prices-convertible-notes">HUT 8 Prices Convertible Notes</a>
+        </body></html>"""
+
+        mock_page = MagicMock()
+        mock_page.content.return_value = index_html
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser.new_context.return_value = mock_context
+
+        mock_pw = MagicMock()
+        mock_pw.__enter__ = MagicMock(return_value=mock_pw)
+        mock_pw.__exit__ = MagicMock(return_value=False)
+        mock_pw.chromium.launch.return_value = mock_browser
+
+        with patch("scrapers.ir_scraper.sync_playwright", return_value=mock_pw):
+            result = scraper._scrape_playwright(company)
+
+        assert result.reports_ingested == 0
+        scraper.db.insert_report.assert_not_called()

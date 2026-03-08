@@ -26,5 +26,5 @@
     "axisLabel": { "color": "#525252" },
     "splitLine": { "lineStyle": { "color": "rgba(0,0,0,0.12)" } }
   },
-  "bar": { "itemStyle": { "borderRadius": 2 } }
+  "bar": { "itemStyle": { "borderRadius": 0 } }
 }

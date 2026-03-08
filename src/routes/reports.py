@@ -24,7 +24,7 @@ def _update_progress(task_id: str, state: dict) -> None:
 
 def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
     """Run extraction over currently unextracted reports and return summary counts."""
-    from extractors.extraction_pipeline import extract_report
+    from interpreters.interpret_pipeline import extract_report
     from app_globals import get_registry
 
     registry = get_registry()
@@ -75,10 +75,11 @@ def _run_archive_ingest(task_id: str) -> None:
             _running_tasks.discard('archive')
 
 
-def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True) -> None:
+def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True, pipeline_run_id: int = None) -> None:
     import requests as req_lib
     from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
+    from orchestration import check_edgar_complete
 
     _update_progress(task_id, {
         'status': 'running',
@@ -86,10 +87,24 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
         'auto_extract': auto_extract,
         'warm_model': warm_model,
     })
+
+    # EDGAR-first guardrail: warn if EDGAR has not been fetched yet
+    try:
+        edgar_check = check_edgar_complete(get_db(), ticker=None)
+        if not edgar_check.complete:
+            log.warning("event=ir_ingest_edgar_prereq_missing warning=%s", edgar_check.warning)
+            _update_progress(task_id, {
+                'status': 'running',
+                'source': 'ir',
+                'edgar_prereq_warning': edgar_check.warning,
+            })
+    except Exception:
+        log.debug("EDGAR prereq check failed (non-fatal)", exc_info=True)
     try:
         db = get_db()
         session = req_lib.Session()
         scraper = IRScraper(db=db, session=session)
+        scraper._pipeline_run_id = pipeline_run_id
         companies = db.get_companies(active_only=True)
         totals = {'reports_ingested': 0, 'data_points_extracted': 0,
                   'review_flagged': 0, 'errors': 0}
@@ -139,7 +154,13 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
             _running_tasks.discard('ir')
 
 
-def _run_edgar_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True) -> None:
+def _run_edgar_ingest(
+    task_id: str,
+    auto_extract: bool = False,
+    warm_model: bool = True,
+    tickers: Optional[list] = None,
+    pipeline_run_id: int = None,
+) -> None:
     import requests as req_lib
     from datetime import date
     from app_globals import get_db
@@ -150,18 +171,25 @@ def _run_edgar_ingest(task_id: str, auto_extract: bool = False, warm_model: bool
         'source': 'edgar',
         'auto_extract': auto_extract,
         'warm_model': warm_model,
+        'tickers': tickers or [],
     })
     try:
         db = get_db()
         session = req_lib.Session()
         connector = EdgarConnector(db=db, session=session)
-        companies = db.get_companies(active_only=True)
+        connector._pipeline_run_id = pipeline_run_id
+        all_companies = db.get_companies(active_only=True)
+        ticker_filter = {t.upper() for t in tickers} if tickers else None
+        companies = [c for c in all_companies if ticker_filter is None or c['ticker'].upper() in ticker_filter]
         since = date(2019, 1, 1)
         totals = {'reports_ingested': 0, 'errors': 0}
         for company in companies:
             if company.get('cik'):
                 s = connector.fetch_all_filings(
-                    cik=company['cik'], ticker=company['ticker'], since_date=since
+                    cik=company['cik'],
+                    ticker=company['ticker'],
+                    since_date=since,
+                    filing_regime=company.get('filing_regime', 'domestic'),
                 )
                 totals['reports_ingested'] += s.reports_ingested
                 totals['errors'] += s.errors
@@ -230,6 +258,106 @@ def _run_edgar_bridge(task_id: str, ticker: Optional[str]) -> None:
             _running_tasks.discard('edgar_bridge')
 
 
+def _run_all_ingest(task_id: str) -> None:
+    """Run archive → IR → EDGAR ingest in sequence under a single task ID.
+
+    Archive phase includes inline LLM extraction (press releases are extracted
+    as they are ingested). IR and EDGAR phases store raw text only; run the
+    Interpret step separately to extract those reports.
+    """
+    import requests as req_lib
+    from datetime import date as _date
+    from app_globals import get_db, get_registry
+    from scrapers.archive_ingestor import ArchiveIngestor
+    from scrapers.ir_scraper import IRScraper
+    from scrapers.edgar_connector import EdgarConnector
+    from config import ARCHIVE_DIR
+
+    totals: dict = {
+        'archive_reports': 0, 'archive_points': 0, 'archive_review': 0,
+        'ir_reports': 0,
+        'edgar_reports': 0,
+        'errors': 0,
+    }
+
+    # ── Phase 1: Archive ──────────────────────────────────────────────────────
+    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'archive (1/3)', **totals})
+    try:
+        db = get_db()
+        ingestor = ArchiveIngestor(archive_dir=ARCHIVE_DIR, db=db, registry=get_registry())
+        s = ingestor.ingest_all()
+        totals['archive_reports'] = s.reports_ingested
+        totals['archive_points'] = s.data_points_extracted
+        totals['archive_review'] = s.review_flagged
+        totals['errors'] += s.errors
+    except Exception as e:
+        log.error("All-ingest: archive phase failed: %s", e, exc_info=True)
+        totals['errors'] += 1
+
+    # ── Phase 2: IR ───────────────────────────────────────────────────────────
+    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'ir (2/3)', **totals})
+    try:
+        db = get_db()
+        session = req_lib.Session()
+        scraper = IRScraper(db=db, session=session)
+        for company in db.get_companies(active_only=True):
+            s = scraper.scrape_company(company)
+            totals['ir_reports'] += s.reports_ingested
+            totals['errors'] += s.errors
+    except Exception as e:
+        log.error("All-ingest: IR phase failed: %s", e, exc_info=True)
+        totals['errors'] += 1
+
+    # ── Phase 3: EDGAR ────────────────────────────────────────────────────────
+    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'edgar (3/3)', **totals})
+    try:
+        db = get_db()
+        session = req_lib.Session()
+        connector = EdgarConnector(db=db, session=session)
+        since = _date(2019, 1, 1)
+        for company in db.get_companies(active_only=True):
+            if company.get('cik'):
+                s = connector.fetch_all_filings(
+                    cik=company['cik'],
+                    ticker=company['ticker'],
+                    since_date=since,
+                    filing_regime=company.get('filing_regime', 'domestic'),
+                )
+                totals['edgar_reports'] += s.reports_ingested
+                totals['errors'] += s.errors
+    except Exception as e:
+        log.error("All-ingest: EDGAR phase failed: %s", e, exc_info=True)
+        totals['errors'] += 1
+
+    _update_progress(task_id, {'status': 'complete', 'source': 'all', 'phase': 'done', **totals})
+    with _tasks_lock:
+        _running_tasks.discard('all')
+
+
+@bp.route('/api/ingest/all', methods=['POST'])
+def ingest_all_sources():
+    """Scrape all sources (archive + IR + EDGAR) in sequence under one task.
+
+    This is the primary entry point for the two-step pipeline:
+      1. POST /api/ingest/all   — scrape everything
+      2. POST /api/operations/extract — interpret (LLM+regex) all pending reports
+    """
+    with _tasks_lock:
+        conflicts = _running_tasks & {'all', 'archive', 'ir', 'edgar'}
+        if conflicts:
+            return jsonify({'success': False, 'error': {
+                'code': 'ALREADY_RUNNING',
+                'message': f'Already running: {", ".join(sorted(conflicts))}',
+            }}), 409
+        _running_tasks.add('all')
+
+    task_id = str(uuid.uuid4())
+    _update_progress(task_id, {'status': 'queued', 'source': 'all', 'phase': 'starting'})
+    t = threading.Thread(target=_run_all_ingest, args=(task_id,), daemon=True, name='ingest_all')
+    t.start()
+    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
+
+
 @bp.route('/api/ingest/archive', methods=['POST'])
 def ingest_archive():
     with _tasks_lock:
@@ -275,6 +403,12 @@ def ingest_edgar():
     body = request.get_json(silent=True) or {}
     auto_extract = bool(body.get('auto_extract', False))
     warm_model = bool(body.get('warm_model', True))
+    tickers = body.get('tickers') or []
+    if not isinstance(tickers, list):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT', 'message': "'tickers' must be a list of ticker strings"
+        }}), 400
+    tickers = [str(t).strip().upper() for t in tickers if t]
     with _tasks_lock:
         if 'edgar' in _running_tasks:
             return jsonify({'success': False, 'error': {
@@ -288,8 +422,13 @@ def ingest_edgar():
         'source': 'edgar',
         'auto_extract': auto_extract,
         'warm_model': warm_model,
+        'tickers': tickers,
     })
-    t = threading.Thread(target=_run_edgar_ingest, args=(task_id, auto_extract, warm_model), daemon=True)
+    t = threading.Thread(
+        target=_run_edgar_ingest,
+        args=(task_id, auto_extract, warm_model, tickers or None),
+        daemon=True,
+    )
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 
@@ -582,6 +721,7 @@ def ingest_raw():
                 'source_type': doc.get('source_type', 'wire_press_release'),
                 'source_url': source_url,
                 'raw_text': doc.get('raw_text', ''),
+                'raw_html': doc.get('raw_html') or None,
                 'parsed_at': datetime.now(timezone.utc).isoformat(),
                 'covering_period': doc.get('period'),
             }

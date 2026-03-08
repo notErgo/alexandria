@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Operations{% endblock %}
+{% block title %}Pipeline{% endblock %}
 
 {% block styles %}
 <style>
@@ -7,16 +7,17 @@
 .ops-tab  { padding: 0.55rem 1.1rem; font-size: 0.85rem; cursor: pointer; border-bottom: 2px solid transparent; color: var(--theme-text-secondary); background: none; border-top: none; border-left: none; border-right: none; }
 .ops-tab:hover { color: var(--theme-text-primary); }
 .ops-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
+.crawl-ticker-btn.active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
 .ops-pane { display: none; }
 .ops-pane.active { display: block; }
 
-/* Companies tab */
-.company-row-scraper { font-size: 0.78rem; color: var(--theme-text-muted); }
+/* Scraper mode badges */
 .scraper-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
 .scraper-badge-rss      { background: #3b82f620; color: #3b82f6; }
 .scraper-badge-index    { background: #10b98120; color: #10b981; }
 .scraper-badge-template { background: #8b5cf620; color: #8b5cf6; }
-.scraper-badge-skip     { background: #6b728020; color: #6b7280; }
+.scraper-badge-skip       { background: #6b728020; color: #6b7280; }
+.scraper-badge-playwright { background: #06b6d420; color: #06b6d4; }
 .scraper-badge-running  { background: #f9731620; color: #f97316; }
 .scraper-badge-ok       { background: #22c55e20; color: #22c55e; }
 .scraper-badge-error    { background: #ef444420; color: #ef4444; }
@@ -34,10 +35,10 @@
 .acq-panel { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--theme-border); border-radius: 8px; background: var(--theme-bg-secondary); }
 .acq-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
+.acq-section-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); margin: 1rem 0 0.4rem; }
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
-.kw-chip { display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px; border:1px solid var(--theme-border); background:var(--theme-bg-tertiary); font-size:0.72rem; cursor:pointer; margin:2px 4px 2px 0; }
-.kw-chip:hover { border-color: var(--theme-accent); color: var(--theme-accent); }
+.acq-log-warn { color: #f97316; }
 
 /* Explorer heatmap */
 .explorer-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
@@ -59,44 +60,122 @@
 .cell-detail-label { color: var(--theme-text-muted); }
 .cell-detail-value { color: var(--theme-text-primary); font-family: ui-monospace, monospace; }
 .cell-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.snippet-box { margin-top: 0.75rem; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 0.5rem; font-size: 0.72rem; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; color: var(--theme-text-secondary); max-height: 120px; overflow-y: auto; }
+.snippet-box { margin-top: 0.75rem; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 0.5rem; font-size: 0.72rem; font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; color: var(--theme-text-secondary); max-height: 340px; overflow-y: auto; }
+.html-doc-viewer { font-size: 0.78rem; line-height: 1.55; color: var(--theme-text-primary); font-family: inherit; }
+.html-doc-viewer p, .html-doc-viewer div { margin: 0.3rem 0; }
+.html-doc-viewer table { border-collapse: collapse; width: 100%; font-size: 0.74rem; }
+.html-doc-viewer td, .html-doc-viewer th { border: 1px solid var(--theme-border); padding: 2px 6px; }
+mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; color: inherit; border-radius: 2px; padding: 0 1px; }
 
-/* Reextract panel */
-.reextract-panel { margin-top: 1rem; background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 0.75rem; }
-.reextract-candidate { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; border-radius: 5px; font-size: 0.8rem; cursor: pointer; }
-.reextract-candidate:hover { background: var(--theme-bg-tertiary); }
+/* Re-extract panel — id-specific selector */
+#cell-reextract-panel { margin-top: 1rem; background: var(--theme-bg-secondary); border: 1px solid var(--theme-border); border-radius: 8px; padding: 0.75rem; }
 
-/* Registry tab */
+/* Registry */
 .registry-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .registry-filters select, .registry-filters input { font-size: 0.8rem; padding: 4px 8px; }
 
 /* Danger zone */
 .btn-danger { background: var(--theme-danger); color: #fff; border: none; }
 .btn-danger:hover { opacity: 0.88; }
+
+/* Pipeline guide (used in help overlay) */
+.pipe-diagram { display: flex; align-items: flex-start; gap: 0; margin: 1.25rem 0 1.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.pipe-stage { display: flex; flex-direction: column; align-items: center; min-width: 148px; }
+.pipe-stage-title { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--theme-text-muted); margin-bottom: 0.55rem; }
+.pipe-connector { display: flex; align-items: center; padding: 0 6px; color: var(--theme-text-muted); font-size: 1.3rem; align-self: center; padding-top: 1.6rem; }
+.pipe-box { border: 1px solid var(--theme-border); border-radius: 6px; padding: 0.45rem 0.65rem; font-size: 0.78rem; font-weight: 600; text-align: center; margin-bottom: 5px; width: 136px; background: var(--theme-bg-secondary); }
+.pipe-box-sub { font-size: 0.66rem; font-weight: 400; color: var(--theme-text-muted); margin-top: 3px; line-height: 1.35; }
+.pipe-box-source { border-color: var(--theme-border); }
+.pipe-box-ingest { border-color: #3b82f6; color: #3b82f6; background: #3b82f60d; }
+.pipe-box-extract { border-color: #8b5cf6; color: #8b5cf6; background: #8b5cf60d; }
+.pipe-box-output { border-color: #22c55e; color: #22c55e; background: #22c55e0d; }
+.pipe-box-review { border-color: #f97316; color: #f97316; background: #f973160d; }
+.pipe-note { font-size: 0.68rem; color: var(--theme-text-muted); text-align: center; margin-top: 3px; font-style: italic; }
+.guide-section { margin-bottom: 1.75rem; }
+.guide-section h3 { font-size: 0.88rem; font-weight: 700; margin: 0 0 0.6rem; color: var(--theme-text-primary); border-bottom: 1px solid var(--theme-border); padding-bottom: 0.35rem; }
+.guide-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.guide-table th { text-align: left; padding: 5px 10px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); border-bottom: 1px solid var(--theme-border); background: var(--theme-bg-secondary); }
+.guide-table td { padding: 5px 10px; border-bottom: 1px solid var(--theme-border); vertical-align: top; }
+.guide-table tr:last-child td { border-bottom: none; }
+.guide-table code { font-size: 0.72rem; background: var(--theme-bg-tertiary); padding: 1px 4px; border-radius: 3px; }
+.guide-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+@media (max-width: 900px) { .guide-cols { grid-template-columns: 1fr; } .pipe-diagram { flex-direction: column; align-items: flex-start; } .pipe-connector { transform: rotate(90deg); padding: 4px 0; align-self: flex-start; margin-left: 60px; padding-top: 0; } }
+
+/* Source badge — review tier */
+.source-badge-review { background: #8b5cf620; color: #8b5cf6; }
+
+/* Review table */
+.review-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.review-table th { text-align: left; padding: 5px 10px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); border-bottom: 1px solid var(--theme-border); }
+.review-table td { padding: 5px 10px; border-bottom: 1px solid var(--theme-border); vertical-align: middle; }
+.review-table tr.selected td { background: rgba(59,130,246,0.08); }
+.review-table tr:hover td { background: rgba(255,255,255,0.03); }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title" data-ui-id="2.0" data-spec-id="2.0"><span class="spec-id">2.0</span>Operations</h1>
-
-<div class="ops-tabs">
-  <button class="ops-tab" data-pane="companies" data-ui-id="2.1">Companies</button>
-  <button class="ops-tab" data-pane="registry" data-ui-id="2.2">Registry</button>
-  <button class="ops-tab" data-pane="explorer" data-ui-id="2.3">Explorer</button>
-  <button class="ops-tab" data-pane="rules" data-ui-id="2.4">Metric Rules</button>
-  <a class="ops-tab" href="/review" style="text-decoration:none" data-ui-id="2.5" data-spec-id="2.5">Review Queue <span id="ops-review-count" style="display:none"></span></a>
+<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
+  <h1 class="page-title" style="margin:0" data-ui-id="1.0" data-spec-id="1.0"><span class="spec-id">1.0</span>Pipeline</h1>
+  <div id="sector-switcher" style="display:none;margin-left:0.5rem">
+    <select id="sector-select" style="font-size:0.8rem;padding:0.2rem 0.4rem">
+      {% for s in all_sectors %}<option value="{{ s }}"{% if s == current_sector %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  <span style="margin-left:auto;display:flex;gap:0.4rem;align-items:center">
+    <button id="help-btn" class="btn btn-sm btn-secondary" onclick="toggleHelp()" title="Pipeline guide">?</button>
+    <button id="dev-mode-btn" class="btn btn-sm btn-secondary" onclick="toggleDevMode()" title="Toggle Dev Mode (Ctrl+Shift+D)">Dev</button>
+  </span>
 </div>
 
-<!-- ── Companies tab ──────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-companies" data-ui-id="2.1" data-spec-id="2.1">
-  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.1</span>Companies</h2>
+<div class="ops-tabs">
+  <button class="ops-tab" data-pane="workflow" data-ui-id="0.0">Workflow</button>
+  <button class="ops-tab" data-pane="config" data-ui-id="1.1">Track Config</button>
+  <button class="ops-tab" data-pane="ingest" data-ui-id="2.0">Ingest</button>
+  <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
+  <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
+  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Data</button>
+  <button class="ops-tab" data-pane="interrogate" data-ui-id="6.0">Interrogate</button>
+</div>
+
+<!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-workflow" data-ui-id="0.0" data-spec-id="0.0">
+  <div class="section-header-row" style="margin-bottom:1rem">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">0.0</span>Pipeline Workflow</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-left:auto">
+      <span class="wf-legend-dot wf-critical"></span><span style="font-size:0.75rem">Critical path</span>
+      <span class="wf-legend-dot wf-optional" style="margin-left:0.5rem"></span><span style="font-size:0.75rem">Optional</span>
+      <span class="wf-legend-dot wf-later" style="margin-left:0.5rem"></span><span style="font-size:0.75rem">Do later</span>
+    </div>
+  </div>
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1.25rem">
+    End-to-end pipeline steps in dependency order. Each step links to the relevant tab.
+    Critical path steps must complete before the next stage. Optional steps enhance results.
+    Later steps close the feedback loop — do them after the first full cycle.
+  </p>
+  <div id="workflow-stages"></div>
+  <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:1.5rem">
+    Driven by <code>static/data/workflow_spec.json</code>. Update that file to reflect spec changes — no template edits needed.
+  </p>
+</div>
+
+<!-- ── Track Config pane ──────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-config" data-ui-id="1.1" data-spec-id="1.1">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies</button>
+    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.3">Settings</button>
+    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.4">Crawl Setup</button>
+  </div>
+
+  <!-- Sub-pane: Companies (1.1) -->
+  <div class="pipeline-sub-pane active" id="spane-config-companies" data-ui-id="1.1" data-spec-id="1.1">
+  <div class="section-header-row">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
-    <button class="btn btn-sm btn-secondary" data-spec-id="2.1.6" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
+    <button class="btn btn-sm btn-secondary" data-spec-id="1.1.6" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
-  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="2.1.5">
+  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="1.1.4">
     <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">2.1.5</span>Add Company</h3>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
       <div>
@@ -118,6 +197,7 @@
           <option value="rss">rss</option>
           <option value="index">index</option>
           <option value="template">template</option>
+          <option value="playwright">playwright</option>
         </select>
       </div>
       <div style="min-width:260px">
@@ -178,10 +258,10 @@
     </div>
   </div>
 
-  <div class="card" data-spec-id="2.1.5a" style="margin-bottom:0.7rem">
+  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
       <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">2.1.5a</span>Scraper Governance Probe
+        <span class="spec-id">1.1.5</span>Scraper Governance Probe
       </h3>
       <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
         stale days
@@ -197,166 +277,9 @@
     </div>
   </div>
 
-  <div class="acq-panel" data-ui-id="2.1.7" data-spec-id="2.1.7">
-    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">2.1.7</span>Data Acquisition Controls <span class="source-badge source-badge-na">n/a</span>
-    </div>
-    <div class="acq-actions">
-      <button class="btn btn-sm btn-primary" data-acq-source="archive" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire Archive</button>
-      <button class="btn btn-sm btn-primary" data-acq-source="ir" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire IR</button>
-      <button class="btn btn-sm btn-primary" data-acq-source="edgar" onclick="triggerAcquire(this.getAttribute('data-acq-source'))">Acquire EDGAR</button>
-      <button class="btn btn-sm btn-secondary" onclick="loadRegistry()">Refresh Registry</button>
-    </div>
-    <div style="margin-top:0.45rem">
-      <label style="font-size:0.78rem;color:var(--theme-text-muted)">
-        <input id="acq-auto-extract" type="checkbox" checked>
-        Auto-run extraction after IR/EDGAR acquisition
-      </label>
-    </div>
-    <div id="acq-status" class="acq-status">Idle</div>
-    <div id="acq-log" class="acq-log" style="display:none"></div>
-  </div>
-
-  <div class="acq-panel" data-ui-id="2.1.8" data-spec-id="2.1.8">
-    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">2.1.8</span>LLM Extraction Run Monitor <span class="source-badge source-badge-data">DATA</span>
-    </div>
-    <div class="acq-actions">
-      <input id="extract-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:140px">
-      <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
-      <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
-    </div>
-    <div id="extract-status" class="acq-status">Idle</div>
-    <div id="extract-log" class="acq-log" style="display:none"></div>
-  </div>
-
-  <div class="card" data-ui-id="2.1.9" data-spec-id="2.1.9" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">2.1.9</span>Pipeline Observability <span class="source-badge source-badge-data">DATA</span>
-      </h3>
-      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()">Refresh</button>
-      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">
-      Loading pipeline state…
-    </div>
-    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
-    <div style="overflow-x:auto">
-      <table id="pipeline-table">
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th>Mode</th>
-            <th>Manifest</th>
-            <th>Reports</th>
-            <th>Unextracted</th>
-            <th>Data Points</th>
-            <th>Review Pending</th>
-            <th>Config</th>
-          </tr>
-        </thead>
-        <tbody id="pipeline-tbody">
-          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">Overnight Pipeline + Scout</h3>
-      <span id="overnight-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;align-items:end">
-      <div>
-        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=auto)</label>
-        <input id="ov-tickers" type="text" placeholder="RIOT,CLSK,WULF,ABTC">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Mode</label>
-        <select id="ov-scout-mode">
-          <option value="auto" selected>auto</option>
-          <option value="always">always</option>
-          <option value="never">never</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Max Age (hours)</label>
-        <input id="ov-scout-max-age" type="number" min="1" max="8760" step="1" value="168">
-      </div>
-      <div style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;padding-bottom:4px">
-        <label style="font-size:0.75rem"><input id="ov-apply-modes" type="checkbox"> apply mode changes</label>
-        <label style="font-size:0.75rem"><input id="ov-warm-model" type="checkbox" checked> warm model</label>
-        <label style="font-size:0.75rem"><input id="ov-require-scout-success" type="checkbox"> require scout success</label>
-      </div>
-    </div>
-    <div style="margin-top:0.5rem">
-      <label style="font-size:0.75rem;display:block">Scout Seed Keywords (comma or newline separated)</label>
-      <textarea id="ov-scout-keywords" rows="3" style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem" placeholder="miner, bitcoin, mining, production, hodl"></textarea>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.35rem">
-        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromPack()">Seed From Active Pack</button>
-        <button class="btn btn-sm btn-secondary" onclick="seedScoutKeywordsFromFrequencyTop()">Seed Top Frequency</button>
-        <button class="btn btn-sm btn-secondary" onclick="loadScoutKeywordFrequency()">Refresh Frequency</button>
-        <span style="font-size:0.75rem;color:var(--theme-text-muted)">click any keyword chip to append</span>
-      </div>
-      <div id="ov-keyword-freq" style="margin-top:0.35rem"></div>
-    </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
-      <button class="btn btn-sm btn-primary" onclick="startOvernightWithScout()">Start Overnight Run</button>
-      <button class="btn btn-sm btn-secondary" onclick="refreshOvernightStatus()">Refresh Status</button>
-      <button class="btn btn-sm btn-secondary" onclick="cancelOvernightRun()">Cancel Run</button>
-      <label style="font-size:0.75rem;color:var(--theme-text-muted)">run id</label>
-      <input id="ov-run-id" type="number" min="1" step="1" style="width:100px" placeholder="auto">
-    </div>
-    <div id="overnight-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
-  </div>
-
-  <div class="card" style="margin-top:0.7rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem">
-      <h3 style="margin:0;font-size:0.9rem">Observer Swarm (Source Discovery + Scrape)</h3>
-      <span id="observer-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem;align-items:end">
-      <div>
-        <label style="font-size:0.75rem;display:block">Tickers (comma-separated, blank=all)</label>
-        <input id="obs-tickers" type="text" placeholder="BITF,BTDR">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Scout Count</label>
-        <input id="obs-scout-count" type="number" min="1" max="16" step="1" value="4">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Max Attempts / Source</label>
-        <input id="obs-max-attempts" type="number" min="1" max="20" step="1" value="5">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Max No-Yield</label>
-        <input id="obs-max-no-yield" type="number" min="1" max="10" step="1" value="3">
-      </div>
-      <div>
-        <label style="font-size:0.75rem;display:block">Run ID (optional)</label>
-        <input id="obs-run-id" type="text" placeholder="observer_ui_...">
-      </div>
-      <div style="padding-bottom:4px">
-        <label style="font-size:0.75rem"><input id="obs-execute-scrape" type="checkbox" checked> execute scrape</label>
-        <label style="font-size:0.75rem;display:block"><input id="obs-feedback-loop" type="checkbox" checked> run feedback loop</label>
-        <label style="font-size:0.75rem;display:block"><input id="obs-apply-primitives" type="checkbox"> auto-apply validated primitives</label>
-      </div>
-    </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.55rem">
-      <button class="btn btn-sm btn-primary" onclick="startObserverSwarm()">Run Observer Swarm</button>
-      <button class="btn btn-sm btn-secondary" onclick="refreshObserverSwarmStatus()">Refresh Status</button>
-      <label style="font-size:0.75rem;color:var(--theme-text-muted)">task id</label>
-      <input id="obs-task-id" type="text" style="width:300px" placeholder="auto">
-    </div>
-    <div id="observer-status" style="margin-top:0.45rem;font-size:0.78rem;color:var(--theme-text-secondary)">Idle</div>
-    <div id="observer-artifacts" style="margin-top:0.35rem;font-size:0.74rem;color:var(--theme-text-muted)"></div>
-  </div>
-
-  <table id="companies-table" data-ui-id="2.1.1" data-spec-id="2.1.1">
+  <table id="companies-table" data-ui-id="1.1.1" data-spec-id="1.1.1">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">2.1.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
+      <span class="spec-id">1.1.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
     </caption>
     <thead>
       <tr>
@@ -374,8 +297,8 @@
     </tbody>
   </table>
 
-  <!-- Inline regime editor (shown below selected company row) -->
-  <div id="regime-editor" style="display:none" class="card" style="margin-top:0.5rem" data-ui-id="2.1.2" data-spec-id="2.1.2">
+  <!-- Regime editor: deprecated — routes kept, UI hidden -->
+  <div id="regime-editor" style="display:none" class="card" data-ui-id="1.1.2" data-spec-id="1.1.2">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">2.1.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
@@ -407,9 +330,9 @@
   </div>
 
   <!-- Scrape queue -->
-  <div style="margin-top:1.5rem" data-spec-id="2.1.3">
-    <h2 style="font-size:1rem;margin-bottom:0.5rem"><span class="spec-id">2.1.3</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
-    <table id="scrape-table" data-ui-id="2.1.3">
+  <div style="margin-top:1.5rem" data-spec-id="1.1.2">
+    <h2 style="font-size:1rem;margin-bottom:0.5rem"><span class="spec-id">1.1.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+    <table id="scrape-table" data-ui-id="1.1.2">
       <thead>
         <tr>
           <th>ID</th>
@@ -428,10 +351,10 @@
     </table>
   </div>
 
-  <!-- Danger Zone ──────────────────────────────────────────────────────── -->
-  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="2.1.4" data-spec-id="2.1.4">
+  <!-- Danger Zone -->
+  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.1.3" data-spec-id="1.1.3">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
-      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">2.1.4</span>Danger Zone</h3>
+      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.1.3</span>Danger Zone</h3>
       <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
     </div>
     <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
@@ -472,57 +395,315 @@
       </div>
     </div>
   </div>
-</div>
+  </div><!-- /spane-config-companies -->
 
-<!-- ── Registry tab ───────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-registry" data-ui-id="2.2" data-spec-id="2.2">
-  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.2</span>Registry</h2>
-  <div class="registry-filters" data-ui-id="2.2.1" data-spec-id="2.2.1">
-    <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
-    <input id="reg-period" type="month" placeholder="Period">
-    <select id="reg-doc-type">
-      <option value="">All doc types</option>
-      <option value="archive_html">archive_html</option>
-      <option value="archive_pdf">archive_pdf</option>
-      <option value="ir_press_release">ir_press_release</option>
-      <option value="edgar_10k">edgar_10k</option>
-      <option value="edgar_10q">edgar_10q</option>
-    </select>
-    <select id="reg-extraction-status">
-      <option value="">All extraction</option>
-      <option value="not_extracted">not extracted</option>
-      <option value="extracted">extracted</option>
-      <option value="parse_failed">parse failed</option>
-    </select>
-    <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
-    <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+
+  <!-- Sub-pane: Settings (1.3) -->
+  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.3" data-spec-id="1.3">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.3</span>Settings</h2>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
+      Runtime overrides for extraction thresholds, LLM parameters, crawl limits, and pipeline paths.
+      Unset keys use hardcoded defaults. Changes take effect on the next pipeline run.
+    </p>
+    <div id="settings-groups"></div>
+
+    <!-- Metric Rules (1.3.R) — tune after first extraction cycle -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="1.3.R" data-spec-id="1.3.R">
+      <div class="section-header-row" style="margin-bottom:0.5rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
+        <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
+      </div>
+      <table id="rules-table" style="width:100%;font-size:0.82rem">
+        <thead>
+          <tr>
+            <th data-sort="metric" style="text-align:left">Metric</th>
+            <th data-sort="agreement_threshold" data-sort-type="num" style="text-align:left">Agree Threshold</th>
+            <th data-sort="outlier_threshold" data-sort-type="num" style="text-align:left">Outlier Threshold</th>
+            <th data-sort="outlier_min_history" data-sort-type="num" style="text-align:left">Min History</th>
+            <th data-sort="valid_range_min" data-sort-type="num" style="text-align:left">Range Min</th>
+            <th data-sort="valid_range_max" data-sort-type="num" style="text-align:left">Range Max</th>
+            <th style="text-align:left">Enabled</th>
+            <th style="text-align:left">Action</th>
+          </tr>
+        </thead>
+        <tbody id="rules-tbody">
+          <tr><td colspan="8" style="color:var(--theme-text-muted)">Loading...</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.75rem">
+        Agree Threshold: max fractional difference for LLM/regex auto-accept (default 0.02 = 2%).
+        Outlier Threshold: max deviation from trailing average before routing to review.
+        Valid Range: values outside min/max are discarded before confidence scoring.
+        Defaults are safe — only adjust after observing real extraction results.
+      </p>
+    </div>
+  </div><!-- /spane-config-settings -->
+
+  <!-- Sub-pane: Crawl Setup (1.4) -->
+  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="1.4" data-spec-id="1.4">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.4</span>Crawl Setup</h2>
+    <div class="card" style="background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
+      <p style="margin:0 0 0.75rem;font-size:0.85rem;line-height:1.6">
+        The LLM crawl provider, model selection, and prompt editor are available inline in
+        <strong>Ingest &rarr; Step 3 — LLM-Directed Crawl</strong>.
+        Select a single ticker there to load its per-ticker prompt, review or edit it, then launch the crawl from the same screen.
+      </p>
+      <button class="btn btn-sm btn-secondary" onclick="activateTab('ingest')">Go to Ingest</button>
+    </div>
+  </div><!-- /spane-config-crawlsetup -->
+
+</div><!-- /pane-config -->
+
+<!-- ── Ingest pane ─────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-ingest" data-ui-id="2.0" data-spec-id="2.0">
+
+  <!-- Run Full Pipeline — automated end-to-end run -->
+  <div class="card" style="margin-bottom:1.25rem;border-left:3px solid var(--theme-accent)" data-ui-id="2.0.1" data-spec-id="2.0.1">
+    <div class="section-header-row" style="margin-bottom:0.4rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.0</span>Run Full Pipeline</h3>
+      <span style="font-size:0.72rem;font-weight:600;color:var(--theme-text-muted);text-transform:uppercase;letter-spacing:0.04em">Automated</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.5rem;line-height:1.5">
+      Runs the following steps automatically for all active companies with a configured scraper:
+    </p>
+    <ol style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;padding-left:1.4rem;line-height:1.9">
+      <li>Probe each company IR source for reachability</li>
+      <li>Enqueue live IR scrape jobs (via configured scraper mode: RSS, index page, etc.)</li>
+      <li>Fetch new EDGAR filings (8-K, 10-Q, 10-K, 20-F) for all companies with a CIK</li>
+      <li>Ingest IR press releases from the local archive folder</li>
+      <li>Run LLM + regex extraction on all unextracted documents</li>
+    </ol>
+    <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0 0 0.65rem;line-height:1.4">
+      LLM-directed crawl (Step 3 below) is a separate manual step and is not included here —
+      it navigates IR pages autonomously and should be run on-demand before this pipeline if you want
+      crawl-sourced documents included.
+      After this pipeline completes, review disagreements in the <strong>Review</strong> tab.
+    </p>
+    <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-include-ir" type="checkbox" checked>
+        Include IR (live scrape + archive ingest)
+      </label>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-sm btn-primary" onclick="runFullPipeline()">Run Full Pipeline</button>
+      <button id="pipeline-cancel-btn" class="btn btn-sm btn-danger" onclick="cancelPipeline()" style="display:none">Cancel</button>
+      <span id="pipeline-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="pipeline-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.35rem"></div>
+    <div id="pipeline-log" class="acq-log" style="display:none;max-height:200px;margin-top:0.5rem"></div>
   </div>
-  <table id="registry-table" data-ui-id="2.2.2" data-spec-id="2.2.2">
-    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">2.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
-    </caption>
-    <thead>
-      <tr>
-        <th data-sort="ticker">Ticker</th>
-        <th data-sort="period">Period</th>
-        <th>Doc Type</th>
-        <th>Ingest State</th>
-        <th data-sort="parse_quality">Parse</th>
-        <th data-sort="metrics_found" data-sort-type="num">Metrics</th>
-        <th>Extracted</th>
-        <th>File</th>
-      </tr>
-    </thead>
-    <tbody id="registry-tbody">
-      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
-    </tbody>
-  </table>
-</div>
 
-<!-- ── Explorer tab ───────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-explorer" data-ui-id="2.3" data-spec-id="2.3">
-  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.3</span>Explorer</h2>
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.3.1">
+  <!-- Shared ticker selector — selection applies to EDGAR fetch and LLM crawl -->
+  <div style="margin-bottom:1rem">
+    <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Select companies</div>
+    <div id="crawl-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+    <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">Selection applies to EDGAR fetch and LLM crawl. IR scrape and archive ingest always run for all configured companies.</div>
+  </div>
+
+  <!-- Step 1 — SEC EDGAR [CRITICAL] -->
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.1" data-spec-id="2.1">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.1</span>SEC EDGAR Filings</h3>
+      <span class="wf-path-badge wf-critical">Critical</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Pulls 8-K, 10-Q, 10-K, and 20-F filings directly from EDGAR for all companies with a CIK configured.
+      Run this first — the earliest bitcoin mention date is automatically extracted and injected into the LLM crawl prompt as a lower bound so the crawl does not search before mining began.
+    </p>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-primary" onclick="triggerAcquireEdgar(false)">Fetch Selected</button>
+      <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Fetch All Tickers</button>
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+        <input id="acq-auto-extract" type="checkbox" checked>
+        Auto-run extraction after fetch
+      </label>
+    </div>
+  </div>
+
+  <!-- Step 2 — IR Press Releases [OPTIONAL] -->
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.1.1" data-spec-id="2.1.1">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2</span>IR Press Releases &amp; Archive</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Supplements EDGAR with monthly production announcements. Two sources:
+      <strong>Live IR</strong> scrapes company investor-relations pages directly.
+      <strong>Local Archive</strong> ingests pre-downloaded PDFs and HTML files from the archive folder.
+      Monthly press releases often carry the most precise per-month production figures.
+    </p>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
+      <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Ingest Local Archive</button>
+      <button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadIngest()">Refresh</button>
+    </div>
+  </div>
+
+  <!-- Shared acquire status + log — updated by all Step 1 and Step 2 operations -->
+  <div style="margin-bottom:1rem">
+    <div id="acq-status" class="acq-status">Idle</div>
+    <div id="acq-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <!-- Step 3 — LLM-Directed Crawl [OPTIONAL] -->
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.2" data-spec-id="2.2">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>LLM-Directed Crawl</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.5">
+      An LLM navigates IR and wire-service pages autonomously to discover production announcements.
+      The bitcoin activity start date from Step 1 is automatically injected as a lower bound — run EDGAR first.
+      Review the prompt below before launching; it is loaded from a per-ticker file or the master template.
+    </p>
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="1.4.2" data-spec-id="1.4.2">
+      <div>
+        <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
+        <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
+          <option value="ollama" selected>Local (Ollama)</option>
+          <option value="anthropic">Anthropic API</option>
+        </select>
+      </div>
+      <div id="crawl-model-wrap">
+        <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+          <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px" onchange="saveOllamaModel(this.value)" title="Selecting a model saves it as the global default (shared with Interpret)">
+            <option value="">Loading models…</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="loadCrawlOllamaModels()" title="Reload model list">&#8635;</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:0.75rem">
+      <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">
+        Crawl prompt (editable before launch — select a single ticker above to load its custom prompt)
+        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
+      </label>
+      <textarea id="crawl-prompt-editor" rows="8" class="prompt-editor"
+        placeholder="Select a single ticker above to load its crawl prompt..."></textarea>
+    </div>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-primary" onclick="startCrawlSelected()">Start Crawl (Selected)</button>
+      <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Start Crawl (All)</button>
+      <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop Crawl</button>
+    </div>
+    <div id="research-grid" data-ui-id="2.2.2" data-spec-id="2.2.2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
+    <div id="research-log-panel" data-ui-id="2.2.3" data-spec-id="2.2.3" style="display:none;margin-top:0.5rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+        <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
+        <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+      </div>
+      <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-bg-tertiary);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+    </div>
+  </div>
+
+  <!-- Step 4 — Ingest Status [OPTIONAL] -->
+  <div class="card" data-ui-id="2.3" data-spec-id="2.3">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.4</span>Ingest Status</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()" style="margin-left:auto">Refresh</button>
+      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Document counts, extraction backlog, and scraper config health per company.
+      Check here if extraction results are sparse — grey cells in the Data Explorer mean no document was ingested for that period.
+    </p>
+    <div id="pipe-summary" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
+    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
+    <div style="overflow-x:auto">
+      <table id="pipeline-table" data-ui-id="2.3.2" data-spec-id="2.3.2">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Mode</th>
+            <th>Manifest</th>
+            <th>Reports</th>
+            <th>Unextracted</th>
+            <th>Data Points</th>
+            <th>Review Pending</th>
+            <th>Config</th>
+          </tr>
+        </thead>
+        <tbody id="pipeline-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <span id="ingest-msg" style="font-size:0.8rem;color:var(--theme-text-muted);display:block;margin-top:0.75rem"></span>
+</div><!-- /pane-ingest -->
+
+<!-- ── Interpret pane ──────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-interpret" data-ui-id="3.0" data-spec-id="3.0">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="3.1">Extract</button>
+    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="3.2">QC</button>
+  </div>
+
+  <!-- Sub-pane: Extract (3.1) -->
+  <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="3.1" data-spec-id="3.1">
+    <div class="acq-section-label">LLM Extraction</div>
+    <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
+      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
+      <div class="acq-actions">
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No selection = all tickers</span>
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+        <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
+          <option value="">Loading models…</option>
+        </select>
+        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
+      </div>
+      <div id="extract-status" class="acq-status">Idle</div>
+      <div id="extract-log" class="acq-log" style="display:none"></div>
+    </div>
+  </div><!-- /spane-interpret-extract -->
+
+  <!-- Sub-pane: QC (3.2) -->
+  <div class="pipeline-sub-pane" id="spane-interpret-qc" data-ui-id="3.2" data-spec-id="3.2">
+    <div class="section-header-row">
+      <h3 style="font-size:0.9rem;margin:0"><span class="spec-id">3.2</span>QC Snapshots</h3>
+      <button class="btn btn-sm btn-secondary" onclick="captureQCSnapshot()">Capture Snapshot</button>
+      <span id="qc-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.5rem">
+      Captures precision/recall metrics for the current extraction state.
+    </p>
+    <div id="qc-table-wrap" style="overflow-x:auto">
+      <table style="width:100%;font-size:0.8rem;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--theme-border)">
+            <th style="text-align:left;padding:0.2rem 0.5rem">Date</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Auto-accepted</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Approved</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Rejected</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Edited</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Precision est.</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Recall est.</th>
+          </tr>
+        </thead>
+        <tbody id="qc-table-body">
+          <tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /spane-interpret-qc -->
+</div><!-- /pane-interpret -->
+
+<!-- ── Data pane ───────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-data" data-ui-id="5.0" data-spec-id="5.0">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1">Explorer</button>
+    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2">Registry</button>
+  </div>
+
+  <!-- Sub-pane: Explorer (5.1) -->
+  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="5.1" data-spec-id="5.1">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="5.1.1">
     <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <select id="ex-state">
       <option value="">All states</option>
@@ -549,8 +730,6 @@
     <button class="btn btn-sm btn-primary" onclick="loadExplorer()">Search</button>
     <span id="ex-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
-
-  <!-- Legend -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.75rem;font-size:0.72rem">
     <span><span class="legend-dot" style="background:#22c55e"></span>data</span>
     <span><span class="legend-dot" style="background:#f97316"></span>review pending</span>
@@ -560,37 +739,30 @@
     <span><span class="legend-dot" style="background:#f43f5e"></span>scraper error</span>
     <span><span class="legend-dot" style="background:#6b7280"></span>analyst gap</span>
   </div>
-
   <div class="explorer-wrap">
     <div class="explorer-grid-scroll">
-      <div id="explorer-grid" data-ui-id="2.3.2" data-spec-id="2.3.2">
+      <div id="explorer-grid" data-ui-id="5.1.2" data-spec-id="5.1.2">
         <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-          <span class="spec-id">2.3.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
+          <span class="spec-id">5.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
         </div>
         <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
       </div>
     </div>
-
-    <!-- Cell detail side panel -->
-    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.3.3" data-spec-id="2.3.3">
-      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.3.3</span><span id="cell-detail-header-text">Cell Detail</span> <span class="source-badge source-badge-data">DATA</span></div>
+    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="5.1.3" data-spec-id="5.1.3">
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">5.1.3</span><span id="cell-detail-header-text">Cell Detail</span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
-      <div class="cell-actions" id="cell-actions" data-spec-id="2.3.5"></div>
-
-      <!-- Save value form -->
-      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.3.4" data-spec-id="2.3.4">
+      <div class="cell-actions" id="cell-actions" data-spec-id="5.1.5"></div>
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="5.1.4" data-spec-id="5.1.4">
         <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
           <input id="cell-save-note" type="text" maxlength="500" style="flex:1" placeholder="Note (optional)">
           <button class="btn btn-sm btn-primary" onclick="submitSaveCell()">Save</button>
-          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-save-form').style.display='none'">✕</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-save-form').style.display='none'">&#215;</button>
         </div>
         <div id="cell-save-error" style="color:var(--theme-danger);font-size:0.75rem;margin-top:0.3rem"></div>
       </div>
-
-      <!-- Re-extract panel -->
-      <div id="cell-reextract-panel" style="display:none;margin-top:0.75rem" data-ui-id="2.3.6" data-spec-id="2.3.6">
+      <div id="cell-reextract-panel" style="display:none" data-ui-id="5.1.6" data-spec-id="5.1.6">
         <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
         <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
         <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
@@ -599,56 +771,245 @@
         </div>
         <div id="reextract-results" style="margin-top:0.5rem"></div>
       </div>
-
       <div id="cell-snippet" class="snippet-box" style="display:none"></div>
     </div>
   </div>
-</div>
+  </div><!-- /spane-data-explorer -->
 
-<!-- ── Review tab — redirects to full review page ──────────────────── -->
-<div class="ops-pane" id="pane-review">
-  <div style="padding:2rem;text-align:center;color:var(--theme-text-secondary)">
-    <p style="margin-bottom:1rem">The full Review Queue interface (document viewer, LLM vs regex comparison, re-extract from selection) is available at the dedicated review page.</p>
-    <a href="/review" class="btn btn-primary">Open Review Queue</a>
+  <!-- Sub-pane: Registry (5.2) -->
+  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="5.2" data-spec-id="5.2">
+  <div class="registry-filters" data-ui-id="5.2.1" data-spec-id="5.2.1">
+    <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <input id="reg-period" type="month" placeholder="Period">
+    <select id="reg-doc-type">
+      <option value="">All doc types</option>
+      <option value="ir_press_release">IR Press Release</option>
+      <option value="archive_html">IR Press Release (archive)</option>
+      <option value="archive_pdf">IR Press Release (archive PDF)</option>
+      <option value="edgar_8k">SEC 8-K</option>
+      <option value="edgar_10k">SEC 10-K</option>
+      <option value="edgar_10q">SEC 10-Q</option>
+      <option value="edgar_20f">SEC 20-F</option>
+      <option value="edgar_6k">SEC 6-K</option>
+    </select>
+    <select id="reg-extraction-status">
+      <option value="">All extraction</option>
+      <option value="not_extracted">not extracted</option>
+      <option value="extracted">extracted</option>
+      <option value="parse_failed">parse failed</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
+    <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
-</div>
-
-<!-- ── Metric Rules pane ───────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-rules" data-spec-id="2.4">
-  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.4</span>Metric Rules</h2>
-    <span style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:0.5rem">
-      Per-metric LLM/regex agreement and outlier detection thresholds
-    </span>
-    <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
-  </div>
-  <table id="rules-table" style="width:100%;font-size:0.82rem" data-spec-id="2.4.1">
+  <table id="registry-table" data-ui-id="5.2.2" data-spec-id="5.2.2">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">2.4.1</span>Rules Table <span class="source-badge source-badge-config">CONFIG</span>
+      <span class="spec-id">5.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
     </caption>
     <thead>
       <tr>
-        <th data-sort="metric" style="text-align:left">Metric</th>
-        <th data-sort="agreement_threshold" data-sort-type="num" style="text-align:left">Agreement Threshold</th>
-        <th data-sort="outlier_threshold" data-sort-type="num" style="text-align:left">Outlier Threshold</th>
-        <th data-sort="outlier_min_history" data-sort-type="num" style="text-align:left">Min History</th>
-        <th style="text-align:left">Enabled</th>
-        <th style="text-align:left">Action</th>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="period">Period</th>
+        <th>Doc Type</th>
+        <th>Ingest State</th>
+        <th data-sort="parse_quality">Parse</th>
+        <th data-sort="metrics_found" data-sort-type="num">Metrics</th>
+        <th>Extracted</th>
+        <th>File</th>
       </tr>
     </thead>
-    <tbody id="rules-tbody">
-      <tr><td colspan="6" style="color:var(--theme-text-muted)">Loading...</td></tr>
+    <tbody id="registry-tbody">
+      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
     </tbody>
   </table>
-  <p style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:1rem">
-    Agreement Threshold: max fractional difference (0.0-1.0) for LLM/regex auto-accept.
-    Outlier Threshold: max deviation from trailing average before routing to review (0.0-N).
-    Min History: minimum prior months required to run outlier check.
-    Changes take effect on the next extraction run (no restart needed).
-  </p>
+  </div><!-- /spane-data-registry -->
+</div><!-- /pane-data -->
 
-  <div class="card" style="margin-top:1rem" data-spec-id="2.4.2">
-    <h3 style="margin:0 0 0.6rem;font-size:0.9rem"><span class="spec-id">2.4.2</span>Keyword Dictionary <span class="source-badge source-badge-config">CONFIG</span></h3>
+<!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue</button>
+    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns</button>
+    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight</button>
+  </div>
+
+  <!-- Sub-pane: Queue (4.1) -->
+  <div class="pipeline-sub-pane active" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
+    <div class="section-header-row" style="margin-bottom:0.75rem">
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
+      <a href="/review" class="btn btn-sm btn-secondary" style="margin-left:auto" target="_blank">Open Full Review</a>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+      <input id="rv-ticker" type="text" maxlength="10" placeholder="Ticker" style="width:100px">
+      <select id="rv-status">
+        <option value="PENDING">Pending</option>
+        <option value="">All statuses</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+      </select>
+      <select id="rv-metric">
+        <option value="">All metrics</option>
+      </select>
+      <select id="rv-source-type">
+        <option value="">All sources</option>
+        <option value="edgar_8k">SEC 8-K</option>
+        <option value="edgar_10q">SEC 10-Q</option>
+        <option value="edgar_10k">SEC 10-K</option>
+        <option value="edgar_20f">SEC 20-F</option>
+        <option value="edgar_6k">SEC 6-K</option>
+        <option value="ir_press_release">IR Press Release</option>
+        <option value="archive_html">IR Archive (HTML)</option>
+        <option value="archive_pdf">IR Archive (PDF)</option>
+        <option value="prnewswire_press_release">PRNewswire</option>
+        <option value="wire_press_release">Wire</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="loadReview()">Refresh</button>
+      <span id="rv-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+    </div>
+
+    <!-- Bulk controls -->
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+      <button id="rv-bulk-approve" class="btn btn-sm btn-primary" disabled onclick="bulkApprove()">Approve Selected</button>
+      <span style="font-size:0.75rem;color:var(--theme-text-muted)">J/K navigate &bull; A approve &bull; R reject &bull; Gen generates regex from snippet</span>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table class="review-table" id="review-table" data-ui-id="4.1.2" data-spec-id="4.1.2">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="rv-select-all" onclick="toggleSelectAll()"></th>
+            <th>Ticker</th>
+            <th>Period</th>
+            <th>Metric</th>
+            <th>Source</th>
+            <th style="text-align:right">Regex</th>
+            <th style="text-align:right">LLM</th>
+            <th>Agreement</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="review-tbody">
+          <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /spane-review-queue -->
+
+  <!-- Sub-pane: Patterns (4.2) -->
+  <div class="pipeline-sub-pane" id="spane-review-patterns" data-ui-id="4.2" data-spec-id="4.2">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.2</span>Regex Patterns <span class="source-badge source-badge-config">CONFIG</span></h2>
+      <button class="btn btn-sm btn-secondary" onclick="loadPatterns()" style="margin-left:auto">Refresh</button>
+    </div>
+    <div class="card" style="margin-bottom:1rem;background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
+      <p style="margin:0;font-size:0.8rem;color:var(--theme-text-secondary);line-height:1.5">
+        The LLM runs on every document unconditionally. Regex patterns run in parallel and produce a second candidate.
+        When both agree, the result auto-accepts. When only LLM fires, the item routes here to Queue.
+        Build patterns from approved Queue items using the Gen button — each pattern you save reduces future review volume.
+      </p>
+    </div>
+
+    <div id="patterns-list">
+      <p style="color:var(--theme-text-muted);font-size:0.85rem">Loading...</p>
+    </div>
+    <div id="pattern-keyword-gaps" style="margin:0.75rem 0;font-size:0.8rem;color:var(--theme-text-muted)"></div>
+
+    <!-- Generate from snippet -->
+    <div class="card" style="margin-top:1rem">
+      <h3 style="margin:0 0 0.4rem;font-size:0.9rem">Generate Pattern from Snippet</h3>
+      <p style="font-size:0.75rem;color:var(--theme-text-muted);margin:0 0 0.6rem">
+        Paste a short excerpt containing the value, or use the Gen button on any Queue row to auto-fill.
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
+          <select id="gen-pattern-metric" style="font-size:0.85rem">
+            <option value="production_btc">Production BTC</option>
+            <option value="hodl_btc">Holdings BTC</option>
+            <option value="sold_btc">Sold BTC</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:280px">
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Excerpt containing the value</label>
+          <input id="gen-pattern-text" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="Bitcoin Produced: 1,247">
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="generatePattern()">Generate</button>
+      </div>
+      <div id="gen-pattern-result" style="display:none;margin-top:0.5rem">
+        <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.4rem">
+          <div style="flex:1;min-width:260px">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.2rem">Generated regex (editable)</label>
+            <input id="gen-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem">
+          </div>
+          <div>
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.2rem">Weight</label>
+            <input id="gen-pattern-weight" type="number" min="0.01" max="1" step="0.01" style="width:65px">
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="saveGeneratedPattern()">Save to Library</button>
+          <span id="gen-pattern-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+        <div id="gen-pattern-matches" style="font-size:0.78rem;color:var(--theme-text-muted)"></div>
+      </div>
+    </div>
+
+    <!-- Add manually -->
+    <div class="card" style="margin-top:1rem">
+      <h3 style="margin:0 0 0.6rem;font-size:0.9rem">Add Pattern Manually</h3>
+      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
+          <select id="add-pattern-metric" style="font-size:0.85rem">
+            <option value="production_btc">Production BTC</option>
+            <option value="hodl_btc">Holdings BTC</option>
+            <option value="sold_btc">Sold BTC</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Regex (BTC patterns need a capturing group around the number)</label>
+          <input id="add-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="(?i)\bBTC\s+Produced\s*[|:]?\s*([\d,]+(?:\.\d+)?)">
+        </div>
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Weight</label>
+          <input id="add-pattern-weight" type="number" min="0.01" max="1" step="0.01" value="0.85" style="width:72px">
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="addPatternFromForm()">Add Pattern</button>
+        <span id="add-pattern-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <!-- Test -->
+    <div class="card" style="margin-top:1rem">
+      <h3 style="margin:0 0 0.6rem;font-size:0.9rem">Test Regex Against Document Text</h3>
+      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
+        <div style="flex:1;min-width:260px">
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Regex</label>
+          <input id="test-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="Paste regex here">
+        </div>
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
+          <select id="test-pattern-metric" style="font-size:0.85rem">
+            <option value="production_btc">Production BTC</option>
+            <option value="hodl_btc">Holdings BTC</option>
+            <option value="sold_btc">Sold BTC</option>
+          </select>
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="runPatternTest()">Test</button>
+      </div>
+      <textarea id="test-pattern-text" rows="4" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="Paste document text to test against..."></textarea>
+      <div id="test-pattern-results" style="margin-top:0.5rem;font-size:0.8rem"></div>
+    </div>
+  </div><!-- /spane-review-patterns -->
+
+  <!-- Sub-pane: Highlight Dictionary (4.3) -->
+  <div class="pipeline-sub-pane" id="spane-review-highlight" data-ui-id="4.3" data-spec-id="4.3">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.3</span>Highlight Dictionary <span class="source-badge source-badge-config">CONFIG</span></h2>
+    </div>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+      Terms highlighted in source document viewers (Explorer and Review). No effect on extraction — for readability only.
+    </p>
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
       <label style="font-size:0.78rem;color:var(--theme-text-muted)">Pack</label>
       <select id="kw-pack-select" style="min-width:170px"></select>
@@ -656,28 +1017,314 @@
       <button class="btn btn-sm btn-secondary" onclick="deleteKeywordPack()">Delete Pack</button>
       <span id="kw-dict-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
     </div>
-    <textarea id="kw-pack-terms" rows="5" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="one term per line"></textarea>
+    <textarea id="kw-pack-terms" rows="4" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="one term per line"></textarea>
     <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
-      <button class="btn btn-sm btn-primary" onclick="saveKeywordDictionary()">Save Dictionary</button>
+      <button class="btn btn-sm btn-primary" onclick="saveKeywordDictionary()">Save</button>
       <button class="btn btn-sm btn-secondary" onclick="loadKeywordDictionaryOptions()">Reload</button>
     </div>
-    <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.5rem">
-      Terms are stored globally and used for source highlighting in Explorer and Review panels.
-      Use one term per line.
-    </p>
+  </div><!-- /spane-review-highlight -->
+</div>
+
+<!-- ── Interrogate pane (6.0) ─────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-interrogate" data-ui-id="6.0" data-spec-id="6.0">
+  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">6.0</span>Interrogate</h2>
+  <p style="font-size:0.85rem;color:var(--theme-text-muted);margin:0 0 1rem">
+    Natural language queries against the extracted dataset. Spec ID 6.0 reserved — implementation pending.
+  </p>
+  <div class="card" style="padding:1.5rem;text-align:center;color:var(--theme-text-muted)">
+    Coming soon: LLM-powered interrogation of the extracted time-series dataset.
   </div>
 </div>
+
+<!-- ── Help overlay ──────────────────────────────────────────────────────── -->
+<div id="help-overlay" class="help-overlay">
+  <div class="section-header-row" style="margin-bottom:1rem">
+    <h2 style="font-size:1rem;margin:0">Pipeline Guide</h2>
+    <button class="help-overlay-close btn btn-sm btn-secondary" onclick="toggleHelp()">Close</button>
+  </div>
+  <p style="font-size:0.8rem;color:var(--theme-text-secondary);margin:0 0 1.25rem">
+    How data moves from raw sources into the database and through to analyst-reviewed output.
+  </p>
+
+  <!-- Flow diagram -->
+  <div class="guide-section">
+    <h3>End-to-End Flow</h3>
+    <div class="pipe-diagram">
+
+      <!-- Stage 1: Sources -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">1. Sources</div>
+        <div class="pipe-box pipe-box-source">Archive
+          <div class="pipe-box-sub">PDFs + HTMLs on disk<br><code>OffChain/Miner/Miner Monthly/</code></div>
+        </div>
+        <div class="pipe-box pipe-box-source">IR Feed
+          <div class="pipe-box-sub">Live company IR page<br>modes: rss / index / template</div>
+        </div>
+        <div class="pipe-box pipe-box-source">EDGAR
+          <div class="pipe-box-sub">SEC API<br>8-K, 10-Q, 10-K, 6-K, 20-F</div>
+        </div>
+        <div class="pipe-box pipe-box-source">Newswire
+          <div class="pipe-box-sub">PRNewswire / GlobeNewswire<br>via /api/ingest/raw</div>
+        </div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 2: Ingest -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">2. Ingest</div>
+        <div class="pipe-box pipe-box-ingest" style="margin-top:1.1rem">reports table
+          <div class="pipe-box-sub">Raw text stored.<br>source_type labeled.<br>covering_period set.</div>
+        </div>
+        <div class="pipe-note">One row per document.<br>No extraction yet.</div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 3: Extract -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">3. Extract</div>
+        <div class="pipe-box pipe-box-extract" style="margin-top:1.1rem">LLM + regex
+          <div class="pipe-box-sub">Qwen3.5-35B via Ollama<br>+ pattern matching<br>per metric per report</div>
+        </div>
+        <div class="pipe-note">Agreement engine compares<br>LLM vs regex value.</div>
+      </div>
+
+      <div class="pipe-connector">&#8594;</div>
+
+      <!-- Stage 4: Output -->
+      <div class="pipe-stage">
+        <div class="pipe-stage-title">4. Output</div>
+        <div class="pipe-box pipe-box-output">data_points
+          <div class="pipe-box-sub">LLM + regex agree (&le;2%)<br>Analyst-protected values</div>
+        </div>
+        <div class="pipe-box pipe-box-review" style="margin-top:8px">review_queue
+          <div class="pipe-box-sub">Disagree or LLM-only.<br>Analyst resolves &#8594;<br>data_points</div>
+        </div>
+      </div>
+
+    </div><!-- /pipe-diagram -->
+
+    <p style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:-0.5rem">
+      Ingest and extract are intentionally decoupled (two-stage pipeline). Ingest stores raw text; extraction runs separately on demand or via auto-extract after acquisition.
+      Analyst-edited values (<code>analyst</code>, <code>analyst_approved</code>, <code>review_approved</code>, <code>review_edited</code>) are never overwritten by the pipeline.
+    </p>
+  </div>
+
+  <div class="guide-cols">
+
+    <!-- Source channels -->
+    <div class="guide-section">
+      <h3>Source Channels</h3>
+      <table class="guide-table">
+        <thead>
+          <tr><th>Channel</th><th>scraper_mode</th><th>source_type in DB</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Archive (disk)</td>
+            <td><code>n/a</code></td>
+            <td><code>archive_html</code> <code>archive_pdf</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; RSS feed</td>
+            <td><code>rss</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; HTML index</td>
+            <td><code>index</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; URL template</td>
+            <td><code>template</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; Playwright (JS pages)</td>
+            <td><code>playwright</code></td>
+            <td><code>ir_press_release</code></td>
+          </tr>
+          <tr>
+            <td>IR &mdash; disabled</td>
+            <td><code>skip</code></td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>EDGAR (domestic)</td>
+            <td><code>n/a</code> (requires CIK)</td>
+            <td><code>edgar_8k</code> <code>edgar_10q</code> <code>edgar_10k</code></td>
+          </tr>
+          <tr>
+            <td>EDGAR (foreign)</td>
+            <td><code>n/a</code> (filing_regime)</td>
+            <td><code>edgar_filing</code> (6-K/20-F/40-F)</td>
+          </tr>
+          <tr>
+            <td>PRNewswire</td>
+            <td><code>n/a</code> (prnewswire_url)</td>
+            <td><code>prnewswire_press_release</code></td>
+          </tr>
+          <tr>
+            <td>GlobeNewswire</td>
+            <td><code>n/a</code> (globenewswire_url)</td>
+            <td><code>globenewswire_press_release</code></td>
+          </tr>
+          <tr>
+            <td>Wire / LLM crawl</td>
+            <td><code>n/a</code></td>
+            <td><code>wire_press_release</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Button reference -->
+    <div class="guide-section">
+      <h3>Button &rarr; Action Map</h3>
+      <table class="guide-table">
+        <thead>
+          <tr><th>Button</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Acquire Archive</strong></td>
+            <td>Walks <code>OffChain/Miner/Miner Monthly/</code>, parses PDFs/HTMLs, inserts into <code>reports</code>. Skips existing unless force-flag is set.</td>
+          </tr>
+          <tr>
+            <td><strong>Acquire IR</strong></td>
+            <td>Fetches live IR pages for all active companies using each company's configured scraper_mode. Stores raw text in <code>reports</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Acquire EDGAR</strong></td>
+            <td>Calls SEC EDGAR full-text search for each company with a CIK. Fetches 8-K/10-Q/10-K (or 6-K/20-F for foreign filers). Deduplicates by accession number.</td>
+          </tr>
+          <tr>
+            <td><strong>Auto-extract checkbox</strong></td>
+            <td>When checked, IR and EDGAR acquisition automatically run the extraction stage on all newly-ingested reports before marking the job complete.</td>
+          </tr>
+          <tr>
+            <td><strong>Start Extraction</strong></td>
+            <td>Runs LLM + regex extraction on all unextracted reports (or one ticker). Writes agreed values to <code>data_points</code> and disagreements to <code>review_queue</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>Probe Targets</strong></td>
+            <td>Scraper governance: sends HTTP probes to IR URLs, checks RSS/index/template availability. Writes evidence to <code>source_audit</code>. Does not change modes.</td>
+          </tr>
+          <tr>
+            <td><strong>Probe + Apply Modes</strong></td>
+            <td>Same as Probe Targets, then automatically updates <code>scraper_mode</code> for companies where evidence supports a mode change (skip &rarr; active only with explicit policy).</td>
+          </tr>
+          <tr>
+            <td><strong>Sync Config</strong></td>
+            <td>Re-reads <code>config/companies.json</code> and upserts all company rows. Useful after editing the JSON file directly.</td>
+          </tr>
+          <tr>
+            <td><strong>Scan Manifest</strong></td>
+            <td>Walks the archive directory and records every file in <code>asset_manifest</code> (inventory of what is on disk, before ingest). Run this after adding new files to the archive folder.</td>
+          </tr>
+          <tr>
+            <td><strong>EDGAR Bridge</strong></td>
+            <td>Fills monthly coverage gaps by carrying forward or inferring values from quarterly/annual EDGAR filings when no monthly press release exists.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /guide-cols -->
+
+  <!-- Key concepts -->
+  <div class="guide-section">
+    <h3>Key Concepts and Terminology</h3>
+    <table class="guide-table">
+      <thead>
+        <tr><th style="width:160px">Term</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>reports</code></td>
+          <td>The central ingestion table. One row per document (press release, EDGAR filing, archive file). Holds raw text, source type, and covering period. Extraction status tracked via <code>extracted_at</code>.</td>
+        </tr>
+        <tr>
+          <td><code>data_points</code></td>
+          <td>Final extracted metric values. Populated when LLM and regex agree, or when an analyst approves a review item. These power the Explorer, Coverage, and Scorecard views.</td>
+        </tr>
+        <tr>
+          <td><code>review_queue</code></td>
+          <td>Holds extraction candidates where LLM and regex disagree, or where only LLM found a value. Analyst approves, rejects, or edits each item. Approved items become <code>data_points</code>.</td>
+        </tr>
+        <tr>
+          <td><code>asset_manifest</code></td>
+          <td>Inventory of files physically on disk in the archive folder. Separate from <code>reports</code>: a file can be in the manifest (known on disk) but not yet ingested (no reports row). Run <strong>Scan Manifest</strong> to populate. Tracks <code>ingest_state</code>: <code>pending</code>, <code>ingested</code>, <code>legacy_undated</code>.</td>
+        </tr>
+        <tr>
+          <td><code>covering_period</code></td>
+          <td>The calendar month or quarter a report covers, in <code>YYYY-MM</code> or <code>YYYY-Qn</code> format. Inferred from filename, document body, or EDGAR filing metadata. Drives the coverage grid.</td>
+        </tr>
+        <tr>
+          <td><code>scraper_mode</code></td>
+          <td>Controls how the IR scraper fetches live press releases for a company. One of: <code>rss</code> (parse RSS feed), <code>index</code> (scrape HTML listing page), <code>template</code> (generate URLs from a pattern), <code>playwright</code> (headless browser for JS-rendered pages), <code>skip</code> (do not scrape). EDGAR is a separate, always-on channel if a CIK is configured.</td>
+        </tr>
+        <tr>
+          <td><code>filing_regime</code></td>
+          <td>Whether a company files with the SEC as a domestic (<code>domestic</code>) or foreign private issuer (<code>foreign</code>). Foreign issuers file 6-K/20-F/40-F instead of 8-K/10-K.</td>
+        </tr>
+        <tr>
+          <td>Agreement engine</td>
+          <td>After extraction, compares the LLM value and regex value for each metric. If they agree within a configurable per-metric threshold (set in Metric Schema), the regex value goes directly to <code>data_points</code>. If they disagree or only LLM found a value, the item goes to <code>review_queue</code>.</td>
+        </tr>
+        <tr>
+          <td>Analyst protection</td>
+          <td>Data points with <code>extraction_method</code> in (<code>analyst</code>, <code>analyst_approved</code>, <code>review_approved</code>, <code>review_edited</code>) are never overwritten by pipeline re-runs. Analyst corrections are permanent until explicitly changed.</td>
+        </tr>
+        <tr>
+          <td>Scraper governance</td>
+          <td>Automated probing system that tests whether a company's configured IR source URLs are reachable and of the expected type. Records probe evidence in <code>source_audit</code> and flags companies whose configuration may be stale or misconfigured.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/js/doc_panel.js"></script>
 <script>
+// ── Sector / SSOT globals ────────────────────────────────────────────────────
+const _currentSector = {{ current_sector | tojson }};
+const _SOURCE_TYPES = {{ source_type_display | tojson }};
+window._SOURCE_TYPES = _SOURCE_TYPES;
+
+// ── Help overlay ─────────────────────────────────────────────────────────────
+function toggleHelp() {
+  const el = document.getElementById('help-overlay');
+  if (!el) return;
+  el.classList.toggle('open');
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const el = document.getElementById('help-overlay');
+    if (el && el.classList.contains('open')) el.classList.remove('open');
+  }
+});
+
 // ── Tab routing ─────────────────────────────────────────────────────────────
-const VALID_TABS = ['companies', 'registry', 'explorer', 'rules', 'review'];
+const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate'];
+const TAB_ALIASES = {
+  companies: 'config', rules: 'config', settings: 'config', research: 'ingest',
+  registry: 'data', explorer: 'data', qc: 'interpret', guide: 'workflow',
+};
 let _activeTab = null;
 
 function activateTab(name) {
-  if (!VALID_TABS.includes(name)) name = 'companies';
+  // Resolve backward-compat aliases
+  if (Object.prototype.hasOwnProperty.call(TAB_ALIASES, name)) {
+    name = TAB_ALIASES[name] || 'config';
+  }
+  if (!VALID_TABS.includes(name)) name = 'config';
   if (_activeTab === name) return;
   _activeTab = name;
   document.querySelectorAll('.ops-tab').forEach(function(b) {
@@ -691,15 +1338,38 @@ function activateTab(name) {
   url.searchParams.set('tab', name);
   history.replaceState(null, '', url.toString());
   // Lazy-load tab data on first activation
-  if (name === 'companies' && !_companiesLoaded) loadCompanies();
-  if (name === 'registry' && !_registryLoaded) loadRegistry();
-  if (name === 'explorer') {
+  if (name === 'workflow' && !_workflowLoaded) loadWorkflow();
+  if (name === 'config') {
+    if (!_companiesLoaded) loadCompanies();
+    loadSettings();
+  }
+  if (name === 'data') {
+    if (!_registryLoaded) loadRegistry();
     if (!_metricsLoaded) loadExplorerMetrics();
     if (!_keywordDictionary) loadKeywordDictionaryOptions();
     if (!_explorerLoaded) loadExplorer();
   }
-  if (name === 'review' && !_reviewLoaded) loadReview();
-  if (name === 'rules') loadMetricRules();
+  if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); }
+
+  if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
+  if (name === 'interpret') { loadOllamaModels(); _loadQCTable(); }
+}
+
+// ── Pipeline sub-tab routing ─────────────────────────────────────────────────
+function activatePipelineSubTab(pane, name) {
+  const parentPane = document.getElementById('pane-' + pane);
+  if (!parentPane) return;
+  parentPane.querySelectorAll('.pipeline-sub-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-spane') === name);
+  });
+  parentPane.querySelectorAll('.pipeline-sub-pane').forEach(function(p) {
+    p.classList.toggle('active', p.id === 'spane-' + pane + '-' + name);
+  });
+  // Lazy-load on sub-tab activation
+  if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
+  if (pane === 'review' && name === 'patterns') loadPatterns();
+  if (pane === 'interpret' && name === 'extract') loadOllamaModels();
+  if (pane === 'interpret' && name === 'qc') _loadQCTable();
 }
 
 // Tab button click — event delegation wired once (Anti-pattern #25)
@@ -712,8 +1382,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Read initial tab from URL params (also handles redirects from /coverage, /operations)
   const params = new URLSearchParams(window.location.search);
-  const tab = params.get('tab') || 'companies';
-  // Pre-apply state filter from redirect (e.g. /review → /ops?tab=explorer&state=review_pending)
+  const tab = params.get('tab') || 'workflow';
+  // Pre-apply state filter from redirect (e.g. /review → /ops?tab=data&state=review_pending)
   const stateParam = params.get('state');
   if (stateParam) {
     const sel = document.getElementById('ex-state');
@@ -729,6 +1399,63 @@ document.addEventListener('DOMContentLoaded', function() {
   onPurgeInput();
 });
 
+// ── Workflow tab (0.0) ───────────────────────────────────────────────────────
+let _workflowLoaded = false;
+
+async function loadWorkflow() {
+  _workflowLoaded = true;
+  const container = document.getElementById('workflow-stages');
+  if (!container) return;
+  try {
+    const resp = await fetch('/static/data/workflow_spec.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const spec = await resp.json();
+    container.innerHTML = _renderWorkflow(spec);
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--theme-danger)">Failed to load workflow_spec.json: ' + escapeHtml(String(err)) + '</p>';
+  }
+}
+
+function _renderWorkflow(spec) {
+  var stages = spec.stages || [];
+  return stages.map(function(stage, si) {
+    var stageNum = si + 1;
+    var steps = stage.steps || [];
+    var stepsHtml = steps.map(function(step) {
+      var pathClass = 'wf-' + (step.path || 'optional');
+      var pathLabel = {'critical': 'Critical', 'optional': 'Optional', 'later': 'Do later'}[step.path] || step.path;
+      var navBtn = '';
+      if (step.nav && step.nav.tab) {
+        var navCall = step.nav.sub_tab
+          ? 'activateTab(\'' + step.nav.tab + '\');activatePipelineSubTab(\'' + step.nav.tab + '\',\'' + step.nav.sub_tab + '\')'
+          : 'activateTab(\'' + step.nav.tab + '\')';
+        navBtn = '<button class="btn btn-xs btn-secondary wf-go-btn" onclick="' + navCall + '">Go</button>';
+      }
+      return '<div class="wf-step">'
+        + '<div class="wf-step-header">'
+        + '<span class="wf-path-badge ' + pathClass + '">' + pathLabel + '</span>'
+        + '<span class="wf-step-label">' + escapeHtml(step.label) + '</span>'
+        + '<span class="spec-id wf-specid">' + escapeHtml(step.spec_id) + '</span>'
+        + navBtn
+        + '</div>'
+        + '<p class="wf-step-desc">' + escapeHtml(step.description) + '</p>'
+        + (step.note ? '<p class="wf-step-note">' + escapeHtml(step.note) + '</p>' : '')
+        + '</div>';
+    }).join('');
+
+    return '<div class="wf-stage">'
+      + '<div class="wf-stage-header">'
+      + '<span class="wf-stage-num">' + stageNum + '</span>'
+      + '<span class="wf-stage-label">' + escapeHtml(stage.label) + '</span>'
+      + '<span class="spec-id wf-specid">' + escapeHtml(stage.spec_id) + '</span>'
+      + (stage.tab ? '<button class="btn btn-xs btn-secondary wf-go-btn" onclick="activateTab(\'' + stage.tab + '\')">Open tab</button>' : '')
+      + '</div>'
+      + '<p class="wf-stage-desc">' + escapeHtml(stage.description) + '</p>'
+      + '<div class="wf-steps">' + stepsHtml + '</div>'
+      + '</div>';
+  }).join('<div class="wf-connector"></div>');
+}
+
 // ── Companies tab ───────────────────────────────────────────────────────────
 let _companiesLoaded = false;
 let _companies = [];
@@ -738,11 +1465,6 @@ let _acqTaskId = null;
 let _acqTaskTimer = null;
 let _extractTaskId = null;
 let _extractTimer = null;
-let _overnightRunId = null;
-let _overnightPollTimer = null;
-let _observerTaskId = null;
-let _observerPollTimer = null;
-let _scoutKeywordFrequency = [];
 
 function _acqStateLabel(raw) {
   if (raw === 'complete') return 'complete';
@@ -754,6 +1476,7 @@ function _acqStateLabel(raw) {
 function _appendAcqLog(line) {
   const el = document.getElementById('acq-log');
   if (!el) return;
+  el.style.display = '';
   const row = document.createElement('div');
   row.className = 'acq-log-row';
   row.textContent = line;
@@ -787,7 +1510,8 @@ async function _pollAcquireTask(taskId, source) {
       const p = data.data || {};
       const state = _acqStateLabel(p.status || '');
       const phase = p.phase ? (' (' + p.phase + ')') : '';
-      _setAcqStatus('Acquire ' + source.toUpperCase() + ': ' + state + phase, state === 'failed');
+      const srcLabel = source === 'all' ? 'Scrape All' : ('Acquire ' + source.toUpperCase());
+      _setAcqStatus(srcLabel + ': ' + state + phase, state === 'failed');
       if (state === 'running') {
         return;
       }
@@ -797,16 +1521,23 @@ async function _pollAcquireTask(taskId, source) {
       _setAcquireButtonsEnabled(true);
       if (state === 'complete') {
         const detail = [];
-        if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
-        if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
-        if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
-        if (typeof p.reports_extracted === 'number') detail.push('extracted_reports=' + p.reports_extracted);
-        if (typeof p.extraction_data_points === 'number') detail.push('extract_points=' + p.extraction_data_points);
-        if (typeof p.extraction_review_flagged === 'number') detail.push('extract_review=' + p.extraction_review_flagged);
-        if (typeof p.extraction_errors === 'number') detail.push('extract_errors=' + p.extraction_errors);
-        if (typeof p.errors === 'number') detail.push('errors=' + p.errors);
+        if (source === 'all') {
+          // Per-phase counters for scrape-all
+          if (typeof p.archive_reports === 'number') detail.push('archive=' + p.archive_reports + ' reports, ' + (p.archive_points || 0) + ' pts');
+          if (typeof p.ir_reports === 'number') detail.push('ir=' + p.ir_reports + ' reports');
+          if (typeof p.edgar_reports === 'number') detail.push('edgar=' + p.edgar_reports + ' reports');
+        } else {
+          if (typeof p.reports_ingested === 'number') detail.push('reports=' + p.reports_ingested);
+          if (typeof p.data_points_extracted === 'number') detail.push('data_points=' + p.data_points_extracted);
+          if (typeof p.review_flagged === 'number') detail.push('review=' + p.review_flagged);
+          if (typeof p.reports_extracted === 'number') detail.push('extracted_reports=' + p.reports_extracted);
+          if (typeof p.extraction_data_points === 'number') detail.push('extract_points=' + p.extraction_data_points);
+          if (typeof p.extraction_review_flagged === 'number') detail.push('extract_review=' + p.extraction_review_flagged);
+          if (typeof p.extraction_errors === 'number') detail.push('extract_errors=' + p.extraction_errors);
+        }
+        if (typeof p.errors === 'number' && p.errors > 0) detail.push('errors=' + p.errors);
         _appendAcqLog(new Date().toISOString().slice(11, 19) + ' complete ' + source + (detail.length ? ' (' + detail.join(', ') + ')' : ''));
-        showToast('Acquire ' + source.toUpperCase() + ' complete');
+        showToast((source === 'all' ? 'Scrape All' : 'Acquire ' + source.toUpperCase()) + ' complete');
         loadPipelineObservability();
         if (_registryLoaded) loadRegistry();
         if (_explorerLoaded) loadExplorer();
@@ -827,27 +1558,30 @@ async function _pollAcquireTask(taskId, source) {
   }, 1000);
 }
 
-async function triggerAcquire(source) {
+async function triggerAcquire(source, tickers) {
   if (!source || _acqTaskId) return;
   const autoExtractEnabled = !!document.getElementById('acq-auto-extract')?.checked;
   const autoExtract = autoExtractEnabled && (source === 'ir' || source === 'edgar');
+  const scopeLabel = (tickers && tickers.length) ? ' [' + tickers.join(', ') + ']' : '';
   _setAcquireButtonsEnabled(false);
   _acqTaskId = 'starting';
-  _setAcqStatus('Acquire ' + source.toUpperCase() + ': queued' + (autoExtract ? ' (with extraction)' : ''), false);
-  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source + (autoExtract ? ' + extract' : ''));
+  _setAcqStatus('Acquire ' + source.toUpperCase() + scopeLabel + ': queued' + (autoExtract ? ' (with extraction)' : ''), false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued ' + source + scopeLabel + (autoExtract ? ' + extract' : ''));
+  const body = { auto_extract: autoExtract };
+  if (tickers && tickers.length) body.tickers = tickers;
   try {
     const resp = await fetch('/api/ingest/' + encodeURIComponent(source), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ auto_extract: autoExtract }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) {
       throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
     }
     _acqTaskId = data.data.task_id;
-    _setAcqStatus('Acquire ' + source.toUpperCase() + ': running' + (autoExtract ? ' (with extraction)' : ''), false);
-    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + ' (task ' + _acqTaskId + ')' + (autoExtract ? ' + extract' : ''));
+    _setAcqStatus('Acquire ' + source.toUpperCase() + scopeLabel + ': running' + (autoExtract ? ' (with extraction)' : ''), false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running ' + source + scopeLabel + ' (task ' + _acqTaskId + ')' + (autoExtract ? ' + extract' : ''));
     _pollAcquireTask(_acqTaskId, source);
   } catch (err) {
     _acqTaskId = null;
@@ -861,6 +1595,7 @@ async function triggerAcquire(source) {
 function _appendExtractLog(line) {
   const el = document.getElementById('extract-log');
   if (!el) return;
+  el.style.display = '';
   const row = document.createElement('div');
   row.className = 'acq-log-row';
   row.textContent = line;
@@ -883,11 +1618,14 @@ function _setExtractEnabled(enabled) {
   if (btn) btn.disabled = !enabled;
 }
 
+let _extractLogCount = 0;  // tracks how many log lines we have already rendered
+
 async function _pollExtractionRun(taskId, ticker) {
   if (_extractTimer) clearInterval(_extractTimer);
+  _extractLogCount = 0;
   _extractTimer = setInterval(async function() {
     try {
-      const resp = await fetch('/api/operations/extract/' + encodeURIComponent(taskId) + '/progress');
+      const resp = await fetch('/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const data = await resp.json();
       if (!data.success) throw new Error(data.error?.message || 'progress failed');
@@ -901,6 +1639,12 @@ async function _pollExtractionRun(taskId, ticker) {
         'Extraction ' + (ticker || 'ALL') + ': ' + state + ' (' + processed + '/' + total + ', points=' + points + ', errors=' + errors + ')',
         state === 'error'
       );
+      const logs = p.logs || [];
+      if (logs.length > _extractLogCount) {
+        const newLines = logs.slice(_extractLogCount);
+        newLines.forEach(function(line) { _appendExtractLog(line); });
+        _extractLogCount = logs.length;
+      }
       if (state === 'running') return;
       _extractTaskId = null;
       clearInterval(_extractTimer);
@@ -928,16 +1672,84 @@ async function _pollExtractionRun(taskId, ticker) {
   }, 1000);
 }
 
+async function loadOllamaModels() {
+  const sel = document.getElementById('extract-model');
+  if (!sel) return;
+  try {
+    // Query Ollama directly from the browser — no Flask proxy, no timeout delay.
+    // Falls back to the backend endpoint if CORS blocks the direct call.
+    let models = [];
+    try {
+      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
+      if (direct.ok) {
+        const d = await direct.json();
+        models = (d.models || []).map(function(m) { return m.name; });
+      }
+    } catch (_) {
+      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
+      const d = await fallback.json();
+      models = (d.data?.models || []).map(function(m) { return m.name; });
+    }
+    // Read saved model from config — same key used by backend extraction and crawl.
+    let active = '';
+    try {
+      const cfgResp = await fetch('/api/config', { cache: 'no-store' });
+      const cfgData = await cfgResp.json();
+      const row = (cfgData.data?.config || []).find(function(r) { return r.key === 'ollama_model'; });
+      active = row?.value || '';
+    } catch (_) {}
+    if (!models.length) {
+      sel.innerHTML = '<option value="">No models found</option>';
+      return;
+    }
+    // Sort: saved config model first, then preferred fallbacks, then alpha.
+    // This ensures the correct model is pre-selected even when the exact name
+    // doesn't appear first in the Ollama model list.
+    const preferred = ['qwen3.5:9b', 'qwen3.5:27b'];
+    models.sort(function(a, b) {
+      if (a === active) return -1;
+      if (b === active) return 1;
+      const ai = preferred.indexOf(a), bi = preferred.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    sel.innerHTML = models.map(function(n) {
+      return '<option value="' + escapeAttr(n) + '"' + (n === active ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+    }).join('');
+  } catch (_err) {
+    sel.innerHTML = '<option value="">Could not load models</option>';
+  }
+}
+
+async function saveOllamaModel(modelName) {
+  if (!modelName) return;
+  try {
+    const resp = await fetch('/api/config/ollama_model', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ value: modelName }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    showToast('Model set to ' + modelName);
+  } catch (err) {
+    showToast('Failed to save model: ' + String(err), true);
+  }
+}
+
 async function startExtractionRun() {
   if (_extractTaskId) return;
-  const ticker = (document.getElementById('extract-ticker').value || '').trim().toUpperCase();
+  const _sel = Array.from(_selectedCrawlTickers);
+  const ticker = _sel.length === 1 ? _sel[0] : '';
   const force = !!document.getElementById('extract-force').checked;
   _setExtractEnabled(false);
   _extractTaskId = 'starting';
   _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': queued', false);
   _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : ''));
   try {
-    const resp = await fetch('/api/operations/extract', {
+    const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ ticker: ticker || null, force }),
@@ -1042,305 +1854,6 @@ function _parseCommaOrNewlineTerms(raw) {
   return out;
 }
 
-function _setScoutKeywordTextarea(terms) {
-  const el = document.getElementById('ov-scout-keywords');
-  if (!el) return;
-  el.value = (terms || []).join(', ');
-}
-
-function _appendScoutKeywordTerm(term) {
-  const incoming = String(term || '').trim().toLowerCase();
-  if (!incoming) return;
-  const el = document.getElementById('ov-scout-keywords');
-  if (!el) return;
-  const cur = _parseCommaOrNewlineTerms(el.value);
-  if (!cur.includes(incoming)) cur.push(incoming);
-  el.value = cur.join(', ');
-}
-
-function _renderScoutKeywordFrequency(words) {
-  const root = document.getElementById('ov-keyword-freq');
-  if (!root) return;
-  if (!words || !words.length) {
-    root.innerHTML = '<span style="font-size:0.75rem;color:var(--theme-text-muted)">No keyword frequency data yet.</span>';
-    return;
-  }
-  root.innerHTML = words.map(function(w) {
-    const word = escapeHtml(w.word || '');
-    const count = escapeHtml(String(w.count || 0));
-    return '<button class="kw-chip" onclick="appendScoutKeywordFromChip(\'' + escapeAttr(w.word || '') + '\')" title="append keyword">' + word + ' (' + count + ')</button>';
-  }).join('');
-}
-
-function appendScoutKeywordFromChip(word) {
-  _appendScoutKeywordTerm(word);
-}
-
-async function loadScoutKeywordFrequency() {
-  const msgEl = document.getElementById('overnight-msg');
-  if (msgEl) msgEl.textContent = 'Loading keyword frequency…';
-  try {
-    const resp = await fetch('/api/diagnostics', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const words = ((data.data || {}).keywords || []).slice(0, 20);
-    _scoutKeywordFrequency = words;
-    _renderScoutKeywordFrequency(words);
-    if (msgEl) msgEl.textContent = 'Keyword frequency updated';
-  } catch (err) {
-    if (msgEl) msgEl.textContent = 'Keyword frequency unavailable';
-    _renderScoutKeywordFrequency([]);
-  }
-}
-
-function seedScoutKeywordsFromPack() {
-  const terms = _getKeywordTerms() || [];
-  if (!terms.length) {
-    showToast('No active keyword pack terms available', true);
-    return;
-  }
-  _setScoutKeywordTextarea(terms.slice(0, 40));
-  showToast('Seeded scout keywords from active pack');
-}
-
-function seedScoutKeywordsFromFrequencyTop() {
-  if (!_scoutKeywordFrequency || !_scoutKeywordFrequency.length) {
-    showToast('No frequency terms loaded yet', true);
-    return;
-  }
-  const terms = _scoutKeywordFrequency.slice(0, 12).map(function(r) { return (r.word || '').toLowerCase(); }).filter(Boolean);
-  _setScoutKeywordTextarea(terms);
-  showToast('Seeded scout keywords from frequency top terms');
-}
-
-function _parseTickerCsv(raw) {
-  return String(raw || '')
-    .split(',')
-    .map(function(t) { return t.trim().toUpperCase(); })
-    .filter(Boolean);
-}
-
-function _setOvernightStatus(text, isError) {
-  const el = document.getElementById('overnight-status');
-  if (!el) return;
-  el.textContent = text;
-  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
-}
-
-async function startOvernightWithScout() {
-  const tickers = _parseTickerCsv(document.getElementById('ov-tickers')?.value || '');
-  const scoutMode = (document.getElementById('ov-scout-mode')?.value || 'auto').trim();
-  const scoutMaxAgeHours = Math.max(1, Number(document.getElementById('ov-scout-max-age')?.value || 168));
-  const scoutKeywords = _parseCommaOrNewlineTerms(document.getElementById('ov-scout-keywords')?.value || '');
-  const applyModeChanges = !!document.getElementById('ov-apply-modes')?.checked;
-  const warmModel = !!document.getElementById('ov-warm-model')?.checked;
-  const requireScoutSuccess = !!document.getElementById('ov-require-scout-success')?.checked;
-
-  _setOvernightStatus('Starting overnight run…', false);
-  try {
-    const resp = await fetch('/api/pipeline/overnight/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        tickers,
-        apply_mode_changes: applyModeChanges,
-        warm_model: warmModel,
-        scout_mode: scoutMode,
-        scout_max_age_hours: scoutMaxAgeHours,
-        scout_keywords: scoutKeywords,
-        require_scout_success: requireScoutSuccess,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    _overnightRunId = Number(data.data?.run_id || 0) || null;
-    if (_overnightRunId) {
-      const runIdInput = document.getElementById('ov-run-id');
-      if (runIdInput) runIdInput.value = String(_overnightRunId);
-      _setOvernightStatus('Run #' + _overnightRunId + ' queued', false);
-      showToast('Overnight run started: #' + _overnightRunId);
-      refreshOvernightStatus();
-      if (_overnightPollTimer) clearInterval(_overnightPollTimer);
-      _overnightPollTimer = setInterval(refreshOvernightStatus, 3000);
-    }
-  } catch (err) {
-    _setOvernightStatus('Failed to start: ' + String(err), true);
-    showToast('Failed to start overnight run', true);
-  }
-}
-
-function _activeOvernightRunId() {
-  const explicit = Number(document.getElementById('ov-run-id')?.value || 0);
-  if (explicit > 0) return explicit;
-  return _overnightRunId;
-}
-
-async function refreshOvernightStatus() {
-  const runId = _activeOvernightRunId();
-  if (!runId) {
-    _setOvernightStatus('No run selected. Start a run or enter run id.', false);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/status', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const run = data.data?.run || {};
-    const summary = run.summary || {};
-    const scout = summary.scout || {};
-    const status = run.status || 'unknown';
-    const scoutText = scout.ran
-      ? ('scout=' + (scout.results ? scout.results.length : 0) + ' ok, ' + (scout.failures ? scout.failures.length : 0) + ' failed')
-      : ('scout=' + (scout.reason || 'skipped'));
-    _setOvernightStatus(
-      'Run #' + runId + ' status=' + status
-      + ' | targets=' + ((summary.scrape_targets || []).length || 0)
-      + ' | failures=' + ((summary.failures || []).length || 0)
-      + ' | ' + scoutText,
-      status === 'failed' || status === 'failed_preflight'
-    );
-    if (['complete', 'partial_complete', 'failed', 'failed_preflight', 'cancelled'].includes(status)) {
-      if (_overnightPollTimer) {
-        clearInterval(_overnightPollTimer);
-        _overnightPollTimer = null;
-      }
-      loadPipelineObservability();
-    }
-  } catch (err) {
-    _setOvernightStatus('Status check failed: ' + String(err), true);
-  }
-}
-
-async function cancelOvernightRun() {
-  const runId = _activeOvernightRunId();
-  if (!runId) {
-    showToast('No run id selected', true);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/pipeline/overnight/' + encodeURIComponent(String(runId)) + '/cancel', { method: 'POST' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    _setOvernightStatus('Run #' + runId + ' cancel requested', false);
-    showToast('Cancel requested for run #' + runId);
-  } catch (err) {
-    _setOvernightStatus('Cancel failed: ' + String(err), true);
-    showToast('Cancel failed', true);
-  }
-}
-
-function _setObserverStatus(text, isError) {
-  const el = document.getElementById('observer-status');
-  if (!el) return;
-  el.textContent = text;
-  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-secondary)';
-}
-
-function _renderObserverArtifacts(summary) {
-  const el = document.getElementById('observer-artifacts');
-  if (!el) return;
-  if (!summary || typeof summary !== 'object') {
-    el.textContent = '';
-    return;
-  }
-  const promptIdx = summary.prompt_trace && summary.prompt_trace.index ? String(summary.prompt_trace.index) : '';
-  const decisionPath = summary.decision_trace && summary.decision_trace.path ? String(summary.decision_trace.path) : '';
-  const merged = summary.artifacts && summary.artifacts.merged_source_contracts ? String(summary.artifacts.merged_source_contracts) : '';
-  const parts = [];
-  if (merged) parts.push('merged=' + merged);
-  if (promptIdx) parts.push('prompt_trace=' + promptIdx);
-  if (decisionPath) parts.push('decision_trace=' + decisionPath);
-  el.textContent = parts.join(' | ');
-}
-
-async function startObserverSwarm() {
-  const tickers = _parseTickerCsv(document.getElementById('obs-tickers')?.value || '');
-  const scoutCount = Math.max(1, Number(document.getElementById('obs-scout-count')?.value || 4));
-  const maxAttempts = Math.max(1, Number(document.getElementById('obs-max-attempts')?.value || 5));
-  const maxNoYield = Math.max(1, Number(document.getElementById('obs-max-no-yield')?.value || 3));
-  const executeScrape = !!document.getElementById('obs-execute-scrape')?.checked;
-  const runFeedbackLoop = !!document.getElementById('obs-feedback-loop')?.checked;
-  const applyPrimitives = !!document.getElementById('obs-apply-primitives')?.checked;
-  const runIdRaw = (document.getElementById('obs-run-id')?.value || '').trim();
-
-  _setObserverStatus('Starting observer swarm…', false);
-  _renderObserverArtifacts(null);
-  try {
-    const resp = await fetch('/api/operations/observer_swarm/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        tickers,
-        scout_count: scoutCount,
-        max_attempts_source: maxAttempts,
-        max_no_yield: maxNoYield,
-        execute_scrape: executeScrape,
-        run_feedback_loop: runFeedbackLoop,
-        apply_validated_primitives: applyPrimitives,
-        run_id: runIdRaw || null,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-
-    _observerTaskId = String(data.data?.task_id || '');
-    const taskInput = document.getElementById('obs-task-id');
-    if (taskInput && _observerTaskId) taskInput.value = _observerTaskId;
-    _setObserverStatus('Observer swarm task queued: ' + _observerTaskId, false);
-    showToast('Observer swarm started');
-    refreshObserverSwarmStatus();
-    if (_observerPollTimer) clearInterval(_observerPollTimer);
-    _observerPollTimer = setInterval(refreshObserverSwarmStatus, 3000);
-  } catch (err) {
-    _setObserverStatus('Failed to start: ' + String(err), true);
-    showToast('Failed to start observer swarm', true);
-  }
-}
-
-function _activeObserverTaskId() {
-  const explicit = String(document.getElementById('obs-task-id')?.value || '').trim();
-  if (explicit) return explicit;
-  return _observerTaskId;
-}
-
-async function refreshObserverSwarmStatus() {
-  const taskId = _activeObserverTaskId();
-  if (!taskId) {
-    _setObserverStatus('No observer task selected. Start a run or enter task id.', false);
-    return;
-  }
-  try {
-    const resp = await fetch('/api/operations/observer_swarm/' + encodeURIComponent(taskId) + '/status', { cache: 'no-store' });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
-    const s = data.data || {};
-    const state = s.status || 'unknown';
-    const summary = s.summary || {};
-    const statusCounts = summary.status_counts || {};
-    const feedback = summary.feedback_loop || {};
-    _setObserverStatus(
-      'Task ' + taskId + ' status=' + state
-      + ' | tickers=' + ((s.tickers || []).length || 0)
-      + ' | ready=' + (statusCounts.ready_for_scrape || 0)
-      + ' | partial=' + (statusCounts.partially_covered || 0)
-      + ' | blocked=' + (statusCounts.blocked || 0)
-      + ' | gaps=' + (feedback.gap_count || 0)
-      + ' | candidates=' + (feedback.candidate_count || 0),
-      state === 'error'
-    );
-    _renderObserverArtifacts(summary);
-    if (['complete', 'error'].includes(state)) {
-      if (_observerPollTimer) {
-        clearInterval(_observerPollTimer);
-        _observerPollTimer = null;
-      }
-      loadPipelineObservability();
-    }
-  } catch (err) {
-    _setObserverStatus('Status check failed: ' + String(err), true);
-  }
-}
-
 async function loadCompanies() {
   const tbody = document.getElementById('companies-tbody');
   try {
@@ -1360,7 +1873,6 @@ async function loadCompanies() {
     renderCompanies();
     loadScrapeQueue();
     loadPipelineObservability();
-    loadScoutKeywordFrequency();
   } catch (_err) {
     _companiesLoaded = false;
     if (tbody) {
@@ -1415,6 +1927,13 @@ function renderCompanies() {
       nameExtra = '<div style="font-size:0.7rem;color:var(--theme-text-muted);margin-top:2px;max-width:320px;white-space:normal">' + escapeHtml(c.skip_reason.slice(0, 120)) + (c.skip_reason.length > 120 ? '…' : '') + '</div>';
     }
 
+    const governance = _governanceByTicker[c.ticker];
+    const governanceBadge = governance
+      ? '<span class="scraper-badge scraper-badge-governance-' + escapeHtml(governance) + '"'
+        + ' title="scraper governance: ' + escapeAttr(governance) + '" style="margin-left:4px">'
+        + escapeHtml(governance) + '</span>'
+      : '';
+
     const hasDetail = !!(c.url_template || c.sandbox_note || (c.skip_reason && c.skip_reason.length > 120));
     const expandBtn = hasDetail
       ? '<button class="btn btn-sm btn-secondary" style="padding:1px 6px;font-size:0.7rem" data-ticker="' + escapeAttr(c.ticker) + '" onclick="toggleCompanyDetail(this.getAttribute(\'data-ticker\'))">+</button>'
@@ -1433,7 +1952,6 @@ function renderCompanies() {
       + '<td style="font-size:0.78rem;color:var(--theme-text-muted)">' + escapeHtml(lastScrape) + '</td>'
       + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
           + expandBtn
-          + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="editRegime(this.getAttribute(\'data-ticker\'))">Regime</button>'
           + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), false)">Probe</button>'
           + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), true)">Probe+Apply</button>'
           + (mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
@@ -1582,7 +2100,12 @@ function onPurgeInput() {
   purgeBtn.textContent = ticker ? (labelPrefix + ' ' + ticker) : (labelPrefix + ' ALL');
   if (disableSyncCb) {
     const allowed = (mode === 'hard_delete' && !ticker);
-    if (!allowed) disableSyncCb.checked = false;
+    if (!allowed) {
+      disableSyncCb.checked = false;
+    } else {
+      // Default to checked for full hard_delete — re-populating on restart contradicts the intent
+      disableSyncCb.checked = true;
+    }
     disableSyncCb.disabled = !allowed;
   }
 }
@@ -2020,6 +2543,10 @@ async function submitAddCompany() {
   const data = await resp.json();
   if (!data.success) {
     document.getElementById('ac-error').textContent = data.error?.message || 'Error';
+    if (resp.status === 409) {
+      _companiesLoaded = false;
+      loadCompanies();
+    }
     return;
   }
   document.getElementById('add-company-form').style.display = 'none';
@@ -2186,6 +2713,62 @@ function _getKeywordTerms() {
   return Array.isArray(packTerms) ? packTerms : [];
 }
 
+// ── HTML document viewer with snippet highlighting ────────────────────────────
+function _renderHtmlDocViewer(container, rawHtml, matches) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(rawHtml, 'text/html');
+
+  // Strip elements that should not render in the viewer
+  ['script', 'style', 'link', 'meta', 'iframe', 'object', 'embed',
+   'nav', 'header', 'footer'].forEach(function(tag) {
+    doc.querySelectorAll(tag).forEach(function(el) { el.remove(); });
+  });
+
+  // Collect snippets to highlight (source_snippet or text field, normalise whitespace)
+  const snippets = [];
+  (matches || []).forEach(function(m) {
+    const raw = (m.source_snippet || m.text || '').replace(/\s+/g, ' ').trim();
+    if (raw.length >= 6) snippets.push(raw);
+  });
+
+  // Walk text nodes in the parsed document body and wrap matches with <mark>
+  snippets.forEach(function(snippet) {
+    const needle = snippet.slice(0, 120).toLowerCase();
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+    const toProcess = [];
+    let node;
+    while ((node = walker.nextNode())) toProcess.push(node);
+    toProcess.forEach(function(textNode) {
+      const val = textNode.nodeValue;
+      const idx = val.toLowerCase().indexOf(needle);
+      if (idx < 0) return;
+      const mark = doc.createElement('mark');
+      mark.className = 'doc-snippet-hl';
+      mark.textContent = val.slice(idx, idx + snippet.length);
+      const parent = textNode.parentNode;
+      if (!parent) return;
+      const before = val.slice(0, idx);
+      const after  = val.slice(idx + snippet.length);
+      if (before) parent.insertBefore(doc.createTextNode(before), textNode);
+      parent.insertBefore(mark, textNode);
+      if (after)  parent.insertBefore(doc.createTextNode(after), textNode);
+      parent.removeChild(textNode);
+    });
+  });
+
+  // Render into an isolated wrapper div
+  const wrapper = document.createElement('div');
+  wrapper.className = 'html-doc-viewer';
+  wrapper.innerHTML = doc.body.innerHTML;
+
+  container.innerHTML = '';
+  container.appendChild(wrapper);
+
+  // Scroll first highlight into view
+  const firstMark = container.querySelector('mark.doc-snippet-hl');
+  if (firstMark) firstMark.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 function _buildExplorerHighlightedSource(rawText, matches) {
   if (!rawText) return '';
   const regions = [];
@@ -2323,6 +2906,7 @@ function addKeywordPack() {
   const exSel = document.getElementById('ex-keyword-pack');
   if (exSel) exSel.value = key;
   renderKeywordEditor();
+  saveKeywordDictionary();
 }
 
 function deleteKeywordPack() {
@@ -2338,7 +2922,8 @@ function deleteKeywordPack() {
   }
   _keywordDictionary.active_pack = Object.keys(packs)[0];
   try { localStorage.setItem('keyword_pack', _keywordDictionary.active_pack); } catch (_e) {}
-  loadKeywordDictionaryOptions();
+  renderKeywordEditor();
+  saveKeywordDictionary();
 }
 
 async function saveKeywordDictionary() {
@@ -2524,9 +3109,12 @@ async function loadCellDetail(ticker, period, metric) {
   reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
   actEl.appendChild(reexBtn);
 
-  // Source view with extraction + keyword highlighting
+  // Source view — prefer raw HTML renderer, fall back to plain-text highlighter
   const snippetEl = document.getElementById('cell-snippet');
-  if (d.raw_text) {
+  if (d.raw_html) {
+    _renderHtmlDocViewer(snippetEl, d.raw_html, d.matches || []);
+    snippetEl.style.display = '';
+  } else if (d.raw_text) {
     snippetEl.innerHTML = _buildExplorerHighlightedSource(d.raw_text, d.matches || []);
     snippetEl.style.display = '';
   } else if (d.source_snippet) {
@@ -2602,23 +3190,38 @@ let _reviewIdx = -1;
 
 async function loadReview() {
   _reviewLoaded = true;
-  const status = document.getElementById('rv-status').value;
-  const ticker = document.getElementById('rv-ticker').value.trim().toUpperCase();
+  const statusEl = document.getElementById('rv-status');
+  const tickerEl = document.getElementById('rv-ticker');
+  const metricEl = document.getElementById('rv-metric');
+  const sourceEl = document.getElementById('rv-source-type');
   const params = new URLSearchParams();
-  if (status) params.set('status', status);
-  if (ticker) params.set('ticker', ticker);
+  if (statusEl && statusEl.value) params.set('status', statusEl.value);
+  if (tickerEl && tickerEl.value.trim()) params.set('ticker', tickerEl.value.trim().toUpperCase());
+  if (metricEl && metricEl.value) params.set('metric', metricEl.value);
+  if (sourceEl && sourceEl.value) params.set('source_type', sourceEl.value);
   const resp = await fetch('/api/review?' + params.toString());
   if (!resp.ok) { showToast('Failed to load review queue', true); return; }
   const data = await resp.json();
   _reviewItems = data.data?.items || [];
-  document.getElementById('rv-count').textContent = _reviewItems.length + ' items';
+  const countEl = document.getElementById('rv-count');
+  if (countEl) countEl.textContent = _reviewItems.length + ' items';
   renderReview();
+}
+
+function _sourceTypeBadge(sourceType) {
+  if (!sourceType) return '';
+  const label = (window._SOURCE_TYPES && window._SOURCE_TYPES[sourceType]) || sourceType;
+  const tier = sourceType.startsWith('edgar') ? 'sec'
+    : (sourceType === 'ir_press_release' || sourceType.startsWith('archive')) ? 'ir'
+    : 'wire';
+  return '<span class="source-tier-badge source-tier-' + escapeAttr(tier) + '">' + escapeHtml(label) + '</span>';
 }
 
 function renderReview() {
   const tbody = document.getElementById('review-tbody');
+  if (!tbody) return;
   if (!_reviewItems.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
     return;
   }
   tbody.innerHTML = _reviewItems.map(function(item, idx) {
@@ -2628,13 +3231,17 @@ function renderReview() {
       + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
       + '<td>' + escapeHtml(item.period || '') + '</td>'
       + '<td style="font-size:0.75rem">' + escapeHtml(item.metric || '') + '</td>'
+      + '<td>' + _sourceTypeBadge(item.source_type) + '</td>'
       + '<td style="text-align:right">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
       + '<td style="text-align:right">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
       + '<td style="font-size:0.75rem">' + escapeHtml(item.agreement_status || '') + '</td>'
       + '<td style="color:' + statusColor + ';font-size:0.75rem">' + escapeHtml(item.status || '') + '</td>'
-      + '<td style="display:flex;gap:4px">'
+      + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="approveItem(this.getAttribute(\'data-id\'))">A</button>'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="rejectItem(this.getAttribute(\'data-id\'))">R</button>'
+        + (item.source_snippet ? '<button class="btn btn-sm btn-secondary rv-gen-btn" title="Generate regex pattern from this snippet"'
+            + ' data-metric="' + escapeAttr(item.metric || '') + '"'
+            + ' data-snippet="' + escapeAttr(item.source_snippet || '') + '">Gen</button>' : '')
       + '</td>'
       + '</tr>';
   }).join('');
@@ -2646,12 +3253,19 @@ function toggleSelectAll() {
   document.getElementById('rv-bulk-approve').disabled = !checked;
 }
 
-// Event delegation for checkbox changes — wired once
+// Event delegation for review tbody — wired once
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('review-tbody').addEventListener('change', function(e) {
+  const reviewTbody = document.getElementById('review-tbody');
+  if (!reviewTbody) return;
+  reviewTbody.addEventListener('change', function(e) {
     if (!e.target.classList.contains('rv-cb')) return;
     const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
     document.getElementById('rv-bulk-approve').disabled = !anyChecked;
+  });
+  reviewTbody.addEventListener('click', function(e) {
+    const btn = e.target.closest('.rv-gen-btn');
+    if (!btn) return;
+    prefillPatternGenerator(btn.dataset.metric, btn.dataset.snippet);
   });
 });
 
@@ -2733,26 +3347,36 @@ async function loadMetricRules() {
       return;
     }
     tbody.innerHTML = rules.map(function(r) {
+      var m = escapeHtml(r.metric);
       return '<tr>' +
-        '<td style="font-family:monospace">' + escapeHtml(r.metric) + '</td>' +
+        '<td style="font-family:monospace">' + m + '</td>' +
         '<td><input class="rules-input" type="number" step="0.001" min="0" max="1" ' +
           'value="' + r.agreement_threshold + '" ' +
-          'data-metric="' + escapeHtml(r.metric) + '" data-field="agreement_threshold" ' +
-          'style="width:80px"></td>' +
+          'data-metric="' + m + '" data-field="agreement_threshold" style="width:72px" ' +
+          'title="Max relative difference (fraction) between LLM and regex before routing to review. 0.02 = 2%."></td>' +
         '<td><input class="rules-input" type="number" step="0.01" min="0" ' +
           'value="' + r.outlier_threshold + '" ' +
-          'data-metric="' + escapeHtml(r.metric) + '" data-field="outlier_threshold" ' +
-          'style="width:80px"></td>' +
+          'data-metric="' + m + '" data-field="outlier_threshold" style="width:72px" ' +
+          'title="Max deviation from trailing average (fraction) before flagging as outlier. 0.4 = 40%."></td>' +
         '<td><input class="rules-input" type="number" step="1" min="1" ' +
           'value="' + r.outlier_min_history + '" ' +
-          'data-metric="' + escapeHtml(r.metric) + '" data-field="outlier_min_history" ' +
-          'style="width:60px"></td>' +
-        '<td><select class="rules-input" data-metric="' + escapeHtml(r.metric) + '" data-field="enabled">' +
+          'data-metric="' + m + '" data-field="outlier_min_history" style="width:55px" ' +
+          'title="Minimum prior accepted data points required before outlier check applies."></td>' +
+        '<td><input class="rules-input" type="number" step="1" min="0" ' +
+          'value="' + (r.valid_range_min != null ? r.valid_range_min : '') + '" ' +
+          'data-metric="' + m + '" data-field="valid_range_min" style="width:72px" ' +
+          'placeholder="0" title="Values below this floor are discarded (confidence=0)."></td>' +
+        '<td><input class="rules-input" type="number" step="1" min="0" ' +
+          'value="' + (r.valid_range_max != null ? r.valid_range_max : '') + '" ' +
+          'data-metric="' + m + '" data-field="valid_range_max" style="width:72px" ' +
+          'placeholder="5000" title="Values above this ceiling are discarded (confidence=0)."></td>' +
+        '<td><select class="rules-input" data-metric="' + m + '" data-field="enabled">' +
           '<option value="1"' + (r.enabled ? ' selected' : '') + '>On</option>' +
           '<option value="0"' + (!r.enabled ? ' selected' : '') + '>Off</option>' +
           '</select></td>' +
-        '<td><button class="btn btn-xs btn-primary" onclick="saveMetricRule(' + "'" + escapeHtml(r.metric) + "'" + ')">Save</button>' +
-          ' <span id="rules-msg-' + escapeHtml(r.metric) + '" style="font-size:0.75rem;color:var(--theme-text-muted)"></span></td>' +
+        '<td><button class="btn btn-xs btn-primary" onclick="saveMetricRule(\'' + m + '\')">Save</button>' +
+          ' <button class="btn btn-xs btn-danger" onclick="deleteMetricRule(\'' + m + '\')">Delete</button>' +
+          ' <span id="rules-msg-' + m + '" style="font-size:0.75rem;color:var(--theme-text-muted)"></span></td>' +
         '</tr>';
     }).join('');
     makeSortable('rules-table');
@@ -2766,11 +3390,15 @@ async function saveMetricRule(metric) {
     const el = document.querySelector('[data-metric="' + metric + '"][data-field="' + field + '"]');
     return el ? el.value : null;
   };
+  var vrmin = getVal('valid_range_min');
+  var vrmax = getVal('valid_range_max');
   const body = {
     agreement_threshold: parseFloat(getVal('agreement_threshold')),
     outlier_threshold: parseFloat(getVal('outlier_threshold')),
     outlier_min_history: parseInt(getVal('outlier_min_history'), 10),
     enabled: parseInt(getVal('enabled'), 10),
+    valid_range_min: vrmin !== '' && vrmin != null ? parseFloat(vrmin) : null,
+    valid_range_max: vrmax !== '' && vrmax != null ? parseFloat(vrmax) : null,
   };
   const msgEl = document.getElementById('rules-msg-' + metric);
   try {
@@ -2787,11 +3415,1079 @@ async function saveMetricRule(metric) {
     if (msgEl) msgEl.textContent = String(err);
   }
 }
+
+async function deleteMetricRule(metric) {
+  if (!confirm('Delete rule for "' + metric + '"? The pipeline will fall back to config.py defaults until a new rule is created.')) return;
+  try {
+    const resp = await fetch('/api/metric_rules/' + encodeURIComponent(metric), { method: 'DELETE' });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Delete failed');
+    showToast('Deleted rule for ' + metric);
+    loadMetricRules();
+  } catch(err) {
+    showToast('Delete failed: ' + String(err), true);
+  }
+}
+
+// ── Regex Patterns (1.2.1) ────────────────────────────────────────────────────
+
+let _patternsData = null;
+
+async function loadPatterns() {
+  const container = document.getElementById('patterns-list');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.85rem">Loading...</p>';
+  try {
+    const resp = await fetch('/api/patterns');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    if (!json.success) throw new Error(json.error && json.error.message || 'Load failed');
+    _patternsData = json.data;
+    container.innerHTML = _renderPatternsHTML(json.data);
+    _renderKeywordGaps(json.data.keyword_gaps || []);
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--theme-danger)">Error: ' + escapeHtml(String(err)) + '</p>';
+  }
+}
+
+function _renderPatternsHTML(data) {
+  var metrics = data.metrics || [];
+  if (!metrics.length) return '<p style="color:var(--theme-text-muted)">No pattern files found.</p>';
+  var html = '';
+  metrics.forEach(function(m) {
+    html += '<div style="margin-bottom:1.5rem">';
+    html += '<div style="display:flex;gap:0.5rem;align-items:baseline;margin-bottom:0.4rem">';
+    html += '<strong style="font-size:0.9rem">' + escapeHtml(m.label) + '</strong>';
+    html += '<span style="font-size:0.75rem;color:var(--theme-text-muted);font-family:monospace">' + escapeHtml(m.metric) + '</span>';
+    if (m.unit) html += '<span style="font-size:0.75rem;color:var(--theme-text-muted)">' + escapeHtml(m.unit) + '</span>';
+    html += '<span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:auto">' + m.patterns.length + ' pattern' + (m.patterns.length !== 1 ? 's' : '') + '</span>';
+    html += '</div>';
+    if (!m.patterns.length) {
+      html += '<p style="color:var(--theme-warning,#b45309);font-size:0.82rem;margin:0.2rem 0">No patterns defined — extraction engine will always produce LLM-only results for this metric.</p>';
+    } else {
+      html += '<table style="width:100%;font-size:0.79rem;border-collapse:collapse">';
+      html += '<thead><tr style="border-bottom:1px solid var(--theme-border)">';
+      html += '<th style="text-align:left;padding:0.25rem 0.4rem;width:13%">ID</th>';
+      html += '<th style="text-align:left;padding:0.25rem 0.4rem">Regex</th>';
+      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:6%">Weight</th>';
+      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:5%">Fires</th>';
+      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:6%">Avg Conf</th>';
+      html += '<th style="padding:0.25rem 0.4rem;width:14%"></th>';
+      html += '</tr></thead><tbody>';
+      m.patterns.forEach(function(p) {
+        var pid = escapeHtml(p.id);
+        var metric = escapeHtml(m.metric);
+        var fires = p.fires || 0;
+        var avgConf = p.avg_conf != null ? (p.avg_conf * 100).toFixed(0) + '%' : '—';
+        var firesColor = fires > 0 ? 'var(--theme-text-primary)' : 'var(--theme-text-muted)';
+        html += '<tr style="border-bottom:1px solid var(--theme-border-subtle,#eee)">';
+        html += '<td style="padding:0.3rem 0.4rem;font-family:monospace;font-size:0.7rem;color:var(--theme-text-muted)">' + pid + '</td>';
+        html += '<td style="padding:0.3rem 0.4rem"><input type="text" class="pattern-regex-input"'
+          + ' style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem"'
+          + ' data-metric="' + metric + '" data-pid="' + pid + '"'
+          + ' value="' + escapeHtml(p.regex) + '"></td>';
+        html += '<td style="padding:0.3rem 0.4rem;text-align:right">'
+          + '<input type="number" class="pattern-weight-input" style="width:52px"'
+          + ' min="0.01" max="1" step="0.01"'
+          + ' data-metric="' + metric + '" data-pid="' + pid + '"'
+          + ' value="' + p.confidence_weight + '"></td>';
+        html += '<td style="padding:0.3rem 0.4rem;text-align:right;color:' + firesColor + '">' + fires + '</td>';
+        html += '<td style="padding:0.3rem 0.4rem;text-align:right;color:var(--theme-text-muted)">' + avgConf + '</td>';
+        html += '<td style="padding:0.3rem 0.4rem">'
+          + '<button class="btn btn-xs btn-primary" onclick="savePatternEdit(\'' + metric + '\',\'' + pid + '\')">Save</button> '
+          + '<button class="btn btn-xs btn-danger" onclick="deletePattern(\'' + metric + '\',\'' + pid + '\')">Del</button>'
+          + '<span id="pat-msg-' + metric + '-' + pid + '" style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:0.3rem"></span>'
+          + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  });
+  return html;
+}
+
+function _renderKeywordGaps(gaps) {
+  var el = document.getElementById('pattern-keyword-gaps');
+  if (!el || !gaps.length) return;
+  var uncovered = gaps.filter(function(g) { return !g.covered; });
+  if (!uncovered.length) {
+    el.textContent = 'All top keywords from review snippets are covered by existing patterns.';
+    return;
+  }
+  el.innerHTML = '<strong style="font-size:0.8rem">Top uncovered keywords (from review snippets):</strong> '
+    + uncovered.slice(0, 20).map(function(g) {
+        return '<span style="background:var(--theme-warning-bg,#fff3cd);border-radius:3px;padding:1px 5px;'
+          + 'font-size:0.75rem;margin:0 2px">' + escapeHtml(g.word) + ' (' + g.count + ')</span>';
+      }).join('');
+}
+
+async function savePatternEdit(metric, patternId) {
+  var msgEl = document.getElementById('pat-msg-' + metric + '-' + patternId);
+  var regexInput = document.querySelector('input.pattern-regex-input[data-metric="' + metric + '"][data-pid="' + patternId + '"]');
+  var weightInput = document.querySelector('input.pattern-weight-input[data-metric="' + metric + '"][data-pid="' + patternId + '"]');
+  if (!regexInput || !weightInput) return;
+  try {
+    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric) + '/' + encodeURIComponent(patternId), {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex: regexInput.value, confidence_weight: parseFloat(weightInput.value)}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-success,green)';
+      msgEl.textContent = 'Saved';
+      setTimeout(function() { if (msgEl) { msgEl.textContent = ''; } }, 2000);
+    }
+  } catch(err) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
+  }
+}
+
+async function deletePattern(metric, patternId) {
+  if (!confirm('Delete pattern "' + patternId + '" from ' + metric + '?')) return;
+  try {
+    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric) + '/' + encodeURIComponent(patternId), {
+      method: 'DELETE',
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Delete failed');
+    showToast('Deleted pattern ' + patternId);
+    loadPatterns();
+  } catch(err) {
+    showToast('Delete failed: ' + String(err), true);
+  }
+}
+
+async function addPatternFromForm() {
+  var metric = document.getElementById('add-pattern-metric') && document.getElementById('add-pattern-metric').value;
+  var regexEl = document.getElementById('add-pattern-regex');
+  var regex = regexEl ? regexEl.value.trim() : '';
+  var weightEl = document.getElementById('add-pattern-weight');
+  var weight = weightEl ? parseFloat(weightEl.value) : 0.85;
+  var msgEl = document.getElementById('add-pattern-msg');
+  if (!metric || !regex) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'Metric and regex are required.'; }
+    return;
+  }
+  try {
+    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex: regex, confidence_weight: weight}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Add failed');
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-success,green)';
+      msgEl.textContent = 'Added: ' + (json.data && json.data.id || '');
+      setTimeout(function() { if (msgEl) msgEl.textContent = ''; }, 3000);
+    }
+    if (regexEl) regexEl.value = '';
+    loadPatterns();
+  } catch(err) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
+  }
+}
+
+async function generatePattern() {
+  var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
+  var text = document.getElementById('gen-pattern-text') && document.getElementById('gen-pattern-text').value.trim();
+  var resultEl = document.getElementById('gen-pattern-result');
+  var matchesEl = document.getElementById('gen-pattern-matches');
+  var msgEl = document.getElementById('gen-pattern-msg');
+  if (!text) { if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'Paste a snippet first.'; } return; }
+  if (resultEl) resultEl.style.display = 'none';
+  try {
+    var resp = await fetch('/api/patterns/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({selected_text: text, metric: metric}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Generate failed');
+    var d = json.data;
+    var regexEl = document.getElementById('gen-pattern-regex');
+    var weightEl = document.getElementById('gen-pattern-weight');
+    if (regexEl) regexEl.value = d.regex;
+    if (weightEl) weightEl.value = d.confidence_weight;
+    if (matchesEl) {
+      if (d.match_count > 0) {
+        matchesEl.innerHTML = '<span style="color:var(--theme-success,green)">' + d.match_count
+          + ' match' + (d.match_count !== 1 ? 'es' : '') + ' against the excerpt</span>';
+      } else {
+        matchesEl.innerHTML = '<span style="color:var(--theme-warning,#b45309)">No matches — the excerpt may be too short. Paste a longer passage from the document below in Test Regex to verify.</span>';
+      }
+    }
+    if (resultEl) resultEl.style.display = '';
+    if (msgEl) msgEl.textContent = '';
+  } catch(err) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
+  }
+}
+
+async function saveGeneratedPattern() {
+  var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
+  var regex = document.getElementById('gen-pattern-regex') && document.getElementById('gen-pattern-regex').value.trim();
+  var weight = parseFloat(document.getElementById('gen-pattern-weight') && document.getElementById('gen-pattern-weight').value || '0.87');
+  var msgEl = document.getElementById('gen-pattern-msg');
+  if (!metric || !regex) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'No regex to save.'; }
+    return;
+  }
+  try {
+    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex: regex, confidence_weight: weight}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
+    if (msgEl) {
+      msgEl.style.color = 'var(--theme-success,green)';
+      msgEl.textContent = 'Saved as ' + (json.data && json.data.id || 'pattern');
+      setTimeout(function() { if (msgEl) msgEl.textContent = ''; }, 3000);
+    }
+    document.getElementById('gen-pattern-result').style.display = 'none';
+    document.getElementById('gen-pattern-text').value = '';
+    loadPatterns();
+  } catch(err) {
+    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
+  }
+}
+
+function prefillPatternGenerator(metric, snippet) {
+  // Switch to Review > Patterns sub-tab
+  activateTab('review');
+  activatePipelineSubTab('review', 'patterns');
+  // Pre-fill the generator
+  var metricEl = document.getElementById('gen-pattern-metric');
+  var textEl = document.getElementById('gen-pattern-text');
+  if (metricEl && metric) metricEl.value = metric;
+  if (textEl && snippet) textEl.value = snippet;
+  // Auto-trigger generate after a brief render delay
+  setTimeout(generatePattern, 100);
+  // Scroll the generator into view
+  setTimeout(function() {
+    var el = document.getElementById('gen-pattern-text');
+    if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+  }, 200);
+}
+
+async function runPatternTest() {
+  var regex = document.getElementById('test-pattern-regex') && document.getElementById('test-pattern-regex').value.trim();
+  var text = document.getElementById('test-pattern-text') && document.getElementById('test-pattern-text').value.trim();
+  var metric = document.getElementById('test-pattern-metric') && document.getElementById('test-pattern-metric').value;
+  var resultsEl = document.getElementById('test-pattern-results');
+  if (!resultsEl) return;
+  if (!regex || !text) {
+    resultsEl.innerHTML = '<span style="color:var(--theme-danger)">Regex and text are both required.</span>';
+    return;
+  }
+  try {
+    var resp = await fetch('/api/patterns/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({regex: regex, text: text, metric: metric}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Test failed');
+    var matches = json.data.matches || [];
+    if (!matches.length) {
+      resultsEl.innerHTML = '<span style="color:var(--theme-text-muted)">No matches found.</span>';
+      return;
+    }
+    resultsEl.innerHTML = '<strong>' + matches.length + ' match' + (matches.length !== 1 ? 'es' : '') + '</strong>'
+      + matches.map(function(mx) {
+          return '<div style="margin-top:0.4rem;padding:0.4rem;background:var(--theme-bg-secondary);border-radius:4px">'
+            + '<span style="font-family:monospace">value=' + (mx.value != null ? mx.value : 'null')
+            + (mx.unit ? ' unit=' + escapeHtml(mx.unit) : '') + '</span><br>'
+            + '<span style="font-size:0.74rem;color:var(--theme-text-muted)">' + escapeHtml(mx.context) + '</span>'
+            + '</div>';
+        }).join('');
+  } catch(err) {
+    resultsEl.innerHTML = '<span style="color:var(--theme-danger)">Error: ' + escapeHtml(String(err)) + '</span>';
+  }
+}
+
+// ── Ingest tab ───────────────────────────────────────────────────────────────
+let _ingestLoaded = false;
+let _crawlPollTimer = null;
+let _activePipelineSubTab = 'scrape';
+
+async function triggerScrapeAll() {
+  if (_acqTaskId) { showToast('An acquire task is already running', true); return; }
+  _setAcquireButtonsEnabled(false);
+  _acqTaskId = 'starting';
+  _setAcqStatus('Scrape All: queued', false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' queued scrape-all');
+  try {
+    const resp = await fetch('/api/ingest/all', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    }
+    _acqTaskId = data.data.task_id;
+    _setAcqStatus('Scrape All: running', false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' running scrape-all (task ' + _acqTaskId + ')');
+    _pollAcquireTask(_acqTaskId, 'all');
+  } catch (err) {
+    _acqTaskId = null;
+    _setAcquireButtonsEnabled(true);
+    _setAcqStatus('Scrape All: failed', true);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' failed scrape-all (' + String(err) + ')');
+    showToast('Scrape All failed: ' + String(err), true);
+  }
+}
+
+function triggerScrapeReset() {
+  if (!confirm('This will delete ALL raw reports and reset extraction state for all sources. This cannot be undone.\n\nType CONFIRM to proceed.')) return;
+  const answer = prompt('Type RESET_SCRAPE to confirm deletion of all ingested documents:');
+  if (answer !== 'RESET_SCRAPE') { showToast('Reset cancelled', false); return; }
+  showToast('Use the Purge control in Interpret > QC to execute a full reset.', false);
+  activateTab('interpret');
+}
+
+function triggerAcquireEdgarForCrawl(all) {
+  // Mirrors triggerAcquireEdgar but uses the crawl-pane EDGAR ticker selector
+  const tickers = all ? [] : Array.from(_selectedCrawlTickers);
+  return triggerAcquire('edgar', tickers.length ? tickers : undefined);
+}
+let _crawlTaskId = null;
+let _crawlLogTicker = null;
+let _crawlSnaps = {};
+
+function loadIngest() {
+  _ingestLoaded = true;
+  _renderAllTickerBars();
+  _pollCrawlStatus();
+}
+
+function _renderAllTickerBars() {
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+  _renderInterpretTickerBar();
+}
+
+function _renderResearchInputBar() {
+  const bar = document.getElementById('research-ticker-bar');
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active !== false; });
+  bar.innerHTML = '';
+  if (!actives.length) { bar.textContent = 'No companies configured.'; return; }
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
+    bar.appendChild(btn);
+  });
+}
+
+function _renderInterpretTickerBar() {
+  const bar = document.getElementById('interpret-ticker-bar');
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active !== false; });
+  bar.innerHTML = '';
+  if (!actives.length) { bar.textContent = 'No companies configured.'; return; }
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
+    bar.appendChild(btn);
+  });
+}
+
+function _buildCrawlTickerSelector() {
+  _renderCrawlTickerSelector('crawl-ticker-selector', false);
+}
+
+function _buildEdgarTickerSelector() {
+  _renderCrawlTickerSelector('edgar-ticker-selector', true);
+}
+
+// Shared ticker selection state for Step 1 (EDGAR) and Step 2 (LLM Crawl).
+// Both selector bars read from and write to this Set so toggling a ticker
+// in either step automatically syncs the other.
+const _selectedCrawlTickers = new Set();
+
+function _toggleCrawlTicker(ticker) {
+  if (_selectedCrawlTickers.has(ticker)) {
+    _selectedCrawlTickers.delete(ticker);
+  } else {
+    _selectedCrawlTickers.add(ticker);
+  }
+  _renderAllTickerBars();
+  // Load prompt when exactly one ticker is selected
+  if (_selectedCrawlTickers.size === 1) {
+    loadCrawlPrompt(Array.from(_selectedCrawlTickers)[0]);
+  }
+}
+
+function _renderCrawlTickerSelector(barId, cikOnly) {
+  const bar = document.getElementById(barId);
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active && (!cikOnly || c.cik); });
+  bar.innerHTML = '';
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedCrawlTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() { _toggleCrawlTicker(c.ticker); };
+    bar.appendChild(btn);
+  });
+}
+
+function _getSharedSelectedTickers() {
+  return Array.from(_selectedCrawlTickers);
+}
+
+// Keep existing call-sites working
+function _getCrawlSelectedTickers() { return _getSharedSelectedTickers(); }
+
+async function triggerAcquireEdgar(all) {
+  const tickers = all ? [] : _getSharedSelectedTickers();
+  if (!all && !tickers.length) {
+    setPipelineMsg('Select at least one company first, or use Acquire All', true);
+    return;
+  }
+  return triggerAcquire('edgar', tickers);
+}
+
+async function startCrawlSelected() {
+  const tickers = _getCrawlSelectedTickers();
+  if (!tickers.length) {
+    setPipelineMsg('Select at least one company first', true);
+    return;
+  }
+  await startCrawlTickers(tickers);
+}
+
+async function stopCrawl() {
+  try {
+    const resp = await fetch('/api/crawl/stop', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    const data = await resp.json();
+    if (data.success) {
+      setPipelineMsg('Stop signalled (' + (data.data?.signalled || 0) + ' crawlers)');
+    }
+  } catch (err) {
+    setPipelineMsg('Failed to stop: ' + String(err), true);
+  }
+}
+
+async function startCrawlAll() {
+  const tickers = _companies.length
+    ? _companies.filter(function(c) { return c.active !== false; }).map(function(c) { return c.ticker; })
+    : [];
+  await startCrawlTickers(tickers);
+}
+
+async function loadCrawlOllamaModels() {
+  const sel = document.getElementById('crawl-model');
+  if (!sel) return;
+  try {
+    let models = [];
+    try {
+      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
+      if (direct.ok) {
+        const d = await direct.json();
+        models = (d.models || []).map(function(m) { return m.name; });
+      }
+    } catch (_) {
+      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
+      const d = await fallback.json();
+      models = (d.data?.models || []).map(function(m) { return m.name; });
+    }
+    // Read saved model from config (same key used by Interpret tab)
+    let active = '';
+    try {
+      const cfgResp = await fetch('/api/config', { cache: 'no-store' });
+      const cfgData = await cfgResp.json();
+      const row = (cfgData.data?.config || []).find(function(r) { return r.key === 'ollama_model'; });
+      active = row?.value || '';
+    } catch (_) {}
+    if (models.length) {
+      sel.innerHTML = models.map(function(n) {
+        return '<option value="' + escapeAttr(n) + '"' + (n === active ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+      }).join('');
+    } else {
+      sel.innerHTML = '<option value="">No models found</option>';
+    }
+  } catch (_) {
+    sel.innerHTML = '<option value="">Could not load models</option>';
+  }
+}
+
+function onCrawlProviderChange() {
+  const provider = document.getElementById('crawl-provider')?.value;
+  const wrap = document.getElementById('crawl-model-wrap');
+  if (wrap) wrap.style.display = provider === 'ollama' ? '' : 'none';
+}
+
+async function loadCrawlPrompt(ticker) {
+  const sourceEl = document.getElementById('crawl-prompt-source');
+  try {
+    const resp = await fetch('/api/crawl/prompt/' + ticker);
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      document.getElementById('crawl-prompt-editor').value = data.data.prompt;
+      if (sourceEl) sourceEl.textContent = '(' + (data.data.source === 'ticker_file' ? ticker + '_crawl.md' : 'master template') + ')';
+    } else {
+      document.getElementById('crawl-prompt-editor').value = '';
+      if (sourceEl) sourceEl.textContent = '(no prompt file found)';
+    }
+  } catch (err) {
+    if (sourceEl) sourceEl.textContent = '';
+  }
+}
+
+async function startCrawlTickers(tickers) {
+  if (!tickers.length) {
+    setPipelineMsg('No active companies to crawl', true);
+    return;
+  }
+  const provider = document.getElementById('crawl-provider')?.value || 'ollama';
+  const model = document.getElementById('crawl-model')?.value || null;
+  const prompt = document.getElementById('crawl-prompt-editor')?.value || null;
+  setPipelineMsg('Starting crawl for ' + tickers.join(', ') + ' via ' + provider + '…');
+  try {
+    const body = {tickers: tickers, provider: provider};
+    if (model && model.trim()) body.model = model.trim();
+    if (prompt && prompt.trim()) body.prompt = prompt.trim();
+    const resp = await fetch('/api/crawl/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Start failed');
+    _crawlTaskId = data.data.task_id;
+    setPipelineMsg('Crawl started — task ' + _crawlTaskId.slice(0, 8) + '…');
+    const stopBtn = document.getElementById('crawl-stop-btn');
+    if (stopBtn) stopBtn.style.display = '';
+    _startCrawlPoll();
+  } catch (err) {
+    setPipelineMsg('Failed to start crawl: ' + String(err), true);
+  }
+}
+
+function _startCrawlPoll() {
+  if (_crawlPollTimer) clearInterval(_crawlPollTimer);
+  _crawlPollTimer = setInterval(_pollCrawlStatus, 2000);
+}
+
+async function _pollCrawlStatus() {
+  try {
+    const resp = await fetch('/api/crawl/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const snaps = data.data || [];
+    _crawlSnaps = {};
+    snaps.forEach(function(s) { _crawlSnaps[s.ticker] = s; });
+    _renderResearchGrid(snaps);
+
+    // Stop polling if all done
+    const anyRunning = snaps.some(function(s) {
+      return s.status === 'running' || s.status === 'pending';
+    });
+    if (!anyRunning && _crawlPollTimer) {
+      clearInterval(_crawlPollTimer);
+      _crawlPollTimer = null;
+      const stopBtn = document.getElementById('crawl-stop-btn');
+      if (stopBtn) stopBtn.style.display = 'none';
+    }
+
+    // Update log panel if open
+    if (_crawlLogTicker && _crawlSnaps[_crawlLogTicker]) {
+      _renderResearchLog(_crawlSnaps[_crawlLogTicker]);
+    }
+  } catch (_e) {}
+}
+
+function _renderResearchGrid(snaps) {
+  const grid = document.getElementById('research-grid');
+  if (!grid) return;
+  if (!snaps.length) {
+    grid.innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.85rem">No active crawl session. Click "Crawl All" or a ticker button to start.</p>';
+    return;
+  }
+  grid.innerHTML = '';
+  snaps.forEach(function(s) {
+    const color = s.status === 'complete' ? 'var(--theme-success)'
+      : s.status === 'failed'   ? 'var(--theme-danger)'
+      : s.status === 'running'  ? 'var(--theme-accent)'
+      : 'var(--theme-text-muted)';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'padding:0.5rem;cursor:pointer;';
+    card.onclick = function() { openResearchLog(s.ticker); };
+    const lastLog = s.log && s.log.length ? s.log[0] : '';
+    const ctxTokens = s.ctx_tokens || 0;
+    const ctxLimit = s.ctx_limit || 0;
+    const ctxPct = ctxLimit > 0 ? Math.round(ctxTokens / ctxLimit * 100) : 0;
+    const ctxColor = ctxPct >= 85 ? '#f97316' : ctxPct >= 60 ? '#f59e0b' : 'var(--theme-text-muted)';
+    const ctxStr = ctxLimit > 0
+      ? (ctxTokens > 0 ? Math.round(ctxTokens / 1000) + 'k / ' + Math.round(ctxLimit / 1000) + 'k tokens (' + ctxPct + '%)' : ctxLimit > 0 ? 'limit ' + Math.round(ctxLimit / 1000) + 'k' : '')
+      : '';
+    card.innerHTML = [
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem">',
+      '  <span style="font-weight:600;font-size:0.85rem">' + escapeHtml(s.ticker) + '</span>',
+      '  <span style="font-size:0.7rem;color:' + color + '">' + escapeHtml(s.status) + (s.api_calls ? ' (' + s.api_calls + ' calls)' : '') + '</span>',
+      '</div>',
+      '<div style="font-size:0.72rem;color:var(--theme-text-muted)">',
+      '  Pages: ' + s.pages_fetched + ' &bull; Stored: ' + s.docs_stored + ' &bull; Skipped: ' + s.docs_skipped,
+      '</div>',
+      ctxStr ? '<div style="font-size:0.7rem;color:' + ctxColor + ';margin-top:0.2rem;font-family:ui-monospace,monospace">' + escapeHtml(ctxStr) + '</div>' : '',
+      lastLog ? '<div style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:0.25rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="' + escapeAttr(lastLog) + '">' + escapeHtml(lastLog) + '</div>' : '',
+    ].join('');
+    grid.appendChild(card);
+  });
+}
+
+function openResearchLog(ticker) {
+  _crawlLogTicker = ticker;
+  document.getElementById('research-log-ticker').textContent = ticker;
+  document.getElementById('research-log-panel').style.display = '';
+  const snap = _crawlSnaps[ticker];
+  if (snap) _renderResearchLog(snap);
+}
+
+function closeResearchLog() {
+  _crawlLogTicker = null;
+  document.getElementById('research-log-panel').style.display = 'none';
+}
+
+function _renderResearchLog(snap) {
+  const el = document.getElementById('research-log');
+  if (!el) return;
+  el.innerHTML = (snap.log || []).map(function(line) {
+    const isWarn = line.indexOf('WARN') !== -1 || line.indexOf('ERROR') !== -1;
+    const isToken = line.indexOf('tokens') !== -1 || line.indexOf('ctx ') !== -1;
+    const color = isWarn ? '#f97316' : isToken ? 'var(--theme-accent)' : '';
+    return '<div' + (color ? ' style="color:' + color + '"' : '') + '>' + escapeHtml(line) + '</div>';
+  }).join('');
+}
+
+function setPipelineMsg(text, isError) {
+  const el = document.getElementById('research-msg');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? 'var(--theme-danger)' : 'var(--theme-text-muted)';
+}
+
+// ── Settings tab ─────────────────────────────────────────────────────────────
+const _SETTINGS_GROUPS = [
+  {
+    label: 'Extraction',
+    keys: [
+      {key: 'confidence_review_threshold', label: 'Confidence review threshold', type: 'number',
+       desc: 'Minimum confidence score (0–1) for a regex extraction to be auto-accepted into data_points. Extractions scoring below this threshold are routed to the review queue instead.'},
+      {key: 'agreement_threshold_default', label: 'Agreement threshold (default)', type: 'number',
+       desc: 'Maximum relative difference (as a fraction) allowed between LLM and regex values before the result is flagged as a disagreement and sent to review. Example: 0.02 = 2%.'},
+      {key: 'outlier_min_history', label: 'Outlier min history', type: 'number',
+       desc: 'Minimum number of prior accepted data points required before an outlier check is applied to a new value. Prevents false positives when history is sparse.'},
+      {key: 'context_char_budget', label: 'Context char budget (monthly)', type: 'number',
+       desc: 'Maximum characters of raw document text passed to the LLM per monthly extraction call. Larger budgets improve recall on long press releases but increase token usage.'},
+      {key: 'context_char_budget_quarterly', label: 'Context char budget (quarterly)', type: 'number',
+       desc: 'Maximum characters passed to the LLM for quarterly and annual report extraction. Annual filings are much larger, so this is typically set higher than the monthly budget.'},
+      {key: 'context_max_windows', label: 'Context max windows', type: 'number',
+       desc: 'Maximum number of context window slices (date-range chunks) the pipeline will try per extraction call before giving up. Each additional window retries with a different document segment.'},
+      {key: 'context_fallback_confidence', label: 'Context fallback confidence', type: 'number',
+       desc: 'Confidence score assigned to values extracted from fallback context windows (non-primary slices). Should be lower than the primary confidence to signal reduced certainty.'},
+      {key: 'extract_num_ctx', label: 'Ollama context window — extraction (tokens)', type: 'number',
+       desc: 'Context window size (num_ctx) passed to Ollama for batch extraction calls. Extraction prompts are typically 3–4k tokens so 8,192 is sufficient. Increase only for very long annual filings.'},
+    ],
+  },
+  {
+    label: 'LLM',
+    keys: [
+      {key: 'ollama_model', label: 'Ollama model', type: 'text',
+       desc: 'Ollama model ID used for extraction and crawl. Must be pulled and available locally (e.g. qwen2.5:32b). Run "ollama list" to see installed models.'},
+      {key: 'llm_timeout_seconds', label: 'LLM timeout (seconds)', type: 'number',
+       desc: 'Seconds before an Ollama API call is abandoned. Increase for large models or slow hardware. Default is 300s (5 min).'},
+      {key: 'llm_batch_preamble', label: 'Monthly batch preamble', type: 'textarea',
+       desc: 'System prompt preamble injected before monthly extraction prompts. Overrides the compiled-in default. Leave blank to use the built-in default.'},
+      {key: 'llm_quarterly_batch_preamble', label: 'Quarterly batch preamble', type: 'textarea',
+       desc: 'System prompt preamble for quarterly report extraction. Overrides the compiled-in default.'},
+      {key: 'llm_annual_batch_preamble', label: 'Annual batch preamble', type: 'textarea',
+       desc: 'System prompt preamble for annual report (10-K/20-F) extraction. Overrides the compiled-in default.'},
+    ],
+  },
+  {
+    label: 'Crawl',
+    keys: [
+      {key: 'crawl_max_iterations', label: 'Max iterations per ticker', type: 'number',
+       desc: 'Maximum number of tool-call rounds the LLM crawler runs per ticker before stopping. Each round may fetch a page, run a search, or store a document.'},
+      {key: 'crawl_max_fetch_chars', label: 'Max fetch chars per page', type: 'number',
+       desc: 'Maximum characters of page content returned to the LLM per fetch call. Limits context growth; longer pages are truncated. Default is 12,000 chars.'},
+      {key: 'crawl_num_ctx', label: 'Ollama context window (tokens)', type: 'number',
+       desc: 'Context window size (num_ctx) passed to Ollama for crawl calls. Larger values allow longer multi-turn conversations but require more VRAM. Default is 32,768. Reduce if you see OOM crashes.'},
+      {key: 'bitcoin_mining_keywords', label: 'Bitcoin mining keywords', type: 'text',
+       desc: 'Comma-separated LIKE patterns used to identify the earliest bitcoin-related EDGAR filing. That filing date becomes the lower bound injected into Step 2 crawl prompts.'},
+    ],
+  },
+  {
+    label: 'Pipeline',
+    keys: [
+      {key: 'pipeline_output_dir', label: 'Scout output directory', type: 'text',
+       desc: 'Filesystem path where pipeline progress files and scout output are written. Must be writable by the web server process.'},
+    ],
+  },
+];
+
+let _settingsLoaded = false;
+let _settingsDefaults = {};
+let _settingsValues = {};
+
+async function loadSettings() {
+  if (_settingsLoaded) return;
+  _settingsLoaded = true;
+  try {
+    const [valResp, defResp] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/config/defaults'),
+    ]);
+    if (valResp.ok) {
+      const data = await valResp.json();
+      // /api/config returns {success, data: [{key, value}, ...]}
+      (Array.isArray(data.data) ? data.data : []).forEach(function(row) {
+        _settingsValues[row.key] = row.value;
+      });
+    }
+    if (defResp.ok) {
+      const data = await defResp.json();
+      Object.assign(_settingsDefaults, data.data || {});
+    }
+  } catch (_e) {}
+  _renderSettingsGroups();
+}
+
+async function _settingsSaveGroup(groupLabel) {
+  const group = _SETTINGS_GROUPS.find(function(g) { return g.label === groupLabel; });
+  if (!group) return;
+  const saves = [];
+  for (const {key} of group.keys) {
+    const el = document.getElementById('setting-' + key);
+    if (!el) continue;
+    const val = el.value.trim();
+    if (val === '') continue;
+    saves.push(fetch('/api/config/' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: val}),
+    }));
+  }
+  try {
+    await Promise.all(saves);
+    document.getElementById('settings-msg-' + groupLabel).textContent = 'Saved.';
+    setTimeout(function() {
+      const el = document.getElementById('settings-msg-' + groupLabel);
+      if (el) el.textContent = '';
+    }, 2000);
+  } catch (err) {
+    document.getElementById('settings-msg-' + groupLabel).textContent = 'Error: ' + String(err);
+  }
+}
+
+function _renderSettingsGroups() {
+  const container = document.getElementById('settings-groups');
+  if (!container) return;
+  container.innerHTML = '';
+  _SETTINGS_GROUPS.forEach(function(group) {
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:1.5rem';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem';
+    const title = document.createElement('h3');
+    title.style.cssText = 'font-size:0.85rem;margin:0';
+    title.textContent = group.label;
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-sm btn-primary';
+    saveBtn.textContent = 'Save ' + group.label;
+    saveBtn.onclick = function() { _settingsSaveGroup(group.label); };
+    const msg = document.createElement('span');
+    msg.id = 'settings-msg-' + group.label;
+    msg.style.cssText = 'font-size:0.8rem;color:var(--theme-text-muted)';
+    header.appendChild(title);
+    header.appendChild(saveBtn);
+    header.appendChild(msg);
+    section.appendChild(header);
+
+    group.keys.forEach(function(item) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:0.5rem;align-items:flex-start;margin-bottom:0.4rem';
+      const lblWrap = document.createElement('div');
+      lblWrap.style.cssText = 'width:240px;flex-shrink:0;display:flex;align-items:center;gap:0.3rem;padding-top:0.2rem';
+      const lbl = document.createElement('label');
+      lbl.htmlFor = 'setting-' + item.key;
+      lbl.style.cssText = 'font-size:0.8rem';
+      lbl.textContent = item.label;
+      lblWrap.appendChild(lbl);
+      if (item.desc) {
+        const bubble = document.createElement('span');
+        bubble.className = 'info-bubble';
+        bubble.setAttribute('data-tip', item.desc);
+        bubble.setAttribute('tabindex', '0');
+        bubble.textContent = '?';
+        lblWrap.appendChild(bubble);
+      }
+      let input;
+      if (item.type === 'textarea') {
+        input = document.createElement('textarea');
+        input.rows = 4;
+        input.style.cssText = 'flex:1;font-family:monospace;font-size:0.72rem;padding:0.2rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+      } else {
+        input = document.createElement('input');
+        input.type = item.type;
+        input.style.cssText = 'width:160px;font-size:0.8rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+      }
+      input.id = 'setting-' + item.key;
+      input.value = _settingsValues[item.key] || '';
+      const defaultVal = _settingsDefaults[item.key];
+      input.placeholder = defaultVal != null ? String(defaultVal) : 'default';
+      row.appendChild(lblWrap);
+      row.appendChild(input);
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  });
+}
+
+// ── QC / Pipeline tab ─────────────────────────────────────────────────────────
+let _pipelinePollTimer = null;
+
+async function captureQCSnapshot() {
+  document.getElementById('qc-msg').textContent = 'Capturing…';
+  try {
+    const resp = await fetch('/api/qc/snapshot', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    document.getElementById('qc-msg').textContent = 'Snapshot captured.';
+    await _loadQCTable();
+  } catch (err) {
+    document.getElementById('qc-msg').textContent = 'Error: ' + String(err);
+  }
+}
+
+async function _loadQCTable() {
+  try {
+    const resp = await fetch('/api/qc/summary');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const rows = data.data || [];
+    const tbody = document.getElementById('qc-table-body');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">No snapshots yet. Click "Capture Snapshot" to create the first one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(r) {
+      return '<tr>' +
+        '<td style="padding:0.2rem 0.5rem">' + escapeHtml(r.run_date || '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.auto_accepted ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_approved ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_rejected ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_edited ?? '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.precision_est != null ? (r.precision_est * 100).toFixed(1) + '%' : '') + '</td>' +
+        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.recall_est != null ? (r.recall_est * 100).toFixed(1) + '%' : '') + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch (_e) {}
+}
+
+let _pipelineRunId = null;
+let _pipelineEventOffset = 0;
+
+function _appendPipelineLog(text, warn) {
+  const el = document.getElementById('pipeline-log');
+  if (!el) return;
+  el.style.display = '';
+  const row = document.createElement('div');
+  row.className = 'acq-log-row' + (warn ? ' acq-log-warn' : '');
+  row.textContent = text;
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+  while (el.children.length > 200) el.removeChild(el.firstChild);
+}
+
+function _clearPipelineLog() {
+  const el = document.getElementById('pipeline-log');
+  if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+}
+
+async function _fetchPipelineEvents() {
+  if (!_pipelineRunId) return;
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/events?limit=300');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const rows = (data.data || []);
+    if (rows.length <= _pipelineEventOffset) return;
+    const newRows = rows.slice(_pipelineEventOffset);
+    _pipelineEventOffset = rows.length;
+    newRows.forEach(function(row) {
+      const ts = (row.created_at || '').slice(11, 19);
+      const stage = row.stage || '';
+      const event = row.event || '';
+      const d = row.details || {};
+      const warn = row.level === 'WARNING';
+
+      // Per-URL scraper events — show full URL prominently
+      if (stage === 'ir_scrape') {
+        const ticker = d.ticker || row.ticker || '';
+        const period = d.period ? ' ' + d.period : '';
+        const url = d.url || '';
+        const shortUrl = url.length > 80 ? url.slice(0, 80) + '...' : url;
+        if (event === 'url_ingested') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ingested — ' + shortUrl, false);
+        } else if (event === 'url_skipped') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' skipped (' + (d.reason || '') + ') — ' + shortUrl, false);
+        } else if (event === 'url_error') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ERROR — ' + (d.error || '') + ' — ' + shortUrl, true);
+        } else if (event === 'page_fetch') {
+          _appendPipelineLog(ts + ' [IR] ' + ticker + ' fetching page ' + (d.page || 1) + ' — ' + shortUrl, false);
+        }
+        return;
+      }
+
+      // Ollama lifecycle events — show message directly
+      if (event === 'ollama_status') {
+        _appendPipelineLog(ts + ' [Ollama] ' + (d.message || ''), warn);
+        return;
+      }
+      if (event === 'ollama_warmup') {
+        const status = d.warmed ? 'model loaded' : 'warmup failed (' + d.reason + ')';
+        _appendPipelineLog(ts + ' [Ollama] ' + (d.model || '') + ' — ' + status, !d.warmed);
+        return;
+      }
+
+      // Per-report extraction events
+      if (stage === 'extract' && event === 'stage_start') {
+        _appendPipelineLog(ts + ' [Extract] starting — ' + (d.total_reports || 0) + ' reports queued');
+        return;
+      }
+      if (stage === 'extract' && event === 'report_done') {
+        const pct = d.total > 0 ? Math.round(d.progress / d.total * 100) : 0;
+        const pts = d.data_points > 0 ? ' +' + d.data_points + ' pts' : '';
+        const rv = d.review_flagged > 0 ? ' +' + d.review_flagged + ' review' : '';
+        const src = d.source_type ? ' [' + d.source_type.replace('ir_press_release','IR').replace('edgar_','SEC ') + ']' : '';
+        _appendPipelineLog(
+          ts + ' [Extract] ' + d.progress + '/' + d.total + ' (' + pct + '%) ' +
+          d.ticker + ' ' + (d.period || '').slice(0,7) + src + pts + rv +
+          ' — total ' + d.running_total_dp + ' pts'
+        );
+        return;
+      }
+      if (stage === 'extract' && event === 'report_extract_failed') {
+        _appendPipelineLog(ts + ' [Extract] FAILED ' + d.ticker + ' ' + (d.period || '') + ' — ' + (d.error || ''), true);
+        return;
+      }
+
+      // High-level pipeline stage events
+      const parts = [];
+      if (d.ticker) parts.push(d.ticker);
+      if (d.recommended_mode) parts.push('mode=' + d.recommended_mode);
+      if (d.targeted != null) parts.push('targeted=' + d.targeted);
+      if (d.ingested_delta != null) parts.push('new_docs=' + d.ingested_delta);
+      if (d.reports_processed != null) parts.push('reports=' + d.reports_processed);
+      if (d.data_points != null) parts.push('pts=' + d.data_points);
+      if (d.errors) parts.push('errors=' + d.errors);
+      if (d.reason) parts.push('reason=' + d.reason);
+      if (d.error) parts.push('err=' + d.error);
+      const detail = parts.length ? ' ' + parts.join(' ') : '';
+      _appendPipelineLog(ts + ' [' + stage + '] ' + event + detail, warn);
+    });
+  } catch (_e) {}
+}
+
+async function runOvernightScout() {
+  document.getElementById('pipeline-msg').textContent = 'Starting scout…';
+  try {
+    const resp = await fetch('/api/pipeline/overnight/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({scout_mode: 'force'}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    _pipelineRunId = data.data?.run_id;
+    document.getElementById('pipeline-msg').textContent = 'Scout started (run ' + _pipelineRunId + ').';
+    _startPipelinePoll();
+  } catch (err) {
+    document.getElementById('pipeline-msg').textContent = 'Error: ' + String(err);
+  }
+}
+
+async function runFullPipeline() {
+  _clearPipelineLog();
+  _pipelineEventOffset = 0;
+  document.getElementById('pipeline-msg').textContent = 'Starting pipeline…';
+  document.getElementById('pipeline-status').textContent = '';
+  var cancelBtn = document.getElementById('pipeline-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = '';
+  var includeIr = document.getElementById('pipeline-include-ir')?.checked !== false;
+  try {
+    const resp = await fetch('/api/pipeline/overnight/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
+    _pipelineRunId = data.data?.run_id;
+    document.getElementById('pipeline-msg').textContent = 'Running (run ' + _pipelineRunId + ')…';
+    _startPipelinePoll();
+  } catch (err) {
+    document.getElementById('pipeline-msg').textContent = 'Error: ' + String(err);
+    if (cancelBtn) cancelBtn.style.display = 'none';
+  }
+}
+
+async function cancelPipeline() {
+  if (!_pipelineRunId) return;
+  try {
+    await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/cancel', {method: 'POST'});
+    document.getElementById('pipeline-msg').textContent = 'Cancellation requested.';
+  } catch (_e) {}
+}
+
+function _startPipelinePoll() {
+  if (_pipelinePollTimer) clearInterval(_pipelinePollTimer);
+  _pipelinePollTimer = setInterval(_pollPipelineStatus, 2000);
+}
+
+async function _pollPipelineStatus() {
+  if (!_pipelineRunId) return;
+  _fetchPipelineEvents();
+  try {
+    const resp = await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const status = data.data?.status || '';
+    const msgEl = document.getElementById('pipeline-msg');
+    const statusEl = document.getElementById('pipeline-status');
+    const cancelBtn = document.getElementById('pipeline-cancel-btn');
+    if (statusEl) statusEl.textContent = status ? ('Status: ' + status) : '';
+    if (status && status !== 'running') {
+      clearInterval(_pipelinePollTimer);
+      _pipelinePollTimer = null;
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      if (msgEl) msgEl.textContent = 'Done — ' + status + '.';
+      // Refresh crawl prompt — EDGAR ingest may have updated bitcoin start date context
+      const tickers = _getCrawlSelectedTickers();
+      const promptTicker = tickers.length === 1 ? tickers[0] : (_companies.find(function(c) { return c.active !== false; }) || {}).ticker;
+      if (promptTicker) loadCrawlPrompt(promptTicker);
+      loadPipelineObservability();
+    }
+  } catch (_e) {}
+}
 </script>
 {% endblock %}
-    const governance = _governanceByTicker[c.ticker];
-    const governanceBadge = governance
-      ? '<span class="scraper-badge scraper-badge-governance-' + escapeHtml(governance) + '"'
-        + ' title="scraper governance: ' + escapeAttr(governance) + '" style="margin-left:4px">'
-        + escapeHtml(governance) + '</span>'
-      : '';
