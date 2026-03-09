@@ -31,6 +31,16 @@ def test_validate_candidate_rejects_missing_schema():
 
 
 def test_run_feedback_loop_writes_artifact(tmp_path):
+    import unittest.mock as _mock
+    import requests as _req
+
+    # Prevent outbound HTTP — validate_candidate is called even with apply=False.
+    _mock_session = _mock.MagicMock(spec=_req.Session)
+    _mock_resp = _mock.MagicMock()
+    _mock_resp.status_code = 200
+    _mock_resp.text = "<html><body>no results</body></html>"
+    _mock_session.get.return_value = _mock_resp
+
     contracts = [{
         "ticker": "BTDR",
         "primitive_gaps": [{
@@ -47,6 +57,7 @@ def test_run_feedback_loop_writes_artifact(tmp_path):
         output_dir=Path(tmp_path),
         contracts=contracts,
         apply=False,
+        session=_mock_session,
     )
     assert out["gap_count"] == 1
     assert out["candidate_count"] == 1

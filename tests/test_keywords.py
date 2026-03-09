@@ -174,7 +174,7 @@ class TestKeywordsRoutes:
         assert resp.status_code == 201
         body = json.loads(resp.data)
         assert body['success'] is True
-        assert body['data']['phrase'] == '"digital asset mining"'
+        assert body['data']['phrase'] == 'digital asset mining'
         assert 'id' in body['data']
 
     def test_add_keyword_missing_phrase_400(self, client):
@@ -196,9 +196,9 @@ class TestKeywordsRoutes:
     def test_add_keyword_duplicate_409(self, client, db):
         """Adding a phrase that already exists returns 409."""
         import json
-        db.add_search_keyword('"bitcoin production"')
+        db.add_search_keyword('bitcoin production')
         resp = client.post('/api/keywords',
-                           data=json.dumps({'phrase': '"bitcoin production"'}),
+                           data=json.dumps({'phrase': 'bitcoin production'}),
                            content_type='application/json')
         assert resp.status_code == 409
 
@@ -236,25 +236,25 @@ class TestKeywordsRoutes:
         resp = client.delete('/api/keywords/999999')
         assert resp.status_code == 404
 
-    def test_add_keyword_bare_phrase_auto_quoted(self, client):
-        """POST with a bare phrase (no surrounding quotes) is stored with added quotes."""
+    def test_add_keyword_bare_phrase_stored_unquoted(self, client):
+        """POST with a bare phrase is stored without added quotes."""
         import json
         resp = client.post('/api/keywords',
                            data=json.dumps({'phrase': 'self mined bitcoin'}),
                            content_type='application/json')
         assert resp.status_code == 201
         body = json.loads(resp.data)
-        assert body['data']['phrase'] == '"self mined bitcoin"'
+        assert body['data']['phrase'] == 'self mined bitcoin'
 
-    def test_add_keyword_already_quoted_not_double_quoted(self, client):
-        """POST with a phrase already in quotes is stored as-is (no extra quoting)."""
+    def test_add_keyword_quoted_phrase_stripped(self, client):
+        """POST with a phrase surrounded by quotes has the quotes stripped before storage."""
         import json
         resp = client.post('/api/keywords',
                            data=json.dumps({'phrase': '"already quoted"'}),
                            content_type='application/json')
         assert resp.status_code == 201
         body = json.loads(resp.data)
-        assert body['data']['phrase'] == '"already quoted"'
+        assert body['data']['phrase'] == 'already quoted'
 
     def test_list_keywords_includes_created_at_and_hit_count(self, client, db):
         """Rows returned by the shim include created_at and hit_count fields."""
@@ -336,7 +336,7 @@ class TestMetricKeywordsRoutes:
         assert resp.status_code == 201
         body = json.loads(resp.data)
         assert body['success'] is True
-        assert body['data']['phrase'] == '"btc mined this quarter"'
+        assert body['data']['phrase'] == 'btc mined this quarter'
         assert body['data']['metric_key'] == 'production_btc'
         assert 'id' in body['data']
 
@@ -352,8 +352,8 @@ class TestMetricKeywordsRoutes:
         body = json.loads(resp.data)
         assert body['success'] is False
 
-    def test_add_metric_keyword_bare_phrase_auto_quoted(self, client):
-        """Bare phrase (no surrounding quotes) is auto-quoted before storage."""
+    def test_add_metric_keyword_bare_phrase_stored_unquoted(self, client):
+        """Bare phrase is stored without added quotes."""
         import json
         resp = client.post(
             '/api/metric_schema/hashrate_eh/keywords',
@@ -362,7 +362,7 @@ class TestMetricKeywordsRoutes:
         )
         assert resp.status_code == 201
         body = json.loads(resp.data)
-        assert body['data']['phrase'] == '"exahash per second"'
+        assert body['data']['phrase'] == 'exahash per second'
 
     def test_add_metric_keyword_duplicate_409(self, client, db):
         """Adding a duplicate phrase for the same metric returns 409."""

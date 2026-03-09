@@ -42,9 +42,7 @@ def add_keyword():
                 'message': "'phrase' is required and must be non-empty",
             }}), 400
 
-        phrase = phrase.strip()
-        if not (phrase.startswith('"') and phrase.endswith('"')):
-            phrase = f'"{phrase}"'
+        phrase = phrase.strip().strip('"')
         notes = body.get('notes', '')
 
         try:

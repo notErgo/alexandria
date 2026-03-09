@@ -32,12 +32,23 @@ log = logging.getLogger('miners.routes.dashboard')
 
 bp = Blueprint('dashboard', __name__)
 
-_VALID_METRICS = {
+_VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc', 'mining_mw', 'ai_hpc_mw',
     'hpc_revenue_usd', 'gpu_count',
-}
+})
+
+
+def _get_valid_metrics(db) -> frozenset:
+    """Return set of valid metric keys from DB SSOT (metric_schema table)."""
+    try:
+        rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+        if rows:
+            return frozenset(r['key'] for r in rows)
+    except Exception:
+        pass
+    return _VALID_METRICS_FALLBACK
 
 _METRIC_META = {
     'production_btc':         ('Production',    'BTC'),
@@ -82,10 +93,11 @@ def stacked_bar():
                 'code': 'INVALID_PARAM',
                 'message': "'metric' query parameter is required"
             }}), 400
-        if metric not in _VALID_METRICS:
+        db = get_db()
+        if metric not in _get_valid_metrics(db):
             return jsonify({'success': False, 'error': {
                 'code': 'INVALID_PARAM',
-                'message': f"Unknown metric '{metric}'. Valid: {sorted(_VALID_METRICS)}"
+                'message': f"Unknown metric '{metric}'",
             }}), 400
 
         try:
@@ -98,7 +110,6 @@ def stacked_bar():
                 'message': "'months' must be an integer between 1 and 120"
             }}), 400
 
-        db = get_db()
         label, unit = _METRIC_META.get(metric, (metric, ''))
 
         # Only show analyst-accepted values from final_data_points.

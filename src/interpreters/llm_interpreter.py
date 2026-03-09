@@ -1002,7 +1002,10 @@ class LLMInterpreter:
         start = raw.find('{')
         end = raw.rfind('}') + 1
         if start == -1 or end == 0:
-            log.debug("No JSON object found in LLM batch response")
+            log.debug(
+                "No JSON object found in LLM batch response (first 300 chars): %r",
+                raw[:300],
+            )
             return {}
 
         try:
@@ -1145,7 +1148,7 @@ class LLMInterpreter:
             "think": False,       # Disable chain-of-thought (Qwen3); skips <think> tokens
             "options": {
                 "temperature": 0.0,   # Deterministic output for structured JSON
-                "num_predict": 512,   # Batch JSON response is ~200-350 tokens; cap prevents runaway
+                "num_predict": 768,   # Batch JSON response is ~200-400 tokens; extra headroom for any thinking preamble
                 "num_ctx": self._extract_num_ctx(),  # KV cache size; extraction prompts are ~3-4k tokens
             },
         }
@@ -1159,6 +1162,16 @@ class LLMInterpreter:
                 return None
             data = resp.json()
             response_text = data.get("response", "")
+            # Strip <think>...</think> blocks emitted by Qwen3 when the Ollama
+            # version does not honour the "think": False API parameter.  The
+            # thinking block is captured in a separate "thinking" key by newer
+            # Ollama builds, but older builds include it verbatim in "response".
+            thinking_prefix = data.get("thinking", "")
+            if not thinking_prefix:
+                import re as _re
+                response_text = _re.sub(
+                    r'<think>.*?</think>', '', response_text, flags=_re.DOTALL
+                ).strip()
             self._last_call_meta = {
                 'prompt_tokens': data.get('prompt_eval_count', 0) or 0,
                 'response_tokens': data.get('eval_count', 0) or 0,
@@ -1315,7 +1328,10 @@ class LLMInterpreter:
         start = raw.find('{')
         end = raw.rfind('}') + 1
         if start == -1 or end == 0:
-            log.debug("No JSON object found in LLM quarterly batch response")
+            log.debug(
+                "No JSON object found in LLM quarterly batch response (first 300 chars): %r",
+                raw[:300],
+            )
             return {}
 
         try:

@@ -780,11 +780,8 @@ def _metric_key_exists(db, key: str) -> bool:
 
 
 def _normalize_phrase(phrase: str) -> str:
-    """Ensure phrase is surrounded by double-quotes (EDGAR exact-match syntax)."""
-    p = phrase.strip()
-    if p.startswith('"') and p.endswith('"'):
-        return p
-    return f'"{p}"'
+    """Normalize a keyword phrase: strip surrounding whitespace and quote characters."""
+    return phrase.strip().strip('"')
 
 
 @bp.route('/api/metric_keywords', methods=['GET'])
