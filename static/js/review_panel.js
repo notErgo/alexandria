@@ -45,6 +45,7 @@ const ReviewPanel = (function () {
   let _onApproved  = null;
   let _onRejected  = null;
   let _onFilled    = null;
+  let _onWritten   = null;
   let _keywordDictionary = {
     active_pack: 'btc_activity',
     packs: { btc_activity: ['bitcoin', 'btc'] },
@@ -53,44 +54,43 @@ const ReviewPanel = (function () {
   // ── HTML skeleton ───────────────────────────────────────────────────────────
   const _HTML = `
 <div class="rp-layout">
+  <details class="rp-controls-details">
+    <summary class="rp-controls-summary">Controls</summary>
+    <div class="rp-controls-top">
+      <div class="rp-value-cards" style="display:none"></div>
+      <div class="rp-candidates" style="display:none"></div>
+      <div class="rp-actions" style="display:none">
+        <input type="number" class="rp-corrected" placeholder="Override value (optional)" step="any">
+        <input type="text" class="rp-reject-note" placeholder="Rejection note (required)">
+        <button class="rp-btn rp-btn-approve" data-spec-id="3.4">Approve</button>
+        <button class="rp-btn rp-btn-reject" data-spec-id="3.5">Reject</button>
+      </div>
+      <div class="rp-fill-form" style="display:none">
+        <label class="rp-fill-label">Metric</label>
+        <select class="rp-fill-metric"></select>
+        <label class="rp-fill-label">Value</label>
+        <input type="number" class="rp-fill-value" placeholder="Value" step="any" min="0">
+        <label class="rp-fill-label">Note (optional)</label>
+        <input type="text" class="rp-fill-note" placeholder="Note">
+        <button class="rp-btn rp-btn-submit-fill">Submit to Review Queue</button>
+        <button class="rp-btn rp-btn-write-cell">Write to Cell</button>
+      </div>
+      <div class="rp-reprompt-bar" style="display:none">
+        <span class="rp-hint">Highlight a value in the text below, select metric, click Re-extract:</span>
+        <select class="rp-reprompt-metric">
+          <!-- populated from /api/metric_schema at init -->
+        </select>
+        <button class="rp-btn rp-btn-reprompt" data-spec-id="3.6" disabled>Re-extract / LLM Reprompt</button>
+      </div>
+      <div class="rp-status"></div>
+    </div>
+  </details>
   <div class="rp-source-col">
     <div class="rp-source-header">
       <span class="rp-source-meta"></span>
     </div>
     <div class="rp-doc-placeholder">Select a row to view the document.</div>
-    <iframe class="rp-doc-iframe" src="about:blank" style="display:none;width:100%;min-height:500px;border:none;background:#fff"></iframe>
     <pre class="rp-doc-text" style="display:none"></pre>
-    <div class="rp-reprompt-bar" style="display:none">
-      <span class="rp-hint">Highlight a value in the text above, select which metric it is, then click Re-extract to run regex + LLM on it:</span>
-      <select class="rp-reprompt-metric">
-        <option value="production_btc">production_btc</option>
-        <option value="hodl_btc">hodl_btc</option>
-        <option value="sold_btc">sold_btc</option>
-        <option value="hashrate_eh">hashrate_eh</option>
-        <option value="realization_rate">realization_rate</option>
-      </select>
-      <button class="rp-btn rp-btn-reprompt" data-spec-id="3.6" disabled>Re-extract / LLM Reprompt</button>
-    </div>
-  </div>
-  <div class="rp-sidebar">
-    <div class="rp-value-cards" style="display:none"></div>
-    <div class="rp-candidates" style="display:none"></div>
-    <div class="rp-actions" style="display:none">
-      <input type="number" class="rp-corrected" placeholder="Override value (optional)" step="any">
-      <input type="text" class="rp-reject-note" placeholder="Rejection note (required)">
-      <button class="rp-btn rp-btn-approve" data-spec-id="3.4">Approve</button>
-      <button class="rp-btn rp-btn-reject" data-spec-id="3.5">Reject</button>
-    </div>
-    <div class="rp-fill-form" style="display:none">
-      <label class="rp-fill-label">Metric</label>
-      <select class="rp-fill-metric"></select>
-      <label class="rp-fill-label">Value</label>
-      <input type="number" class="rp-fill-value" placeholder="Value" step="any" min="0">
-      <label class="rp-fill-label">Note (optional)</label>
-      <input type="text" class="rp-fill-note" placeholder="Note">
-      <button class="rp-btn rp-btn-submit-fill">Submit to Review Queue</button>
-    </div>
-    <div class="rp-status"></div>
   </div>
 </div>`;
 
@@ -284,6 +284,14 @@ const ReviewPanel = (function () {
     return body.data;
   }
 
+  async function _fetchPeriodReports(ticker, period) {
+    const p = period.slice(0, 7);
+    const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/reports');
+    if (!resp.ok) return null;
+    const body = await resp.json();
+    return body.success ? body.data : null;
+  }
+
   async function _fetchAnalysis(ticker, period) {
     const p = period.slice(0, 7);
     const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/analysis');
@@ -296,11 +304,11 @@ const ReviewPanel = (function () {
     return body.data.matches || [];
   }
 
-  async function _fetchRawSource(ticker, period) {
+  async function _fetchRawSource(ticker, period, reportId) {
     const p = period.slice(0, 7);
-    // /raw-text returns clean plain text (extracted from raw_html when available)
-    // for the highlight panel; /raw-source serves the full HTML for the iframe.
-    const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/raw-text');
+    let url = '/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/raw-text';
+    if (reportId != null) url += '?report_id=' + encodeURIComponent(reportId);
+    const resp = await fetch(url);
     if (!resp.ok) return '';
     return await resp.text();
   }
@@ -319,6 +327,79 @@ const ReviewPanel = (function () {
     if (!iframe) return;
     iframe.src = 'about:blank';
     iframe.style.display = 'none';
+  }
+
+  // ── Source header with selection rationale ──────────────────────────────────
+
+  function _docBadge(sourceType, priority) {
+    const bg = priority >= 3 ? 'rgba(34,197,94,0.15)' :
+               priority === 2 ? 'rgba(59,130,246,0.15)' : 'rgba(156,163,175,0.15)';
+    const col = priority >= 3 ? '#22c55e' :
+                priority === 2 ? '#93c5fd' : '#9ca3af';
+    return '<span class="rp-doc-sel-type" style="background:' + bg + ';color:' + col + '">'
+      + _esc(sourceType || '') + '</span>';
+  }
+
+  function _renderSourceHeader(selectionData, currentReportId, onSwitch) {
+    const metaEl = _el('rp-source-meta');
+    if (!metaEl) return;
+    if (!selectionData || !selectionData.selected) {
+      metaEl.innerHTML = '<span style="color:var(--theme-text-muted)">No document for this period.</span>';
+      return;
+    }
+    const sel = selectionData.selected;
+    const alts = selectionData.alternatives || [];
+    const rule = selectionData.selection_rule || '';
+    const allDocs = [sel].concat(alts);
+
+    // Find which doc is currently being shown
+    const currentDoc = currentReportId != null
+      ? allDocs.find(function(d) { return d.id === currentReportId; })
+      : null;
+    const showingPriority = !currentDoc || currentDoc.id === sel.id;
+
+    let html = '<span class="rp-doc-sel">';
+
+    if (showingPriority) {
+      // Showing the priority-selected doc — normal display
+      html += _docBadge(sel.source_type, sel.priority)
+        + ' <span class="rp-doc-sel-date">' + _esc(sel.report_date || '') + '</span>'
+        + ' <span class="rp-doc-sel-prio" title="' + _esc(rule) + '">p' + _esc(String(sel.priority)) + '/3</span>';
+    } else {
+      // Showing a non-priority doc (e.g. extraction doc) — flag it clearly
+      html += '<span style="color:var(--theme-text-muted);font-size:0.72rem">showing:</span> '
+        + _docBadge(currentDoc.source_type, currentDoc.priority)
+        + ' <span class="rp-doc-sel-date">' + _esc(currentDoc.report_date || '') + '</span>'
+        + ' <span class="rp-doc-sel-prio">p' + _esc(String(currentDoc.priority)) + '/3</span>'
+        + ' <span style="color:var(--theme-text-muted);font-size:0.72rem;margin:0 4px">|</span>'
+        + '<span style="color:var(--theme-text-muted);font-size:0.72rem">priority:</span> '
+        + _docBadge(sel.source_type, sel.priority)
+        + ' <span class="rp-doc-sel-prio" title="' + _esc(rule) + '">p' + _esc(String(sel.priority)) + '/3</span>';
+    }
+
+    // Build switcher dropdown from all docs, marking current
+    if (allDocs.length > 1) {
+      const activeId = currentDoc ? currentDoc.id : sel.id;
+      html += ' <span class="rp-doc-sel-alts"><select class="rp-doc-alt-select">'
+        + '<option value="">switch doc...</option>'
+        + allDocs.map(function(d) {
+            return '<option value="' + _esc(String(d.id)) + '"'
+              + (d.id === activeId ? ' selected' : '')
+              + '>' + _esc(d.source_type) + ' ' + _esc(d.report_date || '') + ' [p' + _esc(String(d.priority)) + '/3]</option>';
+          }).join('')
+        + '</select></span>';
+    }
+    html += '</span>';
+    metaEl.innerHTML = html;
+
+    // Wire the switch dropdown
+    const altSel = metaEl.querySelector('.rp-doc-alt-select');
+    if (altSel && onSwitch) {
+      altSel.addEventListener('change', function() {
+        const rid = altSel.value ? parseInt(altSel.value, 10) : null;
+        onSwitch(rid);
+      });
+    }
   }
 
   // ── Render doc text ─────────────────────────────────────────────────────────
@@ -490,6 +571,52 @@ const ReviewPanel = (function () {
     }
   }
 
+  async function _doWriteToCell() {
+    const metricEl = _el('rp-fill-metric');
+    const valueEl  = _el('rp-fill-value');
+    const noteEl   = _el('rp-fill-note');
+    const metric   = metricEl ? metricEl.value : (_currentMetric || '');
+    const value    = valueEl  ? parseFloat(valueEl.value) : NaN;
+    const note     = noteEl   ? noteEl.value.trim() : '';
+
+    if (!metric) { _setStatus('Select a metric.', true); return; }
+    if (!_currentTicker || !_currentPeriod) { _setStatus('No cell selected.', true); return; }
+    if (!isFinite(value) || value < 0) {
+      _setStatus('Enter a valid non-negative value.', true);
+      return;
+    }
+
+    const btn = _el('rp-btn-write-cell');
+    if (btn) btn.disabled = true;
+
+    try {
+      const period = _currentPeriod.slice(0, 7);
+      const url = '/api/explorer/cell/'
+        + encodeURIComponent(_currentTicker) + '/'
+        + encodeURIComponent(period) + '/'
+        + encodeURIComponent(metric) + '/save';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ value: value, note: note, manual: true }),
+      });
+      const data = await resp.json().catch(function() { return {}; });
+      if (resp.status === 409) {
+        _setStatus('Analyst-protected value already exists for this cell.', true);
+        if (btn) btn.disabled = false;
+        return;
+      }
+      if (!resp.ok || !data.success) {
+        throw new Error((data.error && data.error.message) || 'HTTP ' + resp.status);
+      }
+      _setStatus('Written to cell (' + metric + ' = ' + value + ')', false);
+      if (_onWritten) _onWritten({ ticker: _currentTicker, period: _currentPeriod, metric: metric, value: value });
+    } catch (e) {
+      _setStatus('Write failed: ' + e.message, true);
+      if (btn) btn.disabled = false;
+    }
+  }
+
   // ── Wire event handlers (called ONCE from init) ─────────────────────────────
 
   function _wireHandlers() {
@@ -514,6 +641,10 @@ const ReviewPanel = (function () {
     // Submit fill
     const fillBtn = _el('rp-btn-submit-fill');
     if (fillBtn) fillBtn.addEventListener('click', _doFill);
+
+    // Write directly to cell
+    const writeCellBtn = _el('rp-btn-write-cell');
+    if (writeCellBtn) writeCellBtn.addEventListener('click', _doWriteToCell);
 
     // "Use this value" — delegated on rp-candidates (persistent parent)
     const candidatesEl = _el('rp-candidates');
@@ -547,6 +678,19 @@ const ReviewPanel = (function () {
     _container.innerHTML = _HTML;
     _loadKeywordDictionary();
     _wireHandlers();
+    // Populate reprompt metric select from SSOT
+    fetch('/api/metric_schema?sector=BTC-miners')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(body) {
+        if (!body || !body.success) return;
+        var sel = _el('rp-reprompt-metric');
+        if (!sel) return;
+        var metrics = (body.data && body.data.metrics) || [];
+        sel.innerHTML = metrics.map(function(m) {
+          return '<option value="' + _esc(m.key) + '">' + _esc(m.label || m.key) + '</option>';
+        }).join('');
+      })
+      .catch(function() {}); // non-fatal
   }
 
   /**
@@ -568,8 +712,6 @@ const ReviewPanel = (function () {
     if (cardsEl) cardsEl.style.display = 'none';
     _setStatus('', false);
 
-    // Show placeholder while loading; clear iframe (review items use text only)
-    _unloadIframe();
     const placeholder = _el('rp-doc-placeholder');
     if (placeholder) { placeholder.textContent = 'Loading...'; placeholder.style.display = ''; }
     const docEl = _el('rp-doc-text');
@@ -588,21 +730,36 @@ const ReviewPanel = (function () {
     if (rejectNoteEl) rejectNoteEl.value = '';
 
     try {
-      const doc = await _fetchDocument(itemId);
+      // Fetch the review item document and (if we know ticker/period) the full
+      // period-reports selection data in parallel so we can render the source header.
+      const fetchPeriodData = (_currentTicker && _currentPeriod)
+        ? _fetchPeriodReports(_currentTicker, _currentPeriod).catch(function() { return null; })
+        : Promise.resolve(null);
+      const [doc, selectionData] = await Promise.all([_fetchDocument(itemId), fetchPeriodData]);
 
-      // Update meta header
-      const metaEl = _el('rp-source-meta');
-      if (metaEl) {
-        let metaHtml = '';
-        if (doc.source_url) {
-          if (doc.source_url.startsWith('http')) {
-            metaHtml = '<a href="' + _esc(doc.source_url) + '" target="_blank" rel="noopener" style="color:var(--theme-accent)">'
-              + _esc(doc.source_url.slice(0, 60)) + (doc.source_url.length > 60 ? '…' : '') + '</a>';
-          } else {
-            metaHtml = _esc(doc.source_url);
+      // Render source header with extraction-doc context and alt-doc switcher.
+      // Pass doc.report_id as the current doc so the selector marks it correctly.
+      if (selectionData) {
+        _renderSourceHeader(selectionData, doc.report_id || null, function(reportId) {
+          _fetchRawSource(_currentTicker, _currentPeriod, reportId).then(function(altText) {
+            _renderDocText(altText, []);
+          });
+        });
+      } else {
+        // Fallback: show source_url link when period data is unavailable
+        const metaEl = _el('rp-source-meta');
+        if (metaEl) {
+          let metaHtml = '';
+          if (doc.source_url) {
+            if (doc.source_url.startsWith('http')) {
+              metaHtml = '<a href="' + _esc(doc.source_url) + '" target="_blank" rel="noopener" style="color:var(--theme-accent)">'
+                + _esc(doc.source_url.slice(0, 60)) + (doc.source_url.length > 60 ? '…' : '') + '</a>';
+            } else {
+              metaHtml = _esc(doc.source_url);
+            }
           }
+          metaEl.innerHTML = metaHtml;
         }
-        metaEl.innerHTML = metaHtml;
       }
 
       // Value cards
@@ -691,15 +848,21 @@ const ReviewPanel = (function () {
       }
 
       // No pending item — show analysis + raw source + fill form
-      const [rawText, matches] = await Promise.all([
-        _fetchRawSource(ticker, period),
+      const [rawText, matches, selectionData] = await Promise.all([
+        _fetchRawSource(ticker, period, null),
         _fetchAnalysis(ticker, period).catch(function () { return []; }),
+        _fetchPeriodReports(ticker, period).catch(function () { return null; }),
       ]);
 
       if (placeholder) placeholder.style.display = 'none';
-      // Load rendered HTML in iframe (raw-source serves raw_html when available)
-      _loadIframe(ticker, period);
       _renderDocText(rawText, matches);
+
+      // Show selection rationale and alternative doc switcher in the header
+      _renderSourceHeader(selectionData, null, function(reportId) {
+        _fetchRawSource(ticker, period, reportId).then(function(altText) {
+          _renderDocText(altText, []);
+        });
+      });
 
       // Populate fill dropdown
       if (fillEl) {
@@ -737,7 +900,6 @@ const ReviewPanel = (function () {
 
     const docEl = _el('rp-doc-text');
     if (docEl) { docEl.innerHTML = ''; docEl.style.display = 'none'; }
-    _unloadIframe();
 
     const repromptBar = _el('rp-reprompt-bar');
     if (repromptBar) repromptBar.style.display = 'none';
@@ -760,6 +922,7 @@ const ReviewPanel = (function () {
   function setOnApproved(fn)  { _onApproved = fn; }
   function setOnRejected(fn)  { _onRejected = fn; }
   function setOnFilled(fn)    { _onFilled   = fn; }
+  function setOnWritten(fn)   { _onWritten  = fn; }
 
   return {
     init,
@@ -769,6 +932,7 @@ const ReviewPanel = (function () {
     setOnApproved,
     setOnRejected,
     setOnFilled,
+    setOnWritten,
     buildHighlightedSource,
   };
 })();

@@ -81,6 +81,10 @@ def get_review_document(item_id):
         return jsonify({'success': True, 'data': {
             'raw_text': raw_text,
             'source_url': report.get('source_url'),
+            'source_type': report.get('source_type'),
+            'report_id': report.get('id'),
+            'ticker': item.get('ticker'),
+            'period': item.get('period'),
             'metric': item.get('metric'),
             'llm_value': item.get('llm_value'),
             'regex_value': item.get('regex_value'),

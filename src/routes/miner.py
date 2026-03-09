@@ -16,18 +16,41 @@ log = logging.getLogger('miners.routes.miner')
 
 bp = Blueprint('miner', __name__)
 
+# ── Document source priority ──────────────────────────────────────────────────
+# When multiple reports cover the same YYYY-MM period, the highest-priority
+# source_type is shown in the timeline and the document viewer.
+# SSOT: every place that selects "the document for a period" must use this dict.
+_REPORT_PRIORITY: dict = {
+    'ir_press_release': 3,
+    'archive_html':     3,
+    'archive_pdf':      3,
+    'edgar_8k':         2,
+    'edgar_10q':        1,
+    'edgar_10k':        1,
+    'edgar_annual':     1,
+}
+_DEFAULT_PRIORITY: int = 1
+
+_PRIORITY_LABELS: dict = {
+    3: 'Monthly IR / Archive (preferred)',
+    2: 'SEC 8-K Event Filing',
+    1: 'SEC Quarterly / Annual',
+}
+
+_EDGAR_SOURCE_TYPES = frozenset({'edgar_10q', 'edgar_10k', 'edgar_20f', 'edgar_6k', 'edgar_40f'})
+
 # Core metrics — always shown in the timeline table even when no data exists.
 # hashrate_eh and realization_rate are NOT core: they only appear when data exists.
-CORE_METRICS = ['production_btc', 'hodl_btc', 'sold_btc']
+CORE_METRICS = ['production_btc', 'holdings_btc', 'sales_btc']
 
 # All known metrics in canonical display order.
 # Non-core metrics appear as columns only when data exists for that ticker.
 ALL_METRICS_ORDER = [
     'production_btc',
-    'hodl_btc',
-    'hodl_btc_unrestricted',
-    'hodl_btc_restricted',
-    'sold_btc',
+    'holdings_btc',
+    'unrestricted_holdings',
+    'restricted_holdings_btc',
+    'sales_btc',
     'hashrate_eh',
     'realization_rate',
     'net_btc_balance_change',
@@ -39,35 +62,35 @@ ALL_METRICS_ORDER = [
 ]
 
 METRIC_LABELS = {
-    'production_btc': 'Production BTC',
-    'hodl_btc': 'Holdings BTC',
-    'hodl_btc_unrestricted': 'Holdings (Unres.)',
-    'hodl_btc_restricted': 'Holdings (Restr.)',
-    'sold_btc': 'Sold BTC',
-    'hashrate_eh': 'Hashrate EH/s',
-    'realization_rate': 'Real. Rate',
+    'production_btc':       'Production BTC',
+    'holdings_btc':         'Holdings BTC',
+    'unrestricted_holdings': 'Holdings (Unres.)',
+    'restricted_holdings_btc': 'Holdings (Restr.)',
+    'sales_btc':            'Sold BTC',
+    'hashrate_eh':          'Hashrate EH/s',
+    'realization_rate':     'Real. Rate',
     'net_btc_balance_change': 'Net BTC Change',
-    'encumbered_btc': 'Encumbered BTC',
-    'mining_mw': 'Mining MW',
-    'ai_hpc_mw': 'AI/HPC MW',
-    'hpc_revenue_usd': 'HPC Revenue USD',
-    'gpu_count': 'GPU Count',
+    'encumbered_btc':       'Encumbered BTC',
+    'mining_mw':            'Mining MW',
+    'ai_hpc_mw':            'AI/HPC MW',
+    'hpc_revenue_usd':      'HPC Revenue USD',
+    'gpu_count':            'GPU Count',
 }
 
 METRIC_UNITS = {
-    'production_btc': 'BTC',
-    'hodl_btc': 'BTC',
-    'hodl_btc_unrestricted': 'BTC',
-    'hodl_btc_restricted': 'BTC',
-    'sold_btc': 'BTC',
-    'hashrate_eh': 'EH/s',
-    'realization_rate': '%',
+    'production_btc':       'BTC',
+    'holdings_btc':         'BTC',
+    'unrestricted_holdings': 'BTC',
+    'restricted_holdings_btc': 'BTC',
+    'sales_btc':            'BTC',
+    'hashrate_eh':          'EH/s',
+    'realization_rate':     '%',
     'net_btc_balance_change': 'BTC',
-    'encumbered_btc': 'BTC',
-    'mining_mw': 'MW',
-    'ai_hpc_mw': 'MW',
-    'hpc_revenue_usd': 'USD',
-    'gpu_count': '',
+    'encumbered_btc':       'BTC',
+    'mining_mw':            'MW',
+    'ai_hpc_mw':            'MW',
+    'hpc_revenue_usd':      'USD',
+    'gpu_count':            '',
 }
 
 
@@ -199,6 +222,7 @@ def get_miner_timeline(ticker: str):
                 'confidence':        dp['confidence'],
                 'extraction_method': dp.get('extraction_method'),
                 'source_snippet':    dp.get('source_snippet'),
+                'inference_notes':   dp.get('inference_notes'),
                 'is_finalized':      (period, metric) in finalized_keys,
                 'is_pending':        False,
             }
@@ -272,10 +296,12 @@ def get_miner_timeline(ticker: str):
             })
 
         # Build report lookup: period key → {id, report_date, source_type, source_url}
-        # Indexed by YYYY-MM (from report_date) for monthly source, and also by
-        # covering_period (e.g. "2025-Q1", "2025-FY") for SEC source so that
-        # SEC spine rows can find their corresponding report.
+        # Uses module-level _REPORT_PRIORITY — same rule as find_report_for_period and
+        # the /reports endpoint, so 5.1, 5.2, and the doc viewer are always consistent.
+        # all_docs_by_period tracks every document per YYYY-MM so alt_docs can be
+        # included in each row for UI transparency.
         report_by_period: dict = {}
+        all_docs_by_period: dict = {}  # ym -> list of all doc dicts for that month
         with db._get_connection() as conn:
             report_rows = conn.execute(
                 """SELECT id, report_date, source_type, source_url, covering_period
@@ -293,7 +319,12 @@ def get_miner_timeline(ticker: str):
                 'source_type': row[2],
                 'source_url':  row[3],
             }
-            report_by_period[ym] = entry
+            all_docs_by_period.setdefault(ym, []).append(entry)
+            new_prio = _REPORT_PRIORITY.get(row[2], _DEFAULT_PRIORITY)
+            existing = report_by_period.get(ym)
+            existing_prio = _REPORT_PRIORITY.get(existing['source_type'], _DEFAULT_PRIORITY) if existing else -1
+            if existing is None or new_prio >= existing_prio:
+                report_by_period[ym] = entry
             # Also index by covering_period for SEC rows ("2025-Q1", "2025-FY", etc.)
             covering = row[4]
             if covering and covering != ym:
@@ -357,17 +388,33 @@ def get_miner_timeline(ticker: str):
             else:
                 period_label = period[:7]
 
+            # Build alt_docs: all other reports for this YYYY-MM that lost to the winner
+            selected_id = report_info['id'] if report_info else None
+            all_docs_for_ym = all_docs_by_period.get(period_ym, [])
+            alt_docs = [
+                {
+                    'id':          d['id'],
+                    'source_type': d['source_type'],
+                    'report_date': d['report_date'],
+                    'priority':    _REPORT_PRIORITY.get(d['source_type'], _DEFAULT_PRIORITY),
+                }
+                for d in all_docs_for_ym
+                if d['id'] != selected_id
+            ]
+
             rows.append({
-                'period':      period,
-                'period_label': period_label,
-                'has_report':  has_report,
-                'report_id':   report_info['id'] if report_info else None,
-                'report_date': report_info['report_date'] if report_info else None,
-                'source_type': report_info['source_type'] if report_info else None,
-                'source_url':  report_info['source_url'] if report_info else None,
-                'is_gap':      is_gap,
-                'is_reviewed': period in reviewed_set,
-                'metrics':     metric_cells,
+                'period':        period,
+                'period_label':  period_label,
+                'has_report':    has_report,
+                'report_id':     selected_id,
+                'report_date':   report_info['report_date'] if report_info else None,
+                'source_type':   report_info['source_type'] if report_info else None,
+                'source_url':    report_info['source_url'] if report_info else None,
+                'doc_priority':  _REPORT_PRIORITY.get(report_info['source_type'], _DEFAULT_PRIORITY) if report_info else None,
+                'alt_docs':      alt_docs,
+                'is_gap':        is_gap,
+                'is_reviewed':   period in reviewed_set,
+                'metrics':       metric_cells,
             })
 
         # Sort descending (most recent first)
@@ -515,24 +562,156 @@ def get_miner_analysis(ticker: str, period: str):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
-def _find_report_for_raw(db, ticker_upper: str, period: str):
+def _find_report_for_raw(db, ticker_upper: str, period: str, report_id: int = None):
+    """Return the report to display for a period.
+
+    If report_id is given, fetch that specific report (used when the user
+    overrides the default selection via ?report_id=N in the doc viewer).
+    Otherwise apply _REPORT_PRIORITY selection via find_report_for_period.
+    """
+    if report_id is not None:
+        with db._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, source_type, source_url, report_date FROM reports WHERE id = ? AND ticker = ?",
+                (report_id, ticker_upper),
+            ).fetchone()
+        return dict(row) if row else None
     period_normalized = (period + '-01') if len(period) == 7 else period[:10]
     return db.find_report_for_period(ticker_upper, period_normalized)
 
 
-@bp.route('/api/miner/<ticker>/<period>/raw-source')
-def get_miner_raw_source(ticker: str, period: str):
-    """Serve raw HTML for a report period — used by the inline iframe and the
-    'Rendered' new-tab button.  Prefers raw_html; falls back to raw_text."""
+@bp.route('/api/miner/<ticker>/<period>/reports')
+def get_period_reports(ticker: str, period: str):
+    """Return all reports covering ticker/YYYY-MM with selection rationale.
+
+    Response:
+      selected   — the report that _REPORT_PRIORITY would pick
+      alternatives — all other reports for the same YYYY-MM, in priority order
+      selection_rule — human-readable explanation
+    """
     try:
         db = get_db()
         ticker_upper = ticker.upper()
         if db.get_company(ticker_upper) is None:
             return jsonify({'success': False, 'error': {'message': 'Unknown ticker'}}), 404
 
-        report_info = _find_report_for_raw(db, ticker_upper, period)
+        period_ym = period[:7]
+        # Also match docs whose covering_period corresponds to this YYYY-MM.
+        # A 10-Q for Q2 has report_date in August but covering_period='YYYY-Q2'.
+        try:
+            _yr, _mo = period_ym.split('-')
+            _q = (int(_mo) - 1) // 3 + 1
+            covering_quarter = f"{_yr}-Q{_q}"
+            covering_fy = f"{_yr}-FY"
+        except Exception:
+            covering_quarter = ''
+            covering_fy = ''
+        with db._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT id, source_type, source_url, report_date FROM reports
+                   WHERE ticker = ?
+                     AND (report_date LIKE ?
+                          OR covering_period = ?
+                          OR covering_period = ?)
+                   ORDER BY report_date DESC, id DESC""",
+                (ticker_upper, period_ym + '%', covering_quarter, covering_fy),
+            ).fetchall()
+
+        if not rows:
+            return jsonify({'success': True, 'data': {'selected': None, 'alternatives': [],
+                'selection_rule': 'No documents found for this period.'}}), 200
+
+        docs = [dict(r) for r in rows]
+        for d in docs:
+            d['priority'] = _REPORT_PRIORITY.get(d['source_type'], _DEFAULT_PRIORITY)
+            d['priority_label'] = _PRIORITY_LABELS.get(d['priority'], 'Unknown')
+
+        # Sort by priority DESC then report_date DESC (same rule as find_report_for_period)
+        docs.sort(key=lambda d: (d['priority'], d['report_date'] or ''), reverse=True)
+        selected = docs[0]
+        alternatives = docs[1:]
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'selected': selected,
+                'alternatives': alternatives,
+                'selection_rule': (
+                    f"Priority {selected['priority']}/3 wins: {selected['priority_label']}. "
+                    f"Ties broken by report_date DESC."
+                    if len(docs) > 1 else
+                    'Only one document for this period.'
+                ),
+            },
+        })
+    except Exception as e:
+        log.error("get_period_reports failed for %s/%s: %s", ticker, period, e, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+_EDGAR_USER_AGENT = 'Hermeneutic Research Platform contact@hermeneutic.io'
+
+
+def _try_fetch_edgar_html(source_url: str, ticker: str, period: str) -> str | None:
+    """Attempt to re-fetch an EDGAR document by URL.
+
+    Returns the raw response text on success (200 + text/html), or None on any
+    failure.  Never raises.
+    """
+    import requests  # local import — only needed for EDGAR re-fetch path
+    try:
+        resp = requests.get(
+            source_url,
+            headers={'User-Agent': _EDGAR_USER_AGENT},
+            timeout=30,
+        )
+        if resp.status_code == 200 and 'text/html' in resp.headers.get('Content-Type', ''):
+            return resp.text
+        log.warning(
+            "edgar_refetch non-200 ticker=%s period=%s status=%s url=%s",
+            ticker, period, resp.status_code, source_url,
+        )
+        return None
+    except Exception as fetch_err:
+        log.warning(
+            "edgar_refetch failed ticker=%s period=%s url=%s error=%s",
+            ticker, period, source_url, fetch_err,
+        )
+        return None
+
+
+@bp.route('/api/miner/<ticker>/<period>/raw-source')
+def get_miner_raw_source(ticker: str, period: str):
+    """Serve raw HTML for a report period — used by the inline iframe and the
+    'Rendered' new-tab button.  Prefers raw_html; falls back to raw_text.
+
+    Accepts ?report_id=N to override the default priority-based selection,
+    allowing the doc viewer to show an alternative document for the period.
+
+    For EDGAR source types, attempts to re-fetch the full document from
+    source_url so the iframe always shows the complete filing rather than a
+    potentially truncated stored copy.
+    """
+    try:
+        db = get_db()
+        ticker_upper = ticker.upper()
+        if db.get_company(ticker_upper) is None:
+            return jsonify({'success': False, 'error': {'message': 'Unknown ticker'}}), 404
+
+        report_id_override = request.args.get('report_id', type=int)
+        report_info = _find_report_for_raw(db, ticker_upper, period, report_id=report_id_override)
         if report_info is None:
             return jsonify({'success': False, 'error': {'message': 'No report for this period'}}), 404
+
+        source_type = report_info.get('source_type', '')
+        source_url = report_info.get('source_url') or ''
+
+        # For EDGAR filings, try to serve the live document directly so the
+        # iframe renders the full, untruncated filing HTML.
+        if source_type in _EDGAR_SOURCE_TYPES and source_url.startswith('https://'):
+            live_html = _try_fetch_edgar_html(source_url, ticker_upper, period)
+            if live_html is not None:
+                return Response(live_html, mimetype='text/html; charset=utf-8')
 
         content = db.get_report_raw_html(report_info['id']) or db.get_report_raw_text(report_info['id'])
         if not content:
@@ -549,9 +728,15 @@ def get_miner_raw_source(ticker: str, period: str):
 def get_miner_raw_text(ticker: str, period: str):
     """Serve plain text for a report period — used by the highlight panel.
 
-    When raw_html is available, extracts clean text from it (giving better
-    quality than the 50 k-truncated raw_text stored at ingest time).
-    Falls back to raw_text when raw_html is absent.
+    For EDGAR source types, attempts to re-fetch the full document from
+    source_url before falling back to the stored raw_html or raw_text.  This
+    ensures the highlight panel works against the complete filing rather than a
+    potentially truncated stored copy.
+
+    For non-EDGAR types, when raw_html is available it is converted to clean
+    text; otherwise raw_text is used.
+
+    Accepts ?report_id=N to override the default priority-based selection.
     """
     try:
         db = get_db()
@@ -559,15 +744,25 @@ def get_miner_raw_text(ticker: str, period: str):
         if db.get_company(ticker_upper) is None:
             return jsonify({'success': False, 'error': {'message': 'Unknown ticker'}}), 404
 
-        report_info = _find_report_for_raw(db, ticker_upper, period)
+        report_id_override = request.args.get('report_id', type=int)
+        report_info = _find_report_for_raw(db, ticker_upper, period, report_id=report_id_override)
         if report_info is None:
             return jsonify({'success': False, 'error': {'message': 'No report for this period'}}), 404
 
         source_type = report_info.get('source_type', '')
+        source_url = report_info.get('source_url') or ''
+
+        # For EDGAR filings, try to re-fetch the live document and convert it to
+        # plain text so the highlight panel sees the full, untruncated filing.
+        if source_type in _EDGAR_SOURCE_TYPES and source_url.startswith('https://'):
+            live_html = _try_fetch_edgar_html(source_url, ticker_upper, period)
+            if live_html is not None:
+                from infra.text_utils import edgar_to_plain
+                return Response(edgar_to_plain(live_html), mimetype='text/plain; charset=utf-8')
+
         raw_html = db.get_report_raw_html(report_info['id'])
         if raw_html:
-            if source_type in ('edgar_10q', 'edgar_10k', 'edgar_8k', 'edgar_6k',
-                               'edgar_20f', 'edgar_40f'):
+            if source_type in _EDGAR_SOURCE_TYPES or source_type == 'edgar_8k':
                 from infra.text_utils import edgar_to_plain
                 content = edgar_to_plain(raw_html)
             else:
