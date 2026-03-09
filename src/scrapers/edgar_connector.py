@@ -625,183 +625,120 @@ class EdgarConnector:
         return filed_date
 
     def fetch_8k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
-        """Fetch all 8-K filings for ticker since the company's BTC first-filing date.
+        """Fetch 8-K filings from the submissions API and store raw exhibit text.
 
-        Architecture: keywords answer ONE question — "when did this company first mention
-        BTC mining in SEC filings?" (detect_btc_first_filing_date).  After that date is
-        known, ALL 8-Ks are ingested with date-only filtering — no keyword content filter.
+        Uses the submissions API (same approach as fetch_10q_filings / fetch_10k_filings).
+        For each 8-K, fetches the filing index page and resolves the EX-99.1 exhibit
+        (press release) URL.  Falls back to EX-99 if EX-99.1 is absent.  Filings with
+        no exhibit are skipped silently — they are 8-Ks about non-production events.
 
-        If btc_first_filing_date is not yet stored, detect_btc_first_filing_date() is
-        called first.  If detection finds nothing (no active keywords, no hits), falls
-        back to the legacy keyword-filtered fetch with a warning.
+        Keyword filtering is handled at extraction time by the keyword gate in
+        interpret_pipeline — no content-based gating is applied at ingest.
 
         Stores raw text only — no extraction performed.
         Returns IngestSummary with counts.
         """
         from miner_types import IngestSummary
         summary = IngestSummary()
-        cik_entity = str(cik).lstrip('0') or '0'
 
-        # Determine whether to use keyword filter or date-only fetch
-        btc_start = self.db.get_btc_first_filing_date(ticker)
-        if btc_start is None:
-            btc_start = self.detect_btc_first_filing_date(cik, ticker)
-
-        if btc_start is not None:
-            # Date-only fetch — no keyword filter; all 8-Ks from btc_start onward
-            params = {
-                'forms': '8-K',
-                'dateRange': 'custom',
-                'startdt': since_date.isoformat(),
-                'entity': cik_entity,
-            }
-            log.info(
-                "fetch_8k_filings: date-only mode for %s (btc_first_filing_date=%s)",
-                ticker, btc_start,
-            )
-        else:
-            # Fallback: keyword-filtered fetch (legacy behaviour)
-            log.warning(
-                "fetch_8k_filings: btc_first_filing_date not set for %s; "
-                "using keyword filter as fallback",
-                ticker,
-            )
-            params = {
-                'q': _build_edgar_query(self.db),
-                'forms': '8-K',
-                'dateRange': 'custom',
-                'startdt': since_date.isoformat(),
-                'entity': cik_entity,
-            }
-        data = self._edgar_request(EDGAR_BASE_URL, params)
-        if data is None:
+        submissions = self._get_submissions(cik)
+        if submissions is None:
+            log.warning("Could not fetch submissions for %s (CIK=%s)", ticker, cik)
             summary.errors += 1
             return summary
 
-        hits = data.get('hits', {}).get('hits', [])
-        log.info("EDGAR returned %d 8-K hits for %s since %s", len(hits), ticker, since_date)
-        self._emit('search_result', ticker=ticker, form_type='8-K',
-                   total_hits=len(hits), since=since_date.isoformat())
-
-        # Track keyword participation: bump hit_count once per search run
-        try:
-            self.db.bump_metric_keyword_hit_counts()
-        except Exception:
-            log.debug('bump_metric_keyword_hit_counts failed (non-fatal)', exc_info=True)
+        filings = parse_submissions_filings(submissions, form_type='8-K')
+        log.info("Found %d 8-K filings for %s", len(filings), ticker)
 
         cik_numeric = cik.lstrip('0') or '0'
-        skipped_non_target = 0
 
-        for hit in hits:
-            source = hit.get('_source', {})
-            if not _hit_matches_target_entity(source, cik):
-                skipped_non_target += 1
-                continue
-            file_date_str = source.get('file_date', '')
-            m = _DATE_PATTERN.match(file_date_str)
-            if not m:
-                continue
-            filed_date = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            period_str = filed_date.strftime('%Y-%m-%d')
-
-            # _id format: "{accession_number}:{doc_name}" — split to get clean accession
-            hit_id = hit.get('_id', '')
-            if ':' in hit_id:
-                accession_number, _, doc_name = hit_id.partition(':')
-            else:
-                accession_number = hit_id
-                doc_name = ''
-
-            # Accession-first dedup
-            if accession_number and self.db.report_exists_by_accession(accession_number):
-                log.debug("Already ingested 8-K by accession: %s %s", ticker, accession_number)
+        for filing in filings:
+            filing_date = filing.get('filing_date', '')
+            if filing_date < since_date.isoformat():
                 continue
 
-            acc_no_clean = accession_number.replace('-', '')
+            acc_no = filing.get('accession_number', '')
+            if acc_no and self.db.report_exists_by_accession(acc_no):
+                log.debug("Already ingested 8-K by accession: %s %s", ticker, acc_no)
+                continue
+            if self.db.report_exists(ticker, filing_date, 'edgar_8k'):
+                log.debug("Already ingested 8-K %s %s", ticker, filing_date)
+                continue
 
-            # If the search result embeds the doc name, fetch exhibit directly
-            if doc_name:
-                exhibit_url = (
-                    f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/"
-                    f"{acc_no_clean}/{doc_name}"
-                )
-                doc_html = self._edgar_get_text(exhibit_url)
-            else:
-                doc_html = ''
-                exhibit_url = ''
+            acc_no_clean = acc_no.replace('-', '')
+            index_url = (
+                f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{acc_no_clean}/"
+                f"{acc_no}-index.htm"
+            )
+            index_html = self._edgar_get_text(index_url)
+            if not index_html:
+                log.warning("Empty 8-K index page for %s %s", ticker, acc_no)
+                summary.errors += 1
+                continue
 
-            # Fallback: fetch the index page and parse for EX-99.1 / EX-99
+            exhibit_url = parse_8k_exhibit_url(index_html, cik_numeric, acc_no_clean)
+            if not exhibit_url:
+                log.debug("No EX-99 exhibit for %s 8-K %s; skipping (non-production filing)", ticker, acc_no)
+                continue
+
+            doc_html = self._edgar_get_text(exhibit_url)
             if not doc_html:
-                index_url = (
-                    f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{acc_no_clean}/"
-                    f"{accession_number}-index.htm"
-                )
-                index_html = self._edgar_get_text(index_url)
-                if index_html:
-                    exhibit_url = parse_8k_exhibit_url(index_html, cik_numeric, acc_no_clean)
-                    if exhibit_url:
-                        doc_html = self._edgar_get_text(exhibit_url)
-                    else:
-                        log.warning("No EX-99 exhibit found for %s 8-K %s", ticker, accession_number)
-                        summary.errors += 1
-                        continue
-                else:
-                    log.warning("Empty index page for %s 8-K %s", ticker, accession_number)
-                    summary.errors += 1
-                    continue
-
-            if not doc_html:
-                log.warning("Empty exhibit for %s 8-K %s", ticker, accession_number)
+                log.warning("Empty 8-K exhibit for %s %s", ticker, acc_no)
                 summary.errors += 1
                 continue
 
             soup = BeautifulSoup(doc_html, 'lxml')
-            text = soup.get_text(separator=' ', strip=True)[:50_000]
+            text = soup.get_text(separator=' ', strip=True)[:_MAX_FILING_TEXT_CHARS]
 
             if not text.strip():
+                log.warning("No text from 8-K exhibit for %s %s", ticker, acc_no)
                 summary.errors += 1
                 continue
 
+            text_len = len(text.strip())
+            parse_quality = 'text_ok' if text_len >= 500 else 'text_sparse'
+
             report = {
                 'ticker':           ticker,
-                'report_date':      period_str,
-                'published_date':   period_str,
+                'report_date':      filing_date,
+                'published_date':   filing_date,
                 'source_type':      'edgar_8k',
                 'source_url':       exhibit_url,
                 'raw_text':         text,
                 'raw_html':         doc_html[:_MAX_RAW_HTML_CHARS],
                 'parsed_at':        datetime.now(timezone.utc).isoformat(),
                 'covering_period':  None,
-                'accession_number': accession_number or None,
+                'accession_number': acc_no or None,
                 'form_type':        '8-K',
             }
             try:
-                self.db.insert_report(report)
+                report_id = self.db.insert_report(report)
+                self.db.set_report_parse_quality(report_id, parse_quality)
                 summary.reports_ingested += 1
+                log.info(
+                    "Stored 8-K filing: %s %s (quality=%s, chars=%d)",
+                    ticker, filing_date, parse_quality, text_len,
+                )
                 self._emit(
                     'url_ingested', ticker=ticker,
                     form_type='8-K',
-                    period=period_str,
-                    filing_date=period_str,
-                    accession=accession_number,
+                    period=filing_date,
+                    filing_date=filing_date,
+                    accession=acc_no,
+                    quality=parse_quality,
+                    text_chars=text_len,
                     url=exhibit_url,
                 )
             except Exception as e:
                 log.error(
-                    "Failed to insert 8-K report %s %s: %s", ticker, period_str, e, exc_info=True
+                    "Failed to insert 8-K report %s %s: %s", ticker, filing_date, e, exc_info=True
                 )
                 self._emit(
                     'url_error', ticker=ticker, level='WARNING',
-                    form_type='8-K', period=period_str,
-                    accession=accession_number, url=exhibit_url, error=str(e),
+                    form_type='8-K', period=filing_date,
+                    accession=acc_no, url=exhibit_url, error=str(e),
                 )
                 summary.errors += 1
-
-        if skipped_non_target:
-            log.info(
-                "Filtered %d non-target 8-K hits for %s (CIK=%s)",
-                skipped_non_target, ticker, cik,
-            )
 
         return summary
 

@@ -169,53 +169,64 @@ class TestForeignForms:
 
 class TestAccessionDedup:
 
+    def _8k_session_with_exhibit(self, acc_no: str, filing_date: str, exhibit_text: str):
+        """Build a session mock for submissions API + index + exhibit fetches."""
+        acc_clean = acc_no.replace('-', '')
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = {
+            "filings": {"recent": {
+                "form": ["8-K"],
+                "filingDate": [filing_date],
+                "accessionNumber": [acc_no],
+                "primaryDocument": ["8k.htm"],
+                "periodOfReport": [filing_date],
+            }}
+        }
+        index_html = (
+            "<html><body><table><tr><td>EX-99.1</td>"
+            "<td><a href='ex991.htm'>exhibit</a></td></tr></table></body></html>"
+        )
+        index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
+        exhibit_resp = MagicMock(
+            status_code=200,
+            text=f"<html><body>{exhibit_text}</body></html>",
+            raise_for_status=lambda: None,
+        )
+        session = MagicMock()
+        session.get.side_effect = lambda url, **kw: (
+            submissions_resp if 'data.sec.gov' in url
+            else index_resp if f'{acc_clean}/{acc_no}-index.htm' in url
+            else exhibit_resp
+        )
+        return session
+
     def test_accession_number_stored_on_8k_ingest(self):
         """insert_report is called with accession_number when ingesting 8-K."""
+        acc_no = '0001507605-24-000042'
         db = _mock_db(accession_exists=False)
-        conn = _connector(db)
-
-        # Simulate _edgar_request returning one 8-K hit
-        accession = '0001507605-24-000042'
-        hit = {
-            '_id': f'{accession}:ex991.htm',
-            '_source': {
-                'file_date': '2024-01-15',
-                'ciks': ['1507605'],
-                'adsh': accession,
-            },
-        }
-        conn._edgar_request = MagicMock(return_value={'hits': {'hits': [hit]}})
-        doc_html = '<html><body>MARA mined 1200 BTC in January 2024</body></html>'
-        conn._edgar_get_text = MagicMock(return_value=doc_html)
+        from scrapers.edgar_connector import EdgarConnector
+        conn = EdgarConnector(db=db, session=self._8k_session_with_exhibit(
+            acc_no, '2024-01-15', 'MARA mined 1200 BTC in January 2024'
+        ))
 
         conn.fetch_8k_filings('0001507605', 'MARA', date(2023, 1, 1))
 
         insert_calls = db.insert_report.call_args_list
         assert len(insert_calls) >= 1
         inserted = insert_calls[0][0][0]
-        assert inserted.get('accession_number') == accession
+        assert inserted.get('accession_number') == acc_no
 
     def test_dedup_by_accession_number_skips_reinsert(self):
         """If accession already exists, fetch_8k_filings skips the insert."""
+        acc_no = '0001507605-24-000042'
         db = _mock_db(accession_exists=True)
-        conn = _connector(db)
-
-        accession = '0001507605-24-000042'
-        hit = {
-            '_id': f'{accession}:ex991.htm',
-            '_source': {
-                'file_date': '2024-01-15',
-                'ciks': ['1507605'],
-                'adsh': accession,
-            },
-        }
-        conn._edgar_request = MagicMock(return_value={'hits': {'hits': [hit]}})
-        conn._edgar_get_text = MagicMock()
+        from scrapers.edgar_connector import EdgarConnector
+        conn = EdgarConnector(db=db, session=self._8k_session_with_exhibit(
+            acc_no, '2024-01-15', 'MARA mined 1200 BTC in January 2024'
+        ))
 
         conn.fetch_8k_filings('0001507605', 'MARA', date(2023, 1, 1))
 
-        # Should NOT call _edgar_get_text or insert_report
-        conn._edgar_get_text.assert_not_called()
         db.insert_report.assert_not_called()
 
 
@@ -239,17 +250,20 @@ class TestBroaderKeywords:
         for term in required:
             assert term in _8K_SEARCH_TERMS, f"Missing term: {term}"
 
-    def test_fetch_8k_uses_or_joined_search_terms(self):
-        """fetch_8k_filings passes OR-joined search terms to _edgar_request."""
-        from scrapers.edgar_connector import _8K_SEARCH_TERMS
+    def test_fetch_8k_uses_submissions_api_not_efts(self):
+        """fetch_8k_filings uses the submissions API — EFTS is never called."""
         db = _mock_db()
         conn = _connector(db)
-        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
+        # Submissions returns no 8-K filings — just verify no EFTS call
+        conn._get_submissions = MagicMock(return_value={'filings': {'recent': {
+            'form': [], 'filingDate': [], 'accessionNumber': [],
+            'primaryDocument': [], 'periodOfReport': [],
+        }}})
+        conn._edgar_request = MagicMock()
 
         conn.fetch_8k_filings('0001507605', 'MARA', date(2023, 1, 1))
 
-        call_params = conn._edgar_request.call_args[0][1]  # second positional arg = params dict
-        assert call_params['q'] == ' OR '.join(_8K_SEARCH_TERMS)
+        conn._edgar_request.assert_not_called()
 
 
 # ── Finding 10: Rate limit + backoff ─────────────────────────────────────────
@@ -360,37 +374,19 @@ class TestBtcFirstFilingDate:
         assert result == '2017-09-15'
         conn._edgar_request.assert_not_called()
 
-    def test_fetch_8k_no_q_param_when_btc_first_filing_date_set(self):
-        """fetch_8k_filings omits the q= keyword filter when btc_first_filing_date is set."""
+    def test_fetch_8k_uses_submissions_api_regardless_of_btc_first_filing_date(self):
+        """fetch_8k_filings always uses submissions API, ignoring btc_first_filing_date."""
         db = _mock_db()
         db.get_btc_first_filing_date = MagicMock(return_value='2017-09-15')
-        db.bump_keyword_hit_counts = MagicMock()
 
         conn = _connector(db)
-        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
+        conn._get_submissions = MagicMock(return_value={'filings': {'recent': {
+            'form': [], 'filingDate': [], 'accessionNumber': [],
+            'primaryDocument': [], 'periodOfReport': [],
+        }}})
+        conn._edgar_request = MagicMock()
 
         conn.fetch_8k_filings('1167419', 'RIOT', date(2017, 9, 15))
 
-        call_params = conn._edgar_request.call_args[0][1]
-        assert 'q' not in call_params, (
-            "fetch_8k_filings must NOT include q= keyword filter when btc_first_filing_date is set"
-        )
-
-    def test_fetch_8k_uses_keyword_filter_when_btc_first_filing_date_not_set(self):
-        """fetch_8k_filings uses keyword q= filter when btc_first_filing_date is not set."""
-        db = _mock_db()
-        db.get_btc_first_filing_date = MagicMock(return_value=None)
-        db.bump_keyword_hit_counts = MagicMock()
-        # detect_btc_first_filing_date will be called and also return None (no keywords match)
-        db.get_search_keywords.return_value = []
-        db.set_btc_first_filing_date = MagicMock()
-
-        conn = _connector(db)
-        conn._edgar_request = MagicMock(return_value={'hits': {'hits': []}})
-
-        conn.fetch_8k_filings('0001507605', 'MARA', date(2023, 1, 1))
-
-        call_params = conn._edgar_request.call_args[0][1]
-        assert 'q' in call_params, (
-            "fetch_8k_filings must include q= keyword filter as fallback when btc_first_filing_date not set"
-        )
+        conn._get_submissions.assert_called_once()
+        conn._edgar_request.assert_not_called()

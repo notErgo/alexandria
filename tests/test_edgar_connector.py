@@ -188,22 +188,21 @@ class TestParseExhibitUrlFromStaleSourceUrl:
 
 
 class TestFetch8kExhibitResolution:
-    """Verify fetch_8k_filings fetches the exhibit, not the index page."""
+    """Verify fetch_8k_filings stores exhibit text, not index page boilerplate."""
 
-    def _make_session(self, search_id, exhibit_text):
-        session = MagicMock()
-        accession = search_id.split(':', 1)[0]
-        filer = accession.split('-', 1)[0]
-
-        search_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
-        search_resp.json.return_value = {
-            "hits": {"hits": [{"_id": search_id, "_source": {
-                "file_date": "2024-06-01",
-                "adsh": accession,
-                "ciks": [filer],
-            }}]}
-        }
-
+    def _make_session(self, acc_no: str, exhibit_text: str):
+        cik_numeric = '1437491'
+        acc_clean = acc_no.replace('-', '')
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = _make_submissions_response(
+            cik_numeric, acc_no, '2024-06-01'
+        )
+        index_html = (
+            "<html><body><table><tr><td>EX-99.1</td>"
+            "<td><a href='ex991pressrelease.htm'>press release</a></td>"
+            "</tr></table></body></html>"
+        )
+        index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
         exhibit_resp = MagicMock(
             status_code=200,
             text=f"<html><body>{exhibit_text}</body></html>",
@@ -211,23 +210,28 @@ class TestFetch8kExhibitResolution:
         )
 
         def side_effect(url, **kwargs):
-            if kwargs.get('params'):
-                return search_resp
+            if 'data.sec.gov' in url:
+                return submissions_resp
+            if f'{acc_clean}/{acc_no}-index.htm' in url:
+                return index_resp
             return exhibit_resp
 
+        session = MagicMock()
         session.get.side_effect = side_effect
         return session
 
-    def test_fetches_exhibit_when_id_contains_doc_name(self):
+    def test_fetches_exhibit_url_from_index(self):
+        """Stored source_url points to the EX-99.1 exhibit, not the index page."""
         from datetime import date as dt
         from scrapers.edgar_connector import EdgarConnector
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
         mock_db.report_exists_by_accession.return_value = False
+        mock_db.insert_report.return_value = 1
 
         session = self._make_session(
-            search_id='0001437491-24-001:ex991pressrelease.htm',
+            acc_no='0001437491-24-001',
             exhibit_text='MARA mined 750 bitcoin during June 2024',
         )
         connector = EdgarConnector(db=mock_db, session=session)
@@ -238,15 +242,17 @@ class TestFetch8kExhibitResolution:
         assert 'MARA mined' in stored['raw_text']
 
     def test_does_not_store_edgar_index_boilerplate(self):
+        """raw_text contains the exhibit body, not EDGAR index page text."""
         from datetime import date as dt
         from scrapers.edgar_connector import EdgarConnector
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
         mock_db.report_exists_by_accession.return_value = False
+        mock_db.insert_report.return_value = 1
 
         session = self._make_session(
-            search_id='0001437491-24-001:ex991.htm',
+            acc_no='0001437491-24-001',
             exhibit_text='Bitcoin production was 750 BTC',
         )
         connector = EdgarConnector(db=mock_db, session=session)
@@ -256,43 +262,216 @@ class TestFetch8kExhibitResolution:
         assert not stored['raw_text'].startswith('EDGAR Filing Documents')
 
 
-class TestFetch8kNoExtraction:
-    def test_fetch_8k_no_extraction(self):
-        """Verify fetch_8k_filings never calls extract_all — Stage 1 only."""
-        import requests as req
+def _make_submissions_response(cik_numeric: str, acc_no: str, filing_date: str) -> dict:
+    """Build a minimal SEC submissions JSON payload with one 8-K entry."""
+    return {
+        "filings": {
+            "recent": {
+                "form":            ["8-K"],
+                "filingDate":      [filing_date],
+                "accessionNumber": [acc_no],
+                "primaryDocument": ["8k.htm"],
+                "periodOfReport":  [filing_date],
+                "reportDate":      [filing_date],
+            }
+        }
+    }
+
+
+class TestFetch8kSubmissionsAPI:
+    """fetch_8k_filings must use the submissions API, not EFTS full-text search."""
+
+    def _make_session(self, cik_numeric: str, acc_no: str, filing_date: str, exhibit_text: str):
+        acc_clean = acc_no.replace('-', '')
+        submissions_url = f"https://data.sec.gov/submissions/CIK{cik_numeric.zfill(10)}.json"
+        index_url_fragment = f"{acc_clean}/{acc_no}-index.htm"
+        exhibit_url = f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{acc_clean}/ex991.htm"
+
+        index_html = (
+            f"<html><body><table><tr>"
+            f"<td>EX-99.1</td>"
+            f"<td><a href='ex991.htm'>{exhibit_text[:20]}</a></td>"
+            f"</tr></table></body></html>"
+        )
+
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = _make_submissions_response(
+            cik_numeric, acc_no, filing_date
+        )
+
+        index_resp = MagicMock(
+            status_code=200, text=index_html, raise_for_status=lambda: None
+        )
+
+        exhibit_resp = MagicMock(
+            status_code=200,
+            text=f"<html><body>{exhibit_text}</body></html>",
+            raise_for_status=lambda: None,
+        )
+
+        def side_effect(url, **kwargs):
+            if 'data.sec.gov' in url:
+                return submissions_resp
+            if index_url_fragment in url:
+                return index_resp
+            return exhibit_resp
+
+        session = MagicMock()
+        session.get.side_effect = side_effect
+        return session
+
+    def test_fetch_8k_uses_submissions_api_not_efts(self):
+        """fetch_8k_filings must NOT call efts.sec.gov — uses submissions API."""
+        from datetime import date as dt
         from scrapers.edgar_connector import EdgarConnector
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
+        mock_db.insert_report.return_value = 1
+
+        session = self._make_session(
+            cik_numeric='1507605',
+            acc_no='0001507605-24-000001',
+            filing_date='2024-06-01',
+            exhibit_text='MARA mined 750 bitcoin during June 2024 production',
+        )
+
+        connector = EdgarConnector(db=mock_db, session=session)
+        connector.fetch_8k_filings(cik='0001507605', ticker='MARA', since_date=dt(2024, 1, 1))
+
+        # EFTS must never be called
+        efts_calls = [
+            call for call in session.get.call_args_list
+            if 'efts.sec.gov' in str(call)
+        ]
+        assert efts_calls == [], f"EFTS was called: {efts_calls}"
+
+        # Report must be stored
+        mock_db.insert_report.assert_called_once()
+        stored = mock_db.insert_report.call_args[0][0]
+        assert stored['source_type'] == 'edgar_8k'
+        assert stored['ticker'] == 'MARA'
+        assert stored['report_date'] == '2024-06-01'
+        assert 'mined 750 bitcoin' in stored['raw_text']
+
+    def test_fetch_8k_skips_filings_before_since_date(self):
+        """8-K with filing_date before since_date is not ingested."""
+        from datetime import date as dt
+        from scrapers.edgar_connector import EdgarConnector
+
+        mock_db = MagicMock()
+        mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
+
+        session = self._make_session(
+            cik_numeric='1507605',
+            acc_no='0001507605-23-000001',
+            filing_date='2023-01-15',
+            exhibit_text='Bitcoin mining report',
+        )
+
+        connector = EdgarConnector(db=mock_db, session=session)
+        connector.fetch_8k_filings(
+            cik='0001507605', ticker='MARA', since_date=dt(2024, 1, 1)
+        )
+
+        mock_db.insert_report.assert_not_called()
+
+    def test_fetch_8k_skips_filing_with_no_exhibit(self):
+        """8-K index page with no EX-99 exhibit is skipped without error."""
+        from datetime import date as dt
+        from scrapers.edgar_connector import EdgarConnector
+
+        mock_db = MagicMock()
+        mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
+
+        # Index page has no EX-99 row
+        index_html = "<html><body><table><tr><td>8-K</td><td><a href='8k.htm'>form</a></td></tr></table></body></html>"
+
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = _make_submissions_response(
+            '1507605', '0001507605-24-000001', '2024-06-01'
+        )
+        index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
+
+        session = MagicMock()
+        session.get.side_effect = lambda url, **kw: (
+            submissions_resp if 'data.sec.gov' in url else index_resp
+        )
+
+        connector = EdgarConnector(db=mock_db, session=session)
+        result = connector.fetch_8k_filings(
+            cik='0001507605', ticker='MARA', since_date=dt(2024, 1, 1)
+        )
+
+        mock_db.insert_report.assert_not_called()
+        assert result.errors == 0  # no-exhibit is a skip, not an error
+
+    def test_fetch_8k_deduplicates_by_accession(self):
+        """8-K already stored by accession number is not re-ingested."""
+        from datetime import date as dt
+        from scrapers.edgar_connector import EdgarConnector
+
+        mock_db = MagicMock()
+        mock_db.report_exists_by_accession.return_value = True
+
+        session = self._make_session(
+            cik_numeric='1507605',
+            acc_no='0001507605-24-000001',
+            filing_date='2024-06-01',
+            exhibit_text='MARA bitcoin production',
+        )
+
+        connector = EdgarConnector(db=mock_db, session=session)
+        connector.fetch_8k_filings(cik='0001507605', ticker='MARA', since_date=dt(2024, 1, 1))
+
+        mock_db.insert_report.assert_not_called()
+
+
+class TestFetch8kNoExtraction:
+    def test_fetch_8k_no_extraction(self):
+        """Verify fetch_8k_filings never calls extract_all — Stage 1 only."""
+        from datetime import date as dt
+        from scrapers.edgar_connector import EdgarConnector
+
+        mock_db = MagicMock()
+        mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
         mock_db.insert_report.return_value = 1
 
         session = MagicMock()
-        # Simulate EDGAR full-text search response
-        session.get.return_value = MagicMock(
+        acc_no = '0001437491-24-000001'
+        acc_clean = acc_no.replace('-', '')
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = _make_submissions_response(
+            '1437491', acc_no, '2024-06-01'
+        )
+        index_html = (
+            "<html><body><table><tr><td>EX-99.1</td>"
+            "<td><a href='ex991.htm'>press release</a></td></tr></table></body></html>"
+        )
+        index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
+        exhibit_resp = MagicMock(
             status_code=200,
-            json=lambda: {
-                "hits": {
-                    "hits": [
-                        {
-                            "_id": "0001-24-001",
-                            "_source": {
-                                "file_date": "2024-06-01",
-                                "entity_name": "MARA Holdings",
-                                "period_ending": "2024-06-01",
-                            }
-                        }
-                    ]
-                }
-            },
             text="<html><body>Bitcoin production report text here</body></html>",
             raise_for_status=lambda: None,
         )
 
+        def side_effect(url, **kwargs):
+            if 'data.sec.gov' in url:
+                return submissions_resp
+            if f'{acc_clean}/{acc_no}-index.htm' in url:
+                return index_resp
+            return exhibit_resp
+
+        session.get.side_effect = side_effect
         connector = EdgarConnector(db=mock_db, session=session)
 
         with patch('scrapers.edgar_connector.extract_all') as mock_extract:
             connector.fetch_8k_filings(cik="0001437491", ticker="MARA",
-                                        since_date=__import__('datetime').date(2024, 1, 1))
+                                        since_date=dt(2024, 1, 1))
             mock_extract.assert_not_called()
 
 
