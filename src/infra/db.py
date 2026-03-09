@@ -317,6 +317,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 34")
                     version = 34
 
+                if version < 35:
+                    self._migrate_v35(conn)
+                    conn.execute("PRAGMA user_version = 35")
+                    version = 35
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1337,6 +1342,36 @@ class MinerDB:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
         if 'inference_notes' not in existing:
             conn.execute("ALTER TABLE data_points ADD COLUMN inference_notes TEXT")
+
+    def _migrate_v35(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v34 → v35: display_order column on metric_schema.
+
+        Adds an explicit integer sort key so dashboard panels can be ordered
+        independently of the metric key name.  Default value 999 sorts any
+        unseeded row after explicitly-ordered ones.  sales_btc is seeded before
+        restricted_holdings_btc to match the requested dashboard panel order.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(metric_schema)").fetchall()}
+        if 'display_order' not in existing:
+            conn.execute(
+                "ALTER TABLE metric_schema ADD COLUMN display_order INTEGER NOT NULL DEFAULT 999"
+            )
+        # Assign explicit order for known BTC-miners metrics.
+        order_map = [
+            ('production_btc',          10),
+            ('hashrate_eh',             20),
+            ('holdings_btc',            30),
+            ('unrestricted_holdings',   40),
+            ('sales_btc',               50),
+            ('restricted_holdings_btc', 60),
+            ('realization_rate',        70),
+            ('net_btc_balance_change',  80),
+        ]
+        for key, order in order_map:
+            conn.execute(
+                "UPDATE metric_schema SET display_order = ? WHERE key = ? AND sector = 'BTC-miners'",
+                (order, key),
+            )
 
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
@@ -2678,6 +2713,9 @@ class MinerDB:
                     counts['source_audit'] = _del('source_audit', 'ticker = ?', (t,))
                     _archive('llm_benchmark_runs', 'ticker = ?', (t,))
                     counts['llm_benchmark_runs'] = _del('llm_benchmark_runs', 'ticker = ?', (t,))
+                    # final_data_points — analyst override layer, no FK deps
+                    _archive('final_data_points', 'ticker = ?', (t,))
+                    counts['final_data_points'] = _del('final_data_points', 'ticker = ?', (t,))
                     # Reset operational fields on the company row
                     conn.execute(
                         """UPDATE companies
@@ -2716,6 +2754,9 @@ class MinerDB:
                     counts['source_audit'] = _del('source_audit')
                     _archive('llm_benchmark_runs')
                     counts['llm_benchmark_runs'] = _del('llm_benchmark_runs')
+                    # final_data_points — analyst override layer, no FK deps
+                    _archive('final_data_points')
+                    counts['final_data_points'] = _del('final_data_points')
                     if mode in {'reset', 'archive'}:
                         # Full reset keeps config rows and only resets company operational fields.
                         conn.execute(
@@ -4596,7 +4637,7 @@ class MinerDB:
     # ── Phase III: metric_schema CRUD ─────────────────────────────────────────
 
     def get_metric_schema(self, sector: str, active_only: bool = False) -> list:
-        """Return metric schema rows for a sector, ordered by key.
+        """Return metric schema rows for a sector, ordered by display_order then key.
 
         When active_only=True, only rows with active=1 are returned.
         Rows without the active column (pre-v22 DBs) default to active=1.
@@ -4604,12 +4645,14 @@ class MinerDB:
         with self._get_connection() as conn:
             if active_only:
                 rows = conn.execute(
-                    "SELECT * FROM metric_schema WHERE sector = ? AND COALESCE(active, 1) = 1 ORDER BY key ASC",
+                    "SELECT * FROM metric_schema WHERE sector = ? AND COALESCE(active, 1) = 1"
+                    " ORDER BY COALESCE(display_order, 999) ASC, key ASC",
                     (sector,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM metric_schema WHERE sector = ? ORDER BY key ASC",
+                    "SELECT * FROM metric_schema WHERE sector = ?"
+                    " ORDER BY COALESCE(display_order, 999) ASC, key ASC",
                     (sector,),
                 ).fetchall()
             return [dict(r) for r in rows]

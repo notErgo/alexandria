@@ -148,6 +148,23 @@ def _prior_period(period_str: str) -> Optional[str]:
         return None
 
 
+def _prior_periods(period_str: str, n: int) -> list:
+    """Return up to n YYYY-MM-01 strings going backwards from period_str."""
+    result = []
+    current = period_str
+    for _ in range(n):
+        prev = _prior_period(current)
+        if prev is None:
+            break
+        result.append(prev)
+        current = prev
+    return result
+
+
+# How many prior months to check for historical data embedded in each press release.
+_HISTORICAL_LOOKBACK = 3
+
+
 def _is_quarterly_doc(report: dict) -> bool:
     """Return True if report.source_type is a quarterly filing (10-Q)."""
     return report.get('source_type') in _QUARTERLY_SOURCES
@@ -172,44 +189,60 @@ def _try_gap_fill(
     confidence_threshold: float,
     summary,
 ) -> None:
-    """Try to fill prior-period gaps via a targeted second-pass LLM call.
+    """Try to fill prior-period gaps via a multi-period second-pass LLM call.
+
+    Looks back up to _HISTORICAL_LOOKBACK months from the report period.
+    Press releases typically include a trailing table with the last 3 months
+    of production data — this pass captures those historical figures.
 
     Only fires when:
-    (a) prior period exists (report_date is parseable)
-    (b) prior period has at least one missing metric in data_points
-    (c) LLM returns a result with confidence >= threshold
+    (a) at least one prior period has a missing metric in data_points
+    (b) LLM returns results with confidence >= threshold
 
     Never overwrites existing data.
     """
     period_str = report.get('report_date')
-    prior = _prior_period(period_str)
-    if prior is None:
+    ticker = report.get('ticker')
+
+    target_periods = _prior_periods(period_str, _HISTORICAL_LOOKBACK)
+    if not target_periods:
         return
 
-    ticker = report.get('ticker')
-    missing = _get_missing_metrics(db, ticker, prior, all_metrics)
-    if not missing:
-        log.debug("Gap fill: all metrics filled for %s %s, skipping", ticker, prior)
+    # Only include periods that have at least one missing metric
+    periods_with_gaps = [
+        p for p in target_periods
+        if _get_missing_metrics(db, ticker, p, all_metrics)
+    ]
+    if not periods_with_gaps:
+        log.debug("Gap fill: all metrics filled for %s %s, skipping", ticker, target_periods)
         return
 
     log.info(
-        "Gap fill: checking prior period %s for %s (missing: %s)", prior, ticker, missing
+        "Gap fill: checking %d prior periods for %s (periods: %s)",
+        len(periods_with_gaps), ticker, periods_with_gaps,
     )
     try:
-        results = llm_interpreter.extract_for_period(llm_text, missing, period_str, prior)
+        all_results = llm_interpreter.extract_historical_periods(
+            llm_text, all_metrics, period_str, periods_with_gaps,
+        )
     except Exception as e:
-        log.error("Gap fill failed for %s %s: %s", ticker, prior, e, exc_info=True)
+        log.error("Gap fill failed for %s %s: %s", ticker, periods_with_gaps, e, exc_info=True)
         return
 
     try:
         _gf_meta = dict(llm_interpreter._last_call_meta)
         from interpreters.llm_interpreter import _active_model
-        gf_hits = lambda t: sum(1 for r in results.values() if r is not None and r.confidence >= t)
+        total_results = sum(len(v) for v in all_results.values())
+        gf_hits = lambda t: sum(
+            1 for period_res in all_results.values()
+            for r in period_res.values()
+            if r is not None and r.confidence >= t
+        )
         db.insert_benchmark_run({
             'model': _active_model(db),
-            'call_type': 'gap_fill',
+            'call_type': 'gap_fill_multi',
             'ticker': ticker,
-            'period': prior,
+            'period': periods_with_gaps[0],
             'report_id': report.get('id'),
             'prompt_chars': len(llm_text),
             'response_chars': _gf_meta.get('response_chars', 0),
@@ -217,8 +250,8 @@ def _try_gap_fill(
             'response_tokens': _gf_meta.get('response_tokens', 0),
             'total_duration_ms': _gf_meta.get('total_duration_ms', 0),
             'eval_duration_ms': _gf_meta.get('eval_duration_ms', 0),
-            'metrics_requested': len(missing),
-            'metrics_extracted': len(results),
+            'metrics_requested': len(all_metrics) * len(periods_with_gaps),
+            'metrics_extracted': total_results,
             'hits_90': gf_hits(0.90),
             'hits_80': gf_hits(0.80),
             'hits_75': gf_hits(0.75),
@@ -226,27 +259,28 @@ def _try_gap_fill(
     except Exception as _bench_err:
         log.debug("Gap fill benchmark write failed (non-fatal): %s", _bench_err)
 
-    for metric, result in results.items():
-        if result is None or result.confidence < confidence_threshold:
-            continue
-        # Only store if slot is still empty — another extraction may have filled it
-        if db.data_point_exists(ticker, prior, metric):
-            continue
-        db.insert_data_point({
-            'report_id': report.get('id'),
-            'ticker': ticker,
-            'period': prior,
-            'metric': metric,
-            'value': result.value,
-            'unit': result.unit,
-            'confidence': result.confidence,
-            'extraction_method': result.extraction_method,
-            'source_snippet': result.source_snippet,
-        })
-        summary.data_points_extracted += 1
-        log.info(
-            "Gap fill: stored %s %s %s = %.4f", ticker, prior, metric, result.value
-        )
+    for period, period_results in all_results.items():
+        for metric, result in period_results.items():
+            if result is None or result.confidence < confidence_threshold:
+                continue
+            # Only store if slot is still empty — another extraction may have filled it
+            if db.data_point_exists(ticker, period, metric):
+                continue
+            db.insert_data_point({
+                'report_id': report.get('id'),
+                'ticker': ticker,
+                'period': period,
+                'metric': metric,
+                'value': result.value,
+                'unit': result.unit,
+                'confidence': result.confidence,
+                'extraction_method': result.extraction_method,
+                'source_snippet': result.source_snippet,
+            })
+            summary.data_points_extracted += 1
+            log.info(
+                "Gap fill: stored %s %s %s = %.4f", ticker, period, metric, result.value
+            )
 
 
 def _get_llm_interpreter(db):

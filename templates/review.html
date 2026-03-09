@@ -181,6 +181,51 @@
   </div>
 </div>
 
+<!-- Purge Final Data danger zone -->
+<details id="purge-details" style="margin-top:1.5rem">
+  <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+    Purge Final Data
+  </summary>
+  <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+
+    <!-- Per-ticker clear -->
+    <div style="margin-bottom:0.75rem">
+      <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for Ticker</div>
+      <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+        Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <select id="pf-ticker-select" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+          <option value="">Select ticker…</option>
+        </select>
+        <input id="pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
+          style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px">
+        <button class="btn btn-sm btn-danger" id="pf-ticker-btn" disabled>Clear Ticker Final</button>
+        <span id="pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <!-- Global purge -->
+    <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
+      <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+      <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+        Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <select id="pf-mode-select" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+          <option value="clear">clear</option>
+          <option value="archive">archive</option>
+        </select>
+        <input id="pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
+          style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px">
+        <button class="btn btn-sm btn-danger" id="pf-global-btn" disabled>Purge All</button>
+        <span id="pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+  </div>
+</details>
+
 {% endblock %}
 
 {% block scripts %}
@@ -248,12 +293,18 @@
       .then(function(data) {
         if (!data || !data.success) return;
         const sel = document.getElementById('ticker-filter');
+        const pfSel = document.getElementById('pf-ticker-select');
         sel.innerHTML = '<option value="">All</option>';
+        pfSel.innerHTML = '<option value="">Select ticker…</option>';
         data.data.forEach(function(c) {
           const opt = document.createElement('option');
           opt.value = c.ticker;
           opt.textContent = c.ticker;
           sel.appendChild(opt);
+          const opt2 = document.createElement('option');
+          opt2.value = c.ticker;
+          opt2.textContent = c.ticker;
+          pfSel.appendChild(opt2);
         });
         // Reapply URL param if present
         const urlTicker = new URLSearchParams(window.location.search).get('ticker');
@@ -539,7 +590,78 @@
           break;
       }
     });
+
+    // Wire purge confirm inputs
+    document.getElementById('pf-ticker-select').addEventListener('change', onPfTickerInput);
+    document.getElementById('pf-ticker-confirm').addEventListener('input', onPfTickerInput);
+    document.getElementById('pf-global-confirm').addEventListener('input', onPfGlobalInput);
+    document.getElementById('pf-ticker-btn').addEventListener('click', pfClearTicker);
+    document.getElementById('pf-global-btn').addEventListener('click', pfPurgeAll);
   });
+
+  // ── Purge Final Data ───────────────────────────────────────────────────────
+
+  function onPfTickerInput() {
+    const ticker = document.getElementById('pf-ticker-select').value.trim().toUpperCase();
+    const expected = ticker ? `CLEAR_FINAL_${ticker}` : '';
+    const typed = document.getElementById('pf-ticker-confirm').value.trim();
+    document.getElementById('pf-ticker-btn').disabled = !expected || typed !== expected;
+  }
+
+  function onPfGlobalInput() {
+    const typed = document.getElementById('pf-global-confirm').value.trim();
+    document.getElementById('pf-global-btn').disabled = typed !== 'CLEAR_FINAL_ALL';
+  }
+
+  async function pfClearTicker() {
+    const ticker = document.getElementById('pf-ticker-select').value.trim().toUpperCase();
+    if (!ticker) return;
+    const statusEl = document.getElementById('pf-ticker-status');
+    statusEl.textContent = 'Clearing…';
+    statusEl.style.color = '';
+    try {
+      const resp = await fetch(`/api/interpret/${encodeURIComponent(ticker)}/final`, {method: 'DELETE'});
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Failed');
+      const n = data.data.deleted;
+      statusEl.textContent = `Cleared ${n} rows`;
+      statusEl.style.color = 'var(--theme-success)';
+      document.getElementById('pf-ticker-confirm').value = '';
+      document.getElementById('pf-ticker-btn').disabled = true;
+      showToast(`Cleared ${n} finalized values for ${ticker}`);
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      statusEl.style.color = 'var(--theme-danger)';
+    }
+  }
+
+  async function pfPurgeAll() {
+    const mode = document.getElementById('pf-mode-select').value;
+    const statusEl = document.getElementById('pf-global-status');
+    statusEl.textContent = 'Purging…';
+    statusEl.style.color = '';
+    try {
+      const resp = await fetch('/api/interpret/final/purge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({confirm: true, mode}),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!data.success) throw new Error(data.error?.message || 'Failed');
+      const n = data.data.deleted;
+      statusEl.textContent = `Purged ${n} rows`;
+      statusEl.style.color = 'var(--theme-success)';
+      document.getElementById('pf-global-confirm').value = '';
+      document.getElementById('pf-global-btn').disabled = true;
+      showToast(`Purged ${n} finalized values`);
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      statusEl.style.color = 'var(--theme-danger)';
+    }
+  }
+
 })();
 </script>
 {% endblock %}

@@ -457,6 +457,16 @@ function renderCompanyTabs(companies) {
     btn.addEventListener('click', function() { selectCompany(c.ticker); });
     tabs.appendChild(btn);
   }
+  // Populate purge-final ticker dropdown if present (ops.html review tab)
+  const pfSel = document.getElementById('mn-pf-ticker');
+  if (pfSel && pfSel.options.length <= 1) {
+    companies.forEach(function(c) {
+      const opt = document.createElement('option');
+      opt.value = c.ticker;
+      opt.textContent = c.ticker;
+      pfSel.appendChild(opt);
+    });
+  }
 }
 
 // ── Select company ────────────────────────────────────────────────────────
@@ -674,7 +684,7 @@ function renderTable(allRows) {
       if (row.has_report) {
         return `<td class="td-empty" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       }
-      return `<td class="td-nodoc">—</td>`;
+      return `<td class="td-nodoc" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
     });
 
     // Type and Date columns
@@ -896,6 +906,7 @@ function closeDocPanel() {
   _selectedPeriod = null;
   const panel = document.getElementById('doc-panel');
   panel.classList.remove('visible');
+  _docSearchClose();
   document.getElementById('pattern-panel').style.display = 'none';
   ReviewPanel.close();
   // Clear row selection
@@ -904,9 +915,143 @@ function closeDocPanel() {
   });
 }
 
-// Escape key closes doc panel
+// ── Panel 5.2 in-panel search (Ctrl+F) ────────────────────────────────────
+var _searchMatches = [];
+var _searchIdx = 0;
+
+function _docSearchGetText() {
+  // rp-doc-text is a <pre> inside #miner-review-panel
+  return document.querySelector('#miner-review-panel .rp-doc-text') || null;
+}
+
+function _docSearchOpen() {
+  const bar = document.getElementById('doc-search-bar');
+  if (!bar) return;
+  bar.classList.add('visible');
+  const input = document.getElementById('doc-search-input');
+  if (input) { input.value = ''; input.focus(); }
+  _searchMatches = [];
+  _searchIdx = 0;
+  _docSearchUpdateCount();
+}
+
+function _docSearchClose() {
+  const bar = document.getElementById('doc-search-bar');
+  if (bar) bar.classList.remove('visible');
+  _docSearchClearHighlights();
+  _searchMatches = [];
+  _searchIdx = 0;
+  _docSearchUpdateCount();
+}
+
+function _docSearchClearHighlights() {
+  const el = _docSearchGetText();
+  if (!el) return;
+  // Replace <mark> wrappers with their text content
+  el.querySelectorAll('mark.doc-search-match').forEach(function(m) {
+    m.replaceWith(document.createTextNode(m.textContent));
+  });
+  el.normalize();
+}
+
+function _docSearchUpdateCount() {
+  const el = document.getElementById('doc-search-count');
+  if (!el) return;
+  el.textContent = _searchMatches.length
+    ? (_searchIdx + 1) + ' / ' + _searchMatches.length
+    : (document.getElementById('doc-search-input') && document.getElementById('doc-search-input').value ? '0' : '');
+}
+
+function _docSearchRun() {
+  _docSearchClearHighlights();
+  _searchMatches = [];
+  _searchIdx = 0;
+  const input = document.getElementById('doc-search-input');
+  const query = input ? input.value : '';
+  if (!query) { _docSearchUpdateCount(); return; }
+
+  const el = _docSearchGetText();
+  if (!el) return;
+
+  // Walk text nodes only — preserve existing HTML spans
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+
+  const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  nodes.forEach(function(node) {
+    const text = node.nodeValue;
+    const parts = [];
+    let last = 0, m2;
+    re.lastIndex = 0;
+    while ((m2 = re.exec(text)) !== null) {
+      if (m2.index > last) parts.push(document.createTextNode(text.slice(last, m2.index)));
+      const mark = document.createElement('mark');
+      mark.className = 'doc-search-match';
+      mark.textContent = m2[0];
+      parts.push(mark);
+      _searchMatches.push(mark);
+      last = re.lastIndex;
+    }
+    if (parts.length) {
+      if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
+      const frag = document.createDocumentFragment();
+      parts.forEach(function(p) { frag.appendChild(p); });
+      node.parentNode.replaceChild(frag, node);
+    }
+  });
+
+  if (_searchMatches.length) _docSearchScroll(0);
+  _docSearchUpdateCount();
+}
+
+function _docSearchScroll(idx) {
+  if (!_searchMatches.length) return;
+  _searchMatches.forEach(function(m) { m.classList.remove('current'); });
+  _searchIdx = ((idx % _searchMatches.length) + _searchMatches.length) % _searchMatches.length;
+  const cur = _searchMatches[_searchIdx];
+  cur.classList.add('current');
+  cur.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  _docSearchUpdateCount();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const input = document.getElementById('doc-search-input');
+  if (input) {
+    input.addEventListener('input', _docSearchRun);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (_searchMatches.length) _docSearchScroll(e.shiftKey ? _searchIdx - 1 : _searchIdx + 1);
+      } else if (e.key === 'Escape') {
+        _docSearchClose();
+      }
+    });
+  }
+  const prevBtn = document.getElementById('doc-search-prev');
+  if (prevBtn) prevBtn.addEventListener('click', function() { _docSearchScroll(_searchIdx - 1); });
+  const nextBtn = document.getElementById('doc-search-next');
+  if (nextBtn) nextBtn.addEventListener('click', function() { _docSearchScroll(_searchIdx + 1); });
+  const closeBtn = document.getElementById('doc-search-close');
+  if (closeBtn) closeBtn.addEventListener('click', _docSearchClose);
+});
+
+// Escape key closes doc panel (or search bar if open)
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && _selectedPeriod) closeDocPanel();
+  if (e.key === 'Escape') {
+    const bar = document.getElementById('doc-search-bar');
+    if (bar && bar.classList.contains('visible')) { _docSearchClose(); return; }
+    if (_selectedPeriod) closeDocPanel();
+  }
+  // Ctrl+F opens in-panel search when panel is visible
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    const panel = document.getElementById('doc-panel');
+    if (panel && panel.classList.contains('visible')) {
+      e.preventDefault();
+      _docSearchOpen();
+    }
+  }
 });
 
 // ── Text selection → pattern generation (wired in DOMContentLoaded) ───────

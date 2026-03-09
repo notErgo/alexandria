@@ -726,11 +726,12 @@ def manifest_detect_period(manifest_id: int):
 def purge_ticker():
     """POST /api/operations/purge_ticker — delete all extracted data for one ticker.
 
-    Deletes data_points and review_queue rows for the ticker, then resets
-    reports.extraction_status = 'pending' so the next extraction run picks them up.
+    Cascades through every downstream layer in FK-safe order:
+      data_points → review_queue → final_data_points
+    Also resets reports.extraction_status = 'pending'.
 
     Body: { "ticker": "MARA" }
-    Returns: { "data_points_deleted": N, "review_queue_deleted": N }
+    Returns: { "data_points_deleted": N, "review_queue_deleted": N, "final_data_points_deleted": N }
     """
     from app_globals import get_db as _get_db
 
@@ -743,11 +744,17 @@ def purge_ticker():
         db = _get_db()
         dp_count = db.purge_data_points(ticker=ticker)
         rq_count = db.purge_review_queue(ticker=ticker)
+        fp_result = db.purge_final_data_points(ticker=ticker, mode='clear')
+        fp_count = fp_result.get('deleted', 0)
         log.info(
-            'purge_ticker ticker=%s data_points=%d review_queue=%d',
-            ticker, dp_count, rq_count,
+            'purge_ticker ticker=%s data_points=%d review_queue=%d final_data_points=%d',
+            ticker, dp_count, rq_count, fp_count,
         )
-        return jsonify({'data_points_deleted': dp_count, 'review_queue_deleted': rq_count})
+        return jsonify({
+            'data_points_deleted': dp_count,
+            'review_queue_deleted': rq_count,
+            'final_data_points_deleted': fp_count,
+        })
     except Exception:
         log.error('purge_ticker_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500

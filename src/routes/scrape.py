@@ -28,6 +28,49 @@ def trigger_scrape(ticker):
     return jsonify({'success': True, 'data': job}), 202
 
 
+@bp.route('/api/scrape/trigger-all', methods=['POST'])
+def trigger_scrape_all():
+    """POST /api/scrape/trigger-all — enqueue scrape jobs for all non-skip companies.
+
+    Skips companies whose scraper_mode is 'skip' or that already have a pending/running job.
+    Returns counts of enqueued, skipped (mode=skip), and already-queued companies.
+    """
+    db = get_db()
+    companies = db.get_companies(active_only=False)
+    enqueued = []
+    skipped_mode = []
+    already_queued = []
+    errors = []
+    for company in companies:
+        ticker = company['ticker']
+        if company.get('scraper_mode') == 'skip':
+            skipped_mode.append(ticker)
+            continue
+        try:
+            job = db.enqueue_scrape_job(ticker, 'historic')
+            enqueued.append(ticker)
+            log.info("Enqueued overnight scrape job for %s (job_id=%s)", ticker, job['id'])
+        except ValueError:
+            # Already pending or running
+            already_queued.append(ticker)
+        except Exception:
+            log.error("Failed to enqueue scrape job for %s", ticker, exc_info=True)
+            errors.append(ticker)
+    log.info(
+        "event=trigger_all_scrape enqueued=%d skipped_mode=%d already_queued=%d errors=%d",
+        len(enqueued), len(skipped_mode), len(already_queued), len(errors),
+    )
+    return jsonify({
+        'success': True,
+        'data': {
+            'enqueued': enqueued,
+            'skipped_mode': skipped_mode,
+            'already_queued': already_queued,
+            'errors': errors,
+        },
+    }), 202
+
+
 @bp.route('/api/scrape/queue')
 def scrape_queue():
     db = get_db()

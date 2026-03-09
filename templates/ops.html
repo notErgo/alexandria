@@ -346,8 +346,10 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 #doc-panel {
   position: fixed;
   bottom: 0;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 1400px;
   z-index: 200;
   display: none;
   flex-direction: column;
@@ -371,9 +373,9 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--theme-text-primary);
+  flex: 1;
 }
 .doc-panel-close {
-  margin-left: auto;
   background: none;
   border: none;
   color: var(--theme-text-muted);
@@ -382,6 +384,34 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   padding: 0 0.3rem;
 }
 .doc-panel-close:hover { color: var(--theme-text-primary); }
+/* Search bar (shown on Ctrl+F) */
+#doc-search-bar {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--theme-bg-primary);
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+#doc-search-bar.visible { display: flex; }
+#doc-search-input {
+  flex: 1;
+  max-width: 320px;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+}
+#doc-search-count {
+  font-size: 0.78rem;
+  color: var(--theme-text-muted);
+  min-width: 5ch;
+}
+.doc-search-match { background: rgba(255,200,0,0.35); border-radius: 2px; }
+.doc-search-match.current { background: rgba(255,140,0,0.65); }
 
 /* Two-column body: source view left, rules right */
 .doc-panel-body {
@@ -1114,7 +1144,11 @@ tr.is-reviewed td { opacity: 0.65; }
 
   <!-- Scrape queue -->
   <div style="margin-top:1rem" data-spec-id="1.1.2">
-    <h2 style="font-size:1rem;margin-bottom:0.5rem"><span class="spec-id">1.1.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
+      <h2 style="font-size:1rem;margin:0"><span class="spec-id">1.1.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+      <button class="btn btn-sm btn-primary" onclick="enqueueAllScrapeJobs()" id="scrape-all-btn">Enqueue All Tickers</button>
+      <span id="scrape-all-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
     <table id="scrape-table" data-ui-id="1.1.2">
       <thead>
         <tr>
@@ -1642,7 +1676,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <span style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary)">Purge ticker data</span>
         <input id="purge-ticker-input" type="text" maxlength="10" placeholder="MARA"
           style="font-size:0.82rem;padding:0.2rem 0.4rem;width:80px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary);text-transform:uppercase">
-        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Deletes all data_points and review_queue rows. Resets reports to pending.</span>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Cascades: data_points → review_queue → final_data_points. Resets reports to pending.</span>
         <button class="btn btn-sm btn-danger" onclick="purgeTickerData()" id="purge-ticker-btn">Purge</button>
         <span id="purge-ticker-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
       </div>
@@ -2155,8 +2189,15 @@ tr.is-reviewed td { opacity: 0.65; }
   <div id="doc-panel" data-spec-id="MD5.2">
     <div class="doc-panel-header">
       <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
-      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Source</button>
+      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem">⤢ Source</button>
       <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
+    </div>
+    <div id="doc-search-bar">
+      <input id="doc-search-input" type="text" placeholder="Search... (Enter = next)" autocomplete="off" />
+      <button class="btn btn-secondary btn-sm" id="doc-search-prev" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8593;</button>
+      <button class="btn btn-secondary btn-sm" id="doc-search-next" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8595;</button>
+      <span id="doc-search-count"></span>
+      <button class="doc-panel-close" id="doc-search-close" title="Close search (Esc)" style="margin-left:auto">✕</button>
     </div>
     <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
       <div id="miner-review-panel"></div>
@@ -2195,6 +2236,55 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /#doc-panel -->
 
 </div><!-- /.md-page -->
+
+  <!-- Purge Final Data -->
+  <details style="margin-top:1.25rem">
+    <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+      Purge Final Data
+    </summary>
+    <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+
+      <!-- Per-ticker clear -->
+      <div style="margin-bottom:0.75rem">
+        <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for Ticker</div>
+        <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+          Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <select id="mn-pf-ticker" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+            onchange="mnPfOnTickerInput()">
+            <option value="">Select ticker…</option>
+          </select>
+          <input id="mn-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
+            style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+            oninput="mnPfOnTickerInput()">
+          <button class="btn btn-sm btn-danger" id="mn-pf-ticker-btn" onclick="mnPfClearTicker()" disabled>Clear Ticker Final</button>
+          <span id="mn-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
+
+      <!-- Global purge -->
+      <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
+        <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+        <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+          Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <select id="mn-pf-mode" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+            <option value="clear">clear</option>
+            <option value="archive">archive</option>
+          </select>
+          <input id="mn-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
+            style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+            oninput="mnPfOnGlobalInput()">
+          <button class="btn btn-sm btn-danger" id="mn-pf-global-btn" onclick="mnPfPurgeAll()" disabled>Purge All</button>
+          <span id="mn-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
+
+    </div>
+  </details>
+
   </div><!-- /spane-review-miner -->
 
   <!-- Sub-pane: Queue (4.1) -->
@@ -2260,6 +2350,55 @@ tr.is-reviewed td { opacity: 0.65; }
         </tbody>
       </table>
     </div>
+
+    <!-- Purge Final Data -->
+    <details style="margin-top:1.25rem">
+      <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+        Purge Final Data
+      </summary>
+      <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+
+        <!-- Per-ticker clear -->
+        <div style="margin-bottom:0.75rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for Ticker</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="rv-pf-ticker" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+              onchange="rvPfOnTickerInput()">
+              <option value="">Select ticker…</option>
+            </select>
+            <input id="rv-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
+              style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+              oninput="rvPfOnTickerInput()">
+            <button class="btn btn-sm btn-danger" id="rv-pf-ticker-btn" onclick="rvPfClearTicker()" disabled>Clear Ticker Final</button>
+            <span id="rv-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+
+        <!-- Global purge -->
+        <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="rv-pf-mode" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+              <option value="clear">clear</option>
+              <option value="archive">archive</option>
+            </select>
+            <input id="rv-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
+              style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+              oninput="rvPfOnGlobalInput()">
+            <button class="btn btn-sm btn-danger" id="rv-pf-global-btn" onclick="rvPfPurgeAll()" disabled>Purge All</button>
+            <span id="rv-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+
+      </div>
+    </details>
+
   </div><!-- /spane-review-queue -->
 
   <!-- Sub-pane: Patterns (4.2) -->
@@ -3331,7 +3470,7 @@ async function purgeTickerData() {
     alert('Enter a ticker (e.g. MARA) in the Purge field first.');
     return;
   }
-  if (!confirm('Delete ALL data_points and review_queue rows for ' + ticker + '?\n\nThis cannot be undone. Extraction status will be reset to pending so you can re-run extraction.')) {
+  if (!confirm('Cascade purge for ' + ticker + '?\n\nDeletes: data_points, review_queue, final_data_points.\nResets reports to pending for re-extraction.\n\nThis cannot be undone.')) {
     return;
   }
   const btn = document.getElementById('purge-ticker-btn');
@@ -3350,7 +3489,8 @@ async function purgeTickerData() {
     if (resp.ok) {
       const dp = data.data_points_deleted || 0;
       const rq = data.review_queue_deleted || 0;
-      const msg = 'Purged ' + ticker + ': deleted ' + dp + ' data_points, ' + rq + ' review_queue rows. Reload the Explorer/miner-data to see the empty grid.';
+      const fp = data.final_data_points_deleted || 0;
+      const msg = 'Purged ' + ticker + ': ' + dp + ' data_points, ' + rq + ' review_queue, ' + fp + ' final. Reload Explorer to see empty grid.';
       msgEl.textContent = msg;
       alert(msg);
     } else {
@@ -4237,6 +4377,34 @@ async function triggerScrape(ticker) {
   setTimeout(loadScrapeQueue, 1000);
 }
 
+async function enqueueAllScrapeJobs() {
+  const btn = document.getElementById('scrape-all-btn');
+  const msgEl = document.getElementById('scrape-all-msg');
+  btn.disabled = true;
+  msgEl.textContent = 'Enqueueing…';
+  try {
+    const resp = await fetch('/api/scrape/trigger-all', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.success) {
+      msgEl.textContent = data.error?.message || 'Failed';
+      showToast(data.error?.message || 'Failed to enqueue scrapes', true);
+      return;
+    }
+    const d = data.data || {};
+    const n = (d.enqueued || []).length;
+    const skipped = (d.skipped_mode || []).length;
+    const already = (d.already_queued || []).length;
+    msgEl.textContent = n + ' enqueued, ' + skipped + ' skipped (mode=skip), ' + already + ' already queued';
+    showToast('Enqueued scrape jobs for ' + n + ' tickers');
+    setTimeout(loadScrapeQueue, 1000);
+  } catch (err) {
+    msgEl.textContent = 'Error: ' + String(err);
+    showToast('Request failed', true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function loadScrapeQueue() {
   const resp = await fetch('/api/scrape/queue', { cache: 'no-store' });
   if (!resp.ok) return;
@@ -4968,6 +5136,21 @@ async function loadReview() {
   const countEl = document.getElementById('rv-count');
   if (countEl) countEl.textContent = _reviewItems.length + ' items';
   renderReview();
+  _rvPfPopulateTickers();
+}
+
+function _rvPfPopulateTickers() {
+  const sel = document.getElementById('rv-pf-ticker');
+  if (!sel || sel.options.length > 1) return; // already populated
+  fetch('/api/companies').then(r => r.ok ? r.json() : null).then(data => {
+    if (!data || !data.success) return;
+    data.data.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.ticker;
+      opt.textContent = c.ticker;
+      sel.appendChild(opt);
+    });
+  }).catch(() => {});
 }
 
 function _sourceTypeBadge(sourceType) {
@@ -7180,5 +7363,131 @@ function renderMinerChart() {
     // renderMinerChart reads _rows directly; callers invoke showChartView which calls renderMinerChart.
   });
 })();
+
+// ── Review tab (miner sub-pane): Purge Final Data ─────────────────────────
+function mnPfOnTickerInput() {
+  const ticker = (document.getElementById('mn-pf-ticker').value || '').trim().toUpperCase();
+  const expected = ticker ? 'CLEAR_FINAL_' + ticker : '';
+  const typed = (document.getElementById('mn-pf-ticker-confirm').value || '').trim();
+  document.getElementById('mn-pf-ticker-btn').disabled = !expected || typed !== expected;
+}
+
+function mnPfOnGlobalInput() {
+  const typed = (document.getElementById('mn-pf-global-confirm').value || '').trim();
+  document.getElementById('mn-pf-global-btn').disabled = typed !== 'CLEAR_FINAL_ALL';
+}
+
+async function mnPfClearTicker() {
+  const ticker = (document.getElementById('mn-pf-ticker').value || '').trim().toUpperCase();
+  if (!ticker) return;
+  const statusEl = document.getElementById('mn-pf-ticker-status');
+  statusEl.textContent = 'Clearing…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch('/api/interpret/' + encodeURIComponent(ticker) + '/final', {method: 'DELETE'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error && data.error.message || 'Failed');
+    const n = data.data.deleted;
+    statusEl.textContent = 'Cleared ' + n + ' rows';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('mn-pf-ticker-confirm').value = '';
+    document.getElementById('mn-pf-ticker-btn').disabled = true;
+    if (ticker === _ticker) { _finalizedValues = []; renderFinalizedTable(); renderReconcileTable(); }
+    showToast('Cleared ' + n + ' finalized values for ' + ticker);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
+}
+
+async function mnPfPurgeAll() {
+  const mode = (document.getElementById('mn-pf-mode').value || 'clear');
+  const statusEl = document.getElementById('mn-pf-global-status');
+  statusEl.textContent = 'Purging…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch('/api/interpret/final/purge', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, mode: mode}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error && data.error.message || 'Failed');
+    const n = data.data.deleted;
+    statusEl.textContent = 'Purged ' + n + ' rows';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('mn-pf-global-confirm').value = '';
+    document.getElementById('mn-pf-global-btn').disabled = true;
+    _finalizedValues = []; renderFinalizedTable(); renderReconcileTable();
+    showToast('Purged ' + n + ' finalized values');
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
+}
+
+// ── Review tab (queue sub-pane): Purge Final Data ─────────────────────────
+function rvPfOnTickerInput() {
+  const ticker = (document.getElementById('rv-pf-ticker').value || '').trim().toUpperCase();
+  const expected = ticker ? 'CLEAR_FINAL_' + ticker : '';
+  const typed = (document.getElementById('rv-pf-ticker-confirm').value || '').trim();
+  document.getElementById('rv-pf-ticker-btn').disabled = !expected || typed !== expected;
+}
+
+function rvPfOnGlobalInput() {
+  const typed = (document.getElementById('rv-pf-global-confirm').value || '').trim();
+  document.getElementById('rv-pf-global-btn').disabled = typed !== 'CLEAR_FINAL_ALL';
+}
+
+async function rvPfClearTicker() {
+  const ticker = (document.getElementById('rv-pf-ticker').value || '').trim().toUpperCase();
+  if (!ticker) return;
+  const statusEl = document.getElementById('rv-pf-ticker-status');
+  statusEl.textContent = 'Clearing…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch('/api/interpret/' + encodeURIComponent(ticker) + '/final', {method: 'DELETE'});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error && data.error.message || 'Failed');
+    const n = data.data.deleted;
+    statusEl.textContent = 'Cleared ' + n + ' rows';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('rv-pf-ticker-confirm').value = '';
+    document.getElementById('rv-pf-ticker-btn').disabled = true;
+    showToast('Cleared ' + n + ' finalized values for ' + ticker);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
+}
+
+async function rvPfPurgeAll() {
+  const mode = (document.getElementById('rv-pf-mode').value || 'clear');
+  const statusEl = document.getElementById('rv-pf-global-status');
+  statusEl.textContent = 'Purging…';
+  statusEl.style.color = '';
+  try {
+    const resp = await fetch('/api/interpret/final/purge', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, mode: mode}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.error && data.error.message || 'Failed');
+    const n = data.data.deleted;
+    statusEl.textContent = 'Purged ' + n + ' rows';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('rv-pf-global-confirm').value = '';
+    document.getElementById('rv-pf-global-btn').disabled = true;
+    showToast('Purged ' + n + ' finalized values');
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+  }
+}
 </script>
 {% endblock %}

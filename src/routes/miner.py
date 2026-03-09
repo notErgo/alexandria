@@ -665,11 +665,12 @@ def _try_fetch_edgar_html(source_url: str, ticker: str, period: str) -> str | No
             headers={'User-Agent': _EDGAR_USER_AGENT},
             timeout=30,
         )
-        if resp.status_code == 200 and 'text/html' in resp.headers.get('Content-Type', ''):
+        if resp.status_code == 200 and resp.text.strip():
             return resp.text
         log.warning(
-            "edgar_refetch non-200 ticker=%s period=%s status=%s url=%s",
-            ticker, period, resp.status_code, source_url,
+            "edgar_refetch non-200-or-empty ticker=%s period=%s status=%s content_type=%s url=%s",
+            ticker, period, resp.status_code,
+            resp.headers.get('Content-Type', ''), source_url,
         )
         return None
     except Exception as fetch_err:

@@ -798,6 +798,150 @@ class LLMInterpreter:
 
         return "\n".join(lines)
 
+    def _build_multi_period_prompt(
+        self,
+        text: str,
+        metrics: list,
+        current_period: str,
+        target_periods: list,
+    ) -> str:
+        """Build a prompt to extract historical monthly figures for multiple prior periods.
+
+        Used when a press release contains a trailing table listing the last
+        N months of production (e.g. Jan/Feb/Mar at the bottom of an April report).
+        Each target_period must be a YYYY-MM-01 string.
+        """
+        period_list = ', '.join(target_periods)
+        lines = [
+            f"This document was published reporting figures for {current_period}. "
+            f"Your task: extract values EXPLICITLY stated for these prior months: {period_list}. "
+            f"Do NOT extract values for {current_period}. "
+            f"Only return a value for a period if the document names that specific month explicitly "
+            f"(by month name or YYYY-MM date). If a period is not mentioned, set all its values to null.\n",
+        ]
+
+        for metric in metrics:
+            lines.append(f"=== METRIC: {metric} ===")
+            lines.append(self._get_prompt_instructions(metric))
+            lines.append("")
+
+        lines.append("=== OUTPUT FORMAT ===")
+        lines.append("Return ONLY this JSON object, no other text:")
+        lines.append("{")
+        for period in target_periods:
+            lines.append(f'  "{period}": {{')
+            for metric in metrics:
+                unit = _BATCH_UNIT_HINTS.get(metric, "")
+                lines.append(
+                    f'    "{metric}": {{"value": <number or null>, "unit": "{unit}", '
+                    f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
+                )
+            lines.append("  },")
+        lines.append("}")
+        lines.append("")
+        lines.append("Document:")
+        lines.append(text)
+
+        return "\n".join(lines)
+
+    def _parse_multi_period_response(
+        self,
+        raw: str,
+        metrics: list,
+        target_periods: list,
+    ) -> dict:
+        """Parse a multi-period JSON response into {period: {metric: ExtractionResult}}."""
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        if start == -1 or end == 0:
+            log.debug("No JSON object in multi-period LLM response")
+            return {}
+
+        try:
+            data = json.loads(raw[start:end])
+        except (json.JSONDecodeError, ValueError) as e:
+            if _HAS_JSON_REPAIR:
+                try:
+                    data = json.loads(_json_repair.repair_json(raw[start:end]))
+                    log.debug("Multi-period JSON repaired (original error: %s)", e)
+                except Exception:
+                    return {}
+            else:
+                return {}
+
+        _model = _active_model(self._db)
+        results = {}
+
+        for period in target_periods:
+            period_data = data.get(period)
+            if not isinstance(period_data, dict):
+                continue
+
+            period_results = {}
+            for metric in metrics:
+                entry = period_data.get(metric)
+                if not isinstance(entry, dict):
+                    continue
+                value = entry.get('value')
+                if value is None:
+                    continue
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    continue
+                bounds = METRIC_VALID_RANGES.get(metric)
+                if bounds is not None:
+                    lo, hi = bounds
+                    if not (lo <= value <= hi):
+                        log.debug(
+                            "Multi-period LLM value %.4f out of range for %s %s",
+                            value, period, metric,
+                        )
+                        continue
+                unit = str(entry.get('unit', ''))
+                confidence = float(entry.get('confidence', 0.5))
+                confidence = max(0.0, min(1.0, confidence))
+                source_snippet = str(entry.get('source_snippet') or raw[:200])
+                period_results[metric] = ExtractionResult(
+                    metric=metric,
+                    value=value,
+                    unit=unit,
+                    confidence=confidence,
+                    extraction_method=f"llm_{_model}",
+                    source_snippet=source_snippet,
+                    pattern_id=f"llm_{_model}",
+                    period_granularity='monthly',
+                )
+
+            if period_results:
+                results[period] = period_results
+
+        return results
+
+    def extract_historical_periods(
+        self,
+        text: str,
+        metrics: list,
+        current_period: str,
+        target_periods: list,
+    ) -> dict:
+        """Extract monthly values for multiple historical periods in a single LLM call.
+
+        Returns {period: {metric: ExtractionResult}} for periods where values were found.
+        """
+        try:
+            prompt = self._build_multi_period_prompt(text, metrics, current_period, target_periods)
+            raw = self._call_ollama(prompt)
+            if raw is None:
+                return {}
+            return self._parse_multi_period_response(raw, metrics, target_periods)
+        except Exception as e:
+            log.error(
+                "Multi-period historical extraction failed current=%s targets=%s: %s",
+                current_period, target_periods, e, exc_info=True,
+            )
+            return {}
+
     def _build_gap_fill_prompt(
         self,
         text: str,
@@ -849,9 +993,11 @@ class LLMInterpreter:
         Applies the same null/float/range/clamp checks as _parse_response.
         Returns dict of {metric: ExtractionResult} for valid entries only.
 
-        expected_granularity: when 'monthly', entries where the LLM reports
-        period_granularity='quarterly' or 'annual' are dropped — a monthly
-        document should not accept a quarterly total as its monthly value.
+        expected_granularity: when 'monthly', quarterly/annual entries are dropped
+        only if the batch also contains at least one monthly result.  If no monthly
+        result exists (early-era docs that only reported quarterly figures), the
+        quarterly results are kept so the agreement pipeline can route them to
+        review_queue rather than silently discarding them.
         """
         start = raw.find('{')
         end = raw.rfind('}') + 1
@@ -907,17 +1053,6 @@ class LLMInterpreter:
             source_snippet = str(entry.get('source_snippet') or raw[:200])
             period_granularity = str(entry.get('period_granularity') or 'unknown').lower().strip()
 
-            # Drop non-monthly results when processing a monthly document.
-            # Prevents the LLM from returning a Q3 quarterly total (e.g. 1,252 BTC)
-            # when the same press release also contains a monthly figure (e.g. 341 BTC).
-            if expected_granularity == 'monthly' and period_granularity in ('quarterly', 'annual'):
-                log.info(
-                    "LLM period_granularity=%r rejected for monthly doc "
-                    "(metric=%s snippet=%r)",
-                    period_granularity, metric, source_snippet[:60],
-                )
-                continue
-
             _model = _active_model(self._db)
             results[metric] = ExtractionResult(
                 metric=metric,
@@ -929,6 +1064,29 @@ class LLMInterpreter:
                 pattern_id=f"llm_{_model}",
                 period_granularity=period_granularity,
             )
+
+        # Drop quarterly/annual entries only when the batch also contains at least
+        # one monthly result.  If every metric came back quarterly (early-era docs
+        # that pre-date monthly reporting), keep them so the agreement/review
+        # pipeline can handle them rather than silently discarding the data.
+        # When monthly data IS present, quarterly entries are spurious aggregates
+        # (e.g. "Produced 341 BTC in Sep and 1,252 BTC in Q3") and must be dropped.
+        if expected_granularity == 'monthly':
+            has_monthly = any(
+                r.period_granularity == 'monthly' for r in results.values()
+            )
+            if has_monthly:
+                to_drop = [
+                    m for m, r in results.items()
+                    if r.period_granularity in ('quarterly', 'annual')
+                ]
+                for m in to_drop:
+                    r = results.pop(m)
+                    log.info(
+                        "LLM period_granularity=%r dropped (monthly found in same batch, "
+                        "metric=%s snippet=%r)",
+                        r.period_granularity, m, r.source_snippet[:60],
+                    )
 
         return results
 
