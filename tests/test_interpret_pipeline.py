@@ -814,3 +814,104 @@ class TestKeywordGate:
         assert any(r['id'] == report_id for r in db_with_company.get_unextracted_reports()), (
             "reset_report_extraction_status must make the report eligible for extraction again"
         )
+
+    def test_quarterly_keyword_gate_fires_when_no_match(self, db_with_company, registry, monkeypatch):
+        """Quarterly 10-Q with no matching keywords is skipped; keyword_gated=1."""
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = False
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='The company reported strong revenue this quarter.',
+            report_date='2024-09-30',
+            source_type='edgar_10q',
+            covering_period='2024-Q3',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_company, registry)
+
+        assert isinstance(summary, ExtractionSummary)
+        assert summary.keyword_gated == 1, "keyword_gated must be 1 when quarterly gate fires"
+        assert summary.data_points_extracted == 0
+        unextracted = db_with_company.get_unextracted_reports()
+        assert not any(r['id'] == report_id for r in unextracted)
+
+    def test_quarterly_keyword_gate_passes_when_match(self, db_with_company, registry, monkeypatch):
+        """Quarterly 10-Q with matching keyword passes gate; LLM is called."""
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=2100.0, unit='BTC', confidence=0.90,
+                extraction_method='llm_test', source_snippet='bitcoin produced 2100',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA bitcoin produced 2100 BTC in Q3 2024.',
+            report_date='2024-09-30',
+            source_type='edgar_10q',
+            covering_period='2024-Q3',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.keyword_gated == 0, "gate must not fire when keyword matches"
+        mock_llm.extract_quarterly_batch.assert_called_once()
+
+    def test_quarterly_gate_bypassed_when_no_keywords_configured(self, db_with_company, registry, monkeypatch):
+        """When no keywords are configured, quarterly gate is bypassed and LLM is called."""
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=900.0, unit='BTC', confidence=0.85,
+                extraction_method='llm_test', source_snippet='produced 900 BTC',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA produced 900 BTC.',
+            report_date='2024-09-30',
+            source_type='edgar_10q',
+            covering_period='2024-Q3',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.keyword_gated == 0, "gate must not fire when no keywords configured"
+        mock_llm.extract_quarterly_batch.assert_called_once()

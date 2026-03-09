@@ -24,7 +24,7 @@ log = logging.getLogger('miners.routes.interpret')
 bp = Blueprint('interpret', __name__)
 
 _VALID_METRICS_FALLBACK = frozenset({
-    'production_btc', 'hodl_btc', 'sold_btc',
+    'production_btc', 'holdings_btc', 'sales_btc',
 })
 
 
@@ -143,6 +143,22 @@ def reprompt(ticker: str):
 
     prompt = _build_reprompt(ticker_upper, monthly, sec, finals, commentary, metrics_filter)
     model = _active_model(db)
+
+    # Warm-up check: verify Ollama is reachable and the model is loaded before calling.
+    try:
+        from interpreters.llm_interpreter import LLMInterpreter
+        _llm_check = LLMInterpreter(session=requests.Session(), db=db)
+        if not _llm_check.check_connectivity():
+            log.warning("event=reprompt_ollama_unavailable ticker=%s model=%s", ticker_upper, model)
+            return jsonify({'success': False, 'error': {
+                'code': 'LLM_UNAVAILABLE',
+                'message': 'Ollama is not reachable or the model is not loaded',
+            }}), 503
+    except Exception:
+        log.error("reprompt Ollama connectivity check failed ticker=%s", ticker_upper, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'LLM_UNAVAILABLE', 'message': 'LLM connectivity check failed',
+        }}), 503
 
     try:
         resp = requests.post(

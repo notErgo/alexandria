@@ -308,3 +308,38 @@ class TestEdgarHitEntityFiltering:
         source = {'ciks': [], 'adsh': '0001839341-22-111309'}
         assert _hit_matches_target_entity(source, '1839341') is True
         assert _hit_matches_target_entity(source, '1167419') is False
+
+
+class TestBuildEdgarQuery:
+    """Tests for _build_edgar_query — dead fallback path."""
+
+    def test_build_query_with_no_keywords_returns_hardcoded_fallback(self):
+        """When metric_keywords returns empty rows, hardcoded terms are used (not empty string)."""
+        from scrapers.edgar_connector import _build_edgar_query
+        from unittest.mock import MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_all_metric_keywords.return_value = []
+
+        result = _build_edgar_query(mock_db)
+
+        assert result, "Query string must not be empty"
+        assert '"' in result, "Hardcoded fallback must use quoted terms"
+        # Must NOT call get_search_keywords (retired table)
+        mock_db.get_search_keywords.assert_not_called()
+
+    def test_build_query_with_metric_keywords_uses_them(self):
+        """When metric_keywords returns phrases, they appear in the query."""
+        from scrapers.edgar_connector import _build_edgar_query
+        from unittest.mock import MagicMock
+
+        mock_db = MagicMock()
+        mock_db.get_all_metric_keywords.return_value = [
+            {'phrase': 'bitcoin mined', 'metric_key': 'production_btc'},
+            {'phrase': 'hash rate', 'metric_key': 'hashrate_eh'},
+        ]
+
+        result = _build_edgar_query(mock_db)
+
+        assert 'bitcoin mined' in result
+        assert 'hash rate' in result

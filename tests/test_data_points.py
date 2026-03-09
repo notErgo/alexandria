@@ -188,3 +188,51 @@ class TestPurgeEndpoint:
         # MARA data must be untouched
         mara_points = db_with_datapoint.query_data_points(ticker='MARA')
         assert len(mara_points) >= 1
+
+
+class TestScorecardSSOT:
+    """Scorecard metrics list must be derived from metric_schema, not hardcoded."""
+
+    @pytest.fixture
+    def scorecard_app(self, db_with_company):
+        from flask import Flask
+        from routes.data_points import bp
+        import app_globals
+        app_globals._db = db_with_company
+        flask_app = Flask(__name__)
+        flask_app.config['TESTING'] = True
+        flask_app.register_blueprint(bp)
+        with flask_app.app_context():
+            yield flask_app
+        app_globals._db = None
+
+    def test_scorecard_derives_metrics_from_schema(self, scorecard_app, db_with_company):
+        """A metric added to metric_schema must appear in the scorecard metrics list."""
+        # Add a novel metric not in the old hardcoded SCORECARD_METRICS list
+        db_with_company.add_analyst_metric(
+            key='test_novel_metric_xyz', label='Test Novel Metric', unit='BTC', sector='BTC-miners'
+        )
+        with scorecard_app.test_client() as c:
+            resp = c.get('/api/scorecard')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        metrics = data['data']['metrics']
+        assert 'test_novel_metric_xyz' in metrics, (
+            "Metric added to metric_schema must appear in scorecard metrics list"
+        )
+
+    def test_scorecard_excludes_non_scorecard_metrics(self, scorecard_app, db_with_company):
+        """Metric with show_on_scorecard=0 must be absent from scorecard metrics list."""
+        # Set show_on_scorecard=0 on production_btc
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                "UPDATE metric_schema SET show_on_scorecard = 0 WHERE key = 'production_btc'"
+            )
+        with scorecard_app.test_client() as c:
+            resp = c.get('/api/scorecard')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        metrics = data['data']['metrics']
+        assert 'production_btc' not in metrics, (
+            "Metric with show_on_scorecard=0 must be excluded from scorecard metrics list"
+        )

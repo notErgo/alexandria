@@ -15,13 +15,23 @@ log = logging.getLogger('miners.routes.llm_prompts')
 
 bp = Blueprint('llm_prompts', __name__)
 
-# All valid metric names — must match the constants used elsewhere in the app.
-_VALID_METRICS = {
+_VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc', 'mining_mw', 'ai_hpc_mw',
     'hpc_revenue_usd', 'gpu_count',
-}
+})
+
+
+def _get_valid_metrics(db) -> frozenset:
+    """Return set of valid metric keys from DB SSOT (metric_schema table)."""
+    try:
+        rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+        if rows:
+            return frozenset(r['key'] for r in rows)
+    except Exception:
+        pass
+    return _VALID_METRICS_FALLBACK
 
 
 @bp.route('/api/llm_prompts')
@@ -64,7 +74,7 @@ def preview_llm_prompt():
                 metrics = [r['key'] for r in rows] if rows else ['production_btc', 'hodl_btc', 'sold_btc']
             except Exception:
                 log.warning('Could not load active metrics for preview', exc_info=True)
-                metrics = ['production_btc', 'hodl_btc', 'sold_btc']
+                metrics = ['production_btc', 'holdings_btc', 'sales_btc']
 
         import requests as req_lib
         interpreter = LLMInterpreter(session=req_lib.Session(), db=db)
@@ -104,10 +114,10 @@ def update_llm_prompt(metric):
         from app_globals import get_db
         db = get_db()
 
-        if metric not in _VALID_METRICS:
+        if metric not in _get_valid_metrics(db):
             return jsonify({'success': False, 'error': {
                 'code': 'INVALID_METRIC',
-                'message': f"Unknown metric '{metric}'. Valid metrics: {sorted(_VALID_METRICS)}"
+                'message': f"Unknown metric '{metric}'",
             }}), 400
 
         body = request.get_json(silent=True) or {}
@@ -142,10 +152,10 @@ def reset_llm_prompt(metric):
         from app_globals import get_db
         db = get_db()
 
-        if metric not in _VALID_METRICS:
+        if metric not in _get_valid_metrics(db):
             return jsonify({'success': False, 'error': {
                 'code': 'INVALID_METRIC',
-                'message': f"Unknown metric '{metric}'"
+                'message': f"Unknown metric '{metric}'",
             }}), 400
 
         with db._get_connection() as conn:

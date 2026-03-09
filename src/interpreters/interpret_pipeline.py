@@ -686,10 +686,14 @@ def _interpret_quarterly_report(
         kw_rows = db.get_all_metric_keywords(active_only=True)
         kw_phrases = [r['phrase'].lower() for r in kw_rows]
     except Exception as _kw_err:
-        log.debug("Could not load metric keywords for gate check (non-fatal): %s", _kw_err)
+        log.warning("Could not load metric keywords for quarterly gate (non-fatal): %s", _kw_err)
         kw_phrases = []
     if kw_phrases:
         text_lower = text.lower()
+        log.debug(
+            "event=quarterly_keyword_gate_check ticker=%s period=%s phrases_checked=%d",
+            ticker, covering_period, len(kw_phrases),
+        )
         if not any(phrase in text_lower for phrase in kw_phrases):
             log.info(
                 "event=quarterly_keyword_gate_skip ticker=%s period=%s source=%s "

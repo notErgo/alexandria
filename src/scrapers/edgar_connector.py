@@ -84,15 +84,9 @@ def _build_edgar_query(db=None) -> str:
         try:
             rows = db.get_all_metric_keywords(active_only=True)
             if rows:
-                return ' OR '.join(r['phrase'] for r in rows)
+                return ' OR '.join(f'"{r["phrase"]}"' for r in rows)
         except Exception:
             log.warning('Could not load metric keywords from DB; using hardcoded fallback', exc_info=True)
-        try:
-            rows = db.get_search_keywords(active_only=True)
-            if rows:
-                return ' OR '.join(r['phrase'] for r in rows)
-        except Exception:
-            log.warning('Could not load search keywords from DB; using hardcoded fallback', exc_info=True)
     return ' OR '.join(_8K_SEARCH_TERMS)
 
 

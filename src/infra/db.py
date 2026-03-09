@@ -322,6 +322,16 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 35")
                     version = 35
 
+                if version < 36:
+                    self._migrate_v36(conn)
+                    conn.execute("PRAGMA user_version = 36")
+                    version = 36
+
+                if version < 37:
+                    self._migrate_v37(conn)
+                    conn.execute("PRAGMA user_version = 37")
+                    version = 37
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1373,6 +1383,50 @@ class MinerDB:
                 (order, key),
             )
 
+    def _migrate_v36(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v35 → v36: strip stray double-quote chars from stored keyword phrases.
+
+        _normalize_phrase() previously wrapped phrases in literal double-quotes
+        (e.g. 'treasury' → '"treasury"').  The keyword gate does a substring
+        match against document text, which never contains literal quote characters,
+        so every phrase failed to match and every report was silently gated.
+        This migration strips those quote chars from all stored phrases so the
+        gate works correctly.
+        """
+        import json as _json
+        rows = conn.execute("SELECT key, keywords FROM metric_schema").fetchall()
+        for row in rows:
+            raw = row[1]
+            if not raw:
+                continue
+            try:
+                phrases = _json.loads(raw)
+            except Exception:
+                continue
+            changed = False
+            for kw in phrases:
+                clean = kw.get('phrase', '').strip('"')
+                if clean != kw.get('phrase', ''):
+                    kw['phrase'] = clean
+                    changed = True
+            if changed:
+                conn.execute(
+                    "UPDATE metric_schema SET keywords = ? WHERE key = ?",
+                    (_json.dumps(phrases), row[0]),
+                )
+
+    def _migrate_v37(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v36 → v37: show_on_scorecard column on metric_schema.
+
+        Controls which metrics appear in the /api/scorecard endpoint.
+        Default 1 so all existing metrics remain visible without manual seeding.
+        """
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(metric_schema)").fetchall()}
+        if 'show_on_scorecard' not in existing:
+            conn.execute(
+                "ALTER TABLE metric_schema ADD COLUMN show_on_scorecard INTEGER NOT NULL DEFAULT 1"
+            )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -1532,7 +1586,12 @@ class MinerDB:
         result = []
         for row in rows:
             metric_key = row[0]
-            for k in _json.loads(row[1] or '[]'):
+            try:
+                kw_list = _json.loads(row[1] or '[]')
+            except Exception:
+                log.warning("Could not parse keywords JSON for metric %s", metric_key)
+                continue
+            for k in kw_list:
                 if active_only and not k.get('active', 1):
                     continue
                 result.append({
@@ -2728,6 +2787,9 @@ class MinerDB:
                     # final_data_points — analyst override layer, no FK deps
                     _archive('final_data_points', 'ticker = ?', (t,))
                     counts['final_data_points'] = _del('final_data_points', 'ticker = ?', (t,))
+                    # reviewed_periods — no FK constraint; must be explicitly deleted
+                    _archive('reviewed_periods', 'ticker = ?', (t,))
+                    counts['reviewed_periods'] = _del('reviewed_periods', 'ticker = ?', (t,))
                     # Reset operational fields on the company row
                     conn.execute(
                         """UPDATE companies
@@ -2769,6 +2831,9 @@ class MinerDB:
                     # final_data_points — analyst override layer, no FK deps
                     _archive('final_data_points')
                     counts['final_data_points'] = _del('final_data_points')
+                    # reviewed_periods — no FK constraint; must be explicitly deleted
+                    _archive('reviewed_periods')
+                    counts['reviewed_periods'] = _del('reviewed_periods')
                     if mode in {'reset', 'archive'}:
                         # Full reset keeps config rows and only resets company operational fields.
                         conn.execute(

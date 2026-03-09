@@ -10,13 +10,24 @@ log = logging.getLogger('miners.routes.data_points')
 
 bp = Blueprint('data_points', __name__)
 
-_VALID_METRICS = {
+_VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
-}
+})
 _PERIOD_RE = re.compile(r'^\d{4}-\d{2}$')
+
+
+def _get_valid_metrics(db) -> frozenset:
+    """Return set of valid metric keys from DB SSOT (metric_schema table)."""
+    try:
+        rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+        if rows:
+            return frozenset(r['key'] for r in rows)
+    except Exception:
+        pass
+    return _VALID_METRICS_FALLBACK
 
 
 def _validate_filters(args):
@@ -33,7 +44,7 @@ def _validate_filters(args):
     to_period = args.get('to_period')
     min_confidence_str = args.get('min_confidence')
 
-    if tickers:
+    if tickers or metric:
         from app_globals import get_db
         db = get_db()
         for t in tickers:
@@ -41,8 +52,10 @@ def _validate_filters(args):
                 return None, (jsonify({'success': False, 'error': {
                     'code': 'INVALID_TICKER', 'message': f'Ticker {t!r} not recognized'
                 }}), 400)
+    else:
+        db = None
 
-    if metric and metric not in _VALID_METRICS:
+    if metric and db is not None and metric not in _get_valid_metrics(db):
         return None, (jsonify({'success': False, 'error': {
             'code': 'INVALID_METRIC', 'message': f'Metric {metric!r} not valid'
         }}), 400)
@@ -111,7 +124,8 @@ def get_data_lineage():
             'message': 'ticker, metric, period are all required',
         }}), 400
 
-    if metric not in _VALID_METRICS:
+    db = get_db()
+    if metric not in _get_valid_metrics(db):
         return jsonify({'success': False, 'error': {
             'code': 'INVALID_METRIC',
             'message': f'Unknown metric: {metric!r}',
@@ -123,7 +137,6 @@ def get_data_lineage():
             'message': 'period must be YYYY-MM',
         }}), 400
 
-    db = get_db()
     period_db = period + '-01'
     try:
         rows = db.query_data_points(
@@ -253,10 +266,17 @@ def scorecard():
     """
     from app_globals import get_db
     db = get_db()
-    SCORECARD_METRICS = [
-        'production_btc', 'sold_btc', 'hashrate_eh',
-        'hodl_btc', 'hodl_btc_unrestricted', 'encumbered_btc', 'ai_hpc_mw',
-    ]
+    try:
+        _schema_rows = db.get_metric_schema('BTC-miners', active_only=False)
+        SCORECARD_METRICS = [
+            r['key'] for r in _schema_rows
+            if r.get('show_on_scorecard', 1)
+        ]
+    except Exception:
+        SCORECARD_METRICS = [
+            'production_btc', 'sales_btc', 'hashrate_eh',
+            'holdings_btc', 'unrestricted_holdings',
+        ]
     companies = db.get_companies(active_only=False)
     result = {}
     for company in companies:

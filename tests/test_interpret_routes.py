@@ -95,3 +95,49 @@ class TestClearAllReviewed:
         with app_with_company.test_client() as c:
             resp = c.delete('/api/interpret/UNKNOWN/reviewed/all')
             assert resp.status_code == 404
+
+
+class TestRepromptMetricValidation:
+    """Tests for _VALID_METRICS_FALLBACK correctness in reprompt endpoint."""
+
+    @pytest.fixture
+    def app_with_company_db_error(self, db_with_company, monkeypatch):
+        """Flask app where get_metric_schema raises so the fallback is used."""
+        import app_globals
+        monkeypatch.setattr(app_globals, 'get_db', lambda: db_with_company)
+
+        # Make get_metric_schema always raise so _get_valid_metrics falls back
+        original = db_with_company.get_metric_schema
+        def raise_error(*a, **kw):
+            raise RuntimeError("DB unavailable")
+        monkeypatch.setattr(db_with_company, 'get_metric_schema', raise_error)
+
+        import importlib
+        import run_web
+        importlib.reload(run_web)
+        app = run_web.create_app()
+        app.config['TESTING'] = True
+        return app
+
+    def test_reprompt_accepts_holdings_btc_when_db_unavailable(self, app_with_company_db_error):
+        """When DB unavailable, 'holdings_btc' must be accepted (not rejected as unknown)."""
+        with app_with_company_db_error.test_client() as c:
+            resp = c.post(
+                '/api/interpret/MARA/reprompt',
+                json={'metrics': ['holdings_btc']},
+            )
+            # Must NOT return 400 INVALID_METRIC
+            assert resp.status_code != 400, (
+                f"holdings_btc wrongly rejected; response: {resp.get_json()}"
+            )
+
+    def test_reprompt_rejects_hodl_btc(self, app_with_company_db_error):
+        """Deprecated 'hodl_btc' must be rejected regardless of fallback."""
+        with app_with_company_db_error.test_client() as c:
+            resp = c.post(
+                '/api/interpret/MARA/reprompt',
+                json={'metrics': ['hodl_btc']},
+            )
+            assert resp.status_code == 400
+            data = resp.get_json()
+            assert data['error']['code'] == 'INVALID_METRIC'
