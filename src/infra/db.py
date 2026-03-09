@@ -1999,6 +1999,18 @@ class MinerDB:
                 (report_id,),
             )
 
+    def reset_report_extraction_status(self, report_id: int) -> None:
+        """Reset one report's extraction_status to 'pending' and clear extracted_at.
+
+        Used by force_reextract in the pipeline to re-run LLM on already-extracted reports
+        without deleting their data_points (unlike purge_data_points which deletes all data).
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET extraction_status = 'pending', extracted_at = NULL WHERE id = ?",
+                (report_id,),
+            )
+
     def report_exists_by_accession(self, accession_number: str) -> bool:
         """Return True if a report with this accession_number already exists."""
         with self._get_connection() as conn:

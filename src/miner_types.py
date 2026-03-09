@@ -154,6 +154,7 @@ class ExtractionSummary:
     errors: int = 0
     prompt_tokens: int = 0
     response_tokens: int = 0
+    keyword_gated: int = 0
 
 
 class IngestState(str, Enum):

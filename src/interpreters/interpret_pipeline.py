@@ -698,6 +698,7 @@ def _interpret_quarterly_report(
             )
             db.mark_report_extracted(report_id)
             summary.reports_processed += 1
+            summary.keyword_gated += 1
             return summary
 
     llm_interpreter = _get_llm_interpreter(db)
@@ -869,6 +870,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                     )
                     db.mark_report_extracted(report['id'])
                     summary.reports_processed += 1
+                    summary.keyword_gated += 1
                     return summary
 
         report_date = report.get('report_date')

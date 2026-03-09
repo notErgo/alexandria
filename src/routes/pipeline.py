@@ -22,8 +22,9 @@ _run_lock = threading.Lock()
 # whenever a new boolean/select is added to start_overnight_pipeline, so the
 # gap between backend capability and UI exposure is caught at test time.
 PIPELINE_UI_PARAMS: dict[str, str] = {
-    'include_ir':    'pipeline-include-ir',
-    'include_crawl': 'pipeline-include-crawl',
+    'include_ir':       'pipeline-include-ir',
+    'include_crawl':    'pipeline-include-crawl',
+    'force_reextract':  'pipeline-force-reextract',
 }
 
 
@@ -496,9 +497,18 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
 
         # Stage: extraction
         registry = get_registry()
+        force_reextract = bool(config.get('force_reextract', False))
         reports = []
         for t in scrape_targets:
-            reports.extend(db.get_unextracted_reports(ticker=t))
+            if force_reextract:
+                batch = db.get_all_reports_for_extraction(ticker=t)
+                for r in batch:
+                    db.reset_report_extraction_status(r['id'])
+                reports.extend(batch)
+            else:
+                reports.extend(db.get_unextracted_reports(ticker=t))
+        _event(db, run_id, 'extract', 'stage_preflight',
+               total_pending=len(reports), force_reextract=int(force_reextract))
         if reports and bool(config.get('warm_model', True)):
             def _pipeline_ollama_log(msg: str) -> None:
                 _event(db, run_id, 'extract', 'ollama_status', message=msg)
@@ -517,7 +527,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 except Exception:
                     pass
         total_reports = len(reports)
-        processed = data_points = errors = 0
+        processed = data_points = errors = keyword_gated = 0
         extracted_tickers = set()
         _event(db, run_id, 'extract', 'stage_start', total_reports=total_reports)
         for i, report in enumerate(reports):
@@ -533,6 +543,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 rv_delta = summary.review_flagged
                 data_points += dp_delta
                 errors += summary.errors
+                keyword_gated += summary.keyword_gated
                 extracted_tickers.add(ticker)
                 _event(
                     db, run_id, 'extract', 'report_done',
@@ -554,7 +565,9 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 )
         for t in extracted_tickers:
             db.upsert_pipeline_run_ticker(run_id, t, extracted=1)
-        _event(db, run_id, 'extract', 'stage_end', reports_processed=processed, data_points=data_points, errors=errors)
+        _event(db, run_id, 'extract', 'stage_end',
+               reports_processed=processed, data_points=data_points,
+               errors=errors, keyword_gated=keyword_gated)
 
         snapshot = db.get_pipeline_observability()
         summary = {
@@ -602,6 +615,64 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             _run_cancel_flags.pop(run_id, None)
 
 
+@bp.route('/api/pipeline/preflight')
+def pipeline_preflight():
+    """Return pipeline readiness summary for display before starting a run.
+
+    Exposes:
+    - pending_report_count: reports with extraction_status IN ('pending','failed')
+    - already_extracted_count: reports with extraction_status = 'done'
+    - llm_available: whether Ollama is reachable right now
+    - ollama_model: active model name
+    - keyword_count: total active metric keywords configured
+    - companies_targeted: active companies count
+    - scraper_mode_skip_count: companies with scraper_mode='skip'
+    """
+    from app_globals import get_db
+    from infra.ollama_warmup import warm_ollama_for_extraction
+    db = get_db()
+
+    with db._get_connection() as conn:
+        pending_count = conn.execute(
+            "SELECT COUNT(*) FROM reports WHERE raw_text IS NOT NULL AND raw_text != ''"
+            " AND extraction_status IN ('pending','failed')"
+        ).fetchone()[0] or 0
+        extracted_count = conn.execute(
+            "SELECT COUNT(*) FROM reports WHERE extraction_status = 'done'"
+        ).fetchone()[0] or 0
+
+    try:
+        kw_rows = db.get_all_metric_keywords(active_only=True)
+        keyword_count = len(kw_rows)
+    except Exception:
+        keyword_count = 0
+
+    try:
+        companies = db.list_companies(active_only=True)
+        companies_targeted = len(companies)
+        scraper_mode_skip_count = sum(
+            1 for c in companies
+            if (c.get('scraper_mode') or c.get('scrape_mode') or '') == 'skip'
+        )
+    except Exception:
+        companies_targeted = 0
+        scraper_mode_skip_count = 0
+
+    warmup = warm_ollama_for_extraction(db=db, reason='preflight_check', force=False)
+    llm_available = bool(warmup.get('warmed'))
+    ollama_model = warmup.get('model', '')
+
+    return jsonify({'success': True, 'data': {
+        'pending_report_count': int(pending_count),
+        'already_extracted_count': int(extracted_count),
+        'llm_available': llm_available,
+        'ollama_model': ollama_model,
+        'keyword_count': keyword_count,
+        'companies_targeted': companies_targeted,
+        'scraper_mode_skip_count': scraper_mode_skip_count,
+    }})
+
+
 @bp.route('/api/pipeline/overnight/start', methods=['POST'])
 def start_overnight_pipeline():
     """Start an overnight pipeline run in a background thread."""
@@ -632,6 +703,7 @@ def start_overnight_pipeline():
         'require_scout_success': bool(body.get('require_scout_success', False)),
         'scout_as_of_date': body.get('scout_as_of_date'),
         'probe_skip_companies': bool(body.get('probe_skip_companies', False)),
+        'force_reextract': bool(body.get('force_reextract', False)),
     }
     run = db.create_pipeline_run(
         triggered_by=str(body.get('triggered_by') or 'ops_ui'),

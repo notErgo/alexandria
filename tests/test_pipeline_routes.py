@@ -193,6 +193,76 @@ def test_overnight_cancel_sets_cancel_requested_flag(client):
     assert status.get_json()['data']['cancel_requested'] is True
 
 
+def test_overnight_start_accepts_force_reextract(client, monkeypatch):
+    """force_reextract flag must be stored in the pipeline run config."""
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            pass
+        def start(self):
+            return None
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+
+    resp = client.post('/api/pipeline/overnight/start', json={
+        'tickers': ['MARA'],
+        'force_reextract': True,
+    })
+    assert resp.status_code == 202
+    run_id = int(resp.get_json()['data']['run_id'])
+    run = app_globals.get_db().get_pipeline_run(run_id)
+    cfg_raw = run.get('config_json') or '{}'
+    cfg = json.loads(cfg_raw) if isinstance(cfg_raw, str) else cfg_raw
+    assert cfg.get('force_reextract') is True, (
+        "force_reextract=True must be stored in the run config"
+    )
+
+
+def test_pipeline_preflight_returns_json(client):
+    """GET /api/pipeline/preflight must return 200 with expected fields."""
+    resp = client.get('/api/pipeline/preflight')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success'] is True
+    preflight = data['data']
+    assert 'pending_report_count' in preflight
+    assert 'already_extracted_count' in preflight
+    assert 'llm_available' in preflight
+    assert 'keyword_count' in preflight
+
+
+def test_pipeline_preflight_counts_pending_vs_extracted(client):
+    """Preflight counts must correctly reflect pending vs extracted reports."""
+    import app_globals
+    from infra.db import MinerDB
+
+    db = app_globals.get_db()
+    # Insert a pending report
+    from helpers import make_report
+    pending_id = db.insert_report(make_report(
+        raw_text='MARA mined 700 BTC.',
+        report_date='2024-09-01',
+        source_type='archive_html',
+        ticker='MARA',
+    ))
+    # Insert and mark another as extracted
+    extracted_id = db.insert_report(make_report(
+        raw_text='MARA mined 800 BTC.',
+        report_date='2024-10-01',
+        source_type='archive_html',
+        ticker='MARA',
+    ))
+    db.mark_report_extracted(extracted_id)
+
+    resp = client.get('/api/pipeline/preflight')
+    assert resp.status_code == 200
+    preflight = resp.get_json()['data']
+    assert preflight['pending_report_count'] >= 1, "Must count the pending report"
+    assert preflight['already_extracted_count'] >= 1, "Must count the extracted report"
+
+
 def test_overnight_apply_modes_runs_for_run_tickers(client, monkeypatch):
     import app_globals
     import routes.companies as companies_mod

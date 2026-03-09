@@ -705,3 +705,112 @@ class TestActiveMetricFilter:
         assert 'hashrate_eh' in captured['metrics'], (
             "Fallback must include all registry metrics when schema is empty"
         )
+
+
+class TestKeywordGate:
+    """Tests for 8-K keyword gate and ExtractionSummary.keyword_gated field."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    @pytest.fixture
+    def registry(self):
+        from interpreters.pattern_registry import PatternRegistry
+        from config import CONFIG_DIR
+        return PatternRegistry.load(CONFIG_DIR)
+
+    def test_8k_keyword_gate_skip_when_keywords_active(self, db_with_company, registry, monkeypatch):
+        """8-K with no matching keywords is skipped and keyword_gated=1 in summary."""
+        import interpreters.interpret_pipeline as _ep
+
+        # Patch get_all_metric_keywords to return a keyword that won't match the text
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin production', 'metric_key': 'production_btc'}],
+        )
+        # Patch LLM to avoid connectivity check
+        from unittest.mock import MagicMock
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = False
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='ITEM 1.01 Entry into a Material Definitive Agreement. '
+                     'The company signed a loan agreement.',
+            report_date='2024-09-01',
+            source_type='edgar_8k',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_company, registry)
+
+        assert isinstance(summary, ExtractionSummary)
+        assert summary.keyword_gated == 1, "keyword_gated must be 1 when gate fires"
+        assert summary.data_points_extracted == 0, "No data_points should be stored"
+        # Report must be marked extracted (so it is not retried forever)
+        unextracted = db_with_company.get_unextracted_reports()
+        assert not any(r['id'] == report_id for r in unextracted)
+
+    def test_8k_keyword_gate_bypass_when_no_keywords(self, db_with_company, registry, monkeypatch):
+        """When no keywords are configured, 8-K gate is bypassed and extraction proceeds."""
+        import interpreters.interpret_pipeline as _ep
+
+        # No keywords configured — gate must not fire
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [],
+        )
+        from unittest.mock import MagicMock
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = False
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='edgar_8k',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.keyword_gated == 0, "keyword_gated must be 0 when gate is bypassed"
+        assert summary.reports_processed == 1
+
+    def test_keyword_gated_field_exists_on_extraction_summary(self):
+        """ExtractionSummary must have a keyword_gated field defaulting to 0."""
+        from miner_types import ExtractionSummary
+        s = ExtractionSummary()
+        assert hasattr(s, 'keyword_gated'), "ExtractionSummary must have keyword_gated field"
+        assert s.keyword_gated == 0
+
+    def test_reset_report_extraction_status_makes_report_pending(self, db_with_company):
+        """reset_report_extraction_status() resets extracted report back to pending."""
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024.',
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        # Mark as extracted first
+        db_with_company.mark_report_extracted(report_id)
+        # Confirm it's no longer in unextracted
+        assert not any(r['id'] == report_id for r in db_with_company.get_unextracted_reports())
+
+        # Now reset
+        db_with_company.reset_report_extraction_status(report_id)
+
+        # Must appear in unextracted again
+        assert any(r['id'] == report_id for r in db_with_company.get_unextracted_reports()), (
+            "reset_report_extraction_status must make the report eligible for extraction again"
+        )

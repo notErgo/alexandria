@@ -1391,8 +1391,19 @@ tr.is-reviewed td { opacity: 0.65; }
         <input id="pipeline-probe-skip" type="checkbox">
         Probe &amp; apply skip-mode companies (required first run after purge)
       </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-force-reextract" type="checkbox">
+        Force re-extract (re-run LLM on all ingested reports, including already extracted)
+      </label>
+    </div>
+    <div id="pipeline-preflight-panel" style="display:none;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;line-height:1.7">
+      <span id="pipeline-preflight-pending"></span>
+      <span id="pipeline-preflight-extracted"></span>
+      <span id="pipeline-preflight-llm"></span>
+      <span id="pipeline-preflight-keywords"></span>
     </div>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelinePreflight()" style="font-size:0.75rem">Check Readiness</button>
       <button class="btn btn-sm btn-primary" onclick="runFullPipeline()">Run Full Pipeline</button>
       <button id="pipeline-cancel-btn" class="btn btn-sm btn-danger" onclick="cancelPipeline()" style="display:none">Cancel</button>
       <span id="pipeline-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
@@ -7201,6 +7212,34 @@ async function runOvernightScout() {
   }
 }
 
+async function loadPipelinePreflight() {
+  var panel = document.getElementById('pipeline-preflight-panel');
+  if (panel) panel.style.display = '';
+  try {
+    const resp = await fetch('/api/pipeline/preflight');
+    if (!resp.ok) return;
+    const d = (await resp.json()).data || {};
+    var pendingEl = document.getElementById('pipeline-preflight-pending');
+    var extractedEl = document.getElementById('pipeline-preflight-extracted');
+    var llmEl = document.getElementById('pipeline-preflight-llm');
+    var kwEl = document.getElementById('pipeline-preflight-keywords');
+    if (pendingEl) {
+      var pendingStyle = d.pending_report_count > 0 ? 'color:#4caf50' : 'color:#ff9800';
+      pendingEl.innerHTML = '<span style="' + pendingStyle + '">' + d.pending_report_count + ' pending</span> &nbsp;';
+    }
+    if (extractedEl) extractedEl.innerHTML = d.already_extracted_count + ' already extracted &nbsp;';
+    if (llmEl) {
+      var llmStyle = d.llm_available ? 'color:#4caf50' : 'color:#f44336';
+      var llmText = d.llm_available ? 'Ollama ready (' + (d.ollama_model || 'unknown') + ')' : 'Ollama unreachable';
+      llmEl.innerHTML = '<span style="' + llmStyle + '">' + llmText + '</span> &nbsp;';
+    }
+    if (kwEl) kwEl.innerHTML = d.keyword_count + ' keywords configured';
+    if (d.pending_report_count === 0 && panel) {
+      panel.innerHTML += '<div style="color:#ff9800;margin-top:0.25rem">0 pending reports — check Force re-extract to re-run LLM on already-extracted reports.</div>';
+    }
+  } catch (_e) {}
+}
+
 async function runFullPipeline() {
   _clearPipelineLog();
   _pipelineEventOffset = 0;
@@ -7211,11 +7250,12 @@ async function runFullPipeline() {
   var includeIr = document.getElementById('pipeline-include-ir')?.checked !== false;
   var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
   var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
+  var forceReextract = document.getElementById('pipeline-force-reextract')?.checked === true;
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
