@@ -29,7 +29,7 @@ from bs4 import BeautifulSoup
 
 log = logging.getLogger('miners.crawl')
 
-_PREFERRED_MODELS = ['qwen3.5:27b', 'qwen3.5:9b']
+_PREFERRED_MODELS = ['qwen3.5:9b', 'qwen3.5:27b']
 
 # ---------------------------------------------------------------------------
 # Paths & constants

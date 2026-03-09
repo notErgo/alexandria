@@ -553,5 +553,5 @@ class TestParseEdgarHit:
         with open(config_path) as f:
             companies = json.load(f)
         tickers_with_cik = [c for c in companies if c.get('cik')]
-        # Original 13 + BTDR (0001899123) + ABTC (0001755953) + APLD (0001144879) = 16
-        assert len(tickers_with_cik) == 16
+        # All active companies must have CIK entries
+        assert len(tickers_with_cik) == len(companies), "Every company in companies.json must have a CIK"

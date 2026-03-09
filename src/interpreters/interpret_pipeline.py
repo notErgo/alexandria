@@ -678,6 +678,28 @@ def _interpret_quarterly_report(
         full_text = report.get('raw_text') or ''
     text = full_text[:_q_selector.char_budget]
 
+    # Keyword gate: skip LLM if no active BTC mining keywords appear in the text.
+    # Prevents wasting LLM compute on pre-mining-era quarterly filings
+    # (e.g. CLSK 2019-2020 before their Bitcoin pivot, RIOT pre-mining 10-Ks, etc.).
+    # The gate is bypassed when no keywords are configured (fresh DB).
+    try:
+        kw_rows = db.get_all_metric_keywords(active_only=True)
+        kw_phrases = [r['phrase'].lower() for r in kw_rows]
+    except Exception as _kw_err:
+        log.debug("Could not load metric keywords for gate check (non-fatal): %s", _kw_err)
+        kw_phrases = []
+    if kw_phrases:
+        text_lower = text.lower()
+        if not any(phrase in text_lower for phrase in kw_phrases):
+            log.info(
+                "event=quarterly_keyword_gate_skip ticker=%s period=%s source=%s "
+                "— no BTC mining keywords found, skipping LLM",
+                ticker, covering_period, source_type,
+            )
+            db.mark_report_extracted(report_id)
+            summary.reports_processed += 1
+            return summary
+
     llm_interpreter = _get_llm_interpreter(db)
     llm_available = _check_llm_available(llm_interpreter)
 
@@ -825,6 +847,29 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # These do not use regex extraction — LLM only with wider text window.
         if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES:
             return _interpret_quarterly_report(report, db, registry, summary, attribution)
+
+        # Keyword gate for 8-K and all non-quarterly sources: skip LLM if no active
+        # BTC mining keywords appear in the document. This is a safety net — 8-K
+        # ingest is already gated by btc_first_filing_date, but archived/IR docs from
+        # before a company's mining pivot can also slip through.
+        if source_type == 'edgar_8k':
+            try:
+                _kw_rows = db.get_all_metric_keywords(active_only=True)
+                _kw_phrases = [r['phrase'].lower() for r in _kw_rows]
+            except Exception as _kw_err:
+                log.debug("Could not load metric keywords for 8-K gate (non-fatal): %s", _kw_err)
+                _kw_phrases = []
+            if _kw_phrases:
+                _text_lower = text.lower()
+                if not any(phrase in _text_lower for phrase in _kw_phrases):
+                    log.info(
+                        "event=8k_keyword_gate_skip ticker=%s period=%s "
+                        "— no BTC mining keywords found, skipping",
+                        report.get('ticker'), report.get('report_date'),
+                    )
+                    db.mark_report_extracted(report['id'])
+                    summary.reports_processed += 1
+                    return summary
 
         report_date = report.get('report_date')
 

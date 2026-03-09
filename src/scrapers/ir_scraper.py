@@ -1,4 +1,7 @@
 """
+DEPRECATED: IR scraping is preserved for historical/manual use only.
+EDGAR (edgar_connector.py) is the canonical ingest source as of 2026-03.
+
 IR press release scraper: fetches and parses monthly production updates
 from company investor relations pages.
 

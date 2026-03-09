@@ -6,5 +6,83 @@
   ],
   "unit": "BTC",
   "conflict_resolution": "highest_confidence",
-  "patterns": []
+  "patterns": [
+    {
+      "id": "hodl_1_total_btc_holdings_table",
+      "regex": "(?i)\\bTotal\\s+BTC\\s+Holdings\\s*(?:\\([^)]*\\))?\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.95,
+      "priority": 0,
+      "_note": "MARA table: 'Total BTC Holdings (in whole numbers) | 13,396'. Parens group optional. PDF footnote guard before value."
+    },
+    {
+      "id": "hodl_2_holdings_to_approximately",
+      "regex": "(?i)\\bholdings\\s+to\\s+approximately\\s+([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.9,
+      "priority": 0,
+      "_note": "CLAUDE.md hodl_btc_4: 'total bitcoin holdings to approximately 5,518'. 18-char keyword-to-value gap covered by direct phrase."
+    },
+    {
+      "id": "hodl_3_held_x_btc",
+      "regex": "(?i)\\bheld\\s+(?:approximately\\s+)?([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b(?!\\s+as\\s+of)",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: 'held approximately 13,286 BTC'. Negative lookahead prevents 'held X BTC as of [prior date]' false positives."
+    },
+    {
+      "id": "hodl_4_holds_x_btc",
+      "regex": "(?i)\\bholds?\\s+(?:approximately\\s+)?([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: 'holds 13,286 BTC' or 'hold approximately X BTC'."
+    },
+    {
+      "id": "hodl_5_x_btc_in_treasury",
+      "regex": "(?i)([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\s+(?:in|held\\s+in)\\s+(?:self-)?treasury\\b",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: '13,286 BTC in treasury' or '13,286 BTC held in self-custody treasury'."
+    },
+    {
+      "id": "hodl_6_treasury_to_x_btc",
+      "regex": "(?i)\\btreasury\\s+to\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: 'bringing Treasury to 13,286 BTC' or 'treasury of 13,286 BTC'."
+    },
+    {
+      "id": "hodl_7_treasury_of_x_btc",
+      "regex": "(?i)\\btreasury\\s+of\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: 'treasury of 13,286 BTC'."
+    },
+    {
+      "id": "hodl_8_total_bitcoin_holdings_of",
+      "regex": "(?i)\\btotal\\s+bitcoin\\s+holdings\\s+(?:of|is|at|were)?\\s*([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Prose: 'total bitcoin holdings of 13,286' or 'total bitcoin holdings at 13,286'."
+    },
+    {
+      "id": "hodl_9_bitcoin_holdings_of",
+      "regex": "(?i)\\bbitcoin\\s+holdings\\s+of\\s+([\\d,]+(?:\\.\\d+)?)\\b",
+      "confidence_weight": 0.82,
+      "priority": 2,
+      "_note": "Prose: 'bitcoin holdings of 13,286'."
+    },
+    {
+      "id": "hodl_10_bitcoin_balance_of",
+      "regex": "(?i)\\bbitcoin\\s+balance\\s+of\\s+([\\d,]+(?:\\.\\d+)?)\\b",
+      "confidence_weight": 0.8,
+      "priority": 2,
+      "_note": "Prose: 'bitcoin balance of 13,286'."
+    },
+    {
+      "id": "hodl_11_x_bitcoin_on_balance_sheet",
+      "regex": "(?i)([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\s+(?:on\\s+(?:our|the)\\s+balance\\s+sheet|in\\s+self.custody)\\b",
+      "confidence_weight": 0.82,
+      "priority": 2,
+      "_note": "Prose: '13,286 BTC on our balance sheet' or '13,286 bitcoin in self-custody'."
+    }
+  ]
 }

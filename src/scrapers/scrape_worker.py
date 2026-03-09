@@ -61,8 +61,9 @@ class ScrapeWorker(threading.Thread):
         return True
 
     def _execute_scrape(self, job: dict) -> None:
-        """Run the actual scrape for a job. Raises on failure.
+        """EDGAR-only fetch for one queued scrape job.
 
+        IR scraping is deprecated. This method fetches EDGAR filings only.
         Updates company scraper_status to 'running' before scraping, then
         'ok' or 'error' on completion.
         """
@@ -73,37 +74,27 @@ class ScrapeWorker(threading.Thread):
 
         self._db.update_company_scraper_fields(ticker, scraper_status='running')
         try:
-            import requests as _req
-            from scrapers.ir_scraper import IRScraper
-            scraper = IRScraper(db=self._db, session=_req.Session())
-            scraper.scrape_company(company)
+            cik = company.get('cik')
+            if cik:
+                import requests as _req
+                from scrapers.edgar_connector import EdgarConnector
+                from datetime import date
+                edgar = EdgarConnector(db=self._db, session=_req.Session())
+                edgar.fetch_all_filings(
+                    cik=cik,
+                    ticker=ticker,
+                    since_date=date(2019, 1, 1),
+                    filing_regime=company.get('filing_regime', 'domestic'),
+                )
+                log.info("EDGAR fetch completed for %s", ticker)
+            else:
+                log.info("No CIK for %s, skipping EDGAR fetch", ticker)
             self._db.update_company_scraper_fields(
                 ticker,
                 scraper_status='ok',
                 last_scrape_at=datetime.now(timezone.utc).isoformat(),
                 last_scrape_error=None,
             )
-            log.info("Scrape completed for %s", ticker)
-
-            # EDGAR fetch: 8-K + 10-Q + 10-K for companies with CIK (ingest only, no extraction)
-            cik = company.get('cik')
-            if cik:
-                try:
-                    import requests as _req
-                    from scrapers.edgar_connector import EdgarConnector
-                    from datetime import date
-                    edgar = EdgarConnector(db=self._db, session=_req.Session())
-                    since = date(2019, 1, 1)
-                    edgar.fetch_all_filings(
-                        cik=cik,
-                        ticker=ticker,
-                        since_date=since,
-                        filing_regime=company.get('filing_regime', 'domestic'),
-                    )
-                    log.info("EDGAR fetch completed for %s", ticker)
-                except Exception as ex:
-                    log.error("EDGAR fetch failed for %s: %s", ticker, ex, exc_info=True)
-
         except Exception as e:
             self._db.update_company_scraper_fields(
                 ticker,

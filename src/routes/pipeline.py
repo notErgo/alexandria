@@ -620,7 +620,7 @@ def start_overnight_pipeline():
         'probe_timeout_seconds': int(body.get('probe_timeout_seconds', 12)),
         'require_probe_success': bool(body.get('require_probe_success', True)),
         'require_non_skip_recommendation': bool(body.get('require_non_skip_recommendation', True)),
-        'include_ir': bool(body.get('include_ir', True)),
+        'include_ir': bool(body.get('include_ir', False)),
         'include_crawl': bool(body.get('include_crawl', False)),
         'crawl_provider': body.get('crawl_provider') or None,
         'crawl_timeout_seconds': int(body.get('crawl_timeout_seconds', 1800)),

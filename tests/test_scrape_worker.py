@@ -52,18 +52,3 @@ class TestScrapeWorker:
         result = worker._process_one()
         assert result is False
 
-    def test_execute_scrape_constructs_ir_scraper_with_session(self, db_with_active_company):
-        """_execute_scrape passes both db and HTTP session into IRScraper."""
-        from scrapers.scrape_worker import ScrapeWorker
-        job = db_with_active_company.enqueue_scrape_job('MARA', 'historic')
-        worker = ScrapeWorker(db_with_active_company)
-
-        with patch('scrapers.ir_scraper.IRScraper') as scraper_cls:
-            scraper_inst = MagicMock()
-            scraper_cls.return_value = scraper_inst
-            worker._execute_scrape(job)
-
-        kwargs = scraper_cls.call_args.kwargs
-        assert kwargs['db'] is db_with_active_company
-        assert kwargs.get('session') is not None
-        scraper_inst.scrape_company.assert_called_once()

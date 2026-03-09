@@ -49,14 +49,32 @@ def ensure_ollama_running(
         return True
 
     _emit('event=ollama_start status=starting')
+
+    # Resolve the ollama binary — try PATH first, then common macOS install locations.
+    import shutil
+    ollama_bin = shutil.which('ollama')
+    if not ollama_bin:
+        for candidate in [
+            '/opt/homebrew/bin/ollama',
+            '/usr/local/bin/ollama',
+            os.path.expanduser('~/.ollama/ollama'),
+        ]:
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                ollama_bin = candidate
+                break
+    if not ollama_bin:
+        _emit('event=ollama_start status=not_found error=ollama binary not found')
+        return False
+
+    _emit(f'event=ollama_start status=launching binary={ollama_bin}')
     try:
         subprocess.Popen(
-            ['ollama', 'serve'],
+            [ollama_bin, 'serve'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    except FileNotFoundError:
-        _emit('event=ollama_start status=not_found error=ollama not found on PATH')
+    except OSError as exc:
+        _emit(f'event=ollama_start status=launch_failed error={exc}')
         return False
 
     for i in range(start_timeout):

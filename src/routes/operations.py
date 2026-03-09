@@ -407,7 +407,7 @@ def operations_extract():
                 from interpreters.interpret_pipeline import extract_report
                 from interpreters.pattern_registry import PatternRegistry
                 from app_globals import get_registry
-                from infra.ollama_warmup import warm_ollama_for_extraction
+                from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
 
                 db = get_db()
                 registry = get_registry()
@@ -440,6 +440,14 @@ def operations_extract():
                     _extraction_progress[task_id]['reports_total'] = len(reports)
 
                 if warm_model and reports:
+                    def _ops_log(msg: str) -> None:
+                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                        with _progress_lock:
+                            logs = _extraction_progress[task_id]['logs']
+                            logs.append(f'[{ts}] [Ollama] {msg}')
+                            if len(logs) > 200:
+                                logs.pop(0)
+                    ensure_ollama_running(log_fn=_ops_log)
                     warm_ollama_for_extraction(db=db, reason='operations_extract')
 
                 from datetime import datetime, timezone

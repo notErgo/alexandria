@@ -30,17 +30,24 @@ DATA_DIR: str = str(Path(
 CONFIG_DIR: str = str(Path(__file__).parent.parent / "config")
 
 def load_companies() -> List[dict]:
-    """Return the full company list from config/companies.json.
-
-    This is the single canonical source of all tickers. Never maintain a
-    hardcoded ticker list elsewhere — call this function instead.
-    """
+    """Return the full company list from config/companies.json."""
     path = Path(CONFIG_DIR) / "companies.json"
     return _json.loads(path.read_text())
 
 def get_all_tickers() -> List[str]:
     """Return sorted list of all ticker symbols from config/companies.json."""
     return sorted(c["ticker"] for c in load_companies())
+
+
+# Static list of all known Bitcoin mining company tickers — used by the archive
+# ingestor to recognize archive filenames regardless of what is currently active
+# in companies.json. This is intentionally decoupled from the active config so
+# that archive files for inactive/removed companies remain recognizable.
+ALL_ARCHIVE_TICKERS: List[str] = sorted([
+    'MARA', 'RIOT', 'CLSK', 'CORZ', 'BITF', 'BTBT', 'CIFR',
+    'HIVE', 'HUT8', 'ARBK', 'SDIG', 'WULF', 'IREN',
+    'BTDR', 'ABTC', 'APLD', 'GRDI', 'MIGI', 'GREE',
+])
 
 
 _VALID_SCRAPER_MODES: frozenset = frozenset({
@@ -156,12 +163,11 @@ MAX_SOURCE_SNIPPET_LEN: int = 1000
 # --- LLM Interpreter (Ollama) — Stage 2 metric extraction ---
 # Used by interpreters/llm_interpreter.py for metric extraction from stored documents.
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:27b")
+LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 LLM_TIMEOUT_SECONDS: int = 300
 
 # --- Crawl LLM (Ollama or Anthropic) — Stage 1 IR navigation ---
-# qwen3.5:9b is used for crawling: fast enough for link navigation, avoids
-# the 300s timeout that qwen3.5:27b hits when message history fills with page text.
+# qwen3.5:9b is used for both extraction and crawling.
 ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
 CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
 CRAWL_OLLAMA_MODEL: str = _os.environ.get("CRAWL_OLLAMA_MODEL", "qwen3.5:9b")

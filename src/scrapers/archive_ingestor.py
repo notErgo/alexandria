@@ -22,9 +22,11 @@ MONTH_MAP: dict = {
 }
 
 # Tickers recognized in directory names (e.g. "MARA MONTHLY").
-# Loaded from config/companies.json — the single canonical source.
-from config import get_all_tickers as _get_all_tickers
-_KNOWN_TICKERS = _get_all_tickers()
+# Uses the static ALL_ARCHIVE_TICKERS list — intentionally decoupled from
+# the active companies.json config so that archive files for inactive or
+# removed companies remain recognizable by the ingestor.
+from config import ALL_ARCHIVE_TICKERS as _ALL_ARCHIVE_TICKERS
+_KNOWN_TICKERS = list(_ALL_ARCHIVE_TICKERS)
 KNOWN_TICKERS = _KNOWN_TICKERS  # public alias for test imports
 
 _ISO_DATE_PATTERN = re.compile(r"^(\d{4})-(\d{2})-\d{2}")

@@ -76,6 +76,7 @@ def _run_archive_ingest(task_id: str) -> None:
 
 
 def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True, pipeline_run_id: int = None) -> None:
+    log.warning("event=ir_ingest_deprecated EDGAR is the canonical ingest source")
     import requests as req_lib
     from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
@@ -296,7 +297,8 @@ def _run_all_ingest(task_id: str) -> None:
         log.error("All-ingest: archive phase failed: %s", e, exc_info=True)
         totals['errors'] += 1
 
-    # ── Phase 2: IR ───────────────────────────────────────────────────────────
+    # ── Phase 2: IR (deprecated — EDGAR is canonical) ────────────────────────
+    log.warning("event=ir_ingest_deprecated EDGAR is the canonical ingest source")
     _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'ir (2/3)', **totals})
     try:
         db = get_db()

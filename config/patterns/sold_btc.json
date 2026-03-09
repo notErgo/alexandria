@@ -6,5 +6,48 @@
   ],
   "unit": "BTC",
   "conflict_resolution": "highest_confidence",
-  "patterns": []
+  "patterns": [
+    {
+      "id": "sold_1_btc_sold_table",
+      "regex": "(?i)\\bBTC\\s+Sold\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.95,
+      "priority": 0,
+      "_note": "Table row: 'BTC Sold | 245'."
+    },
+    {
+      "id": "sold_2_bitcoin_sold_table",
+      "regex": "(?i)\\bBitcoin\\s+[Ss]old\\s*[|:]?\\s*(?:\\d{1,2}\\s+)?([\\d,]+(?:\\.\\d+)?)",
+      "confidence_weight": 0.95,
+      "priority": 0,
+      "_note": "Table row or label: 'Bitcoin sold: 136'."
+    },
+    {
+      "id": "sold_3_sold_x_btc",
+      "regex": "(?i)\\bsold\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.9,
+      "priority": 1,
+      "_note": "Prose: 'sold 1,500 BTC' or 'sold 1,500 of the 2,070 BTC earned'."
+    },
+    {
+      "id": "sold_4_liquidated_x_btc",
+      "regex": "(?i)\\bliquidated\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.88,
+      "priority": 1,
+      "_note": "Prose: 'liquidated 500 BTC'."
+    },
+    {
+      "id": "sold_5_divested_x_btc",
+      "regex": "(?i)\\bdivested\\s+([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\b",
+      "confidence_weight": 0.85,
+      "priority": 1,
+      "_note": "Prose: 'divested 200 bitcoin'."
+    },
+    {
+      "id": "sold_6_x_btc_sold",
+      "regex": "(?i)([\\d,]+(?:\\.\\d+)?)\\s*(?:BTC|bitcoin)\\s+sold\\b",
+      "confidence_weight": 0.85,
+      "priority": 2,
+      "_note": "Inverted form: '245 BTC sold'."
+    }
+  ]
 }

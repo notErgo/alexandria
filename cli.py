@@ -62,6 +62,13 @@ def cmd_ingest(args):
               f"{summary.errors} errors")
 
     elif args.source == 'ir':
+        import warnings
+        warnings.warn(
+            "cli --source ir is deprecated. EDGAR is the canonical ingest source. "
+            "Use --source edgar instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         import json
         import requests as req_lib
         from scrapers.ir_scraper import IRScraper
