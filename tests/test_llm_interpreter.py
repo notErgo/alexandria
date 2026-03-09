@@ -377,3 +377,49 @@ class TestExtractForPeriod:
             target_period="2024-08-01",
         )
         assert result == {}
+
+
+class TestNewMetricPromptKeys:
+    """Assert new metric keys have real prompts (not the generic fallback)."""
+
+    NEW_KEYS = ['holdings_btc', 'sales_btc', 'unrestricted_holdings', 'restricted_holdings_btc']
+
+    def test_new_keys_present_in_default_prompts(self):
+        from interpreters.llm_interpreter import _DEFAULT_PROMPTS
+        for key in self.NEW_KEYS:
+            assert key in _DEFAULT_PROMPTS, f"{key} missing from _DEFAULT_PROMPTS"
+
+    def test_new_keys_not_fallback_prompt(self):
+        from interpreters.llm_interpreter import _DEFAULT_PROMPTS
+        for key in self.NEW_KEYS:
+            prompt = _DEFAULT_PROMPTS[key]
+            assert '{metric}' not in prompt, (
+                f"{key} prompt looks like the generic fallback (contains '{{metric}}')"
+            )
+            assert len(prompt) > 200, (
+                f"{key} prompt is suspiciously short ({len(prompt)} chars); "
+                "expected a detailed extraction prompt"
+            )
+
+    def test_new_keys_present_in_quarterly_prompts(self):
+        from interpreters.llm_interpreter import _QUARTERLY_PROMPTS
+        for key in self.NEW_KEYS:
+            assert key in _QUARTERLY_PROMPTS, f"{key} missing from _QUARTERLY_PROMPTS"
+
+    def test_new_keys_present_in_batch_unit_hints(self):
+        from interpreters.llm_interpreter import _BATCH_UNIT_HINTS
+        for key in self.NEW_KEYS:
+            assert key in _BATCH_UNIT_HINTS, f"{key} missing from _BATCH_UNIT_HINTS"
+            assert _BATCH_UNIT_HINTS[key] == 'BTC', (
+                f"{key} unit hint should be 'BTC', got '{_BATCH_UNIT_HINTS[key]}'"
+            )
+
+    def test_get_default_prompt_returns_real_prompt_for_new_keys(self):
+        from interpreters.llm_interpreter import LLMInterpreter
+        extractor = LLMInterpreter(session=MagicMock(), db=None)
+        for key in self.NEW_KEYS:
+            prompt = extractor.get_default_prompt(key)
+            assert prompt is not None
+            assert '{metric}' not in prompt, (
+                f"get_default_prompt('{key}') returned generic fallback"
+            )

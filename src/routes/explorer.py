@@ -186,6 +186,7 @@ def explorer_cell_save(ticker, period, metric):
         }}), 409
 
     note = str(body.get('note', ''))[:500]
+    extraction_method = 'manual' if body.get('manual') else 'analyst_edited'
     try:
         db.insert_data_point({
             'report_id': None,
@@ -195,7 +196,7 @@ def explorer_cell_save(ticker, period, metric):
             'value': value,
             'unit': '',
             'confidence': 1.0,
-            'extraction_method': 'analyst_edited',
+            'extraction_method': extraction_method,
             'source_snippet': note or None,
         })
     except Exception:
@@ -316,3 +317,98 @@ def registry():
         items = [i for i in items if i.get('parse_quality') == 'parse_failed']
 
     return jsonify({'success': True, 'data': {'items': items, 'total': len(items)}})
+
+
+# ── Document explorer ──────────────────────────────────────────────────────────
+
+@bp.route('/api/documents')
+def documents():
+    """Return ingested reports with their extracted data_points.
+
+    Each item represents one report (document). The `metrics` field is a dict
+    of metric_key → value for data_points linked to that report.
+
+    Query params:
+      ticker   — filter by ticker (optional)
+      source_type — filter by source type e.g. ir_press_release (optional)
+      extracted — 'yes'|'no'|'' — filter by whether the report has data_points
+      limit    — max rows (default 200, max 500)
+    """
+    db = get_db()
+    ticker = request.args.get('ticker', '').upper() or None
+    source_type = request.args.get('source_type') or None
+    extracted_filter = request.args.get('extracted') or None
+    try:
+        limit = max(1, min(500, int(request.args.get('limit', 200))))
+    except (ValueError, TypeError):
+        limit = 200
+
+    clauses = []
+    params = []
+    if ticker:
+        clauses.append("r.ticker = ?")
+        params.append(ticker)
+    if source_type:
+        clauses.append("r.source_type = ?")
+        params.append(source_type)
+
+    where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
+    params.extend([limit])
+
+    with db._get_connection() as conn:
+        report_rows = conn.execute(
+            f"""SELECT r.id, r.ticker, r.source_type, r.report_date,
+                       r.covering_period, r.source_url, r.extracted_at,
+                       r.parse_quality
+                FROM reports r
+                {where}
+                ORDER BY r.ticker, r.report_date DESC
+                LIMIT ?""",
+            params,
+        ).fetchall()
+        reports = [dict(r) for r in report_rows]
+
+        # Fetch all data_points for these report_ids in one query
+        if reports:
+            report_ids = [r['id'] for r in reports]
+            placeholders = ','.join('?' * len(report_ids))
+            dp_rows = conn.execute(
+                f"SELECT report_id, metric, value, extraction_method "
+                f"FROM data_points WHERE report_id IN ({placeholders})",
+                report_ids,
+            ).fetchall()
+        else:
+            dp_rows = []
+
+    # Build a map: report_id → {metric: value}
+    dp_map: dict = {}
+    for dp in dp_rows:
+        rid = dp[0]
+        if rid not in dp_map:
+            dp_map[rid] = {}
+        dp_map[rid][dp[1]] = {'value': dp[2], 'method': dp[3]}
+
+    # Attach metrics to each report
+    for r in reports:
+        r['metrics'] = dp_map.get(r['id'], {})
+
+    # Apply extracted filter
+    if extracted_filter == 'yes':
+        reports = [r for r in reports if r['metrics']]
+    elif extracted_filter == 'no':
+        reports = [r for r in reports if not r['metrics']]
+
+    # Collect all metric keys seen across all documents
+    all_metric_keys: list = []
+    seen: set = set()
+    for r in reports:
+        for k in r['metrics']:
+            if k not in seen:
+                seen.add(k)
+                all_metric_keys.append(k)
+
+    return jsonify({'success': True, 'data': {
+        'reports': reports,
+        'total': len(reports),
+        'metric_keys': sorted(all_metric_keys),
+    }})

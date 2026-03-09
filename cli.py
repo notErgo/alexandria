@@ -83,7 +83,7 @@ def cmd_ingest(args):
         import requests as req_lib
         from scrapers.edgar_connector import EdgarConnector
         session = req_lib.Session()
-        connector = EdgarConnector(db=db, registry=registry, session=session)
+        connector = EdgarConnector(db=db, session=session)
         # When a specific ticker is requested, search ALL companies (including inactive)
         # so that EDGAR can be fetched for companies that switched to quarterly-only.
         if args.ticker:
@@ -207,6 +207,45 @@ def cmd_broad_extract(args):
     print(f"Broad extraction complete: {result['reports_processed']} reports, "
           f"{result['metrics_stored']} metrics stored, "
           f"{result['errors']} errors")
+
+
+def cmd_gap_fill(args):
+    """Infer missing monthly data_points from quarterly totals."""
+    from interpreters.gap_fill import fill_quarterly_gaps
+
+    db = get_db()
+    ticker = args.ticker.upper() if args.ticker else None
+    if not ticker:
+        print("ERROR: --ticker is required for gap-fill")
+        sys.exit(1)
+
+    dry_run = getattr(args, 'dry_run', False)
+    result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run)
+
+    if dry_run:
+        print(f"DRY RUN — no rows written")
+
+    if not result['rows']:
+        print("No inferences computed.")
+        return
+
+    header = f"{'Period':<8}  {'Metric':<24}  {'Value':>10}  {'Method':<20}  {'Status'}"
+    print(header)
+    print('-' * len(header))
+    for r in result['rows']:
+        period = r.get('period', r.get('covering_period', ''))[:7]
+        metric = r.get('metric', '')
+        value = r.get('inferred_value')
+        method = r.get('extraction_method', r.get('reason', ''))
+        status = r.get('status', '')
+        val_str = f"{value:.2f}" if value is not None else '—'
+        print(f"{period:<8}  {metric:<24}  {val_str:>10}  {method:<20}  {status}")
+
+    print(
+        f"\nSummary: {result['filled']} filled, "
+        f"{result['skipped']} skipped, "
+        f"{result['errors']} errors"
+    )
 
 
 def cmd_purge(args):
@@ -405,6 +444,17 @@ def main():
     p_broad.add_argument('--force', action='store_true', default=False,
                          help='Re-extract even reports already in raw_extractions')
 
+    # gap-fill
+    p_gap = sub.add_parser(
+        'gap-fill',
+        help='Infer missing monthly data_points from quarterly totals',
+    )
+    p_gap.add_argument('--ticker', required=True, help='Company ticker (required)')
+    p_gap.add_argument(
+        '--dry-run', action='store_true', default=False,
+        help='Preview inferences without writing to DB',
+    )
+
     # purge
     p_purge = sub.add_parser(
         'purge',
@@ -428,6 +478,8 @@ def main():
         cmd_diagnose(args)
     elif args.command == 'broad_extract':
         cmd_broad_extract(args)
+    elif args.command == 'gap-fill':
+        cmd_gap_fill(args)
     elif args.command == 'purge':
         cmd_purge(args)
 

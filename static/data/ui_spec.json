@@ -82,9 +82,9 @@
     {"id": "DE4.3", "name": "Export button", "source": "n/a", "path": "optional", "template": "index.html", "api_endpoints": ["/api/export.csv"]},
     {"id": "DE4.4", "name": "Lineage panel", "source": "DATA", "path": "optional", "template": "index.html", "api_endpoints": ["/api/data/lineage"]},
 
-    {"id": "MD5.0", "name": "Miner Data Page", "source": "n/a", "path": "n/a", "route": "/miner-data", "template": "miner_data.html"},
-    {"id": "MD5.1", "name": "Reports table", "source": "DATA", "path": "critical", "template": "miner_data.html"},
-    {"id": "MD5.2", "name": "Doc panel", "source": "DATA", "path": "optional", "template": "miner_data.html", "api_endpoints": ["/api/operations/manifest/<id>/preview"]},
+    {"id": "MD5.0", "name": "Miner Data (Review tab)", "source": "n/a", "path": "n/a", "template": "ops.html"},
+    {"id": "MD5.1", "name": "Reports table", "source": "DATA", "path": "critical", "template": "ops.html"},
+    {"id": "MD5.2", "name": "Doc panel", "source": "DATA", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/operations/manifest/<id>/preview"]},
 
     {"id": "DB6.0", "name": "Dashboard Page", "source": "n/a", "path": "n/a", "route": "/dashboard", "template": "dashboard.html"},
     {"id": "DB6.1", "name": "Metric panels", "source": "DATA", "path": "critical", "template": "dashboard.html"},

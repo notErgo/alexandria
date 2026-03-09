@@ -33,15 +33,18 @@ log = logging.getLogger('miners.routes.dashboard')
 bp = Blueprint('dashboard', __name__)
 
 _VALID_METRICS = {
-    'production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate',
+    'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
+    'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc', 'mining_mw', 'ai_hpc_mw',
     'hpc_revenue_usd', 'gpu_count',
 }
 
 _METRIC_META = {
     'production_btc':         ('Production',    'BTC'),
-    'hodl_btc':               ('Holdings',      'BTC'),
-    'sold_btc':               ('Sold',          'BTC'),
+    'holdings_btc':           ('Holdings',      'BTC'),
+    'unrestricted_holdings':  ('Holdings (Unres.)', 'BTC'),
+    'restricted_holdings_btc': ('Holdings (Restr.)', 'BTC'),
+    'sales_btc':              ('Sold',          'BTC'),
     'hashrate_eh':            ('Hashrate',      'EH/s'),
     'realization_rate':       ('Realization',   '%'),
     'net_btc_balance_change': ('Net BTC Change','BTC'),

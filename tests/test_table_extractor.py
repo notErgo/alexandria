@@ -49,7 +49,7 @@ class TestExtractFromTables:
         metrics_found = {r.metric for r in results}
         assert "production_btc" in metrics_found
         assert "hashrate_eh" in metrics_found
-        assert "hodl_btc" in metrics_found
+        assert "holdings_btc" in metrics_found
 
     def test_no_table_returns_empty(self):
         soup = BeautifulSoup("<p>No tables here.</p>", "lxml")

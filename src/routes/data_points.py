@@ -11,8 +11,8 @@ log = logging.getLogger('miners.routes.data_points')
 bp = Blueprint('data_points', __name__)
 
 _VALID_METRICS = {
-    'production_btc', 'hodl_btc', 'hodl_btc_unrestricted', 'hodl_btc_restricted',
-    'sold_btc', 'hashrate_eh', 'realization_rate',
+    'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
+    'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
 }

@@ -280,11 +280,11 @@ class TestV32KeywordsOnMetricSchema:
     def test_other_metrics_default_to_empty_keywords(self, raw_conn):
         import json
         row = raw_conn.execute(
-            "SELECT keywords FROM metric_schema WHERE key = 'sold_btc'"
+            "SELECT keywords FROM metric_schema WHERE key = 'sales_btc'"
         ).fetchone()
         assert row is not None
         kws = json.loads(row[0] or '[]')
-        assert kws == [], f"sold_btc should have no seeded keywords, got: {kws}"
+        assert kws == [], f"sales_btc should have no seeded keywords, got: {kws}"
 
 
 class TestSchemaV33:

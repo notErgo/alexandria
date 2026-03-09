@@ -1,10 +1,11 @@
 """
 LLM prompt DB store API routes.
 
-  GET  /api/llm_prompts           — list all active prompts
-  GET  /api/llm_prompts/preview   — render the full assembled batch prompt (no document body)
-  GET  /api/llm_prompts/<metric>  — get active prompt for metric (404 if not set)
-  POST /api/llm_prompts/<metric>  — upsert prompt for metric
+  GET    /api/llm_prompts           — list all active prompts
+  GET    /api/llm_prompts/preview   — render the full assembled batch prompt (no document body)
+  GET    /api/llm_prompts/<metric>  — get active prompt for metric (404 if not set)
+  POST   /api/llm_prompts/<metric>  — upsert prompt for metric
+  DELETE /api/llm_prompts/<metric>  — deactivate DB override (revert to hardcoded default)
 """
 import logging
 
@@ -14,10 +15,10 @@ log = logging.getLogger('miners.routes.llm_prompts')
 
 bp = Blueprint('llm_prompts', __name__)
 
-# All valid metric names — must match the constants used elsewhere in the app
+# All valid metric names — must match the constants used elsewhere in the app.
 _VALID_METRICS = {
-    'production_btc', 'hodl_btc', 'hodl_btc_unrestricted', 'hodl_btc_restricted',
-    'sold_btc', 'hashrate_eh', 'realization_rate',
+    'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
+    'sales_btc', 'hashrate_eh', 'realization_rate',
     'net_btc_balance_change', 'encumbered_btc', 'mining_mw', 'ai_hpc_mw',
     'hpc_revenue_usd', 'gpu_count',
 }
@@ -127,4 +128,32 @@ def update_llm_prompt(metric):
         return jsonify({'success': True})
     except Exception:
         log.error('Error updating LLM prompt for %s', metric, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/llm_prompts/<metric>', methods=['DELETE'])
+def reset_llm_prompt(metric):
+    """Deactivate the DB override for a metric, reverting to the hardcoded default.
+
+    Sets active=0 on the llm_prompts row so _get_prompt() falls back to
+    _DEFAULT_PROMPTS in llm_interpreter.py on the next extraction run.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        if metric not in _VALID_METRICS:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_METRIC',
+                'message': f"Unknown metric '{metric}'"
+            }}), 400
+
+        with db._get_connection() as conn:
+            conn.execute(
+                "UPDATE llm_prompts SET active = 0 WHERE metric = ?",
+                (metric,),
+            )
+        return jsonify({'success': True, 'message': f"DB override for '{metric}' deactivated; hardcoded default will be used."})
+    except Exception:
+        log.error('Error resetting LLM prompt for %s', metric, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

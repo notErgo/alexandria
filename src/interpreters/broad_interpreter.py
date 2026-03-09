@@ -35,16 +35,16 @@ _STANDARD_METRIC_MAP: dict[str, str] = {
     'bitcoin_mined':    'production_btc',
     'self_mined_btc':   'production_btc',
     # BTC treasury / holdings
-    'hodl_btc':         'hodl_btc',
-    'btc_holdings':     'hodl_btc',
-    'bitcoin_holdings': 'hodl_btc',
-    'treasury_btc':     'hodl_btc',
-    'btc_treasury':     'hodl_btc',
-    'total_btc':        'hodl_btc',
+    'holdings_btc':     'holdings_btc',
+    'btc_holdings':     'holdings_btc',
+    'bitcoin_holdings': 'holdings_btc',
+    'treasury_btc':     'holdings_btc',
+    'btc_treasury':     'holdings_btc',
+    'total_btc':        'holdings_btc',
     # BTC sold
-    'sold_btc':         'sold_btc',
-    'btc_sold':         'sold_btc',
-    'bitcoin_sold':     'sold_btc',
+    'sales_btc':        'sales_btc',
+    'btc_sold':         'sales_btc',
+    'bitcoin_sold':     'sales_btc',
     # Hashrate
     'hashrate_eh':      'hashrate_eh',
     'hashrate':         'hashrate_eh',
@@ -74,8 +74,8 @@ _STANDARD_METRIC_MAP: dict[str, str] = {
 # Category labels for non-standard metrics
 _CATEGORY_MAP: dict[str, str] = {
     'production_btc':           'btc_production',
-    'hodl_btc':                 'btc_treasury',
-    'sold_btc':                 'btc_sold',
+    'holdings_btc':             'btc_treasury',
+    'sales_btc':                'btc_sold',
     'hashrate_eh':              'hashrate',
     'mining_mw':                'mining_capacity',
     'ai_hpc_mw':                'ai_hpc',

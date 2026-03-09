@@ -179,10 +179,10 @@ LLM_AGREEMENT_THRESHOLD: float = 0.02
 # These are seed values; runtime reads from metric_rules DB table when available.
 METRIC_AGREEMENT_THRESHOLDS: dict = {
     'production_btc':          0.01,   # integer BTC counts: 1% tolerance
-    'hodl_btc':                0.01,
-    'sold_btc':                0.01,
-    'hodl_btc_unrestricted':   0.01,
-    'hodl_btc_restricted':     0.01,
+    'holdings_btc':            0.01,
+    'sales_btc':               0.01,
+    'unrestricted_holdings':   0.01,
+    'restricted_holdings_btc': 0.01,
     'net_btc_balance_change':  0.02,
     'encumbered_btc':          0.01,
     'hashrate_eh':             0.10,   # 1-decimal EH/s: 10% tolerance
@@ -200,10 +200,10 @@ METRIC_AGREEMENT_THRESHOLD_DEFAULT: float = 0.02
 # These are seed values; runtime reads from metric_rules DB table when available.
 OUTLIER_THRESHOLDS: dict = {
     'production_btc':          0.40,   # 40% swing in one month is unusual
-    'hodl_btc':                0.30,
-    'sold_btc':                1.00,   # sold_btc is volatile; 100% (2x) to flag
-    'hodl_btc_unrestricted':   0.30,
-    'hodl_btc_restricted':     1.00,
+    'holdings_btc':            0.30,
+    'sales_btc':               1.00,   # sales are volatile; 100% (2x) to flag
+    'unrestricted_holdings':   0.30,
+    'restricted_holdings_btc': 1.00,
     'hashrate_eh':             0.25,
     'realization_rate':        0.20,
     'net_btc_balance_change':  1.00,

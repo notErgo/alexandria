@@ -11,20 +11,20 @@ from typing import Optional, Tuple
 
 # Valid value ranges per metric (inclusive bounds)
 METRIC_VALID_RANGES: dict = {
-    "production_btc":         (0.0, 5000.0),
-    "hodl_btc":               (0.0, 200000.0),
-    "hodl_btc_unrestricted":  (0.0, 200000.0),
-    "hodl_btc_restricted":    (0.0, 200000.0),
-    "sold_btc":               (0.0, 5000.0),
-    "hashrate_eh":            (0.0, 100.0),
-    "realization_rate":       (0.0, 1.0),
+    "production_btc":           (0.0, 5000.0),
+    "holdings_btc":             (0.0, 200000.0),
+    "unrestricted_holdings":    (0.0, 200000.0),
+    "restricted_holdings_btc":  (0.0, 200000.0),
+    "sales_btc":                (0.0, 5000.0),
+    "hashrate_eh":              (0.0, 100.0),
+    "realization_rate":         (0.0, 1.0),
     # v2 metrics
-    "net_btc_balance_change": (-50000.0, 50000.0),
-    "encumbered_btc":         (0.0, 200000.0),
-    "mining_mw":              (0.0, 10000.0),
-    "ai_hpc_mw":              (0.0, 5000.0),
-    "hpc_revenue_usd":        (0.0, 1_000_000_000.0),
-    "gpu_count":              (0.0, 1_000_000.0),
+    "net_btc_balance_change":   (-50000.0, 50000.0),
+    "encumbered_btc":           (0.0, 200000.0),
+    "mining_mw":                (0.0, 10000.0),
+    "ai_hpc_mw":                (0.0, 5000.0),
+    "hpc_revenue_usd":          (0.0, 1_000_000_000.0),
+    "gpu_count":                (0.0, 1_000_000.0),
 }
 
 # Distance at which distance_factor reaches 0.0

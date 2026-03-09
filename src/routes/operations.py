@@ -328,14 +328,40 @@ def operations_observer_swarm_status(task_id: str):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+# Cadence → source_type sets for report filtering.
+_CADENCE_SOURCE_TYPES = {
+    'monthly':   ['ir_press_release', 'archive_html', 'archive_pdf'],
+    'quarterly': ['edgar_10q'],
+    'annual':    ['edgar_10k'],
+    # 'all' / None: no filter (all source_types)
+}
+
+
 @bp.route('/api/operations/interpret', methods=['POST'])
 def operations_extract():
-    """Trigger background extraction for a ticker (or all tickers). Returns task_id."""
+    """Trigger background extraction for a ticker (or all tickers). Returns task_id.
+
+    Body parameters:
+        ticker (str, optional): Limit to one company.
+        force (bool): Re-extract already-extracted reports (default false).
+        warm_model (bool): Warm Ollama before starting (default true).
+        cadence (str): 'monthly' | 'quarterly' | 'annual' | 'all' (default 'all').
+            Filters reports to the matching source_types.
+        from_period (str): Earliest report_date to include (YYYY-MM).
+        to_period (str): Latest report_date to include (YYYY-MM).
+        sample (int): If > 0, randomly pick at most this many reports (max 10).
+            Use for prompt debugging — quick feedback without a full run.
+    """
     try:
         body = request.get_json(silent=True) or {}
         ticker = (body.get('ticker') or '').strip().upper() or None
         force = bool(body.get('force', False))
         warm_model = bool(body.get('warm_model', True))
+        cadence = (body.get('cadence') or 'all').strip().lower()
+        from_period = (body.get('from_period') or '').strip() or None
+        to_period = (body.get('to_period') or '').strip() or None
+        sample_n = int(body.get('sample') or 0)
+        sample_n = max(0, min(sample_n, 10))  # clamp 0-10
         run_key = ticker or '__ALL__'
 
         # 409 guard — prevent duplicate extraction runs
@@ -352,6 +378,10 @@ def operations_extract():
             _extraction_progress[task_id] = {
                 'status': 'running',
                 'ticker': ticker or 'ALL',
+                'cadence': cadence,
+                'from_period': from_period,
+                'to_period': to_period,
+                'sample': sample_n if sample_n > 0 else None,
                 'reports_processed': 0,
                 'reports_total': 0,
                 'data_points': 0,
@@ -364,8 +394,15 @@ def operations_extract():
             task_id, ticker or 'ALL', force, warm_model
         )
 
+        # Capture loop-local values for the thread closure.
+        _cadence = cadence
+        _from_period = from_period
+        _to_period = to_period
+        _sample_n = sample_n
+
         def _run():
             try:
+                import random as _random
                 from app_globals import get_db
                 from interpreters.interpret_pipeline import extract_report
                 from interpreters.pattern_registry import PatternRegistry
@@ -375,8 +412,29 @@ def operations_extract():
                 db = get_db()
                 registry = get_registry()
 
-                reports = db.get_all_reports_for_extraction(ticker=ticker) if force \
-                    else db.get_unextracted_reports(ticker=ticker)
+                source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
+
+                if force:
+                    reports = db.get_all_reports_for_extraction(
+                        ticker=ticker,
+                        source_types=source_types,
+                        from_period=_from_period,
+                        to_period=_to_period,
+                    )
+                else:
+                    reports = db.get_unextracted_reports(
+                        ticker=ticker,
+                        source_types=source_types,
+                        from_period=_from_period,
+                        to_period=_to_period,
+                    )
+
+                if _sample_n > 0 and len(reports) > _sample_n:
+                    reports = _random.sample(reports, _sample_n)
+                    log.info(
+                        "Task %s: sample mode — picked %d of %d reports",
+                        task_id, _sample_n, len(reports) + (_sample_n - len(reports)),
+                    )
 
                 with _progress_lock:
                     _extraction_progress[task_id]['reports_total'] = len(reports)
@@ -662,6 +720,63 @@ def manifest_detect_period(manifest_id: int):
     except Exception:
         log.error('Error in manifest_detect_period for id=%s', manifest_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/purge_ticker', methods=['POST'])
+def purge_ticker():
+    """POST /api/operations/purge_ticker — delete all extracted data for one ticker.
+
+    Deletes data_points and review_queue rows for the ticker, then resets
+    reports.extraction_status = 'pending' so the next extraction run picks them up.
+
+    Body: { "ticker": "MARA" }
+    Returns: { "data_points_deleted": N, "review_queue_deleted": N }
+    """
+    from app_globals import get_db as _get_db
+
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper()
+    if not ticker:
+        return jsonify({'error': 'ticker is required'}), 400
+
+    try:
+        db = _get_db()
+        dp_count = db.purge_data_points(ticker=ticker)
+        rq_count = db.purge_review_queue(ticker=ticker)
+        log.info(
+            'purge_ticker ticker=%s data_points=%d review_queue=%d',
+            ticker, dp_count, rq_count,
+        )
+        return jsonify({'data_points_deleted': dp_count, 'review_queue_deleted': rq_count})
+    except Exception:
+        log.error('purge_ticker_error ticker=%s', ticker, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@bp.route('/api/operations/gap-fill', methods=['POST'])
+def gap_fill():
+    """POST /api/operations/gap-fill — infer missing monthly data_points from quarterly.
+
+    Body: { "ticker": "MARA", "dry_run": false }
+    Returns: { "filled": N, "skipped": N, "errors": N, "rows": [...] }
+    """
+    from app_globals import get_db as _get_db
+    from interpreters.gap_fill import fill_quarterly_gaps
+
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper()
+    dry_run = bool(body.get('dry_run', False))
+
+    if not ticker:
+        return jsonify({'error': 'ticker is required'}), 400
+
+    try:
+        db = _get_db()
+        result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run)
+        return jsonify(result)
+    except Exception:
+        log.error('gap_fill_error ticker=%s', ticker, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @bp.route('/operations')

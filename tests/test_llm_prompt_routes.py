@@ -114,7 +114,7 @@ class TestLlmPromptRoutes:
 
     def test_list_prompts_after_updates(self, client):
         client.post('/api/llm_prompts/production_btc', json={'prompt_text': 'P1'})
-        client.post('/api/llm_prompts/hodl_btc', json={'prompt_text': 'P2'})
+        client.post('/api/llm_prompts/holdings_btc', json={'prompt_text': 'P2'})
         resp = client.get('/api/llm_prompts')
         data = resp.get_json()
         assert len(data['data']['prompts']) == 2
@@ -164,14 +164,14 @@ class TestLlmPromptRoutes:
         )
 
     def test_preview_default_metrics_include_core(self, client):
-        """Default preview must include production_btc and hodl_btc (active=1)."""
+        """Default preview must include production_btc and holdings_btc (active=1)."""
         resp = client.get('/api/llm_prompts/preview')
         assert resp.status_code == 200
         data = resp.get_json()
         assert data['success'] is True
         metrics = data['data']['metrics']
         assert 'production_btc' in metrics, "production_btc must be in default preview metrics"
-        assert 'hodl_btc' in metrics, "hodl_btc must be in default preview metrics"
+        assert 'holdings_btc' in metrics, "holdings_btc must be in default preview metrics"
 
     def test_preview_prompt_includes_target_metrics_block(self, client):
         """Preview prompt must include a TARGET METRICS block with metric labels from metric_schema."""

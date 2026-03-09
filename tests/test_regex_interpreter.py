@@ -365,7 +365,7 @@ class TestHodlBtcProseExtraction:
     )
 
     def test_hodl_btc_4_matches_to_approximately(self):
-        results = extract_all(self.MARA_2021_MAY, [self._HODL_PROSE], "hodl_btc")
+        results = extract_all(self.MARA_2021_MAY, [self._HODL_PROSE], "holdings_btc")
         values = [r.value for r in results if r.confidence >= 0.75]
         assert 5518.0 in values, (
             f"hodl_btc_4 must match 'total bitcoin holdings to approximately 5,518'. "
@@ -373,7 +373,7 @@ class TestHodlBtcProseExtraction:
         )
 
     def test_production_value_not_extracted_as_hodl(self):
-        results = extract_all(self.MARA_2021_MAY, [self._HODL_PROSE], "hodl_btc")
+        results = extract_all(self.MARA_2021_MAY, [self._HODL_PROSE], "holdings_btc")
         values = [r.value for r in results]
         assert 226.6 not in values, (
             "Production value (226.6) must not be extracted as hodl_btc"
@@ -383,7 +383,7 @@ class TestHodlBtcProseExtraction:
         """Variant with comma-formatted number: 'holdings to approximately 15,232'"""
         results = extract_all(
             "increasing total bitcoin holdings to approximately 15,232",
-            [self._HODL_PROSE], "hodl_btc",
+            [self._HODL_PROSE], "holdings_btc",
         )
         assert any(abs(r.value - 15232.0) < 0.1 for r in results), (
             f"hodl_btc_4 must match 15,232. Got {[r.value for r in results]}"
@@ -411,7 +411,7 @@ class TestSoldBtcPatterns:
         """Real MARA 2023 prose: 'Marathon opted to sell 1,500 BTC during January 2023'"""
         results = extract_all(
             "Marathon opted to sell 1,500 BTC during January 2023.",
-            [self._PATTERN], "sold_btc",
+            [self._PATTERN], "sales_btc",
         )
         assert any(abs(r.value - 1500.0) < 0.1 for r in results), (
             f"Should extract 1500. Got {[r.value for r in results]}"
@@ -421,7 +421,7 @@ class TestSoldBtcPatterns:
         """'The Company opted to sell 650 bitcoin this month'"""
         results = extract_all(
             "The Company opted to sell 650 bitcoin this month to offset expenses.",
-            [self._PATTERN], "sold_btc",
+            [self._PATTERN], "sales_btc",
         )
         assert any(abs(r.value - 650.0) < 0.1 for r in results), (
             f"Should extract 650. Got {[r.value for r in results]}"
@@ -431,7 +431,7 @@ class TestSoldBtcPatterns:
         """'Marathon sold 3.5 million shares' must NOT fire sold_btc patterns."""
         results = extract_all(
             "Marathon sold 3.5 million shares at $15 per share in a secondary offering.",
-            [self._PATTERN], "sold_btc",
+            [self._PATTERN], "sales_btc",
         )
         confident = [r for r in results if r.confidence >= 0.75]
         assert len(confident) == 0, (
@@ -474,7 +474,7 @@ class TestCLSKTableFormat:
         """'Total bitcoin holdings as of January 31: 10,556' must yield 10556."""
         results = extract_all(
             "Total bitcoin holdings as of January 31: 10,556",
-            [self._HODL_COLON], "hodl_btc",
+            [self._HODL_COLON], "holdings_btc",
         )
         assert any(abs(r.value - 10556.0) < 0.1 for r in results), (
             f"hodl_btc_6 must extract 10556. Got {[r.value for r in results]}"
@@ -484,7 +484,7 @@ class TestCLSKTableFormat:
         """Must not capture '31' (the day) as the holdings value."""
         results = extract_all(
             "Total bitcoin holdings as of January 31: 10,556",
-            [self._HODL_COLON], "hodl_btc",
+            [self._HODL_COLON], "holdings_btc",
         )
         assert all(r.value != 31.0 for r in results), (
             "Must not extract the day-of-month (31) as holdings"
@@ -494,7 +494,7 @@ class TestCLSKTableFormat:
         """Variant with February date: 'bitcoin holdings as of February 28: 9,500'"""
         results = extract_all(
             "Total bitcoin holdings as of February 28: 9,500",
-            [self._HODL_COLON], "hodl_btc",
+            [self._HODL_COLON], "holdings_btc",
         )
         assert any(abs(r.value - 9500.0) < 0.1 for r in results), (
             f"hodl_btc_6 must handle February variant. Got {[r.value for r in results]}"

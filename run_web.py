@@ -17,7 +17,7 @@ from infra.logging_config import setup_logging
 setup_logging()
 
 import logging
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect
 
 from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG, validate_companies_config
 
@@ -195,7 +195,7 @@ def create_app() -> Flask:
 
     @app.route('/miner-data')
     def miner_data_page():
-        return render_template('miner_data.html')
+        return redirect('/ops?tab=review', code=302)
 
     @app.route('/company/<ticker>')
     def company_page(ticker):

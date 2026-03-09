@@ -45,7 +45,7 @@ _ALIASES: dict[str, list[str]] = {
         'installed hashrate',
         'total hash rate capacity',
     ],
-    'hodl_btc': [
+    'holdings_btc': [
         'bitcoin held',
         'btc held',
         'bitcoin holdings',
@@ -56,7 +56,7 @@ _ALIASES: dict[str, list[str]] = {
         'end of month btc',
         'bitcoin balance',
     ],
-    'sold_btc': [
+    'sales_btc': [
         'btc sold',
         'bitcoin sold',
         'total btc sold',

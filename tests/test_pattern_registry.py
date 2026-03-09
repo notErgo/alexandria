@@ -8,7 +8,7 @@ _CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'config')
 class TestPatternRegistry:
     def test_load_returns_expected_metrics(self):
         registry = PatternRegistry.load(_CONFIG_DIR)
-        expected = {"production_btc", "hodl_btc", "sold_btc"}
+        expected = {"production_btc", "holdings_btc", "sales_btc"}
         assert set(registry.metrics.keys()) == expected
 
     def test_patterns_sorted_by_priority(self):

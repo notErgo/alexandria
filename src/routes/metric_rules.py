@@ -3,6 +3,13 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from config import (
+    METRIC_AGREEMENT_THRESHOLDS,
+    METRIC_AGREEMENT_THRESHOLD_DEFAULT,
+    OUTLIER_THRESHOLDS,
+    OUTLIER_MIN_HISTORY,
+)
+
 log = logging.getLogger('miners.routes.metric_rules')
 
 bp = Blueprint('metric_rules', __name__)
@@ -234,3 +241,65 @@ def delete_metric_rule(metric: str):
             'code': 'DB_ERROR', 'message': 'Failed to delete metric rule',
         }}), 500
     return jsonify({'success': True})
+
+
+@bp.route('/api/metric_rules/sync', methods=['POST'])
+def sync_metric_rules():
+    """Insert metric_rules rows for any active metric_schema key that lacks one.
+
+    Uses agreement/outlier thresholds from config.py as defaults.
+    Existing rows are left untouched (no overwrites).
+    Returns {'inserted': [...], 'already_exist': [...]}.
+    """
+    from app_globals import get_db
+    db = get_db()
+    try:
+        schema_rows = db.get_metric_schema(sector='BTC-miners', active_only=True)
+        schema_keys = {r['key'] for r in schema_rows}
+    except Exception as e:
+        log.error("sync_metric_rules: failed to fetch metric_schema: %s", e, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'DB_ERROR', 'message': 'Failed to read metric_schema',
+        }}), 500
+
+    try:
+        existing_rules = db.get_metric_rules()
+        existing_keys = {r['metric'] for r in existing_rules}
+    except Exception as e:
+        log.error("sync_metric_rules: failed to fetch metric_rules: %s", e, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'DB_ERROR', 'message': 'Failed to read metric_rules',
+        }}), 500
+
+    inserted = []
+    already_exist = sorted(existing_keys & schema_keys)
+    missing = schema_keys - existing_keys
+
+    for key in sorted(missing):
+        ag = METRIC_AGREEMENT_THRESHOLDS.get(key, METRIC_AGREEMENT_THRESHOLD_DEFAULT)
+        ot = OUTLIER_THRESHOLDS.get(key, 0.50)
+        try:
+            db.upsert_metric_rule(
+                metric=key,
+                agreement_threshold=ag,
+                outlier_threshold=ot,
+                outlier_min_history=OUTLIER_MIN_HISTORY,
+                enabled=1,
+                notes='auto-synced from metric_schema',
+            )
+            inserted.append(key)
+            log.info("sync_metric_rules: inserted rule for %s (ag=%.3f, ot=%.2f)", key, ag, ot)
+        except Exception as e:
+            log.error("sync_metric_rules: failed to insert rule for %s: %s", key, e, exc_info=True)
+            return jsonify({'success': False, 'error': {
+                'code': 'DB_ERROR', 'message': f'Failed to insert rule for {key}',
+            }}), 500
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'inserted': inserted,
+            'already_exist': already_exist,
+            'inserted_count': len(inserted),
+        },
+    })

@@ -2,11 +2,11 @@
 import pytest
 
 
-ACTIVE_METRICS = {'production_btc', 'hodl_btc', 'sold_btc'}
+ACTIVE_METRICS = {'production_btc', 'holdings_btc', 'sales_btc'}
 DEPRECATED_METRICS = {
     'hashrate_eh', 'realization_rate', 'ai_hpc_mw', 'gpu_count',
     'hpc_revenue_usd', 'mining_mw', 'encumbered_btc',
-    'hodl_btc_restricted', 'hodl_btc_unrestricted', 'net_btc_balance_change',
+    'restricted_holdings_btc', 'unrestricted_holdings', 'net_btc_balance_change',
 }
 
 
@@ -26,7 +26,7 @@ def test_active_filter_excludes_deprecated(db):
 
 
 def test_active_filter_includes_core(db):
-    """Active metrics (production_btc, hodl_btc, sold_btc) appear when active_only=True."""
+    """Active metrics (production_btc, holdings_btc, sales_btc) appear when active_only=True."""
     rows = db.get_metric_schema('BTC-miners', active_only=True)
     keys = {r['key'] for r in rows}
     for m in ACTIVE_METRICS:

@@ -1134,18 +1134,45 @@ def _extract_mda_section(full_text: str, form_type: str) -> Optional[str]:
     For 10-Q / 6-K: looks for 'Item 2' (Management Discussion & Analysis).
     For 10-K / 20-F / 40-F: looks for 'Item 7' (Management Discussion & Analysis).
 
-    Returns the section text if found (up to 100K chars), or None to use full_text.
+    Returns the section text if found (up to _MAX_FILING_TEXT_CHARS), or None
+    to use full_text.
+
+    The search skips table-of-contents occurrences by requiring that the
+    candidate section contain at least MIN_SECTION_CHARS characters before the
+    next item marker.  This prevents picking up the short TOC stub instead of
+    the actual body.
     """
     _annual_forms = ('10-K', '10-k', '20-F', '20-F/A', '40-F', '40-F/A')
     item_label = 'Item 7' if form_type in _annual_forms else 'Item 2'
     next_item = 'Item 8' if form_type in _annual_forms else 'Item 3'
+
+    # Minimum characters between the item marker and the next item before we
+    # accept the candidate as the real section body rather than a TOC entry.
+    _MIN_SECTION_CHARS = 2000
 
     # Case-insensitive search
     text_upper = full_text.upper()
     item_upper = item_label.upper()
     next_upper = next_item.upper()
 
-    start = text_upper.find(item_upper)
+    # Walk all occurrences of item_upper and pick the first one with enough
+    # following content (skips short TOC stubs).
+    pos = 0
+    start = -1
+    while True:
+        found = text_upper.find(item_upper, pos)
+        if found == -1:
+            break
+        end_candidate = text_upper.find(next_upper, found + 100)
+        if end_candidate == -1:
+            section_len = len(full_text) - found
+        else:
+            section_len = end_candidate - found
+        if section_len >= _MIN_SECTION_CHARS:
+            start = found
+            break
+        pos = found + 1
+
     if start == -1:
         return None
 

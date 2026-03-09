@@ -105,7 +105,7 @@ def _apply_pattern(text: str, pattern_dict: dict, metric: str,
         # just the numeric value, avoiding false first-number matches when a PDF
         # footnote digit appears between the keyword and the value
         # (e.g. "BTC Produced 2 750" — group 1 is "750", not "2").
-        if metric in {'production_btc', 'hodl_btc', 'sold_btc'} and m.lastindex and m.lastindex >= 1:
+        if metric in {'production_btc', 'holdings_btc', 'sales_btc'} and m.lastindex and m.lastindex >= 1:
             raw_match = m.group(1)
         else:
             raw_match = m.group(0)

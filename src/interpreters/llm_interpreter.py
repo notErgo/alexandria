@@ -245,6 +245,83 @@ _DEFAULT_PROMPTS: dict = {
         "Rules: total deployed count only. If not found, set value to null.\n\n"
         "Document:\n{text}"
     ),
+    "holdings_btc": (
+        "You are a financial data extractor. Your task: find the company's TOTAL bitcoin BALANCE "
+        "or HOLDINGS at the END of this reporting period (an absolute count, not a change).\n\n"
+        "MARA / Marathon Digital table format (highest priority):\n"
+        "- Row label: 'Total BTC Holdings (in whole numbers)' followed by the current-period value.\n"
+        "  Example: Total BTC Holdings (in whole numbers)  |  13,396  |  ...\n"
+        "  Extract 13,396. Do NOT use year-ago or prior-month values in the same row.\n"
+        "- MARA dual-period table: [current] [year-ago] [%] [current] [prior-month] [%].\n"
+        "  The FIRST number after the row label is the current period.\n"
+        "- If separate 'Unrestricted BTC Holdings' and 'Restricted BTC Holdings' rows are present,\n"
+        "  extract the 'Total BTC Holdings' row, not the unrestricted-only row.\n\n"
+        "Prose phrasings to look for:\n"
+        "- 'held approximately X bitcoin', 'holds X BTC', 'hold X BTC'\n"
+        "- 'X BTC in treasury', 'treasury of X BTC', 'bringing Treasury to X BTC'\n"
+        "- 'total bitcoin holdings to approximately X', 'total bitcoin holdings of X'\n"
+        "- 'bitcoin holdings of X', 'bitcoin balance of X', 'X BTC on our balance sheet'\n"
+        "- 'X bitcoin in self-custody', 'ended the month holding X bitcoin'\n\n"
+        "CRITICAL RULES:\n"
+        "1. Absolute total at period-end — not a delta. ('added 86 BTC' -> find the new total.)\n"
+        "2. 'holdings to approximately X' -> X is the NEW total. Use X.\n"
+        "3. REJECT 'holdings as of [date]' when that date is a prior month.\n"
+        "4. REJECT values labeled YTD, Q1/Q2/Q3/Q4, or fiscal year.\n"
+        "5. Numbers may contain commas (13,286 = 13286).\n"
+        "6. If no holdings figure is present, return null.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"holdings_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "sales_btc": (
+        "You are a financial data extractor. Your task: find the number of bitcoin SOLD or "
+        "LIQUIDATED by this company during THIS reporting month only.\n\n"
+        "MARA / Marathon Digital table format (highest priority):\n"
+        "- Row label: 'BTC Sold' or 'Bitcoin Sold' followed by the current-period value.\n"
+        "  Example: BTC Sold  |  245  |  ...   -> extract 245\n"
+        "  The FIRST number is the current month; 0 or absent row -> return null.\n"
+        "  Marathon has been 100% HODL since mid-2024; zero-sale months are normal.\n\n"
+        "Prose phrasings to look for:\n"
+        "- 'sold X BTC', 'sold X bitcoin', 'sold X of the Y BTC earned'\n"
+        "- 'liquidated X BTC', 'liquidated X bitcoin'\n"
+        "- 'divested X BTC', 'Bitcoin sold: X', 'proceeds from sale of X BTC'\n\n"
+        "REJECT the following:\n"
+        "- Purchases or buys of bitcoin.\n"
+        "- Network fee outflows, staking losses.\n"
+        "- Values described as quarterly, annual, year-to-date, or from a prior month.\n"
+        "- Zero-sale disclosure ('did not sell any bitcoin') -> return null, not 0.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"sales_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "unrestricted_holdings": (
+        "You are a financial data extractor. Your task: find the company's UNRESTRICTED bitcoin "
+        "holdings at the END of this reporting period — bitcoin freely available, not pledged.\n\n"
+        "MARA table: Row label 'Unrestricted BTC Holdings'; extract the FIRST (current-period) value.\n"
+        "Prose: 'unrestricted bitcoin holdings of X', 'X BTC unrestricted', 'unencumbered BTC of X'.\n"
+        "If the document does not distinguish restricted vs unrestricted, return null.\n"
+        "REJECT beginning-of-period or prior-month values.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"unrestricted_holdings","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
+    "restricted_holdings_btc": (
+        "You are a financial data extractor. Your task: find the company's RESTRICTED or PLEDGED "
+        "bitcoin holdings at the END of this reporting period — bitcoin that is encumbered or "
+        "pledged as collateral.\n\n"
+        "MARA table: Row label 'Restricted BTC Holdings' or 'Pledged BTC Holdings'; extract the "
+        "FIRST (current-period) value.\n"
+        "Prose: 'restricted bitcoin holdings of X', 'X BTC pledged as collateral', 'pledged X BTC'.\n"
+        "Return 0 (not null) ONLY if the document explicitly states zero restricted holdings.\n"
+        "If not mentioned at all, return null.\n\n"
+        "Return ONLY this JSON, no other text:\n"
+        '{{"metric":"restricted_holdings_btc","value":<number or null>,"unit":"BTC",'
+        '"confidence":<0.0-1.0>,"source_snippet":"<exact phrase you found, max 100 chars>"}}\n\n'
+        "Document:\n{text}"
+    ),
 }
 
 # Fallback for unknown metrics
@@ -336,6 +413,24 @@ _QUARTERLY_PROMPTS: dict = {
         "Extract the total GPU units deployed (H100s, A100s, or equivalents) at quarter-end or year-end.\n"
         "REJECT: planned or ordered units not yet deployed."
     ),
+    "holdings_btc": (
+        "Extract the company's TOTAL bitcoin BALANCE or HOLDINGS at quarter/year-end "
+        "(point-in-time). Use 'Total BTC Holdings (in whole numbers)' row for MARA. "
+        "REJECT beginning-of-period balances or averages."
+    ),
+    "sales_btc": (
+        "Extract bitcoin SOLD or LIQUIDATED during the quarter or fiscal year (cumulative "
+        "total). Look for 'BTC Sold' rows or prose 'sold X bitcoin'. Return null if no "
+        "sales occurred. REJECT individual month figures."
+    ),
+    "unrestricted_holdings": (
+        "Extract UNRESTRICTED bitcoin holdings at quarter-end or year-end. REJECT "
+        "beginning-of-period values."
+    ),
+    "restricted_holdings_btc": (
+        "Extract RESTRICTED or PLEDGED bitcoin at quarter-end or year-end. Return null "
+        "if the document makes no mention of restricted/pledged BTC."
+    ),
 }
 
 _BATCH_UNIT_HINTS: dict = {
@@ -352,6 +447,10 @@ _BATCH_UNIT_HINTS: dict = {
     "ai_hpc_mw":               "MW",
     "hpc_revenue_usd":         "USD",
     "gpu_count":               "units",
+    "holdings_btc":            "BTC",
+    "sales_btc":               "BTC",
+    "unrestricted_holdings":   "BTC",
+    "restricted_holdings_btc": "BTC",
 }
 
 _DEFAULT_BATCH_PREAMBLE = (

@@ -283,9 +283,9 @@ class TestMetricSchemaSSOT:
     def test_metric_schema_includes_all_13_keys(self, db):
         """All 13 expected metric keys must be present in metric_schema."""
         expected_keys = {
-            'production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate',
-            'ai_hpc_mw', 'encumbered_btc', 'gpu_count', 'hodl_btc_restricted',
-            'hodl_btc_unrestricted', 'hpc_revenue_usd', 'mining_mw', 'net_btc_balance_change',
+            'production_btc', 'holdings_btc', 'sales_btc', 'hashrate_eh', 'realization_rate',
+            'ai_hpc_mw', 'encumbered_btc', 'gpu_count', 'restricted_holdings_btc',
+            'unrestricted_holdings', 'hpc_revenue_usd', 'mining_mw', 'net_btc_balance_change',
         }
         rows = db.get_metric_schema('BTC-miners', active_only=False)
         actual_keys = {r['key'] for r in rows}
@@ -502,7 +502,7 @@ class TestMetricKeywordsRoutes:
         """POST /api/.../keywords stores exclude_terms alongside phrase."""
         import json
         resp = client.post(
-            '/api/metric_schema/hodl_btc/keywords',
+            '/api/metric_schema/holdings_btc/keywords',
             data=json.dumps({
                 'phrase': '"holdings"',
                 'exclude_terms': 'Digital Holdings,Marathon Holdings',
@@ -516,23 +516,23 @@ class TestMetricKeywordsRoutes:
     def test_patch_metric_keyword_exclude_terms(self, client, db):
         """PATCH /api/.../keywords/<id> can update exclude_terms."""
         import json
-        kw_id = db.add_metric_keyword('hodl_btc', '"btc holdings"')
+        kw_id = db.add_metric_keyword('holdings_btc', '"btc holdings"')
         resp = client.patch(
-            f'/api/metric_schema/hodl_btc/keywords/{kw_id}',
+            f'/api/metric_schema/holdings_btc/keywords/{kw_id}',
             data=json.dumps({'exclude_terms': 'Digital Holdings'}),
             content_type='application/json',
         )
         assert resp.status_code == 200
-        rows = db.get_metric_keywords('hodl_btc', active_only=False)
+        rows = db.get_metric_keywords('holdings_btc', active_only=False)
         row = next(r for r in rows if r['id'] == kw_id)
         assert row['exclude_terms'] == 'Digital Holdings'
 
     def test_get_metric_keywords_returns_exclude_terms(self, client, db):
         """GET /api/.../keywords includes exclude_terms field in each row."""
         import json
-        db.add_metric_keyword('hodl_btc', '"total holdings"',
+        db.add_metric_keyword('holdings_btc', '"total holdings"',
                               exclude_terms='Digital Holdings')
-        resp = client.get('/api/metric_schema/hodl_btc/keywords?all=1')
+        resp = client.get('/api/metric_schema/holdings_btc/keywords?all=1')
         body = json.loads(resp.data)
         assert body['success'] is True
         kws = body['data']['keywords']
@@ -544,21 +544,21 @@ class TestMetricKeywordsRoutes:
     def test_db_add_metric_keyword_with_exclude_terms(self, db):
         """DB-level: add_metric_keyword stores and returns exclude_terms."""
         kw_id = db.add_metric_keyword(
-            'hodl_btc', '"bitcoin reserve"', exclude_terms='Digital Holdings'
+            'holdings_btc', '"bitcoin reserve"', exclude_terms='Digital Holdings'
         )
-        rows = db.get_metric_keywords('hodl_btc', active_only=False)
+        rows = db.get_metric_keywords('holdings_btc', active_only=False)
         row = next(r for r in rows if r['id'] == kw_id)
         assert row['exclude_terms'] == 'Digital Holdings'
 
     def test_db_update_metric_keyword_exclude_terms(self, db):
         """DB-level: update_metric_keyword can set and clear exclude_terms."""
-        kw_id = db.add_metric_keyword('hodl_btc', '"reserves"')
+        kw_id = db.add_metric_keyword('holdings_btc', '"reserves"')
         db.update_metric_keyword(kw_id, exclude_terms='Miner Holdings')
-        rows = db.get_metric_keywords('hodl_btc', active_only=False)
+        rows = db.get_metric_keywords('holdings_btc', active_only=False)
         row = next(r for r in rows if r['id'] == kw_id)
         assert row['exclude_terms'] == 'Miner Holdings'
         # Clear it
         db.update_metric_keyword(kw_id, exclude_terms='')
-        rows = db.get_metric_keywords('hodl_btc', active_only=False)
+        rows = db.get_metric_keywords('holdings_btc', active_only=False)
         row = next(r for r in rows if r['id'] == kw_id)
         assert row['exclude_terms'] == ''

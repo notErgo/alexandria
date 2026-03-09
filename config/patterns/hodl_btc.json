@@ -1,6 +1,9 @@
 {
-  "metric": "hodl_btc",
-  "valid_range": [0, 200000],
+  "metric": "holdings_btc",
+  "valid_range": [
+    0,
+    200000
+  ],
   "unit": "BTC",
   "conflict_resolution": "highest_confidence",
   "patterns": []

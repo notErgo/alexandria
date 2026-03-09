@@ -76,16 +76,16 @@ def app_with_mara(app, tmp_path, monkeypatch):
             'extraction_method': 'prod_btc_3',
             'source_snippet': 'mined 742 bitcoin during January',
         },
-        # period 2022-01: also has hodl_btc
+        # period 2022-01: also has holdings_btc
         {
             'report_id': None,
             'ticker': 'MARA',
             'period': '2022-01-01',
-            'metric': 'hodl_btc',
+            'metric': 'holdings_btc',
             'value': 3215.0,
             'unit': 'BTC',
             'confidence': 0.88,
-            'extraction_method': 'hodl_btc_1',
+            'extraction_method': 'holdings_btc_1',
             'source_snippet': 'held 3,215 bitcoin',
         },
         # period 2022-03: has production_btc (gap at 2022-02)
@@ -159,8 +159,8 @@ class TestMinerTimeline:
         assert jan_row is not None, '2022-01 row missing from timeline'
         assert jan_row['metrics']['production_btc'] is not None
         assert jan_row['metrics']['production_btc']['value'] == 742.0
-        assert jan_row['metrics']['hodl_btc'] is not None
-        assert jan_row['metrics']['hodl_btc']['value'] == 3215.0
+        assert jan_row['metrics']['holdings_btc'] is not None
+        assert jan_row['metrics']['holdings_btc']['value'] == 3215.0
 
     def test_includes_gap_rows_between_data_points(self, app_with_mara):
         """Data at 2022-01 and 2022-03 → 2022-02 row included, is_gap=True."""
@@ -182,7 +182,7 @@ class TestMinerTimeline:
         assert feb_row is not None
         # Only CORE_METRICS are always present; non-core (hashrate_eh, realization_rate)
         # only appear when data exists for the ticker, so check only core metrics here.
-        for metric in ('production_btc', 'hodl_btc', 'sold_btc'):
+        for metric in ('production_btc', 'holdings_btc', 'sales_btc'):
             assert feb_row['metrics'][metric] is None, f'{metric} should be null in gap row'
 
     def test_row_includes_report_metadata(self, app_with_report):

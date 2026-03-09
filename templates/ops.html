@@ -110,6 +110,742 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 .review-table td { padding: 5px 10px; border-bottom: 1px solid var(--theme-border); vertical-align: middle; }
 .review-table tr.selected td { background: rgba(59,130,246,0.08); }
 .review-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* ── Miner Data (inlined from miner_data.html) ─────────────────────────────── */
+/* ── Page layout ─────────────────────────────────────────────────────────── */
+.md-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Company tabs ─────────────────────────────────────────────────────────── */
+.md-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--theme-border);
+  padding-bottom: 0.5rem;
+}
+.md-tab {
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px 4px 0 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.3px;
+  transition: background 0.1s, color 0.1s;
+}
+.md-tab:hover {
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-primary);
+}
+.md-tab.active {
+  background: var(--theme-bg-secondary);
+  border-color: var(--theme-border);
+  border-bottom-color: var(--theme-bg-secondary);
+  color: var(--theme-accent);
+}
+
+/* ── Upper area: info card above table ────────────────────────────────────── */
+.md-upper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Company info card (horizontal strip above table) ─────────────────────── */
+.md-info-card {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.82rem;
+  color: var(--theme-text-secondary);
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+}
+.md-info-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--theme-text-primary);
+}
+.md-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.md-info-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+}
+.md-info-value {
+  color: var(--theme-text-primary);
+  word-break: break-all;
+}
+.md-info-value a {
+  color: var(--theme-accent);
+  text-decoration: none;
+}
+.md-info-value a:hover { text-decoration: underline; }
+.md-info-placeholder {
+  color: var(--theme-text-muted);
+  font-style: italic;
+}
+
+/* ── Table area ──────────────────────────────────────────────────────────── */
+.md-table-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 55vh;
+}
+.md-table-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--theme-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+}
+.md-table-filters label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  color: var(--theme-text-secondary);
+}
+.md-table-filters input[type="month"] {
+  padding: 0.2rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.8rem;
+}
+.md-table-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/* ── Data table ──────────────────────────────────────────────────────────── */
+#timeline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+#timeline-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--theme-bg-tertiary);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  z-index: 1;
+}
+#timeline-table tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.08s;
+}
+#timeline-table tbody tr:hover { background: var(--theme-bg-tertiary); }
+#timeline-table tbody tr.selected { background: rgba(59,130,246,0.1); }
+#timeline-table tbody tr.row-gap { background: rgba(255,255,255,0.015); }
+#timeline-table tbody tr.row-gap td { color: var(--theme-text-muted); }
+#timeline-table td {
+  padding: 0.35rem 0.6rem;
+  vertical-align: middle;
+}
+.td-period {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+td.row-gap .td-period { color: var(--theme-text-muted); }
+.td-value { color: var(--theme-text-primary); }
+.td-empty { color: var(--theme-text-muted); }
+.td-nodoc { color: var(--theme-text-muted); font-style: italic; font-size: 0.75rem; }
+.td-gap-label {
+  color: rgba(249,115,22,0.6);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+.method-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--theme-text-muted);
+  background: var(--theme-bg-tertiary);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.td-pending {
+  color: var(--theme-text-secondary, #94a3b8);
+  font-style: italic;
+}
+.badge-pending {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.35);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.src-badge {
+  font-size: 0.65rem;
+  color: var(--theme-accent);
+  margin-left: 4px;
+}
+.td-type-col { text-align: center; width: 46px; font-size: 0.75rem; white-space: nowrap; }
+.td-date-col { text-align: left; width: 88px; font-size: 0.77rem; white-space: nowrap; color: var(--theme-text-muted); }
+.src-icon { font-size: 0.75rem; }
+.src-icon.has-doc { color: var(--theme-accent); }
+.src-icon.no-doc { color: var(--theme-text-muted); }
+
+/* Empty / loading states */
+.md-table-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--theme-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Document viewer panel (bottom drawer) ───────────────────────────────── */
+#doc-panel {
+  display: none;
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  flex-direction: column;
+  overflow: hidden;
+}
+#doc-panel.visible { display: flex; }
+.doc-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+#doc-panel-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+.doc-panel-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--theme-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 0.3rem;
+}
+.doc-panel-close:hover { color: var(--theme-text-primary); }
+
+/* Two-column body: source view left, rules right */
+.doc-panel-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  height: 420px;
+  overflow: hidden;
+}
+#doc-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-text-muted);
+  font-size: 0.85rem;
+  padding: 2rem;
+  text-align: center;
+}
+.rules-panel {
+  border-left: 1px solid var(--theme-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.rules-panel-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  flex-shrink: 0;
+}
+#rules-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem;
+}
+.rule-card {
+  background: var(--theme-bg-tertiary);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  border-left: 3px solid var(--rule-color, var(--theme-border));
+}
+.rule-card-id {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--theme-accent);
+  margin-bottom: 0.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rule-card-status {
+  display: inline-block;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.rule-card-status.accepted {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--theme-success);
+}
+.rule-card-status.pending {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--theme-warning);
+}
+.rule-card-metric {
+  font-size: 0.68rem;
+  color: var(--theme-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.rule-card-value {
+  font-weight: 600;
+  color: var(--theme-text-primary);
+  margin: 0.1rem 0;
+}
+.rule-card-conf {
+  font-size: 0.7rem;
+  color: var(--theme-text-muted);
+}
+.rule-card-snippet {
+  font-size: 0.7rem;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 0.2rem;
+}
+.rules-empty {
+  padding: 1rem 0.75rem;
+  color: var(--theme-text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* ── Pattern generator (inside doc panel) ───────────────────────────────── */
+#pattern-panel {
+  display: none;
+  border-top: 1px solid var(--theme-border);
+  padding: 0.6rem 0.75rem;
+  flex-shrink: 0;
+  background: var(--theme-bg-tertiary);
+}
+.pattern-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.4rem;
+}
+.pattern-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+.pattern-form-row label {
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  min-width: 56px;
+}
+.pattern-form-row input, .pattern-form-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.82rem;
+}
+#pattern-regex-input {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+#selected-text-display {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pattern-match-count {
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+}
+.pattern-match-count.good { color: var(--theme-success); }
+.pattern-match-count.zero { color: var(--theme-danger); }
+#apply-result {
+  display: none;
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--theme-bg-secondary);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--theme-text-secondary);
+}
+
+/* ── Inline HTML source viewer ──────────────────────────────────────────── */
+#doc-source-view {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--theme-text-secondary);
+  line-height: 1.5;
+  background: var(--theme-bg-primary);
+  border-radius: 0 0 0 8px;
+  user-select: text;
+  cursor: text;
+}
+.doc-hl {
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Right-click context menu ───────────────────────────────────────────── */
+.source-ctx-menu {
+  position: fixed;
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 9999;
+  min-width: 160px;
+  padding: 0.25rem 0;
+  display: none;
+}
+.ctx-menu-item {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  color: var(--theme-text-primary);
+  cursor: pointer;
+}
+.ctx-menu-item:hover {
+  background: var(--theme-bg-tertiary);
+  color: var(--theme-accent);
+}
+
+/* ── Loading ─────────────────────────────────────────────────────────────── */
+.spin {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--theme-border);
+  border-top-color: var(--theme-accent);
+  border-radius: 50%;
+  animation: md-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes md-spin { to { transform: rotate(360deg); } }
+
+
+/* ── Manual fill panel (inside rules panel) ──────────────────────────────── */
+#manual-fill-panel {
+  border-top: 1px solid var(--theme-border);
+  padding: 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.fill-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.15rem;
+}
+#fill-metric, #fill-value, #fill-note {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.22rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.78rem;
+}
+#fill-submit {
+  padding: 0.22rem 0.5rem;
+  font-size: 0.78rem;
+  background: var(--theme-accent);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  align-self: flex-start;
+}
+#fill-submit:hover { opacity: 0.85; }
+#fill-status {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  min-height: 1em;
+}
+
+/* ── Source toggle strip ──────────────────────────────────────────────────── */
+.source-toggle {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--theme-border);
+  padding-bottom: 0.4rem;
+}
+.source-toggle-btn {
+  padding: 0.28rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid var(--theme-border);
+  background: transparent;
+  color: var(--theme-text-secondary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: background 0.1s, color 0.1s;
+}
+.source-toggle-btn:hover { background: var(--theme-bg-secondary); color: var(--theme-text-primary); }
+.source-toggle-btn.active {
+  background: var(--theme-accent);
+  border-color: var(--theme-accent);
+  color: #fff;
+}
+
+/* ── Finalized badge ─────────────────────────────────────────────────────── */
+.badge-final {
+  display: inline-block;
+  background: var(--theme-success, #10b981);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 0 0.28rem;
+  border-radius: 3px;
+  margin-left: 3px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+
+/* ── Interpret tab ──────────────────────────────────────────────────────── */
+#view-interpret {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.interp-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  margin-bottom: 0.4rem;
+}
+#interp-reconcile-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+#interp-reconcile-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+#interp-reconcile-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+}
+.interp-commentary {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.82rem;
+  resize: vertical;
+  min-height: 60px;
+}
+.suggestion-card {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.suggestion-card .sug-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+.suggestion-card .sug-rationale {
+  color: var(--theme-text-secondary);
+  font-size: 0.78rem;
+}
+.suggestion-card .sug-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+#staging-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+#staging-table th {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+  color: var(--theme-text-muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+#staging-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--theme-border);
+}
+.danger-zone {
+  border: 1px solid var(--theme-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+.danger-zone summary {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-danger, #ef4444);
+  cursor: pointer;
+  user-select: none;
+}
+.danger-zone .dz-body {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.danger-zone .dz-confirm-input {
+  padding: 0.2rem 0.4rem;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.8rem;
+  width: 200px;
+}
+tr.is-reviewed td { opacity: 0.65; }
+.badge-method {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0 3px;
+  border-radius: 2px;
+  margin-left: 3px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.badge-method-r { background: var(--theme-bg-secondary); color: var(--theme-text-muted); }
+.badge-method-l { background: #1e3a5f; color: #93c5fd; }
+.badge-method-a { background: #1c3a1c; color: #86efac; }
+.badge-method-f { background: #2d1b69; color: #c4b5fd; }
+.badge-method-d { background: rgba(217,119,6,0.15); color: #d97706; }
+.badge-method-s { background: rgba(217,119,6,0.15); color: #d97706; }
+.badge-method-p { background: var(--theme-bg-secondary); color: var(--theme-text-muted); }
+.badge-method-m { background: rgba(20,184,166,0.15); color: #14b8a6; }
+/* ReviewPanel controls collapsible */
+.rp-controls-details { border: 1px solid var(--theme-border); border-radius: 6px; }
+.rp-controls-summary {
+  list-style: none;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--theme-text-muted);
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.rp-controls-summary::-webkit-details-marker { display: none; }
+.rp-controls-summary::before { content: '+ '; }
+.rp-controls-details[open] .rp-controls-summary::before { content: '- '; }
+.rp-controls-details .rp-controls-top {
+  border-top: 1px solid var(--theme-border);
+  border-radius: 0 0 6px 6px;
+}
+#coverage-summary-bar table { border-collapse: collapse; }
+#coverage-summary-bar td, #coverage-summary-bar th {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--theme-border);
+  font-size: 0.78rem;
+}
+#coverage-summary-bar th { background: var(--theme-bg-secondary); font-weight: 600; }
+
 </style>
 {% endblock %}
 
@@ -123,6 +859,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   </div>
   <span style="margin-left:auto;display:flex;gap:0.4rem;align-items:center">
     <button id="help-btn" class="btn btn-sm btn-secondary" onclick="toggleHelp()" title="Pipeline guide">?</button>
+    <button id="inspect-btn" class="btn btn-sm btn-secondary" onclick="toggleInspect()" title="Toggle UI inspector hover highlight and tooltip">Inspect</button>
     <button id="dev-mode-btn" class="btn btn-sm btn-secondary" onclick="toggleDevMode()" title="Cycle path filter: All / Critical / +Optional (Ctrl+Shift+D)">Dev</button>
   </span>
 </div>
@@ -133,8 +870,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   <button class="ops-tab" data-pane="ingest" data-ui-id="2.0">Ingest</button>
   <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
   <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
-  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Raw Data</button>
-  <button class="ops-tab" data-pane="interrogate" data-ui-id="6.0">Interrogate</button>
+  <button class="ops-tab" data-pane="interrogate" data-ui-id="5.0">Interrogate</button>
 </div>
 
 <!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
@@ -521,7 +1257,8 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
       <div class="section-header-row" style="margin-bottom:0.5rem">
         <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
-        <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:auto">Refresh</button>
+        <button class="btn btn-sm btn-secondary" onclick="syncMetricRules()" style="margin-left:auto">Sync to metric_schema</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:0.5rem">Refresh</button>
       </div>
       <table id="rules-table" data-spec-id="1.2.1" style="width:100%;font-size:0.82rem">
         <thead>
@@ -795,16 +1532,112 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
         placeholder="Click Refresh to render the current prompt…"></textarea>
       <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.4rem">
         Active keywords from Track Config &rarr; Companies are injected automatically.
-        To edit per-metric prompt overrides, use Track Config &rarr; Settings.
-        Override + save + run audit trail are planned features.
+        Use the Prompt Editor below to override per-metric prompts before running extraction.
+      </p>
+    </div>
+
+    <!-- Prompt Editor — per-metric DB override -->
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.3.E">
+      <div class="section-header-row" style="margin-bottom:0.6rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.E</span>Prompt Editor</h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Edit and save a DB override for any metric — takes effect immediately on the next extraction run</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
+        <label style="font-size:0.78rem;font-weight:600">Metric</label>
+        <select id="pe-metric-select" style="font-size:0.82rem;padding:0.2rem 0.4rem;min-width:200px" onchange="peLoadPrompt()">
+          <option value="">Loading…</option>
+        </select>
+        <span id="pe-source-label" style="font-size:0.72rem;padding:2px 7px;border-radius:3px;display:none"></span>
+        <span id="pe-updated-at" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
+        <button class="btn btn-sm btn-secondary" style="margin-left:auto" onclick="peResetPrompt()" id="pe-reset-btn" title="Remove DB override and revert to hardcoded default" disabled>Reset to default</button>
+      </div>
+      <textarea id="pe-prompt-text" rows="8"
+        style="width:100%;font-family:ui-monospace,monospace;font-size:0.72rem;line-height:1.5;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem;color:var(--theme-text-primary);overflow-y:hidden"
+        placeholder="Select a metric to load its prompt…" spellcheck="false"
+        oninput="peAutoResize(this)"></textarea>
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+        <button class="btn btn-sm btn-primary" onclick="peSavePrompt()" id="pe-save-btn" disabled>Save override</button>
+        <span id="pe-char-count" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
+        <span id="pe-save-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+      </div>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.5rem;margin-bottom:0">
+        <strong>How prompts are resolved at runtime:</strong>
+        The LLM checks the DB table first (<code>llm_prompts</code>, <code>active=1</code>).
+        If a row exists for the metric, that text is used — your edit takes effect on the next extraction, no restart needed.
+        If no DB row is active, the hardcoded default in <code>llm_interpreter.py</code> is used.
+        "Reset to default" sets <code>active=0</code> on the DB row; the code fallback then applies.
       </p>
     </div>
 
     <div class="acq-section-label">LLM Extraction</div>
     <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
-      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem"></div>
+      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+
+      <!-- Source docs + date range -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Source docs</label>
+        <select id="extract-cadence" style="font-size:0.82rem;padding:0.2rem 0.4rem" onchange="onSourceDocsChange()" title="Which document types to process">
+          <option value="all">All types</option>
+          <option value="monthly">Press releases only  (monthly → monthly rows directly)</option>
+          <option value="quarterly">10-Q filings only  (quarterly → needs gap-fill for monthly)</option>
+          <option value="annual">10-K filings only  (annual → needs gap-fill for monthly)</option>
+        </select>
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap;margin-left:0.5rem">From</label>
+        <input id="extract-from" type="text" placeholder="YYYY-MM" maxlength="7"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:90px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">To</label>
+        <input id="extract-to" type="text" placeholder="YYYY-MM" maxlength="7"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:90px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Leave blank = all periods</span>
+      </div>
+
+      <!-- Gap-fill option — shown when source includes 10-Q or 10-K -->
+      <div id="extract-gapfill-row" style="display:none;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+          <input id="extract-auto-gapfill" type="checkbox" checked>
+          Run gap-fill after extraction
+          <span style="font-size:0.72rem;color:var(--theme-text-muted)">(infers missing monthly rows from the quarterly totals just extracted)</span>
+        </label>
+      </div>
+
+      <!-- Sample mode -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">
+          <input id="extract-sample-enabled" type="checkbox" onchange="toggleSampleMode()"> Sample mode
+        </label>
+        <span id="extract-sample-controls" style="display:none;gap:0.4rem;align-items:center;flex-wrap:wrap">
+          <input id="extract-sample-n" type="number" min="1" max="10" value="5"
+            style="font-size:0.82rem;padding:0.2rem 0.4rem;width:60px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <span style="font-size:0.78rem;color:var(--theme-text-muted)">
+            docs (max 10) — random pick for prompt iteration.
+            Only the periods covered by the sampled docs are overwritten;
+            all other existing data points are untouched. No implicit purge.
+          </span>
+        </span>
+      </div>
+
+      <!-- Force re-extract explanation -->
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.4rem;line-height:1.5">
+        <strong style="color:var(--theme-text-secondary)">Without force:</strong> processes only reports not yet extracted (new documents only).
+        <strong style="color:var(--theme-text-secondary)">With force:</strong> re-runs all matched reports and overwrites existing data points via
+        <code>INSERT OR REPLACE</code> — old values are silently replaced, no conflict shown.
+        Exception: rows with <code>extraction_method IN (analyst, analyst_approved, review_approved, review_edited)</code> are skipped by the pipeline regardless.
+        To start completely fresh, use the CLI <code>purge</code> command first.
+      </div>
+
+      <!-- Purge ticker data -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem;padding:0.5rem 0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:6px">
+        <span style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary)">Purge ticker data</span>
+        <input id="purge-ticker-input" type="text" maxlength="10" placeholder="MARA"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:80px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary);text-transform:uppercase">
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Deletes all data_points and review_queue rows. Resets reports to pending.</span>
+        <button class="btn btn-sm btn-danger" onclick="purgeTickerData()" id="purge-ticker-btn">Purge</button>
+        <span id="purge-ticker-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+
+      <!-- Force + model + run -->
       <div class="acq-actions">
-        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No selection = all tickers</span>
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No ticker selection = all tickers</span>
         <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
         <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
           <option value="">Loading models…</option>
@@ -852,6 +1685,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
   <div class="pipeline-sub-tabs">
     <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
     <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="documents" onclick="activatePipelineSubTab('data','documents');loadDocuments()">Documents <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Explorer (5.1) -->
@@ -979,18 +1813,342 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
     <span id="backfill-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
   </div>
   </div><!-- /spane-data-registry -->
+
+  <!-- Sub-pane: Documents -->
+  <div class="pipeline-sub-pane" id="spane-data-documents">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+    <input id="doc-ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <select id="doc-ex-source">
+      <option value="">All sources</option>
+      <option value="ir_press_release">IR Press Release</option>
+      <option value="archive_html">Archive HTML</option>
+      <option value="archive_pdf">Archive PDF</option>
+      <option value="edgar_8k">EDGAR 8-K</option>
+      <option value="edgar_10q">EDGAR 10-Q</option>
+      <option value="edgar_10k">EDGAR 10-K</option>
+    </select>
+    <select id="doc-ex-extracted">
+      <option value="">All</option>
+      <option value="yes">Extracted only</option>
+      <option value="no">Not extracted</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadDocuments()">Search</button>
+    <span id="doc-ex-count" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+  </div>
+  <div id="doc-ex-table-wrap" style="overflow-x:auto">
+    <table id="doc-ex-table" style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead>
+        <tr id="doc-ex-thead-row">
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Ticker</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Source</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Filing Date</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Period</th>
+          <!-- metric columns injected by JS -->
+        </tr>
+      </thead>
+      <tbody id="doc-ex-tbody">
+        <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted);padding:1rem">Run a search to load documents.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  </div><!-- /spane-data-documents -->
 </div><!-- /pane-data -->
 
 <!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns <span class="wf-path-badge wf-later">Later</span></button>
-    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-later">Later</span></button>
+    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Review <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
+  <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
+  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+<div class="md-page">
+  <h1 class="page-title" style="margin:0" data-spec-id="MD5.0"><span class="spec-id">5.0</span>Miner Data</h1>
+
+  <!-- ── Company tabs ─────────────────────────────────────────────────── -->
+  <div id="company-tabs" class="md-tabs">
+    <span style="color:var(--theme-text-muted);font-size:0.82rem;align-self:center">
+      <span class="spin"></span> Loading companies…
+    </span>
+  </div>
+
+  <!-- ── Source toggle strip ─────────────────────────────────────────── -->
+  <div class="source-toggle">
+    <button class="source-toggle-btn active" data-view="monthly" onclick="switchView('monthly')">Monthly PRs / 8-K</button>
+    <button class="source-toggle-btn" data-view="sec" onclick="switchView('sec')">SEC Filings (10-Q / 10-K)</button>
+    <button class="source-toggle-btn" data-view="interpret" onclick="switchView('interpret')">Interpret</button>
+  </div>
+
+  <!-- ── Monthly view ─────────────────────────────────────────────────── -->
+  <div id="view-monthly">
+  <!-- ── Upper area ──────────────────────────────────────────────────── -->
+  <div class="md-upper">
+
+    <!-- Left: company info -->
+    <div class="md-info-card" id="company-info">
+      <div class="md-info-placeholder">Select a company above.</div>
+    </div>
+
+    <!-- Right: filters + table -->
+    <div class="md-table-panel" data-spec-id="MD5.1">
+      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+        <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
+      </div>
+      <div class="md-table-filters">
+        <label>
+          <input type="checkbox" id="filter-gaps-only"> Gaps only
+        </label>
+        <label>
+          <input type="checkbox" id="filter-show-incomplete"> Incomplete only
+        </label>
+        <label>
+          From <input type="month" id="filter-from" style="margin-left:0.3rem">
+        </label>
+        <label>
+          To <input type="month" id="filter-to" style="margin-left:0.3rem">
+        </label>
+        <!-- Column visibility toggle -->
+        <div style="margin-left:auto;position:relative;" id="col-vis-wrap">
+          <button class="btn btn-secondary btn-sm" onclick="toggleColMenu()" id="col-vis-btn"
+            style="font-size:0.78rem;padding:0.2rem 0.55rem;">Columns &#9660;</button>
+          <div id="col-vis-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);
+            background:var(--theme-bg-secondary);border:1px solid var(--theme-border);
+            border-radius:6px;padding:0.5rem 0.75rem;z-index:50;min-width:180px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);margin-bottom:.4rem;">Show columns</div>
+            <!-- metric checkboxes injected by buildTableHeaders() -->
+            <div id="col-vis-metrics"></div>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-type" checked> Type</label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-date" checked> Date</label>
+          </div>
+        </div>
+        <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+      </div>
+      <!-- Coverage summary bar — populated by loadCoverageSummary() -->
+      <details id="coverage-summary-details" style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
+        <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
+        <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
+          <span style="color:var(--theme-text-muted)">Loading…</span>
+        </div>
+      </details>
+      <div class="md-table-scroll">
+        <table id="timeline-table">
+          <thead>
+            <tr id="timeline-thead-row">
+              <th title="Reviewed" style="width:30px;min-width:28px"><input type="checkbox" id="mark-all-reviewed-cb" title="Mark all visible rows reviewed" onchange="toggleMarkAllReviewed(this.checked)"></th>
+              <th data-sort="period">Period</th>
+              <!-- metric columns injected by buildTableHeaders() -->
+              <th data-col="doc-type">Type</th>
+              <th data-col="doc-date">Date</th>
+            </tr>
+          </thead>
+          <tbody id="timeline-tbody">
+            <tr><td colspan="20" class="md-table-empty">Select a company to load data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /.md-upper -->
+  </div><!-- /#view-monthly -->
+
+  <!-- ── SEC view ────────────────────────────────────────────────────── -->
+  <div id="view-sec" style="display:none">
+    <div class="md-upper">
+      <div class="md-info-card" id="sec-info-card" style="font-size:0.82rem;color:var(--theme-text-secondary)">
+        <div class="md-info-placeholder">Select a company to load SEC data.</div>
+      </div>
+      <div class="md-table-panel">
+        <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+          SEC Filings <span class="source-badge source-badge-data">10-Q / 10-K</span>
+        </div>
+        <div class="md-table-scroll">
+          <table id="sec-timeline-table">
+            <thead>
+              <tr id="sec-thead-row">
+                <th>Period</th>
+                <!-- columns injected by buildSecHeaders() -->
+                <th data-col="sec-doc-type">Type</th>
+                <th data-col="sec-doc-date">Date</th>
+              </tr>
+            </thead>
+            <tbody id="sec-timeline-tbody">
+              <tr><td colspan="10" class="md-table-empty">Select a company to load SEC data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div><!-- /#view-sec -->
+
+  <!-- ── Interpret view ──────────────────────────────────────────────── -->
+  <div id="view-interpret" style="display:none">
+
+    <!-- Side-by-side reconciliation summary -->
+    <div>
+      <div class="interp-section-title">Reconciliation Summary</div>
+      <div id="interp-reconcile-wrap" style="overflow-x:auto">
+        <table id="interp-reconcile-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Metric</th>
+              <th>Monthly Value</th><th>SEC Value</th><th>Finalized</th>
+            </tr>
+          </thead>
+          <tbody id="interp-reconcile-tbody">
+            <tr><td colspan="5" class="md-table-empty">Select a company and switch to this tab.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Analyst commentary -->
+    <div>
+      <div class="interp-section-title">Analyst Commentary</div>
+      <textarea id="interp-commentary" class="interp-commentary"
+        placeholder="Add context or reconciliation notes for the LLM prompt…"></textarea>
+    </div>
+
+    <!-- LLM reprompt -->
+    <div>
+      <div style="margin-bottom:0.4rem">
+        <label style="font-size:0.8rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Metrics to reprompt (empty = all)</label>
+        <select id="reprompt-metrics-filter" multiple
+          style="min-width:180px;max-height:80px;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:2px 4px">
+          <!-- populated from /api/metric_schema in boot() -->
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="reprompt-btn" onclick="doReprompt()">Reprompt LLM</button>
+      <button class="btn btn-secondary btn-sm" id="rerun-sec-btn" onclick="doRerunSec()" style="margin-left:0.5rem">Re-interpret SEC filings</button>
+      <span id="reprompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      <span id="rerun-sec-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+    </div>
+
+    <!-- Suggestion cards -->
+    <div id="suggestions-area" style="display:none">
+      <div class="interp-section-title">Suggestions</div>
+      <div id="suggestion-cards" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+    </div>
+
+    <!-- Staging list -->
+    <div id="staging-area" style="display:none">
+      <div class="interp-section-title">Staged for Finalization</div>
+      <table id="staging-table">
+        <thead>
+          <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody id="staging-tbody"></tbody>
+      </table>
+      <div style="margin-top:0.5rem">
+        <button class="btn btn-primary btn-sm" onclick="finalizeSelected()">Finalize Selected</button>
+        <span id="finalize-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      </div>
+    </div>
+
+    <!-- Already-finalized values -->
+    <div>
+      <div class="interp-section-title">Finalized Values</div>
+      <div id="finalized-list-wrap" style="overflow-x:auto">
+        <table id="finalized-table">
+          <thead>
+            <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th>Updated</th><th></th></tr>
+          </thead>
+          <tbody id="finalized-tbody">
+            <tr><td colspan="7" class="md-table-empty">No finalized values.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <details class="danger-zone">
+      <summary>Danger Zone</summary>
+      <div class="dz-body">
+        <div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for <span id="dz-ticker-label">—</span></div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Removes all finalized values for this ticker. Raw pipeline data is untouched.
+            Type <code id="dz-confirm-word">CLEAR_FINAL_TICKER</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="text" class="dz-confirm-input" id="dz-ticker-confirm-input"
+              placeholder="Type confirmation word">
+            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Clear Ticker Final</button>
+            <span id="dz-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="dz-purge-mode" style="padding:0.2rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem">
+              <option value="clear">clear</option>
+              <option value="archive">archive</option>
+            </select>
+            <input type="text" class="dz-confirm-input" id="dz-global-confirm-input"
+              placeholder="CLEAR_FINAL_ALL">
+            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Purge All</button>
+            <span id="dz-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+  </div><!-- /#view-interpret -->
+
+  <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
+  <div id="doc-panel" data-spec-id="MD5.2">
+    <div class="doc-panel-header">
+      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
+      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Source</button>
+      <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
+    </div>
+    <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
+      <div id="miner-review-panel"></div>
+    </div>
+    <!-- Pattern generator — shown after text selection in source view -->
+    <div id="pattern-panel">
+      <div class="pattern-title">
+        Pattern Generator
+        <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
+          — select text in the document above
+        </span>
+      </div>
+      <div class="pattern-form-row">
+        <label>Selected</label>
+        <span id="selected-text-display"></span>
+      </div>
+      <div class="pattern-form-row">
+        <label>Metric</label>
+        <select id="pattern-metric">
+          <option value="">Loading metrics...</option>
+        </select>
+      </div>
+      <div class="pattern-form-row">
+        <label>Regex</label>
+        <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
+        <span class="pattern-match-count" id="match-count-display"></span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
+        <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
+        <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
+        <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="apply-result"></div>
+    </div>
+  </div><!-- /#doc-panel -->
+
+</div><!-- /.md-page -->
+  </div><!-- /spane-review-miner -->
+
   <!-- Sub-pane: Queue (4.1) -->
-  <div class="pipeline-sub-pane active" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
+  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
     <div class="section-header-row" style="margin-bottom:0.75rem">
       <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
       <a href="/review" class="btn btn-sm btn-secondary" style="margin-left:auto" target="_blank">Open Full Review</a>
@@ -1090,7 +2248,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
           <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Excerpt containing the value</label>
           <input id="gen-pattern-text" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="Bitcoin Produced: 1,247">
         </div>
-        <button class="btn btn-sm btn-secondary" onclick="generatePattern()">Generate</button>
+        <button class="btn btn-sm btn-secondary" onclick="patternTabGenerate()">Generate</button>
       </div>
       <div id="gen-pattern-result" style="display:none;margin-top:0.5rem">
         <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.4rem">
@@ -1102,7 +2260,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.2rem">Weight</label>
             <input id="gen-pattern-weight" type="number" min="0.01" max="1" step="0.01" style="width:65px">
           </div>
-          <button class="btn btn-sm btn-primary" onclick="saveGeneratedPattern()">Save to Library</button>
+          <button class="btn btn-sm btn-primary" onclick="patternTabSave()">Save to Library</button>
           <span id="gen-pattern-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
         </div>
         <div id="gen-pattern-matches" style="font-size:0.78rem;color:var(--theme-text-muted)"></div>
@@ -1443,6 +2601,8 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 
 {% block scripts %}
 <script src="/static/js/doc_panel.js"></script>
+<script src="/static/js/review_panel.js"></script>
+<script src="/static/js/miner_data.js"></script>
 <script>
 // ── Sector / SSOT globals ────────────────────────────────────────────────────
 const _currentSector = {{ current_sector | tojson }};
@@ -1563,6 +2723,30 @@ document.addEventListener('keydown', function(e) {
   _applyDevState();
 })();
 
+// ── UI Inspector toggle ────────────────────────────────────────────────────
+// Toggles the base.html hover inspector (block highlight + floating chip).
+// Stored in localStorage('devMode') — same key as base.html's applyDevMode().
+function toggleInspect() {
+  // 'no-dev-mode' on body = inspector OFF; absent = inspector ON
+  const wasOff = document.body.classList.contains('no-dev-mode');
+  document.body.classList.toggle('no-dev-mode', !wasOff);
+  try { localStorage.setItem('devMode', wasOff ? 'true' : 'false'); } catch (_e) {}
+  const btn = document.getElementById('inspect-btn');
+  if (btn) btn.classList.toggle('path-active', wasOff); // lit = inspector ON
+}
+
+(function _initInspectBtn() {
+  // Sync button visual state after base.html has applied devMode from localStorage.
+  // Use setTimeout(0) to run after base.html's DOMContentLoaded handler.
+  window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+      const isOff = document.body.classList.contains('no-dev-mode');
+      const btn = document.getElementById('inspect-btn');
+      if (btn) btn.classList.toggle('path-active', !isOff);
+    }, 0);
+  });
+})();
+
 // ── Tab routing ─────────────────────────────────────────────────────────────
 const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate'];
 const TAB_ALIASES = {
@@ -1577,11 +2761,6 @@ function activateTab(name) {
     name = TAB_ALIASES[name] || 'config';
   }
   if (!VALID_TABS.includes(name)) name = 'config';
-  // Raw Data tab navigates to the dedicated miner-data page
-  if (name === 'data') {
-    window.location.href = '/miner-data';
-    return;
-  }
   if (_activeTab === name) return;
   _activeTab = name;
   document.querySelectorAll('.ops-tab').forEach(function(b) {
@@ -1601,16 +2780,11 @@ function activateTab(name) {
     loadSettings();
     loadKeywords();
   }
-  if (name === 'data') {
-    if (!_registryLoaded) loadRegistry();
-    if (!_metricsLoaded) loadExplorerMetrics();
-    if (!_keywordDictionary) loadKeywordDictionaryOptions();
-    if (!_explorerLoaded) loadExplorer();
-  }
-  if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); }
+  if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!window._minerDataBooted) { window._minerDataBooted = true; if (typeof boot === 'function') boot(); } }
 
+  if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
-  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); _loadQCTable(); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -1627,7 +2801,8 @@ function activatePipelineSubTab(pane, name) {
   if (pane === 'config' && name === 'metrics') { loadMetricSchemaTable(); loadAllKeywordsTable(); }
   if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
   if (pane === 'review' && name === 'patterns') { loadPatterns(); loadPatternMetricSelects(); }
-  if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); }
+  if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
+  if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
   if (pane === 'interpret' && name === 'qc') _loadQCTable();
 }
 
@@ -1913,6 +3088,10 @@ async function _pollExtractionRun(taskId, ticker) {
         _appendExtractLog(new Date().toISOString().slice(11, 19) + ' complete ' + (ticker || 'ALL')
           + ' reports=' + processed + ' data_points=' + points + ' errors=' + errors);
         showToast('Extraction complete (' + (ticker || 'ALL') + ')');
+        if (window._extractAutoGapFill) {
+          window._extractAutoGapFill = false;
+          await _runGapFillAfterExtraction(window._extractTicker || '');
+        }
         loadPipelineObservability();
         if (_explorerLoaded) loadExplorer();
         if (_reviewLoaded) loadReview();
@@ -1998,25 +3177,65 @@ async function saveOllamaModel(modelName) {
   }
 }
 
+function toggleSampleMode() {
+  const enabled = document.getElementById('extract-sample-enabled')?.checked;
+  const controls = document.getElementById('extract-sample-controls');
+  if (controls) controls.style.display = enabled ? 'flex' : 'none';
+}
+
+function onSourceDocsChange() {
+  const cadence = document.getElementById('extract-cadence')?.value || 'all';
+  const gapfillRow = document.getElementById('extract-gapfill-row');
+  if (gapfillRow) {
+    // Show gap-fill option when processing 10-Q or 10-K — those don't produce monthly rows directly
+    gapfillRow.style.display = (cadence === 'quarterly' || cadence === 'annual' || cadence === 'all') ? 'flex' : 'none';
+  }
+}
+
 async function startExtractionRun() {
   if (_extractTaskId) return;
   const _sel = Array.from(_selectedCrawlTickers);
   const ticker = _sel.length === 1 ? _sel[0] : '';
   const force = !!document.getElementById('extract-force').checked;
+  const cadence = document.getElementById('extract-cadence')?.value || 'all';
+  const fromPeriod = (document.getElementById('extract-from')?.value || '').trim() || null;
+  const toPeriod = (document.getElementById('extract-to')?.value || '').trim() || null;
+  const sampleEnabled = !!document.getElementById('extract-sample-enabled')?.checked;
+  const sampleN = sampleEnabled ? parseInt(document.getElementById('extract-sample-n')?.value || '5', 10) : 0;
+  const autoGapFill = !!(document.getElementById('extract-auto-gapfill')?.checked) && cadence !== 'monthly';
+
+  const filters = [];
+  if (cadence !== 'all') filters.push(cadence);
+  if (fromPeriod) filters.push('from ' + fromPeriod);
+  if (toPeriod) filters.push('to ' + toPeriod);
+  if (sampleN > 0) filters.push('sample=' + sampleN);
+  if (autoGapFill) filters.push('gap-fill after');
+  const filterLabel = filters.length ? ' [' + filters.join(', ') + ']' : '';
+
   _setExtractEnabled(false);
   _extractTaskId = 'starting';
-  _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': queued', false);
-  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : ''));
+  // Store auto-gap-fill intent for the completion handler
+  window._extractAutoGapFill = autoGapFill;
+  window._extractTicker = ticker;
+  _setExtractStatus('Extraction ' + (ticker || 'ALL') + filterLabel + ': queued', false);
+  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : '') + filterLabel);
   try {
     const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ ticker: ticker || null, force }),
+      body: JSON.stringify({
+        ticker: ticker || null,
+        force,
+        cadence,
+        from_period: fromPeriod,
+        to_period: toPeriod,
+        sample: sampleN || null,
+      }),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
     _extractTaskId = data.data.task_id;
-    _setExtractStatus('Extraction ' + (ticker || 'ALL') + ': running', false);
+    _setExtractStatus('Extraction ' + (ticker || 'ALL') + filterLabel + ': running', false);
     _appendExtractLog(new Date().toISOString().slice(11, 19) + ' running task ' + _extractTaskId);
     _pollExtractionRun(_extractTaskId, ticker || 'ALL');
   } catch (err) {
@@ -2025,6 +3244,75 @@ async function startExtractionRun() {
     _setExtractStatus('Extraction failed: ' + String(err), true);
     _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed to start (' + String(err) + ')');
     showToast('Failed to start extraction', true);
+  }
+}
+
+async function _runGapFillAfterExtraction(ticker) {
+  if (!ticker) {
+    _appendExtractLog(new Date().toISOString().slice(11, 19) + ' gap-fill skipped (no single ticker selected)');
+    return;
+  }
+  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' running gap-fill for ' + ticker + '…');
+  try {
+    const resp = await fetch('/api/operations/gap-fill', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker}),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      _appendExtractLog(new Date().toISOString().slice(11, 19)
+        + ' gap-fill done: ' + (data.filled || 0) + ' filled, '
+        + (data.skipped || 0) + ' skipped, '
+        + (data.errors || 0) + ' errors');
+    } else {
+      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' gap-fill error: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    _appendExtractLog(new Date().toISOString().slice(11, 19) + ' gap-fill failed: ' + String(err));
+  }
+}
+
+async function purgeTickerData() {
+  const inputEl = document.getElementById('purge-ticker-input');
+  const ticker = (inputEl ? inputEl.value : '').trim().toUpperCase();
+  if (!ticker) {
+    alert('Enter a ticker (e.g. MARA) in the Purge field first.');
+    return;
+  }
+  if (!confirm('Delete ALL data_points and review_queue rows for ' + ticker + '?\n\nThis cannot be undone. Extraction status will be reset to pending so you can re-run extraction.')) {
+    return;
+  }
+  const btn = document.getElementById('purge-ticker-btn');
+  const msgEl = document.getElementById('purge-ticker-msg');
+  btn.disabled = true;
+  msgEl.textContent = 'Purging ' + ticker + '...';
+  try {
+    const resp = await fetch('/api/operations/purge_ticker', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker}),
+    });
+    const rawText = await resp.text();
+    let data;
+    try { data = JSON.parse(rawText); } catch(e) { data = {}; }
+    if (resp.ok) {
+      const dp = data.data_points_deleted || 0;
+      const rq = data.review_queue_deleted || 0;
+      const msg = 'Purged ' + ticker + ': deleted ' + dp + ' data_points, ' + rq + ' review_queue rows. Reload the Explorer/miner-data to see the empty grid.';
+      msgEl.textContent = msg;
+      alert(msg);
+    } else {
+      const msg = 'HTTP ' + resp.status + ': ' + rawText;
+      msgEl.textContent = 'Error: ' + msg;
+      alert('Purge failed — ' + msg);
+    }
+  } catch (err) {
+    const msg = 'Request failed: ' + String(err);
+    msgEl.textContent = msg;
+    alert(msg);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -3033,6 +4321,77 @@ async function backfillRawHtml() {
       + ', errors: ' + (r.errors || 0);
   } catch(err) {
     if (msg) msg.textContent = 'Error: ' + String(err);
+  }
+}
+
+// ── Document Explorer ─────────────────────────────────────────────────────────
+async function loadDocuments() {
+  const ticker     = (document.getElementById('doc-ex-ticker')?.value || '').trim().toUpperCase();
+  const sourceType = document.getElementById('doc-ex-source')?.value || '';
+  const extracted  = document.getElementById('doc-ex-extracted')?.value || '';
+  const params = new URLSearchParams();
+  if (ticker)     params.set('ticker', ticker);
+  if (sourceType) params.set('source_type', sourceType);
+  if (extracted)  params.set('extracted', extracted);
+  params.set('limit', '300');
+
+  const tbody = document.getElementById('doc-ex-tbody');
+  const countEl = document.getElementById('doc-ex-count');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:1rem;color:var(--theme-text-muted)">Loading…</td></tr>';
+
+  try {
+    const resp = await fetch('/api/documents?' + params.toString());
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const reports = body.data.reports || [];
+    const metricKeys = body.data.metric_keys || [];
+
+    if (countEl) countEl.textContent = reports.length + ' document' + (reports.length === 1 ? '' : 's');
+
+    // Rebuild metric columns in thead
+    const theadRow = document.getElementById('doc-ex-thead-row');
+    if (theadRow) {
+      // Remove old metric ths
+      Array.from(theadRow.querySelectorAll('th[data-doc-metric]')).forEach(th => th.remove());
+      metricKeys.forEach(function(key) {
+        const th = document.createElement('th');
+        th.setAttribute('data-doc-metric', key);
+        th.style.cssText = 'text-align:right;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap';
+        th.textContent = key;
+        theadRow.appendChild(th);
+      });
+    }
+
+    if (!reports.length) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="' + (4 + metricKeys.length) + '" style="text-align:center;color:var(--theme-text-muted);padding:1rem">No documents found.</td></tr>';
+      return;
+    }
+
+    const _srcShort = {'ir_press_release': 'IR', 'archive_html': 'Arch-HTML', 'archive_pdf': 'Arch-PDF',
+      'edgar_8k': '8-K', 'edgar_10q': '10-Q', 'edgar_10k': '10-K'};
+
+    if (tbody) tbody.innerHTML = reports.map(function(r) {
+      const period = r.covering_period || (r.report_date ? r.report_date.slice(0, 7) : '—');
+      const src = _srcShort[r.source_type] || (r.source_type || '—');
+      const hasData = Object.keys(r.metrics || {}).length > 0;
+      const rowStyle = hasData ? '' : 'opacity:0.55';
+      const metricCells = metricKeys.map(function(key) {
+        const m = r.metrics && r.metrics[key];
+        if (!m || m.value == null) return '<td style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--theme-border);color:var(--theme-text-muted)">—</td>';
+        const methodBadge = m.method ? ' <span style="font-size:0.65rem;opacity:0.65">' + escapeHtml(m.method.slice(0,1).toUpperCase()) + '</span>' : '';
+        return '<td style="text-align:right;padding:4px 6px;border-bottom:1px solid var(--theme-border)">' + escapeHtml(m.value.toLocaleString()) + methodBadge + '</td>';
+      }).join('');
+      return '<tr style="' + rowStyle + '">'
+        + '<td style="font-weight:600;padding:4px 6px;border-bottom:1px solid var(--theme-border)">' + escapeHtml(r.ticker || '') + '</td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--theme-border);font-size:0.75rem">' + escapeHtml(src) + '</td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--theme-border);font-size:0.75rem;white-space:nowrap">' + escapeHtml((r.report_date || '').slice(0, 10)) + '</td>'
+        + '<td style="padding:4px 6px;border-bottom:1px solid var(--theme-border);font-size:0.75rem;white-space:nowrap">' + escapeHtml(period) + '</td>'
+        + metricCells
+        + '</tr>';
+    }).join('');
+  } catch(err) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="20" style="color:var(--theme-danger);padding:1rem">' + escapeHtml('Error: ' + err.message) + '</td></tr>';
   }
 }
 
@@ -4140,6 +5499,23 @@ async function loadMetricRules() {
   }
 }
 
+async function syncMetricRules() {
+  try {
+    const resp = await fetch('/api/metric_rules/sync', { method: 'POST' });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Sync failed');
+    const d = json.data;
+    if (d.inserted_count > 0) {
+      showToast('Inserted ' + d.inserted_count + ' rule(s): ' + d.inserted.join(', '));
+    } else {
+      showToast('All metric_schema keys already have rules. Nothing to insert.');
+    }
+    loadMetricRules();
+  } catch(err) {
+    showToast('Sync failed: ' + String(err), true);
+  }
+}
+
 async function saveMetricRule(metric) {
   const getVal = function(field) {
     const el = document.querySelector('[data-metric="' + metric + '"][data-field="' + field + '"]');
@@ -4366,7 +5742,7 @@ async function addPatternFromForm() {
   }
 }
 
-async function generatePattern() {
+async function patternTabGenerate() {
   var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
   var text = document.getElementById('gen-pattern-text') && document.getElementById('gen-pattern-text').value.trim();
   var resultEl = document.getElementById('gen-pattern-result');
@@ -4402,7 +5778,7 @@ async function generatePattern() {
   }
 }
 
-async function saveGeneratedPattern() {
+async function patternTabSave() {
   var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
   var regex = document.getElementById('gen-pattern-regex') && document.getElementById('gen-pattern-regex').value.trim();
   var weight = parseFloat(document.getElementById('gen-pattern-weight') && document.getElementById('gen-pattern-weight').value || '0.87');
@@ -4917,6 +6293,147 @@ async function loadSettings() {
     }
   } catch (_e) {}
   _renderSettingsGroups();
+}
+
+// ── Prompt Editor (1.3.E) ─────────────────────────────────────────────────
+
+function peAutoResize(ta) {
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = (ta.scrollHeight + 2) + 'px';
+  const cc = document.getElementById('pe-char-count');
+  if (cc) cc.textContent = ta.value.length + ' chars';
+}
+
+async function pePopulateMetrics() {
+  const sel = document.getElementById('pe-metric-select');
+  if (!sel || sel.options.length > 1) return;
+  try {
+    const resp = await fetch('/api/metric_schema');
+    const data = await resp.json();
+    const metrics = (data.data || data).map ? (data.data || data) : [];
+    sel.innerHTML = '<option value="">Select metric…</option>';
+    metrics.forEach(function(m) {
+      const opt = document.createElement('option');
+      opt.value = m.key || m;
+      opt.textContent = (m.label || m.key || m) + ' (' + (m.key || m) + ')';
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    sel.innerHTML = '<option value="">Failed to load metrics</option>';
+  }
+}
+
+async function peLoadPrompt() {
+  const sel = document.getElementById('pe-metric-select');
+  const ta = document.getElementById('pe-prompt-text');
+  const sourceLabel = document.getElementById('pe-source-label');
+  const updatedAt = document.getElementById('pe-updated-at');
+  const saveBtn = document.getElementById('pe-save-btn');
+  const resetBtn = document.getElementById('pe-reset-btn');
+  const msg = document.getElementById('pe-save-msg');
+
+  if (!sel || !ta) return;
+  const metric = sel.value;
+  if (!metric) {
+    ta.value = '';
+    ta.placeholder = 'Select a metric to load its prompt…';
+    sourceLabel.style.display = 'none';
+    updatedAt.textContent = '';
+    saveBtn.disabled = true;
+    resetBtn.disabled = true;
+    return;
+  }
+
+  msg.textContent = '';
+  ta.value = 'Loading…';
+  saveBtn.disabled = true;
+  resetBtn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/llm_prompts/' + encodeURIComponent(metric));
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      ta.value = 'Error loading prompt: ' + (data.error?.message || resp.status);
+      return;
+    }
+    const dbRow = data.data?.prompt;
+    const defaultText = data.data?.default_prompt || '';
+
+    if (dbRow && dbRow.prompt_text) {
+      ta.value = dbRow.prompt_text;
+      sourceLabel.textContent = 'DB override';
+      sourceLabel.style.cssText = 'font-size:0.72rem;padding:2px 7px;border-radius:3px;display:inline-block;background:rgba(59,130,246,0.15);color:#60a5fa';
+      const ts = dbRow.updated_at ? ' — saved ' + dbRow.updated_at.slice(0, 16) : '';
+      updatedAt.textContent = ts;
+      resetBtn.disabled = false;
+    } else {
+      ta.value = defaultText;
+      sourceLabel.textContent = 'hardcoded default';
+      sourceLabel.style.cssText = 'font-size:0.72rem;padding:2px 7px;border-radius:3px;display:inline-block;background:var(--theme-bg-tertiary);color:var(--theme-text-muted)';
+      updatedAt.textContent = '(no DB override — editing will create one)';
+      resetBtn.disabled = true;
+    }
+    saveBtn.disabled = false;
+    peAutoResize(ta);
+  } catch (err) {
+    ta.value = 'Failed to load: ' + String(err);
+  }
+}
+
+async function peSavePrompt() {
+  const sel = document.getElementById('pe-metric-select');
+  const ta = document.getElementById('pe-prompt-text');
+  const msg = document.getElementById('pe-save-msg');
+  const saveBtn = document.getElementById('pe-save-btn');
+
+  const metric = sel?.value;
+  const text = ta?.value?.trim();
+  if (!metric || !text) { msg.textContent = 'Select a metric and enter prompt text.'; return; }
+
+  msg.textContent = 'Saving…';
+  saveBtn.disabled = true;
+  try {
+    const resp = await fetch('/api/llm_prompts/' + encodeURIComponent(metric), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt_text: text}),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      msg.textContent = 'Saved. Will take effect on next extraction run.';
+      await peLoadPrompt();
+    } else {
+      msg.textContent = 'Error: ' + (data.error?.message || resp.status);
+    }
+  } catch (err) {
+    msg.textContent = 'Failed: ' + String(err);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function peResetPrompt() {
+  const sel = document.getElementById('pe-metric-select');
+  const msg = document.getElementById('pe-save-msg');
+  const metric = sel?.value;
+  if (!metric) return;
+
+  if (!confirm('Remove DB override for "' + metric + '"? The hardcoded default will be used on the next extraction run.')) return;
+
+  msg.textContent = 'Resetting…';
+  try {
+    const resp = await fetch('/api/llm_prompts/' + encodeURIComponent(metric), {method: 'DELETE'});
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      msg.textContent = 'DB override removed. Hardcoded default will be used.';
+      await peLoadPrompt();
+    } else {
+      msg.textContent = 'Error: ' + (data.error?.message || resp.status);
+    }
+  } catch (err) {
+    msg.textContent = 'Failed: ' + String(err);
+  }
 }
 
 async function loadPromptPreview() {

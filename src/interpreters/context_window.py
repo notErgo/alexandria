@@ -8,8 +8,8 @@ from config import CONTEXT_CHAR_BUDGET, CONTEXT_CHAR_BUDGET_QUARTERLY
 
 _METRIC_KEYWORDS = {
     'production_btc':   ['produced', 'mined', 'mining', 'btc', 'bitcoin', 'production', 'earned', 'self-mined'],
-    'hodl_btc':         ['held', 'holdings', 'hodl', 'treasury', 'balance', 'btc', 'restricted', 'unrestricted', 'pledged'],
-    'sold_btc':         ['sold', 'sale', 'proceeds', 'liquidated', 'divested', 'btc'],
+    'holdings_btc':     ['held', 'holdings', 'hodl', 'treasury', 'balance', 'btc', 'restricted', 'unrestricted', 'pledged'],
+    'sales_btc':        ['sold', 'sale', 'proceeds', 'liquidated', 'divested', 'btc'],
     'hashrate_eh':      ['hashrate', 'hash rate', 'eh/s', 'exahash', 'deployed', 'energized'],
     'realization_rate': ['realized', 'realization', 'revenue', 'price', 'usd'],
 }

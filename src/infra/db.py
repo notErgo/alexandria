@@ -312,6 +312,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 33")
                     version = 33
 
+                if version < 34:
+                    self._migrate_v34(conn)
+                    conn.execute("PRAGMA user_version = 34")
+                    version = 34
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -527,22 +532,23 @@ class MinerDB:
         """)
 
     def _seed_metric_schema(self, conn: sqlite3.Connection) -> None:
-        """Seed metric_schema with the 13 known BTC-miners extraction metrics.
+        """Seed metric_schema with the known BTC-miners extraction metrics.
 
         Uses INSERT OR IGNORE so re-runs on an already-seeded DB are no-ops.
-        Ordered to match the 13 pattern JSON files in config/patterns/.
+        Canonical keys match what is stored in data_points and used throughout
+        the extraction pipeline.
         """
         metrics = [
-            ('production_btc',          'BTC Produced',                 'BTC'),
-            ('hodl_btc',                'BTC Holdings (Total)',          'BTC'),
-            ('sold_btc',                'BTC Sold',                      'BTC'),
+            ('production_btc',          'BTC Produced',                  'BTC'),
+            ('holdings_btc',            'BTC Holdings (Total)',           'BTC'),
+            ('sales_btc',               'BTC Sold',                      'BTC'),
             ('hashrate_eh',             'Hashrate',                      'EH/s'),
             ('realization_rate',        'BTC Realization Rate',          '%'),
             ('ai_hpc_mw',               'AI/HPC Capacity',               'MW'),
             ('encumbered_btc',          'Encumbered BTC',                'BTC'),
             ('gpu_count',               'GPU Count',                     'units'),
-            ('hodl_btc_restricted',     'BTC Holdings (Restricted)',     'BTC'),
-            ('hodl_btc_unrestricted',   'BTC Holdings (Unrestricted)',   'BTC'),
+            ('restricted_holdings_btc', 'BTC Holdings (Restricted)',     'BTC'),
+            ('unrestricted_holdings',   'BTC Holdings (Unrestricted)',   'BTC'),
             ('hpc_revenue_usd',         'HPC Revenue',                   'USD'),
             ('mining_mw',               'Mining Capacity',               'MW'),
             ('net_btc_balance_change',  'Net BTC Balance Change',        'BTC'),
@@ -1062,7 +1068,7 @@ class MinerDB:
         deprecated = (
             'hashrate_eh', 'realization_rate', 'ai_hpc_mw', 'gpu_count',
             'hpc_revenue_usd', 'mining_mw', 'encumbered_btc',
-            'hodl_btc_restricted', 'hodl_btc_unrestricted', 'net_btc_balance_change',
+            'restricted_holdings_btc', 'unrestricted_holdings', 'net_btc_balance_change',
         )
         conn.execute(
             "UPDATE metric_schema SET active = 0 WHERE key IN ({})".format(
@@ -1325,6 +1331,12 @@ class MinerDB:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_rp_ticker ON reviewed_periods(ticker)"
         )
+
+    def _migrate_v34(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v33 → v34: inference_notes column on data_points."""
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
+        if 'inference_notes' not in existing:
+            conn.execute("ALTER TABLE data_points ADD COLUMN inference_notes TEXT")
 
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
@@ -1974,13 +1986,22 @@ class MinerDB:
         self,
         ticker: Optional[str] = None,
         source_type: Optional[str] = None,
+        source_types: Optional[list] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
     ) -> list:
         """Return reports eligible for extraction.
 
         Eligible means: raw_text present AND extraction_status IN ('pending','failed')
         AND extraction_attempts < MAX_EXTRACTION_ATTEMPTS (not dead_letter).
 
-        Optionally filter by ticker and/or source_type (e.g. 'edgar_10q').
+        Args:
+            ticker: Limit to one company.
+            source_type: Single source_type filter (legacy, use source_types instead).
+            source_types: List of source_type values to include (e.g. ['ir_press_release',
+                'archive_html', 'archive_pdf'] for monthly cadence).
+            from_period: Earliest report_date to include (YYYY-MM or YYYY-MM-DD).
+            to_period: Latest report_date to include (YYYY-MM or YYYY-MM-DD).
         """
         from config import MAX_EXTRACTION_ATTEMPTS
         clauses = [
@@ -1993,9 +2014,18 @@ class MinerDB:
         if ticker:
             clauses.append("ticker = ?")
             params.append(ticker)
-        if source_type:
-            clauses.append("source_type = ?")
-            params.append(source_type)
+        # source_types list takes priority over legacy single source_type
+        effective_types = source_types or ([source_type] if source_type else None)
+        if effective_types:
+            placeholders = ','.join('?' * len(effective_types))
+            clauses.append(f"source_type IN ({placeholders})")
+            params.extend(effective_types)
+        if from_period:
+            clauses.append("report_date >= ?")
+            params.append(from_period if len(from_period) > 7 else from_period + '-01')
+        if to_period:
+            clauses.append("report_date <= ?")
+            params.append(to_period if len(to_period) > 7 else to_period + '-31')
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -2032,10 +2062,12 @@ class MinerDB:
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
-                    source_period_type, covering_report_id, covering_period)
+                    source_period_type, covering_report_id, covering_period,
+                    inference_notes)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
-                           :source_period_type, :covering_report_id, :covering_period)""",
+                           :source_period_type, :covering_report_id, :covering_period,
+                           :inference_notes)""",
                 {
                     'report_id':         dp.get('report_id'),
                     'ticker':            dp['ticker'],
@@ -2049,6 +2081,7 @@ class MinerDB:
                     'source_period_type': dp.get('source_period_type', 'quarterly'),
                     'covering_report_id': dp.get('covering_report_id'),
                     'covering_period':   dp.get('covering_period'),
+                    'inference_notes':   dp.get('inference_notes'),
                 },
             )
             return cursor.lastrowid
@@ -2139,13 +2172,36 @@ class MinerDB:
             ).fetchone()
             return row[0] if row else 'monthly'
 
-    def get_all_reports_for_extraction(self, ticker: Optional[str] = None) -> list:
-        """Return all reports with raw_text regardless of extracted_at (for --force re-extraction)."""
+    def get_all_reports_for_extraction(
+        self,
+        ticker: Optional[str] = None,
+        source_types: Optional[list] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
+    ) -> list:
+        """Return all reports with raw_text regardless of extracted_at (for --force re-extraction).
+
+        Args:
+            ticker: Limit to one company.
+            source_types: List of source_type values to include.
+            from_period: Earliest report_date to include (YYYY-MM or YYYY-MM-DD).
+            to_period: Latest report_date to include (YYYY-MM or YYYY-MM-DD).
+        """
         clauses = ["raw_text IS NOT NULL", "raw_text != ''"]
         params: list = []
         if ticker:
             clauses.append("ticker = ?")
             params.append(ticker)
+        if source_types:
+            placeholders = ','.join('?' * len(source_types))
+            clauses.append(f"source_type IN ({placeholders})")
+            params.extend(source_types)
+        if from_period:
+            clauses.append("report_date >= ?")
+            params.append(from_period if len(from_period) > 7 else from_period + '-01')
+        if to_period:
+            clauses.append("report_date <= ?")
+            params.append(to_period if len(to_period) > 7 else to_period + '-31')
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -2360,17 +2416,28 @@ class MinerDB:
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
-                    run_id, model_name, extractor_version, prompt_version, chunk_id)
+                    run_id, model_name, extractor_version, prompt_version, chunk_id,
+                    inference_notes)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
-                           :run_id, :model_name, :extractor_version, :prompt_version, :chunk_id)""",
+                           :run_id, :model_name, :extractor_version, :prompt_version, :chunk_id,
+                           :inference_notes)""",
                 {
-                    **dp,
+                    'report_id':         dp.get('report_id'),
+                    'ticker':            dp['ticker'],
+                    'period':            dp['period'],
+                    'metric':            dp['metric'],
+                    'value':             dp['value'],
+                    'unit':              dp.get('unit', ''),
+                    'confidence':        dp['confidence'],
+                    'extraction_method': dp.get('extraction_method'),
+                    'source_snippet':    dp.get('source_snippet'),
                     'run_id':            dp.get('run_id'),
                     'model_name':        dp.get('model_name'),
                     'extractor_version': dp.get('extractor_version'),
                     'prompt_version':    dp.get('prompt_version'),
                     'chunk_id':          dp.get('chunk_id'),
+                    'inference_notes':   dp.get('inference_notes'),
                 },
             )
             return cursor.lastrowid
@@ -2956,13 +3023,28 @@ class MinerDB:
             return [dict(r) for r in rows]
 
     def find_report_for_period(self, ticker: str, period: str) -> Optional[dict]:
-        """Return {id, source_type, source_url} for the latest report matching ticker + YYYY-MM."""
+        """Return {id, source_type, source_url} for the preferred report matching ticker + YYYY-MM.
+
+        Uses the same source_type priority as the timeline route:
+          3 = ir_press_release / archive_html / archive_pdf  (highest: monthly PR)
+          2 = edgar_8k
+          1 = edgar_10q / edgar_10k and everything else
+        This ensures the doc viewer always shows the same document as the 5.1 table.
+        """
         period_ym = period[:7]
         with self._get_connection() as conn:
             rows = conn.execute(
-                """SELECT id, source_type, source_url FROM reports
+                """SELECT id, source_type, source_url, report_date FROM reports
                    WHERE ticker = ? AND report_date LIKE ?
-                   ORDER BY report_date DESC, id DESC
+                   ORDER BY
+                     CASE source_type
+                       WHEN 'ir_press_release' THEN 3
+                       WHEN 'archive_html'     THEN 3
+                       WHEN 'archive_pdf'      THEN 3
+                       WHEN 'edgar_8k'         THEN 2
+                       ELSE 1
+                     END DESC,
+                     report_date DESC, id DESC
                    LIMIT 1""",
                 (ticker, period_ym + '%'),
             ).fetchall()
@@ -4765,8 +4847,10 @@ def _metric_unit(metric: str) -> str:
     """Return canonical unit string for a metric name."""
     units = {
         "production_btc":         "BTC",
-        "hodl_btc":               "BTC",
-        "sold_btc":               "BTC",
+        "holdings_btc":           "BTC",
+        "unrestricted_holdings":  "BTC",
+        "restricted_holdings_btc": "BTC",
+        "sales_btc":              "BTC",
         "hashrate_eh":            "EH/s",
         "realization_rate":       "ratio",
         # v2 metrics
