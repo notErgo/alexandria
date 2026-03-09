@@ -236,6 +236,37 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
     probe_failures = []
     scout_summary = {'ran': False, 'reason': 'not_evaluated'}
     try:
+        # Stage: probe + apply skip-mode companies before target selection
+        probe_skip = bool(config.get('probe_skip_companies', False))
+        probe_timeout = int(config.get('probe_timeout_seconds', 12))
+        if probe_skip and not requested_tickers:
+            all_companies = db.get_companies(active_only=True)
+            skip_candidates = [c['ticker'] for c in all_companies if (c.get('scraper_mode') or 'skip') == 'skip']
+            _event(db, run_id, 'bootstrap_probe', 'stage_start', candidates=len(skip_candidates))
+            for t in skip_candidates:
+                if _is_cancelled(run_id):
+                    raise _RunCancelled()
+                try:
+                    result = _run_bootstrap_probe_for_ticker(
+                        db,
+                        ticker=t,
+                        apply_mode=True,
+                        allow_apply_skip=False,
+                        timeout=probe_timeout,
+                    )
+                    _event(
+                        db, run_id, 'bootstrap_probe', 'ticker_done',
+                        ticker=t,
+                        recommended_mode=result.get('recommended_mode'),
+                        applied=int(bool(result.get('applied'))),
+                    )
+                except Exception as e:
+                    _event(db, run_id, 'bootstrap_probe', 'ticker_failed', ticker=t, level='WARNING', error=str(e))
+            _event(db, run_id, 'bootstrap_probe', 'stage_end', candidates=len(skip_candidates))
+        else:
+            _event(db, run_id, 'bootstrap_probe', 'stage_skipped',
+                   reason='probe_skip_companies=false' if not probe_skip else 'explicit_tickers_provided')
+
         if requested_tickers:
             targets = []
             for t in requested_tickers:
@@ -600,6 +631,7 @@ def start_overnight_pipeline():
         'scout_max_age_hours': int(body.get('scout_max_age_hours', 168)),
         'require_scout_success': bool(body.get('require_scout_success', False)),
         'scout_as_of_date': body.get('scout_as_of_date'),
+        'probe_skip_companies': bool(body.get('probe_skip_companies', False)),
     }
     run = db.create_pipeline_run(
         triggered_by=str(body.get('triggered_by') or 'ops_ui'),

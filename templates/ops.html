@@ -1387,6 +1387,10 @@ tr.is-reviewed td { opacity: 0.65; }
         <input id="pipeline-include-crawl" type="checkbox">
         Include LLM crawl (slow — navigates IR + wire services autonomously)
       </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-probe-skip" type="checkbox">
+        Probe &amp; apply skip-mode companies (required first run after purge)
+      </label>
     </div>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
       <button class="btn btn-sm btn-primary" onclick="runFullPipeline()">Run Full Pipeline</button>
@@ -7206,11 +7210,12 @@ async function runFullPipeline() {
   if (cancelBtn) cancelBtn.style.display = '';
   var includeIr = document.getElementById('pipeline-include-ir')?.checked !== false;
   var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
+  var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
