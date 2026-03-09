@@ -52,7 +52,11 @@ class TestSortSeriesByCurrentMonth:
 
 @pytest.fixture
 def app_with_data(db_with_company, tmp_path):
-    """Flask test app with MARA company + production_btc data points seeded."""
+    """Flask test app with MARA + RIOT companies seeded with accepted final_data_points.
+
+    The dashboard only reads final_data_points (analyst-accepted values).
+    Raw data_points are intentionally not seeded here.
+    """
     # Add RIOT company
     db_with_company.insert_company({
         'ticker': 'RIOT', 'name': 'Riot Platforms', 'tier': 1,
@@ -60,32 +64,18 @@ def app_with_data(db_with_company, tmp_path):
         'pr_base_url': 'https://www.riotplatforms.com',
         'cik': '0001167419', 'active': 1,
     })
-    # Seed MARA data (3 months)
+    # Seed MARA finalized data (3 months)
     for period, value in [('2024-10-01', 900.0), ('2024-11-01', 950.0), ('2024-12-01', 1000.0)]:
-        r_id = db_with_company.insert_report({
-            'ticker': 'MARA', 'report_date': period, 'published_date': period,
-            'source_type': 'archive', 'source_url': None,
-            'raw_text': f'Produced {value} BTC', 'parsed_at': period + 'T00:00:00',
-        })
-        db_with_company.insert_data_point({
-            'report_id': r_id, 'ticker': 'MARA', 'period': period,
-            'metric': 'production_btc', 'value': value, 'unit': 'BTC',
-            'confidence': 0.95, 'extraction_method': 'regex',
-            'source_snippet': f'Produced {value} BTC',
-        })
-    # Seed RIOT data (2 months, smaller values)
+        db_with_company.upsert_final_data_point(
+            ticker='MARA', period=period, metric='production_btc',
+            value=value, unit='BTC', confidence=0.95, analyst_note='review_approved',
+        )
+    # Seed RIOT finalized data (2 months, smaller values)
     for period, value in [('2024-11-01', 500.0), ('2024-12-01', 550.0)]:
-        r_id = db_with_company.insert_report({
-            'ticker': 'RIOT', 'report_date': period, 'published_date': period,
-            'source_type': 'archive', 'source_url': None,
-            'raw_text': f'Produced {value} BTC', 'parsed_at': period + 'T00:00:00',
-        })
-        db_with_company.insert_data_point({
-            'report_id': r_id, 'ticker': 'RIOT', 'period': period,
-            'metric': 'production_btc', 'value': value, 'unit': 'BTC',
-            'confidence': 0.92, 'extraction_method': 'regex',
-            'source_snippet': f'Produced {value} BTC',
-        })
+        db_with_company.upsert_final_data_point(
+            ticker='RIOT', period=period, metric='production_btc',
+            value=value, unit='BTC', confidence=0.92, analyst_note='review_approved',
+        )
 
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))

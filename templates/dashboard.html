@@ -142,25 +142,10 @@
   </div>
 </div>
 
-<!-- ── Overview panel (4-up: Production / Holdings / Sold / Net Change) ── -->
+<!-- ── Overview panel — one card per active metric (SSOT-driven, built by JS) ── -->
 <div id="overview-panel">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" id="overview-grid">
-    <div class="card" style="padding:0.75rem;">
-      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">BTC Produced</div>
-      <div id="ov-chart-production_btc" style="width:100%;height:220px;"></div>
-    </div>
-    <div class="card" style="padding:0.75rem;">
-      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">BTC Holdings</div>
-      <div id="ov-chart-hodl_btc" style="width:100%;height:220px;"></div>
-    </div>
-    <div class="card" style="padding:0.75rem;">
-      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">BTC Sold</div>
-      <div id="ov-chart-sold_btc" style="width:100%;height:220px;"></div>
-    </div>
-    <div class="card" style="padding:0.75rem;">
-      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">Net BTC Change + Cumulative</div>
-      <div id="ov-chart-net_btc_balance_change" style="width:100%;height:220px;"></div>
-    </div>
+    <!-- Populated dynamically by loadOverview() from /api/metric_schema -->
   </div>
 </div>
 
@@ -917,18 +902,45 @@ function setView(view) {
   else                             loadDashboard();
 }
 
-// ── Overview: load all 4 panels in parallel ───────────────────────────────
+// ── Overview: one chart per active metric (SSOT from metric_schema) ──────
 async function loadOverview() {
   const months = document.getElementById('ov-months').value;
-  const PANELS = [
-    { metric: 'production_btc',       label: 'BTC Produced',          unit: 'BTC', cumulative: false },
-    { metric: 'hodl_btc',             label: 'BTC Holdings',          unit: 'BTC', cumulative: false },
-    { metric: 'sold_btc',             label: 'BTC Sold',              unit: 'BTC', cumulative: false },
-    { metric: 'net_btc_balance_change', label: 'Net BTC Change',      unit: 'BTC', cumulative: true  },
-  ];
+  const grid   = document.getElementById('overview-grid');
 
-  await Promise.all(PANELS.map(function(p) {
-    return loadOverviewPanel(p.metric, p.label, p.unit, p.cumulative, months);
+  // Dispose existing overview charts
+  Object.keys(_overviewCharts).forEach(function(k) {
+    try { _overviewCharts[k].dispose(); } catch(e) {}
+    delete _overviewCharts[k];
+  });
+
+  // Fetch active metrics from SSOT
+  let metrics = [];
+  try {
+    const resp = await fetch('/api/metric_schema?active=true&sector=BTC-miners');
+    if (resp.ok) {
+      const body = await resp.json();
+      metrics = body.data || [];
+    }
+  } catch(e) { /* leave empty */ }
+
+  if (!metrics.length) {
+    grid.innerHTML = '<div class="empty-state">No metrics configured.</div>';
+    return;
+  }
+
+  // Build one card per metric (containers must exist in DOM before ECharts init)
+  grid.innerHTML = metrics.map(function(m) {
+    const title = escapeHtml(m.label) + (m.unit ? ' (' + escapeHtml(m.unit) + ')' : '');
+    return '<div class="card" style="padding:0.75rem;">' +
+      '<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">' +
+      title + '</div>' +
+      '<div id="ov-chart-' + escapeHtml(m.key) + '" style="width:100%;height:220px;"></div>' +
+      '</div>';
+  }).join('');
+
+  // Load all panels in parallel
+  await Promise.all(metrics.map(function(m) {
+    return loadOverviewPanel(m.key, m.label, m.unit || '', false, months);
   }));
 }
 

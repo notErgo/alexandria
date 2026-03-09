@@ -288,6 +288,50 @@ def approve_review_item(item_id):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+@bp.route('/api/review/batch-finalize', methods=['POST'])
+def batch_finalize():
+    """Finalize multiple review items in one call.
+
+    Body: {"ids": [int, ...]}
+    Returns: {"success": true, "data": {"finalized": N, "failed": N}}
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        body = request.get_json(silent=True) or {}
+        ids = body.get('ids')
+        if not isinstance(ids, list) or not ids:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'ids' must be a non-empty list"
+            }}), 400
+        if len(ids) > 200:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'ids' must contain at most 200 items"
+            }}), 400
+        if not all(isinstance(i, int) for i in ids):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'ids' must be a list of integers"
+            }}), 400
+
+        finalized = 0
+        failed = 0
+        for item_id in ids:
+            try:
+                db.approve_review_item(item_id)
+                finalized += 1
+            except ValueError:
+                failed += 1
+
+        return jsonify({'success': True, 'data': {'finalized': finalized, 'failed': failed}})
+    except Exception:
+        log.error("Error in batch-finalize", exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
 @bp.route('/api/review/<int:item_id>/reject', methods=['POST'])
 def reject_review_item(item_id):
     """

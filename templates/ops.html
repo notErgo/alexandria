@@ -111,6 +111,11 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 .review-table tr.selected td { background: rgba(59,130,246,0.08); }
 .review-table tr:hover td { background: rgba(255,255,255,0.03); }
 
+/* Review status badges */
+.badge-status-pending  { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600; background:#f973160d; color:#f97316; }
+.badge-status-final    { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600; background:#22c55e1a; color:#22c55e; }
+.badge-status-rejected { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600; background:#ef44440d; color:#ef4444; }
+
 /* ── Miner Data (inlined from miner_data.html) ─────────────────────────────── */
 /* ── Page layout ─────────────────────────────────────────────────────────── */
 .md-page {
@@ -337,13 +342,20 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   font-size: 0.85rem;
 }
 
-/* ── Document viewer panel (bottom drawer) ───────────────────────────────── */
+/* ── Document viewer panel (fixed bottom drawer — no layout shift) ────────── */
 #doc-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
   display: none;
-  background: var(--theme-bg-secondary);
-  border: 1px solid var(--theme-border);
-  border-radius: 8px;
   flex-direction: column;
+  background: var(--theme-bg-secondary);
+  border-top: 2px solid var(--theme-border);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.35);
+  max-height: 60vh;
   overflow: hidden;
 }
 #doc-panel.visible { display: flex; }
@@ -1865,6 +1877,28 @@ tr.is-reviewed td { opacity: 0.65; }
 
   <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
   <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+
+<!-- Chart panel (collapsed by default; opens after finalize) -->
+<div id="chart-panel" style="display:none; margin-bottom:1rem">
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+    <span style="font-size:0.85rem;font-weight:600">Metric Chart</span>
+    <select id="chart-metric-select" multiple size="1"
+      style="min-width:180px" onchange="renderMinerChart()">
+    </select>
+    <label style="font-size:0.78rem;display:flex;align-items:center;gap:0.3rem">
+      <input type="checkbox" id="chart-finalized-only" checked onchange="renderMinerChart()">
+      Finalized only
+    </label>
+    <button class="btn btn-sm btn-secondary" onclick="hideChartView()">Hide chart</button>
+  </div>
+  <div id="miner-echarts" style="width:100%;height:320px"></div>
+</div>
+<div style="margin-bottom:0.5rem">
+  <button class="btn btn-sm btn-secondary" id="btn-show-chart" onclick="showChartView()">
+    Show chart
+  </button>
+</div>
+
 <div class="md-page">
   <h1 class="page-title" style="margin:0" data-spec-id="MD5.0"><span class="spec-id">5.0</span>Miner Data</h1>
 
@@ -1928,21 +1962,37 @@ tr.is-reviewed td { opacity: 0.65; }
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       </div>
       <!-- Coverage summary bar — populated by loadCoverageSummary() -->
-      <details id="coverage-summary-details" style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
+      <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
         <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
         <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
           <span style="color:var(--theme-text-muted)">Loading…</span>
         </div>
       </details>
+      <details id="table-help" style="flex-shrink:0;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.78rem;color:var(--theme-text-muted)">
+        <summary style="cursor:pointer;user-select:none;color:var(--theme-accent)">How to use this table</summary>
+        <ul style="margin:0.4rem 0 0.3rem 1.1rem;padding:0;line-height:1.7;color:var(--theme-text-secondary)">
+          <li><strong>Click the period label</strong> — opens the Document Viewer as a fixed bottom panel. Click X or press Escape to close it.</li>
+          <li><strong>Checkbox / click anywhere on a row</strong> — selects the row for batch accept. <strong>Shift+click</strong> selects a range. <strong>Ctrl+click</strong> toggles individual rows.</li>
+          <li><strong>Double-click a numeric value cell</strong> — opens an inline editor in the cell. Type a number and press Enter or OK. Escape restores the original value.</li>
+          <li><strong>Hover over a value cell</strong> — browser tooltip shows the raw source snippet that produced the value.</li>
+          <li><strong>Method badges</strong> next to values: R = regex, L = LLM, A = analyst, F = finalized, D = derived, S = SEC filing, P = pipeline.</li>
+          <li><strong>Columns button</strong> — toggle individual metric columns on/off.</li>
+        </ul>
+      </details>
+      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border)">
+        <button id="batch-accept-btn" class="btn btn-primary btn-sm" disabled onclick="batchAcceptSelected()">Batch Accept</button>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted)">Check rows to select &bull; Shift+click for range &bull; Ctrl+click to toggle &bull; Click period label to open doc viewer</span>
+      </div>
       <div class="md-table-scroll">
         <table id="timeline-table">
           <thead>
             <tr id="timeline-thead-row">
-              <th title="Reviewed" style="width:30px;min-width:28px"><input type="checkbox" id="mark-all-reviewed-cb" title="Mark all visible rows reviewed" onchange="toggleMarkAllReviewed(this.checked)"></th>
+              <th style="width:30px;min-width:28px"><input type="checkbox" id="select-all-rows-cb" title="Select / deselect all rows" onchange="toggleSelectAll(this.checked)"></th>
               <th data-sort="period">Period</th>
               <!-- metric columns injected by buildTableHeaders() -->
               <th data-col="doc-type">Type</th>
               <th data-col="doc-date">Date</th>
+              <th style="width:60px;min-width:60px"></th>
             </tr>
           </thead>
           <tbody id="timeline-tbody">
@@ -2185,7 +2235,7 @@ tr.is-reviewed td { opacity: 0.65; }
 
     <!-- Bulk controls -->
     <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
-      <button id="rv-bulk-approve" class="btn btn-sm btn-primary" disabled onclick="bulkApprove()">Approve Selected</button>
+      <button id="rv-bulk-finalize" class="btn btn-sm btn-primary" disabled onclick="bulkFinalize()">Finalize Selected</button>
       <span style="font-size:0.75rem;color:var(--theme-text-muted)">J/K navigate &bull; A approve &bull; R reject &bull; Gen generates regex from snippet</span>
     </div>
 
@@ -2600,6 +2650,7 @@ tr.is-reviewed td { opacity: 0.65; }
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script src="/static/js/doc_panel.js"></script>
 <script src="/static/js/review_panel.js"></script>
 <script src="/static/js/miner_data.js"></script>
@@ -4928,6 +4979,12 @@ function _sourceTypeBadge(sourceType) {
   return '<span class="source-tier-badge source-tier-' + escapeAttr(tier) + '">' + escapeHtml(label) + '</span>';
 }
 
+function _statusBadge(status) {
+  if (status === 'APPROVED' || status === 'EDITED') return '<span class="badge-status-final">Finalized</span>';
+  if (status === 'REJECTED') return '<span class="badge-status-rejected">Rejected</span>';
+  return '<span class="badge-status-pending">Review Pending</span>';
+}
+
 function renderReview() {
   const tbody = document.getElementById('review-tbody');
   if (!tbody) return;
@@ -4936,7 +4993,6 @@ function renderReview() {
     return;
   }
   tbody.innerHTML = _reviewItems.map(function(item, idx) {
-    const statusColor = item.status === 'APPROVED' ? 'var(--theme-success)' : item.status === 'REJECTED' ? 'var(--theme-danger)' : 'var(--theme-warning)';
     return '<tr data-idx="' + idx + '">'
       + '<td><input type="checkbox" class="rv-cb" data-id="' + escapeAttr(String(item.id)) + '"></td>'
       + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
@@ -4946,9 +5002,9 @@ function renderReview() {
       + '<td style="text-align:right">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
       + '<td style="text-align:right">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
       + '<td style="font-size:0.75rem">' + escapeHtml(item.agreement_status || '') + '</td>'
-      + '<td style="color:' + statusColor + ';font-size:0.75rem">' + escapeHtml(item.status || '') + '</td>'
+      + '<td>' + _statusBadge(item.status) + '</td>'
       + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
-        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="approveItem(this.getAttribute(\'data-id\'))">A</button>'
+        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="acceptItem(this.getAttribute(\'data-id\'))">Accept</button>'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="rejectItem(this.getAttribute(\'data-id\'))">R</button>'
         + (item.source_snippet ? '<button class="btn btn-sm btn-secondary rv-gen-btn" title="Generate regex pattern from this snippet"'
             + ' data-metric="' + escapeAttr(item.metric || '') + '"'
@@ -4961,7 +5017,7 @@ function renderReview() {
 function toggleSelectAll() {
   const checked = document.getElementById('rv-select-all').checked;
   document.querySelectorAll('.rv-cb').forEach(function(cb) { cb.checked = checked; });
-  document.getElementById('rv-bulk-approve').disabled = !checked;
+  document.getElementById('rv-bulk-finalize').disabled = !checked;
 }
 
 // Event delegation for review tbody — wired once
@@ -4971,7 +5027,7 @@ document.addEventListener('DOMContentLoaded', function() {
   reviewTbody.addEventListener('change', function(e) {
     if (!e.target.classList.contains('rv-cb')) return;
     const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
-    document.getElementById('rv-bulk-approve').disabled = !anyChecked;
+    document.getElementById('rv-bulk-finalize').disabled = !anyChecked;
   });
   reviewTbody.addEventListener('click', function(e) {
     const btn = e.target.closest('.rv-gen-btn');
@@ -4980,11 +5036,11 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-async function approveItem(id) {
+async function acceptItem(id) {
   const resp = await fetch('/api/review/' + encodeURIComponent(id) + '/approve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
   const data = await resp.json();
   if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
-  showToast('Approved');
+  showToast('Finalized');
   loadReview();
 }
 
@@ -5001,18 +5057,25 @@ async function rejectItem(id) {
   loadReview();
 }
 
-async function bulkApprove() {
-  const ids = Array.from(document.querySelectorAll('.rv-cb:checked')).map(function(cb) { return cb.getAttribute('data-id'); });
+async function bulkFinalize() {
+  const ids = Array.from(document.querySelectorAll('.rv-cb:checked'))
+    .map(function(cb) { return parseInt(cb.getAttribute('data-id'), 10); });
   if (!ids.length) return;
-  let failed = 0;
-  for (const id of ids) {
-    const resp = await fetch('/api/review/' + encodeURIComponent(id) + '/approve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
-    const data = await resp.json();
-    if (!data.success) failed++;
-  }
-  if (failed) showToast(failed + ' items failed to approve', true);
-  else showToast(ids.length + ' items approved');
+  const resp = await fetch('/api/review/batch-finalize', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: ids}),
+  });
+  const data = await resp.json();
+  if (!data.success) { showToast('Batch finalize failed', true); return; }
+  const n = data.data && data.data.finalized || 0;
+  const failed = data.data && data.data.failed || 0;
+  if (failed) showToast(n + ' finalized, ' + failed + ' failed', true);
+  else showToast(n + ' items finalized');
   loadReview();
+  // Navigate to miner chart view after finalizing
+  activatePipelineSubTab('review', 'miner');
+  setTimeout(function() { showChartView(); }, 200);
 }
 
 // Keyboard navigation — J/K/A/R (Anti-pattern #33)
@@ -5029,7 +5092,7 @@ document.addEventListener('keydown', function(e) {
   } else if ((e.key === 'a' || e.key === 'A') && _reviewIdx >= 0) {
     const row = rows[_reviewIdx];
     const btn = row ? row.querySelector('[data-id]') : null;
-    if (btn) approveItem(btn.getAttribute('data-id'));
+    if (btn) acceptItem(btn.getAttribute('data-id'));
   } else if ((e.key === 'r' || e.key === 'R') && _reviewIdx >= 0) {
     const row = rows[_reviewIdx];
     const btn = row ? row.querySelectorAll('[data-id]')[1] : null;
@@ -6305,6 +6368,13 @@ function peAutoResize(ta) {
   if (cc) cc.textContent = ta.value.length + ' chars';
 }
 
+function _preambleConfigKey(metric) {
+  if (metric === '_preamble_monthly')    return 'llm_batch_preamble';
+  if (metric === '_preamble_quarterly')  return 'llm_quarterly_batch_preamble';
+  if (metric === '_preamble_annual')     return 'llm_annual_batch_preamble';
+  return '';
+}
+
 async function pePopulateMetrics() {
   const sel = document.getElementById('pe-metric-select');
   if (!sel || sel.options.length > 1) return;
@@ -6313,12 +6383,30 @@ async function pePopulateMetrics() {
     const data = await resp.json();
     const metrics = (data.data || data).map ? (data.data || data) : [];
     sel.innerHTML = '<option value="">Select metric…</option>';
+
+    const preambleGroup = document.createElement('optgroup');
+    preambleGroup.label = 'Batch Preambles';
+    [
+      {value: '_preamble_monthly',    text: 'Monthly batch preamble'},
+      {value: '_preamble_quarterly',  text: 'Quarterly batch preamble (10-Q/10-K)'},
+      {value: '_preamble_annual',     text: 'Annual batch preamble (10-K/20-F)'},
+    ].forEach(function(p) {
+      const opt = document.createElement('option');
+      opt.value = p.value;
+      opt.textContent = p.text;
+      preambleGroup.appendChild(opt);
+    });
+    sel.appendChild(preambleGroup);
+
+    const metricGroup = document.createElement('optgroup');
+    metricGroup.label = 'Per-metric Prompts';
     metrics.forEach(function(m) {
       const opt = document.createElement('option');
       opt.value = m.key || m;
       opt.textContent = (m.label || m.key || m) + ' (' + (m.key || m) + ')';
-      sel.appendChild(opt);
+      metricGroup.appendChild(opt);
     });
+    sel.appendChild(metricGroup);
   } catch (err) {
     sel.innerHTML = '<option value="">Failed to load metrics</option>';
   }
@@ -6346,6 +6434,38 @@ async function peLoadPrompt() {
   }
 
   msg.textContent = '';
+
+  if (metric.startsWith('_preamble_')) {
+    const configKey = _preambleConfigKey(metric);
+    ta.value = 'Loading…';
+    saveBtn.disabled = true;
+    resetBtn.disabled = true;
+    try {
+      const defResp = await fetch('/api/config/' + encodeURIComponent(configKey) + '/default');
+      const defData = await defResp.json();
+      const defaultText = defData.data?.default || '';
+      const currentVal = _settingsValues[configKey];
+      if (currentVal) {
+        ta.value = currentVal;
+        sourceLabel.textContent = 'DB override';
+        sourceLabel.style.display = 'inline-block';
+        updatedAt.textContent = '';
+        resetBtn.disabled = false;
+      } else {
+        ta.value = defaultText;
+        sourceLabel.textContent = 'compiled-in default';
+        sourceLabel.style.display = 'inline-block';
+        updatedAt.textContent = '(no DB override — editing will create one)';
+        resetBtn.disabled = true;
+      }
+      saveBtn.disabled = false;
+      peAutoResize(ta);
+    } catch (err) {
+      ta.value = 'Failed to load: ' + String(err);
+    }
+    return;
+  }
+
   ta.value = 'Loading…';
   saveBtn.disabled = true;
   resetBtn.disabled = true;
@@ -6391,6 +6511,32 @@ async function peSavePrompt() {
   const text = ta?.value?.trim();
   if (!metric || !text) { msg.textContent = 'Select a metric and enter prompt text.'; return; }
 
+  if (metric.startsWith('_preamble_')) {
+    const configKey = _preambleConfigKey(metric);
+    msg.textContent = 'Saving…';
+    saveBtn.disabled = true;
+    try {
+      const resp = await fetch('/api/config/' + encodeURIComponent(configKey), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: text}),
+      });
+      const data = await resp.json();
+      if (resp.ok && (data.success !== false)) {
+        _settingsValues[configKey] = text;
+        msg.textContent = 'Saved. Takes effect on next extraction run.';
+        await peLoadPrompt();
+      } else {
+        msg.textContent = 'Error: ' + (data.error?.message || resp.status);
+      }
+    } catch (err) {
+      msg.textContent = 'Failed: ' + String(err);
+    } finally {
+      saveBtn.disabled = false;
+    }
+    return;
+  }
+
   msg.textContent = 'Saving…';
   saveBtn.disabled = true;
   try {
@@ -6418,6 +6564,29 @@ async function peResetPrompt() {
   const msg = document.getElementById('pe-save-msg');
   const metric = sel?.value;
   if (!metric) return;
+
+  if (metric.startsWith('_preamble_')) {
+    if (!confirm('Reset preamble to compiled-in default?')) return;
+    const configKey = _preambleConfigKey(metric);
+    msg.textContent = 'Resetting…';
+    try {
+      const resp = await fetch('/api/config/' + encodeURIComponent(configKey), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: ''}),
+      });
+      const data = await resp.json();
+      if (resp.ok && (data.success !== false)) {
+        delete _settingsValues[configKey];
+        await peLoadPrompt();
+      } else {
+        msg.textContent = 'Error: ' + (data.error?.message || resp.status);
+      }
+    } catch (err) {
+      msg.textContent = 'Failed: ' + String(err);
+    }
+    return;
+  }
 
   if (!confirm('Remove DB override for "' + metric + '"? The hardcoded default will be used on the next extraction run.')) return;
 
@@ -6915,5 +7084,101 @@ async function _pollPipelineStatus() {
     }
   } catch (_e) {}
 }
+
+// ── Miner chart (ECharts 5.4.3) ─────────────────────────────────────────────
+let _minerChartInstance = null;
+
+function populateChartMetricSelect() {
+  const sel = document.getElementById('chart-metric-select');
+  if (!sel) return;
+  if (sel.options.length > 0) return; // already populated
+  const metrics = (typeof METRICS_ORDER !== 'undefined' ? METRICS_ORDER : []);
+  const labels = (typeof _metricLabelsCache !== 'undefined' ? _metricLabelsCache : {});
+  metrics.forEach(function(key) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = labels[key] || key;
+    sel.appendChild(opt);
+  });
+  if (sel.options.length > 0) sel.options[0].selected = true;
+}
+
+function showChartView() {
+  const panel = document.getElementById('chart-panel');
+  if (panel) panel.style.display = '';
+  populateChartMetricSelect();
+  renderMinerChart();
+}
+
+function hideChartView() {
+  const panel = document.getElementById('chart-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function renderMinerChart() {
+  const container = document.getElementById('miner-echarts');
+  if (!container) return;
+
+  const sel = document.getElementById('chart-metric-select');
+  const selectedMetrics = sel
+    ? Array.from(sel.options).filter(function(o) { return o.selected; }).map(function(o) { return o.value; })
+    : [];
+  if (!selectedMetrics.length) return;
+
+  const rows = (typeof _rows !== 'undefined' ? _rows : []);
+  const finalizedOnly = document.getElementById('chart-finalized-only') && document.getElementById('chart-finalized-only').checked;
+  const labels = (typeof _metricLabelsCache !== 'undefined' ? _metricLabelsCache : {});
+
+  // Build period list (x-axis)
+  const periods = rows.map(function(r) { return r.period || ''; }).filter(Boolean);
+
+  // Build one series per selected metric
+  const series = selectedMetrics.map(function(metric) {
+    const dataPoints = rows.map(function(r) {
+      const cell = r.metrics && r.metrics[metric];
+      if (!cell) return null;
+      if (finalizedOnly && !cell.is_finalized) return null;
+      return cell.value != null ? cell.value : null;
+    });
+    return {
+      name: labels[metric] || metric,
+      type: 'line',
+      connectNulls: false,
+      data: dataPoints,
+    };
+  });
+
+  // Determine ECharts theme from localStorage (same key as dashboard.html)
+  const theme = (localStorage.getItem('hermeneutic-chart-theme') === 'dark') ? 'dark' : null;
+
+  // Init or reuse chart instance
+  if (!_minerChartInstance || _minerChartInstance.isDisposed()) {
+    _minerChartInstance = typeof echarts !== 'undefined'
+      ? echarts.init(container, theme)
+      : null;
+  }
+  if (!_minerChartInstance) return;
+
+  _minerChartInstance.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { type: 'scroll', bottom: 0 },
+    grid: { top: 30, left: 60, right: 20, bottom: 50 },
+    xAxis: { type: 'category', data: periods, axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: 'value' },
+    series: series,
+  }, true);
+}
+
+// Hook renderMinerChart into selectCompany: after _rows is populated, refresh chart if visible
+(function() {
+  const _origSelectCompany = typeof selectCompany === 'function' ? selectCompany : null;
+  if (!_origSelectCompany) return;
+  window._origSelectCompanyForChart = _origSelectCompany;
+  // Patch is applied after DOMContentLoaded so selectCompany is defined
+  document.addEventListener('DOMContentLoaded', function() {
+    // No-op: selectCompany is in miner_data.js and already updates _rows.
+    // renderMinerChart reads _rows directly; callers invoke showChartView which calls renderMinerChart.
+  });
+})();
 </script>
 {% endblock %}

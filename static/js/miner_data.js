@@ -7,6 +7,7 @@ let _ticker = null;               // currently selected company ticker
 let _rows = [];                   // full unfiltered row list from API
 let _selectedPeriod = null;       // period of the currently open doc panel
 let _currentDocText = '';         // raw text for pattern generator (set when doc is loaded)
+let _lastSelectedRowIdx = -1;     // row index of the last selected row (for Shift+click range)
 
 // Metric highlight colours — 5 known colours; extras assigned from a palette.
 const _METRIC_COLORS_KNOWN = {
@@ -35,10 +36,62 @@ function _assignMetricColor(key) {
 // Event delegation for row clicks — wired once at page load (anti-pattern #26 compliance).
 // Placing inside renderTable() would accumulate a listener on every filter change.
 document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('timeline-tbody').addEventListener('click', function(e) {
+  const _tbody = document.getElementById('timeline-tbody');
+
+  // Prevent text selection on Shift+click (standard multi-select UX)
+  _tbody.addEventListener('mousedown', function(e) {
+    if (e.shiftKey) e.preventDefault();
+  });
+
+  _tbody.addEventListener('click', function(e) {
     const row = e.target.closest('tr[data-period]');
     if (!row) return;
-    selectPeriod(row.getAttribute('data-period'));
+
+    // Period label cell: open doc panel (only trigger point)
+    if (e.target.closest('.td-period')) {
+      selectPeriod(row.getAttribute('data-period'));
+      return;
+    }
+
+    // Value / empty cells: dblclick handles inline edit — ignore single click
+    if (e.target.closest('.td-value, .td-empty')) return;
+
+    // Accept button handled by its own onclick
+    if (e.target.closest('button')) return;
+
+    // All other row areas (including the checkbox itself): handle selection
+    const rows = Array.from(_tbody.querySelectorAll('tr[data-period]'));
+    const idx = rows.indexOf(row);
+    const isCbTarget = e.target.classList && e.target.classList.contains('row-select-cb');
+    const rowCb = row.querySelector('.row-select-cb');
+
+    if (e.shiftKey && _lastSelectedRowIdx >= 0) {
+      // Range select: check all rows from _lastSelectedRowIdx to idx
+      if (isCbTarget) e.preventDefault(); // block checkbox toggle, we handle it
+      const lo = Math.min(idx, _lastSelectedRowIdx);
+      const hi = Math.max(idx, _lastSelectedRowIdx);
+      rows.forEach(function(r, i) {
+        if (r.classList.contains('row-gap')) return;
+        const cb = r.querySelector('.row-select-cb');
+        if (cb && i >= lo && i <= hi) cb.checked = true;
+      });
+      _lastSelectedRowIdx = idx;
+      _updateBatchAcceptBtn();
+      _syncSelectAllHeader();
+    } else if (isCbTarget) {
+      // Plain checkbox click: let browser handle the toggle, then sync state
+      _lastSelectedRowIdx = idx;
+      Promise.resolve().then(function() {
+        _updateBatchAcceptBtn();
+        _syncSelectAllHeader();
+      });
+    } else {
+      // Click anywhere else on the row: toggle this row's checkbox
+      if (rowCb) rowCb.checked = !rowCb.checked;
+      _lastSelectedRowIdx = idx;
+      _updateBatchAcceptBtn();
+      _syncSelectAllHeader();
+    }
   });
 
   // ── ReviewPanel init ────────────────────────────────────────────────────
@@ -135,73 +188,93 @@ function stripXbrlPreamble(text) {
   return text;
 }
 
-// ── Reviewed period checkboxes ─────────────────────────────────────────────
-async function onReviewedChange(cb) {
-  if (!_ticker) return;
-  const period = cb.getAttribute('data-period');
-  const tr = cb.closest('tr');
-  try {
-    if (cb.checked) {
-      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({periods: [period]}),
-      });
-      if (resp.ok) {
-        if (tr) tr.classList.add('is-reviewed');
-      } else {
-        cb.checked = false;
-      }
-    } else {
-      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
-        method: 'DELETE',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({period: period}),
-      });
-      if (resp.ok) {
-        if (tr) tr.classList.remove('is-reviewed');
-      } else {
-        cb.checked = true;
-      }
-    }
-  } catch (e) {
-    // revert on error
-    cb.checked = !cb.checked;
-  }
+// ── Row selection — batch accept helpers ───────────────────────────────────
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('#timeline-tbody .row-select-cb').forEach(function(cb) {
+    cb.checked = checked;
+  });
+  _lastSelectedRowIdx = -1;
+  _updateBatchAcceptBtn();
+  _syncSelectAllHeader();
 }
 
-async function toggleMarkAllReviewed(checked) {
+function _updateBatchAcceptBtn() {
+  const n = document.querySelectorAll('#timeline-tbody .row-select-cb:checked').length;
+  const btn = document.getElementById('batch-accept-btn');
+  if (!btn) return;
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? ('Accept ' + n + ' row' + (n === 1 ? '' : 's')) : 'Batch Accept';
+}
+
+function _syncSelectAllHeader() {
+  const cbs = Array.from(document.querySelectorAll('#timeline-tbody .row-select-cb'));
+  if (!cbs.length) return;
+  const allChecked = cbs.every(function(cb) { return cb.checked; });
+  const anyChecked = cbs.some(function(cb) { return cb.checked; });
+  const headerCb = document.getElementById('select-all-rows-cb');
+  if (!headerCb) return;
+  headerCb.checked = allChecked;
+  headerCb.indeterminate = !allChecked && anyChecked;
+}
+
+async function batchAcceptSelected() {
   if (!_ticker) return;
-  const cbs = document.querySelectorAll('.period-reviewed-cb');
-  if (checked) {
-    const periods = Array.from(cbs).map(function(cb) { return cb.getAttribute('data-period'); });
-    try {
-      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({periods: periods}),
-      });
-      if (resp.ok) {
-        cbs.forEach(function(cb) {
-          cb.checked = true;
-          const tr = cb.closest('tr');
-          if (tr) tr.classList.add('is-reviewed');
+  const periods = Array.from(document.querySelectorAll('#timeline-tbody .row-select-cb:checked'))
+    .map(function(cb) { return cb.getAttribute('data-period'); })
+    .filter(Boolean);
+  if (!periods.length) return;
+
+  const values = [];
+  periods.forEach(function(period) {
+    const row = _rows && _rows.find(function(r) { return r.period === period; });
+    if (!row) return;
+    METRICS_ORDER.forEach(function(metric) {
+      const m = row.metrics && row.metrics[metric];
+      if (m && m.value != null) {
+        values.push({
+          period: period,
+          metric: metric,
+          value: m.value,
+          unit: m.unit || '',
+          confidence: m.confidence != null ? m.confidence : 1.0,
+          analyst_note: 'review_approved',
         });
       }
-    } catch (e) {}
-  } else {
-    try {
-      const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reviewed/all`, {
-        method: 'DELETE',
-      });
-      if (resp.ok) {
-        cbs.forEach(function(cb) {
-          cb.checked = false;
-          const tr = cb.closest('tr');
-          if (tr) tr.classList.remove('is-reviewed');
+    });
+  });
+
+  if (!values.length) { showToast('No values to accept', true); return; }
+
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: values}),
+    });
+    const body = await resp.json();
+    if (body.success) {
+      periods.forEach(function(period) {
+        const row = _rows && _rows.find(function(r) { return r.period === period; });
+        if (!row) return;
+        METRICS_ORDER.forEach(function(m) {
+          if (row.metrics[m] && row.metrics[m].value != null) row.metrics[m].is_finalized = true;
         });
-      }
-    } catch (e) {}
+      });
+      document.querySelectorAll('#timeline-tbody .row-select-cb:checked')
+        .forEach(function(cb) { cb.checked = false; });
+      _lastSelectedRowIdx = -1;
+      _updateBatchAcceptBtn();
+      _syncSelectAllHeader();
+      renderTable(_rows);
+      const nRows = periods.length;
+      showToast((body.data && body.data.count || 0) + ' values accepted across ' + nRows + ' period' + (nRows === 1 ? '' : 's'));
+      if (_currentView === 'interpret') loadInterpretData(_ticker);
+    } else {
+      showToast((body.error && body.error.message) || 'Batch accept failed', true);
+    }
+  } catch (e) {
+    showToast('Batch accept failed', true);
   }
 }
 
@@ -276,6 +349,50 @@ function cancelInlineEdit() {
   _editingCell = null;
 }
 
+async function acceptRow(period) {
+  const row = _rows && _rows.find(function(r) { return r.period === period; });
+  if (!row) return;
+
+  // Collect all non-null metric values for this period
+  const values = [];
+  METRICS_ORDER.forEach(function(metric) {
+    const m = row.metrics && row.metrics[metric];
+    if (m && m.value != null) {
+      values.push({
+        period: period,
+        metric: metric,
+        value: m.value,
+        unit: m.unit || '',
+        confidence: m.confidence != null ? m.confidence : 1.0,
+        analyst_note: 'review_approved',
+      });
+    }
+  });
+  if (!values.length) return;
+
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: values}),
+    });
+    const body = await resp.json();
+    if (body.success) {
+      // Mark all cells as finalized in the cache
+      values.forEach(function(v) {
+        if (row.metrics[v.metric]) row.metrics[v.metric].is_finalized = true;
+      });
+      renderTable(_rows);
+      showToast(values.length + ' value' + (values.length === 1 ? '' : 's') + ' accepted for ' + period.slice(0, 7));
+      if (_currentView === 'interpret') loadInterpretData(_ticker);
+    } else {
+      showToast((body.error && body.error.message) || 'Accept failed', true);
+    }
+  } catch (e) {
+    showToast('Accept failed', true);
+  }
+}
+
 async function boot() {
   // Load metric schema from SSOT — populates #pattern-metric and METRICS_ORDER fallback
   try {
@@ -286,6 +403,7 @@ async function boot() {
         const metrics = mbody.data.metrics;
         METRICS_ORDER = metrics.map(function(m) { return m.key; });
         metrics.forEach(function(m) { _assignMetricColor(m.key); });
+        if (typeof populateChartMetricSelect === 'function') populateChartMetricSelect();
         const sel = document.getElementById('pattern-metric');
         sel.innerHTML = '';
         const repromptSel = document.getElementById('reprompt-metrics-filter');
@@ -384,6 +502,12 @@ async function selectCompany(ticker) {
     loadCoverageSummary(ticker);
     renderTable(_rows);
     makeSortable('timeline-table');
+
+    // Refresh chart if panel is visible
+    if (typeof renderMinerChart === 'function') {
+      const chartPanel = document.getElementById('chart-panel');
+      if (chartPanel && chartPanel.style.display !== 'none') renderMinerChart();
+    }
 
     // If another view is active, also refresh it
     if (_currentView === 'sec') loadSecData(ticker);
@@ -570,14 +694,26 @@ function renderTable(allRows) {
     const dateCell = `<td class="td-date-col">${escapeHtml(dateVal)}</td>`;
 
     const reviewedClass = row.is_reviewed ? ' is-reviewed' : '';
-    const reviewedChecked = row.is_reviewed ? ' checked' : '';
-    const reviewedCb = `<td style="text-align:center"><input type="checkbox" class="period-reviewed-cb" data-period="${escapeHtml(row.period)}"${reviewedChecked} onchange="onReviewedChange(this)"></td>`;
+    // Checkbox is a selection control for batch accept (always starts unchecked on render)
+    const reviewedCb = `<td style="text-align:center"><input type="checkbox" class="row-select-cb" data-period="${escapeHtml(row.period)}"></td>`;
+
+    // Accept button: finalize all non-null metric values for this period
+    const allFinalized = METRICS_ORDER.every(function(m) {
+      return !row.metrics[m] || row.metrics[m].value == null || row.metrics[m].is_finalized;
+    });
+    const hasValues = METRICS_ORDER.some(function(m) {
+      return row.metrics[m] && row.metrics[m].value != null;
+    });
+    const acceptBtn = (!isGap && hasValues)
+      ? `<td style="text-align:center"><button class="btn btn-xs ${allFinalized ? 'btn-secondary' : 'btn-primary'}" title="${allFinalized ? 'All values finalized' : 'Accept all values for this period'}" onclick="acceptRow('${escapeHtml(row.period)}')">${allFinalized ? 'F' : 'Accept'}</button></td>`
+      : `<td></td>`;
+
     parts.push(`
       <tr class="${rowClass}${selClass}${reviewedClass}" data-period="${escapeHtml(row.period)}">
         ${reviewedCb}
         <td class="td-period">${escapeHtml(row.period_label)}</td>
         ${metricCells.join('')}
-        ${typeCell}${dateCell}
+        ${typeCell}${dateCell}${acceptBtn}
       </tr>`);
   }
   tbody.innerHTML = parts.join('');
@@ -750,8 +886,7 @@ function selectPeriod(period) {
   // Open ReviewPanel for this cell (no specific metric — shows all analysis)
   ReviewPanel.openCell(_ticker, period, null, {nullMetrics: nullMetrics});
 
-  // Scroll panel into view
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Intentionally no scrollIntoView — doc-panel is position:fixed at viewport bottom.
 }
 
 

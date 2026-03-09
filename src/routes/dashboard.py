@@ -101,8 +101,9 @@ def stacked_bar():
         db = get_db()
         label, unit = _METRIC_META.get(metric, (metric, ''))
 
-        # Fetch all data points for this metric
-        rows = db.query_data_points(metric=metric, limit=10000)
+        # Only show analyst-accepted values from final_data_points.
+        # Raw data_points (unreviewed pipeline output) are never shown on the dashboard.
+        rows = db.get_final_data_points_for_metric(metric)
         if not rows:
             return jsonify({'success': True, 'data': {
                 'metric': metric, 'label': label, 'unit': unit,

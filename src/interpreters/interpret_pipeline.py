@@ -318,15 +318,25 @@ def _build_regex_by_metric(text: str, registry, report_date: str = None,
     return regex_by_metric
 
 
-def _run_llm_batch(llm_interpreter, text: str, metrics: list, ticker: str = None) -> tuple:
+def _run_llm_batch(
+    llm_interpreter,
+    text: str,
+    metrics: list,
+    ticker: str = None,
+    expected_granularity: str = 'monthly',
+) -> tuple:
     """
     Try batch extraction first (1 Ollama call for all metrics).
     Falls back to per-metric extract() if batch returns empty.
 
     Returns (results: dict, meta: dict) where meta contains timing info from
     llm_interpreter._last_call_meta (populated by _call_ollama).
+
+    expected_granularity is forwarded to extract_batch so monthly documents
+    reject LLM responses that report a quarterly or annual period_granularity.
     """
-    result = llm_interpreter.extract_batch(text, metrics, ticker=ticker)
+    result = llm_interpreter.extract_batch(text, metrics, ticker=ticker,
+                                           expected_granularity=expected_granularity)
     meta = dict(llm_interpreter._last_call_meta)
     if result:
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))

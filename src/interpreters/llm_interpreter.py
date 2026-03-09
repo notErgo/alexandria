@@ -459,7 +459,19 @@ _DEFAULT_BATCH_PREAMBLE = (
     "IMPORTANT: This document should be a monthly bitcoin mining production report. "
     "If it appears to be general corporate news, a financing announcement, a strategic "
     "update, a legal notice, or any document that does not contain monthly operational "
-    "mining statistics, return null for ALL metrics — do not guess or infer values.\n"
+    "mining statistics, return null for ALL metrics — do not guess or infer values.\n\n"
+    "PERIOD SELECTION RULES (apply to every metric):\n"
+    "1. Extract figures for THIS SPECIFIC REPORTING MONTH only. "
+    "   A press release reporting September 2021 operations contains the monthly figure you want.\n"
+    "2. Many reports include both a monthly figure AND a quarter-to-date or year-to-date total "
+    "   in the same sentence or table. ALWAYS prefer the single-month figure. "
+    "   Example: 'Produced 341 BTC in September and 1,252 BTC in Q3 2021' "
+    "   — extract 341 (September), not 1,252 (Q3 total).\n"
+    "3. Set period_granularity='monthly' when you extract a single-month figure, "
+    "   'quarterly' when you can only find a multi-month total, "
+    "   'annual' for a full-year total, or 'unknown' if you cannot determine the period.\n"
+    "4. NEVER extract a quarterly, year-to-date, or annual aggregate as the monthly value "
+    "   — if no single-month figure exists for a metric, return null for that metric.\n"
 )
 
 
@@ -533,7 +545,13 @@ class LLMInterpreter:
     #  Batch extraction (1 Ollama call → all metrics)                     #
     # ------------------------------------------------------------------ #
 
-    def extract_batch(self, text: str, metrics: list, ticker: str = None) -> dict:
+    def extract_batch(
+        self,
+        text: str,
+        metrics: list,
+        ticker: str = None,
+        expected_granularity: str = 'monthly',
+    ) -> dict:
         """
         Extract all metrics in a single Ollama call.
 
@@ -541,13 +559,19 @@ class LLMInterpreter:
         Returns a dict of {metric: ExtractionResult} for metrics where a valid
         value was found. Returns {} on any failure so the caller can fall back
         to per-metric extract() calls.
+
+        expected_granularity: 'monthly' | 'quarterly' | 'annual' | None
+            When 'monthly', any metric whose LLM response carries
+            period_granularity='quarterly' or 'annual' is silently dropped —
+            the document is a monthly press release and a quarterly figure
+            (e.g. Q3 total) is not what we want.
         """
         try:
             prompt = self._build_batch_prompt(text, metrics, ticker=ticker)
             raw = self._call_ollama(prompt)
             if raw is None:
                 return {}
-            return self._parse_batch_response(raw, metrics)
+            return self._parse_batch_response(raw, metrics, expected_granularity=expected_granularity)
         except Exception as e:
             log.error("LLM batch extraction failed: %s", e, exc_info=True)
             return {}
@@ -763,7 +787,8 @@ class LLMInterpreter:
             unit = _BATCH_UNIT_HINTS.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
-                f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
+                f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>", '
+                f'"period_granularity": "monthly|quarterly|annual|unknown"}},'
             )
         lines.append('  "summary": "<one sentence: document type, company, period, and key figures found — max 150 chars>"')
         lines.append("}")
@@ -814,13 +839,19 @@ class LLMInterpreter:
 
         return "\n".join(lines)
 
-    def _parse_batch_response(self, raw: str, metrics: list) -> dict:
+    def _parse_batch_response(
+        self, raw: str, metrics: list, expected_granularity: str = 'monthly'
+    ) -> dict:
         """
         Parse the LLM's batch JSON response.
 
         Iterates `metrics` (not data.keys()) to ignore LLM hallucinations.
         Applies the same null/float/range/clamp checks as _parse_response.
         Returns dict of {metric: ExtractionResult} for valid entries only.
+
+        expected_granularity: when 'monthly', entries where the LLM reports
+        period_granularity='quarterly' or 'annual' are dropped — a monthly
+        document should not accept a quarterly total as its monthly value.
         """
         start = raw.find('{')
         end = raw.rfind('}') + 1
@@ -874,6 +905,18 @@ class LLMInterpreter:
             confidence = float(entry.get('confidence', 0.5))
             confidence = max(0.0, min(1.0, confidence))
             source_snippet = str(entry.get('source_snippet') or raw[:200])
+            period_granularity = str(entry.get('period_granularity') or 'unknown').lower().strip()
+
+            # Drop non-monthly results when processing a monthly document.
+            # Prevents the LLM from returning a Q3 quarterly total (e.g. 1,252 BTC)
+            # when the same press release also contains a monthly figure (e.g. 341 BTC).
+            if expected_granularity == 'monthly' and period_granularity in ('quarterly', 'annual'):
+                log.info(
+                    "LLM period_granularity=%r rejected for monthly doc "
+                    "(metric=%s snippet=%r)",
+                    period_granularity, metric, source_snippet[:60],
+                )
+                continue
 
             _model = _active_model(self._db)
             results[metric] = ExtractionResult(
@@ -884,6 +927,7 @@ class LLMInterpreter:
                 extraction_method=f"llm_{_model}",
                 source_snippet=source_snippet,
                 pattern_id=f"llm_{_model}",
+                period_granularity=period_granularity,
             )
 
         return results
@@ -943,7 +987,7 @@ class LLMInterpreter:
             "think": False,       # Disable chain-of-thought (Qwen3); skips <think> tokens
             "options": {
                 "temperature": 0.0,   # Deterministic output for structured JSON
-                "num_predict": 400,   # Batch JSON response is ~200-300 tokens; cap prevents runaway
+                "num_predict": 512,   # Batch JSON response is ~200-350 tokens; cap prevents runaway
                 "num_ctx": self._extract_num_ctx(),  # KV cache size; extraction prompts are ~3-4k tokens
             },
         }

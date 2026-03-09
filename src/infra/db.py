@@ -2774,6 +2774,56 @@ class MinerDB:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_final_data_points_for_metric(self, metric: str) -> list:
+        """Return all final_data_points rows for a metric across all tickers.
+
+        Used by the dashboard to ensure only analyst-accepted values are shown.
+        Returns rows ordered by ticker, period DESC.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT * FROM final_data_points
+                   WHERE metric = ?
+                   ORDER BY ticker, period DESC""",
+                (metric,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def query_final_data_points(
+        self,
+        ticker: Optional[str] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
+        metric: Optional[str] = None,
+        limit: int = 50000,
+    ) -> list:
+        """Query final_data_points with optional filters. Returns list of dicts."""
+        clauses: list = []
+        params: list = []
+        if ticker:
+            clauses.append('ticker = ?')
+            params.append(ticker)
+        if from_period:
+            clauses.append('period >= ?')
+            params.append(from_period)
+        if to_period:
+            clauses.append('period <= ?')
+            params.append(to_period)
+        if metric:
+            clauses.append('metric = ?')
+            params.append(metric)
+        where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
+        params.append(limit)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM final_data_points
+                   {where}
+                   ORDER BY ticker, period
+                   LIMIT ?""",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def upsert_final_data_point(
         self,
         ticker: str,
@@ -3122,7 +3172,18 @@ class MinerDB:
                 (datetime.now(timezone.utc).isoformat(), dp_id, id),
             )
             dp["id"] = dp_id
-            return dp
+        # upsert_final_data_point opens its own connection — call after the above tx commits
+        self.upsert_final_data_point(
+            ticker=item['ticker'],
+            period=item['period'],
+            metric=item['metric'],
+            value=float(item['raw_value']),
+            unit=_metric_unit(item['metric']),
+            confidence=item['confidence'],
+            analyst_note='review_approved',
+            source_ref=f"review_queue:{id}",
+        )
+        return dp
 
     def reject_review_item(self, id: int, note: str) -> None:
         with self._get_connection() as conn:
@@ -3168,7 +3229,18 @@ class MinerDB:
                 (str(corrected_value), note, datetime.now(timezone.utc).isoformat(), dp_id, id),
             )
             dp["id"] = dp_id
-            return dp
+        # upsert_final_data_point opens its own connection — call after the above tx commits
+        self.upsert_final_data_point(
+            ticker=item['ticker'],
+            period=item['period'],
+            metric=item['metric'],
+            value=corrected_value,
+            unit=_metric_unit(item['metric']),
+            confidence=1.0,
+            analyst_note=note or 'review_edited',
+            source_ref=f"review_queue:{id}",
+        )
+        return dp
 
 
     # ── Diagnostics queries ──────────────────────────────────────────────────

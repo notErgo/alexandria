@@ -286,6 +286,73 @@ class TestBatchExtraction:
         result = extractor.extract_batch("MARA mined 700 BTC", ["production_btc"])
         assert result["production_btc"].extraction_method.startswith("llm_")
 
+    def test_extract_batch_drops_quarterly_result_for_monthly_doc(self):
+        """Monthly doc (expected_granularity='monthly') drops metric where LLM reports quarterly."""
+        session = MagicMock()
+        session.post.return_value = self._batch_response({
+            "production_btc": {
+                "value": 1252, "unit": "BTC", "confidence": 0.9,
+                "source_snippet": "Produced 1,252 BTC during Q3 2021",
+                "period_granularity": "quarterly",
+            },
+        })
+        extractor = _make_extractor(session=session)
+        result = extractor.extract_batch(
+            "some text", ["production_btc"], expected_granularity='monthly'
+        )
+        assert "production_btc" not in result, \
+            "Quarterly result must be dropped when expected_granularity is monthly"
+
+    def test_extract_batch_accepts_monthly_result_for_monthly_doc(self):
+        """Monthly doc accepts metric where LLM reports monthly period_granularity."""
+        session = MagicMock()
+        session.post.return_value = self._batch_response({
+            "production_btc": {
+                "value": 341, "unit": "BTC", "confidence": 0.95,
+                "source_snippet": "Produced 340.6 bitcoin during September 2021",
+                "period_granularity": "monthly",
+            },
+        })
+        extractor = _make_extractor(session=session)
+        result = extractor.extract_batch(
+            "some text", ["production_btc"], expected_granularity='monthly'
+        )
+        assert "production_btc" in result
+        assert result["production_btc"].value == 341.0
+        assert result["production_btc"].period_granularity == "monthly"
+
+    def test_extract_batch_accepts_unknown_granularity_for_monthly_doc(self):
+        """unknown period_granularity is not filtered — only quarterly/annual are rejected."""
+        session = MagicMock()
+        session.post.return_value = self._batch_response({
+            "production_btc": {
+                "value": 500, "unit": "BTC", "confidence": 0.8,
+                "source_snippet": "mined 500 BTC",
+                "period_granularity": "unknown",
+            },
+        })
+        extractor = _make_extractor(session=session)
+        result = extractor.extract_batch(
+            "some text", ["production_btc"], expected_granularity='monthly'
+        )
+        assert "production_btc" in result
+
+    def test_extract_batch_drops_annual_result_for_monthly_doc(self):
+        """annual period_granularity is also rejected for monthly docs."""
+        session = MagicMock()
+        session.post.return_value = self._batch_response({
+            "production_btc": {
+                "value": 9000, "unit": "BTC", "confidence": 0.85,
+                "source_snippet": "mined 9,000 BTC in fiscal 2021",
+                "period_granularity": "annual",
+            },
+        })
+        extractor = _make_extractor(session=session)
+        result = extractor.extract_batch(
+            "some text", ["production_btc"], expected_granularity='monthly'
+        )
+        assert "production_btc" not in result
+
 
 class TestCheckConnectivity:
     def test_returns_true_when_version_ok_and_model_exists(self):

@@ -43,14 +43,16 @@ log = logging.getLogger('miners.routes.timeseries')
 
 bp = Blueprint('timeseries', __name__)
 
-# Metric display order, labels, and units
-_METRIC_ORDER = [
+# Fallback metric order used only by suggest/fill validation when DB is unavailable.
+# Main get_timeseries() derives metric list from metric_schema at request time (SSOT).
+_METRIC_ORDER_FALLBACK = [
     ('hashrate_eh',             'Hashrate',      'EH/s'),
     ('production_btc',          'Production',    'BTC'),
-    ('sold_btc',                'Sold',          'BTC'),
-    ('hodl_btc',                'Holdings',      'BTC'),
+    ('sales_btc',               'Sold',          'BTC'),
+    ('holdings_btc',            'Holdings',      'BTC'),
+    ('unrestricted_holdings',   'Holdings (Unres.)', 'BTC'),
+    ('restricted_holdings_btc', 'Holdings (Restr.)', 'BTC'),
     ('realization_rate',        'Realization',   '%'),
-    # v2 metrics — panels only appear when data exists
     ('net_btc_balance_change',  'Net BTC Change','BTC'),
     ('encumbered_btc',          'Encumbered BTC','BTC'),
     ('mining_mw',               'Mining MW',     'MW'),
@@ -113,12 +115,11 @@ def get_timeseries():
             return jsonify({'success': False, 'error': {
                 'message': f'Invalid to date: {raw_to} (expected YYYY-MM)'}}), 400
 
-        # ── Fetch raw data ────────────────────────────────────────────────────
-        # One query per ticker (or one broad query if no ticker filter)
+        # ── Fetch analyst-accepted data only (final_data_points) ─────────────
         if tickers:
             all_rows = []
             for t in tickers:
-                rows = db.query_data_points(
+                rows = db.query_final_data_points(
                     ticker=t,
                     from_period=f"{raw_from}-01" if raw_from else None,
                     to_period=f"{raw_to}-01" if raw_to else None,
@@ -126,7 +127,7 @@ def get_timeseries():
                 )
                 all_rows.extend(rows)
         else:
-            all_rows = db.query_data_points(
+            all_rows = db.query_final_data_points(
                 from_period=f"{raw_from}-01" if raw_from else None,
                 to_period=f"{raw_to}-01" if raw_to else None,
                 limit=50000,
@@ -156,11 +157,18 @@ def get_timeseries():
         # Use requested tickers (if supplied), else all tickers found in data
         ticker_list = tickers if tickers else sorted(active_tickers)
 
-        # ── Build response metrics ────────────────────────────────────────────
+        # ── Build response metrics (SSOT: metric_schema, not hardcoded list) ──
         n = len(time_spine)
         metrics_out = []
 
-        for metric_key, label, unit in _METRIC_ORDER:
+        # Derive metric order from metric_schema DB (SSOT); fall back to hardcoded list
+        try:
+            schema_rows = db.get_metric_schema(sector=_SECTOR, active_only=True)
+            metric_order = [(r['key'], r['label'], r.get('unit', '')) for r in schema_rows]
+        except Exception:
+            metric_order = _METRIC_ORDER_FALLBACK
+
+        for metric_key, label, unit in metric_order:
             series_out = []
 
             for ticker in ticker_list:
@@ -208,9 +216,33 @@ def get_timeseries():
             'message': 'Internal server error'}}), 500
 
 
-# ── Metric key → unit lookup ──────────────────────────────────────────────
-_METRIC_UNITS = {k: unit for k, _label, unit in _METRIC_ORDER}
+# ── Metric key → unit lookup (fallback; suggest/fill validate against DB at runtime) ──
+_METRIC_UNITS = {k: unit for k, _label, unit in _METRIC_ORDER_FALLBACK}
 _METRIC_KEYS  = set(_METRIC_UNITS)
+
+
+_SECTOR = 'BTC-miners'
+
+
+def _get_valid_metric_keys(db) -> set:
+    """Return current valid metric keys from metric_schema (SSOT). Falls back to hardcoded set."""
+    try:
+        rows = db.get_metric_schema(sector=_SECTOR, active_only=True)
+        return {r['key'] for r in rows}
+    except Exception:
+        return _METRIC_KEYS
+
+
+def _get_metric_unit(db, metric: str) -> str:
+    """Return unit for a metric key. Looks in metric_schema, falls back to _METRIC_UNITS."""
+    try:
+        rows = db.get_metric_schema(sector=_SECTOR, active_only=True)
+        for r in rows:
+            if r['key'] == metric:
+                return r.get('unit', '')
+    except Exception:
+        pass
+    return _METRIC_UNITS.get(metric, '')
 
 
 def _ym_to_months(ym: str) -> int:
@@ -233,16 +265,17 @@ def suggest_period():
         # ── Validation ───────────────────────────────────────────────────
         if not re.match(r'^[A-Z0-9]{1,6}$', ticker):
             return jsonify({'success': False, 'error': {'message': 'Invalid ticker'}}), 400
-        if metric not in _METRIC_KEYS:
+        valid_keys = _get_valid_metric_keys(db)
+        if metric not in valid_keys:
             return jsonify({'success': False, 'error': {
                 'message': f'Unknown metric: {metric}'}}), 400
         if not _PERIOD_RE.match(period):
             return jsonify({'success': False, 'error': {
                 'message': 'period must be YYYY-MM'}}), 400
 
-        unit = _METRIC_UNITS[metric]
+        unit = _get_metric_unit(db, metric)
 
-        # ── Fetch all data points for this ticker+metric ─────────────────
+        # ── Fetch data points for interpolation (raw extracted data) ─────
         rows = db.query_data_points(ticker=ticker, metric=metric, limit=10000)
         # Build map: YYYY-MM → value
         dp_map = {r['period'][:7]: r['value'] for r in rows}
@@ -330,7 +363,8 @@ def fill_period():
         # ── Validation ───────────────────────────────────────────────────
         if not re.match(r'^[A-Z0-9]{1,6}$', ticker):
             return jsonify({'success': False, 'error': {'message': 'Invalid ticker'}}), 400
-        if metric not in _METRIC_KEYS:
+        valid_keys = _get_valid_metric_keys(db)
+        if metric not in valid_keys:
             return jsonify({'success': False, 'error': {
                 'message': f'Unknown metric: {metric}'}}), 400
         if not _PERIOD_RE.match(period):

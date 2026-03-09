@@ -156,6 +156,73 @@ class TestReviewRejectRoute:
             assert resp.status_code == 400
 
 
+class TestApproveFinalDataPoints:
+    def test_approve_writes_to_final_data_points(self, app_with_review, db_with_review):
+        """POST /api/review/<id>/approve writes the value to final_data_points."""
+        with app_with_review.test_client() as c:
+            resp = c.get('/api/review')
+            item_id = resp.get_json()['data']['items'][0]['id']
+
+            resp = c.post(f'/api/review/{item_id}/approve',
+                         json={}, content_type='application/json')
+            assert resp.status_code == 200
+
+            finals = db_with_review.get_final_data_points('MARA')
+            assert len(finals) == 1
+            row = finals[0]
+            assert row['period'] == '2024-01-01'
+            assert row['metric'] == 'production_btc'
+            assert row['value'] == 700.0
+
+    def test_edit_writes_to_final_data_points(self, app_with_review, db_with_review):
+        """POST /api/review/<id>/approve with value stores corrected value in final_data_points."""
+        with app_with_review.test_client() as c:
+            resp = c.get('/api/review')
+            item_id = resp.get_json()['data']['items'][0]['id']
+
+            resp = c.post(f'/api/review/{item_id}/approve',
+                         json={'value': 750}, content_type='application/json')
+            assert resp.status_code == 200
+
+            finals = db_with_review.get_final_data_points('MARA')
+            assert len(finals) == 1
+            assert finals[0]['value'] == 750.0
+
+    def test_batch_finalize_endpoint(self, app_with_review, db_with_review):
+        """POST /api/review/batch-finalize finalizes multiple items."""
+        db = db_with_review
+        # Seed a second review item
+        db.insert_review_item({
+            'data_point_id': None,
+            'ticker': 'MARA',
+            'period': '2024-02-01',
+            'metric': 'production_btc',
+            'raw_value': '620.0',
+            'confidence': 0.80,
+            'source_snippet': 'MARA mined 620 BTC in February 2024.',
+            'status': 'PENDING',
+            'llm_value': 620.0,
+            'regex_value': 620.0,
+            'agreement_status': 'REVIEW_QUEUE',
+        })
+
+        with app_with_review.test_client() as c:
+            resp = c.get('/api/review')
+            items = resp.get_json()['data']['items']
+            ids = [item['id'] for item in items[:2]]
+            assert len(ids) == 2
+
+            resp = c.post('/api/review/batch-finalize',
+                         json={'ids': ids}, content_type='application/json')
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data['success'] is True
+            assert data['data']['finalized'] == 2
+
+            finals = db.get_final_data_points('MARA')
+            assert len(finals) == 2
+
+
 class TestReextractTicker:
     """reextract routes pass ticker context to LLM via extract_batch."""
 

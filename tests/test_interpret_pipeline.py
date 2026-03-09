@@ -178,7 +178,7 @@ class TestExtractReportBatchPath:
         batch_called = []
         extract_called = []
 
-        def fake_batch(text, metrics, ticker=None):
+        def fake_batch(text, metrics, ticker=None, **kwargs):
             batch_called.append(metrics)
             return {
                 "production_btc": ExtractionResult(
@@ -219,7 +219,7 @@ class TestExtractReportBatchPath:
         extract_called = []
 
         mock_llm = _make_mock_llm()
-        mock_llm.extract_batch = lambda text, metrics, ticker=None: {}
+        mock_llm.extract_batch = lambda text, metrics, ticker=None, **kw: {}
         mock_llm.extract = lambda text, metric: extract_called.append(metric) or None
         mock_llm.extract_for_period.return_value = {}
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
@@ -244,7 +244,7 @@ class TestExtractReportBatchPath:
         import interpreters.interpret_pipeline as _ep
 
         mock_llm = _make_mock_llm()
-        mock_llm.extract_batch = lambda text, metrics, ticker=None: {}
+        mock_llm.extract_batch = lambda text, metrics, ticker=None, **kw: {}
         mock_llm.extract = lambda text, metric: None
         mock_llm.extract_for_period.return_value = {}
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
@@ -280,7 +280,7 @@ class TestLLMOnlyRouting:
         from miner_types import ExtractionResult
         from config import LLM_MODEL_ID
 
-        def fake_batch(text, metrics, ticker=None):
+        def fake_batch(text, metrics, ticker=None, **kwargs):
             return {
                 "production_btc": ExtractionResult(
                     metric="production_btc", value=value, unit="BTC",

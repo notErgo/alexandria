@@ -230,13 +230,20 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   font-size: 0.85rem;
 }
 
-/* ── Document viewer panel (bottom drawer) ───────────────────────────────── */
+/* ── Document viewer panel (fixed bottom drawer — no layout shift) ────────── */
 #doc-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
   display: none;
-  background: var(--theme-bg-secondary);
-  border: 1px solid var(--theme-border);
-  border-radius: 8px;
   flex-direction: column;
+  background: var(--theme-bg-secondary);
+  border-top: 2px solid var(--theme-border);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.35);
+  max-height: 60vh;
   overflow: hidden;
 }
 #doc-panel.visible { display: flex; }
@@ -743,6 +750,47 @@ tr.is-reviewed td { opacity: 0.65; }
   font-size: 0.78rem;
 }
 #coverage-summary-bar th { background: var(--theme-bg-secondary); font-weight: 600; }
+/* ── Extraction guide (collapsible) ─────────────────────────────────────── */
+.extraction-guide {
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  background: var(--theme-bg-secondary);
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.82rem;
+  color: var(--theme-text-secondary);
+}
+.extraction-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--theme-text-primary);
+  user-select: none;
+  padding: 0.1rem 0;
+}
+.extraction-guide summary::-webkit-details-marker { color: var(--theme-text-muted); }
+.extraction-guide dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0.75rem 0 0 0;
+}
+.extraction-guide dt {
+  font-weight: 600;
+  color: var(--theme-text-primary);
+  white-space: nowrap;
+  padding-top: 0.05rem;
+}
+.extraction-guide dd {
+  margin: 0;
+  color: var(--theme-text-secondary);
+  line-height: 1.45;
+}
+.extraction-guide .guide-divider {
+  grid-column: 1 / -1;
+  border: none;
+  border-top: 1px solid var(--theme-border);
+  margin: 0.2rem 0;
+}
 </style>
 {% endblock %}
 
@@ -810,11 +858,21 @@ tr.is-reviewed td { opacity: 0.65; }
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       </div>
       <!-- Coverage summary bar — populated by loadCoverageSummary() -->
-      <details id="coverage-summary-details" style="padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
+      <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
         <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
         <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
           <span style="color:var(--theme-text-muted)">Loading…</span>
         </div>
+      </details>
+      <details id="table-help" style="flex-shrink:0;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.78rem;color:var(--theme-text-muted)">
+        <summary style="cursor:pointer;user-select:none;color:var(--theme-accent)">How to use this table</summary>
+        <ul style="margin:0.4rem 0 0.3rem 1.1rem;padding:0;line-height:1.7;color:var(--theme-text-secondary)">
+          <li><strong>Click a period label, Type, or Date cell</strong> — opens the Document Viewer as a fixed bottom panel (source text + extraction analysis). Click the X or press Escape to close it.</li>
+          <li><strong>Double-click a numeric value cell</strong> — opens an inline editor directly in the cell. Type a number and press Enter or click OK. Pressing Escape restores the original value.</li>
+          <li><strong>Hover over a value cell</strong> — browser tooltip shows the raw source snippet that produced the value.</li>
+          <li><strong>Method badges</strong> next to values show extraction source: R = regex, L = LLM, A = analyst, F = finalized, D = derived, S = SEC filing, P = pipeline.</li>
+          <li><strong>Columns button</strong> — toggle individual metric columns on/off.</li>
+        </ul>
       </details>
       <div class="md-table-scroll">
         <table id="timeline-table">
@@ -868,6 +926,62 @@ tr.is-reviewed td { opacity: 0.65; }
 
   <!-- ── Interpret view ──────────────────────────────────────────────── -->
   <div id="view-interpret" style="display:none">
+
+    <details class="extraction-guide">
+      <summary>How extraction works</summary>
+      <dl>
+        <dt>Two-stage pipeline</dt>
+        <dd>Stage 1 — Ingest: fetch raw document and store text in the reports table. Stage 2 — Extract: run regex and LLM passes against stored text, then route results through the agreement engine.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Document routing</dt>
+        <dd>Press releases and archive files (PDF/HTML) run the monthly path. EDGAR 10-Q and 10-K filings run the quarterly/annual path. Each path uses the same extraction stack but different period-granularity expectations.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Regex extraction</dt>
+        <dd>Pattern files in <code>config/patterns/</code> are matched against the full document text. Each match yields a value, a confidence score (pattern weight x distance factor x range factor), and the surrounding context window.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>LLM extraction</dt>
+        <dd>A single Ollama batch call sends all active metrics at once. The model returns a JSON object with value, confidence, source_snippet, and period_granularity for each metric.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Period granularity filter</dt>
+        <dd>Monthly documents reject LLM responses marked as quarterly or annual. Example: LLM returns Q3 total = 1,252 for a September press release — the response is discarded because September data (341) was expected. The regex result is used or the item goes to review.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Agreement engine</dt>
+        <dd>If regex and LLM agree within the per-metric threshold, the value is auto-accepted into data_points. If they disagree, or only the LLM found a value, the item is routed to review_queue for analyst decision.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Analyst protection</dt>
+        <dd>Rows with extraction_method in (analyst, analyst_approved, review_approved, review_edited) are never overwritten by a pipeline re-run.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Finalization overlay</dt>
+        <dd>The final_data_points table is an analyst-controlled override layer. "Finalize" writes here. The data display prioritises final_data_points over raw data_points. "Reprompt LLM" reruns extraction and updates raw data_points only — finalized values are untouched.</dd>
+
+        <hr class="guide-divider">
+
+        <dt>Method badges</dt>
+        <dd>
+          <span class="badge-method badge-method-r">R</span> regex auto-accept —
+          <span class="badge-method badge-method-l">L</span> LLM auto-accept —
+          <span class="badge-method badge-method-a">A</span> analyst entry —
+          <span class="badge-method badge-method-f">F</span> finalized (final_data_points) —
+          <span class="badge-method badge-method-d">D</span> derived / gap-fill —
+          <span class="badge-method badge-method-s">S</span> SEC filing source —
+          <span class="badge-method badge-method-p">P</span> pipeline auto-accept
+        </dd>
+      </dl>
+    </details>
 
     <!-- Side-by-side reconciliation summary -->
     <div>
@@ -1069,6 +1183,9 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('timeline-tbody').addEventListener('click', function(e) {
     const row = e.target.closest('tr[data-period]');
     if (!row) return;
+    // Skip editable cells — dblclick handles those; don't fire selectPeriod on
+    // the first click of a dblclick sequence (would cause scroll jump before edit).
+    if (e.target.closest('.td-value, .td-empty')) return;
     selectPeriod(row.getAttribute('data-period'));
   });
 
@@ -1782,8 +1899,8 @@ function selectPeriod(period) {
   // Open ReviewPanel for this cell (no specific metric — shows all analysis)
   ReviewPanel.openCell(_ticker, period, null, {nullMetrics: nullMetrics});
 
-  // Scroll panel into view
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Intentionally no scrollIntoView — the panel appends below the table and
+  // forced scrolling caused the "whole screen jumps" symptom during dblclick editing.
 }
 
 

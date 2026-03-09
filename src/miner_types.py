@@ -121,6 +121,7 @@ class ExtractionResult:
     extraction_method: str
     source_snippet: str
     pattern_id: str
+    period_granularity: Optional[str] = None  # 'monthly'|'quarterly'|'annual'|'unknown'
 
 
 @dataclass

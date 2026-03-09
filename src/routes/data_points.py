@@ -238,10 +238,11 @@ def _is_sec_period(period: str) -> bool:
 
 @bp.route('/api/scorecard')
 def scorecard():
-    """Return latest monthly and latest SEC value per metric per company.
+    """Return latest finalized monthly and SEC value per metric per company.
 
-    Reads final_data_points first (analyst layer); falls back to raw
-    data_points for metrics not yet finalized.
+    Only surfaces values that have been explicitly accepted into final_data_points
+    (review_approved, review_edited, or analyst-finalized). Unreviewed raw
+    data_points are never shown on the dashboard.
 
     Response shape:
       data.companies[ticker] = {
@@ -261,21 +262,6 @@ def scorecard():
     for company in companies:
         ticker = company['ticker']
 
-        dps_monthly = db.query_data_points(
-            ticker=ticker,
-            source_period_types=['monthly'],
-            limit=500,
-        )
-        dps_sec = db.query_data_points(
-            ticker=ticker,
-            source_period_types=['quarterly', 'annual'],
-            limit=200,
-        )
-
-        monthly_best = _latest_per_metric(dps_monthly, SCORECARD_METRICS)
-        sec_best = _latest_per_metric(dps_sec, SCORECARD_METRICS)
-
-        # Analyst layer: prefer final_data_points where available
         finals = db.get_final_data_points(ticker)
         final_monthly = _latest_per_metric(
             [f for f in finals if not _is_sec_period(f['period'])], SCORECARD_METRICS
@@ -284,7 +270,7 @@ def scorecard():
             [f for f in finals if _is_sec_period(f['period'])], SCORECARD_METRICS
         )
 
-        def _cell(dp, is_finalized=False):
+        def _cell(dp):
             if dp is None:
                 return None
             return {
@@ -292,22 +278,14 @@ def scorecard():
                 'period':             dp.get('period'),
                 'confidence':         dp.get('confidence'),
                 'source_period_type': dp.get('source_period_type'),
-                'is_finalized':       is_finalized,
+                'is_finalized':       True,
             }
 
         result[ticker] = {
             'name':           company.get('name'),
             'scraper_status': company.get('scraper_status'),
-            'monthly': {
-                m: _cell(final_monthly[m], True) if m in final_monthly
-                   else _cell(monthly_best.get(m), False)
-                for m in SCORECARD_METRICS
-            },
-            'sec': {
-                m: _cell(final_sec[m], True) if m in final_sec
-                   else _cell(sec_best.get(m), False)
-                for m in SCORECARD_METRICS
-            },
+            'monthly': {m: _cell(final_monthly.get(m)) for m in SCORECARD_METRICS},
+            'sec':     {m: _cell(final_sec.get(m))     for m in SCORECARD_METRICS},
         }
 
     return jsonify({'success': True, 'data': {'companies': result, 'metrics': SCORECARD_METRICS}})
