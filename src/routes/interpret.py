@@ -23,8 +23,14 @@ log = logging.getLogger('miners.routes.interpret')
 
 bp = Blueprint('interpret', __name__)
 
+# KEEP IN SYNC with data_points.py, llm_prompts.py, dashboard.py
+# This fallback is used when metric_schema DB table is unavailable.
+# A truncated fallback silently rejects valid metrics — keep it complete.
 _VALID_METRICS_FALLBACK = frozenset({
-    'production_btc', 'holdings_btc', 'sales_btc',
+    'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
+    'sales_btc', 'hashrate_eh', 'realization_rate',
+    'net_btc_balance_change', 'encumbered_btc',
+    'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
 })
 
 

@@ -265,7 +265,7 @@ def test_pipeline_preflight_counts_pending_vs_extracted(client):
 
 def test_overnight_apply_modes_runs_for_run_tickers(client, monkeypatch):
     import app_globals
-    import routes.companies as companies_mod
+    import orchestration as orch_mod
 
     db = app_globals.get_db()
     run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
@@ -277,7 +277,7 @@ def test_overnight_apply_modes_runs_for_run_tickers(client, monkeypatch):
         assert apply_mode is True
         return {'applied': True, 'recommended_mode': 'rss'}
 
-    monkeypatch.setattr(companies_mod, '_run_bootstrap_probe_for_ticker', _fake_probe)
+    monkeypatch.setattr(orch_mod, 'run_bootstrap_probe_for_ticker', _fake_probe)
 
     resp = client.post(f'/api/pipeline/overnight/{run_id}/apply_modes', json={})
     assert resp.status_code == 200

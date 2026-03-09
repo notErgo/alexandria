@@ -58,3 +58,18 @@ def setup_logging(level: int = logging.DEBUG) -> logging.Logger:
         logger.warning("File logging disabled (path=%s): %s", log_file, e)
 
     return logger
+
+
+def log_event(logger, level: str, event: str, **fields) -> None:
+    """Emit a structured log line with event= as the first field.
+
+    Enforces the event= key naming contract for machine-parseable logs.
+    All pipeline start/complete/error log calls should use this helper.
+
+    Usage:
+        log_event(log, 'info', 'extract_start', ticker='MARA', report_id=42)
+    Emits:
+        event=extract_start ticker=MARA report_id=42
+    """
+    parts = [f"event={event}"] + [f"{k}={v}" for k, v in fields.items()]
+    getattr(logger, level)(" ".join(parts))

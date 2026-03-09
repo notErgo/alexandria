@@ -43,16 +43,28 @@ class ScrapeWorker(threading.Thread):
 
         job = jobs[0]
         job_id = job['id']
+        ticker = job['ticker']
         self._db.claim_scrape_job(job_id)
         with self._lock:
             self._current_job_id = job_id
+        log.info("event=scrape_job_claimed job_id=%s ticker=%s", job_id, ticker)
 
+        import time as _time
+        _t0 = _time.monotonic()
         try:
             self._execute_scrape(job)
             self._db.complete_scrape_job(job_id)
-            log.info("Scrape job %d (%s) completed successfully", job_id, job['ticker'])
+            elapsed_ms = int((_time.monotonic() - _t0) * 1000)
+            log.info(
+                "event=scrape_job_complete job_id=%s ticker=%s status=ok elapsed_ms=%s",
+                job_id, ticker, elapsed_ms,
+            )
         except Exception as e:
-            log.error("Scrape job %d (%s) failed: %s", job_id, job['ticker'], e, exc_info=True)
+            elapsed_ms = int((_time.monotonic() - _t0) * 1000)
+            log.error(
+                "event=scrape_job_error job_id=%s ticker=%s status=error elapsed_ms=%s error=%s",
+                job_id, ticker, elapsed_ms, e, exc_info=True,
+            )
             self._db.fail_scrape_job(job_id, str(e))
         finally:
             with self._lock:

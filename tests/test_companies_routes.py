@@ -190,7 +190,7 @@ def test_bootstrap_probe_recommends_and_applies_mode(client, monkeypatch):
     })
     assert add.status_code == 200
 
-    import routes.companies as companies_mod
+    import orchestration as orch_mod
 
     def _fake_probe(source_type, url, timeout=12):
         return {
@@ -201,7 +201,7 @@ def test_bootstrap_probe_recommends_and_applies_mode(client, monkeypatch):
             'evidence_date': None,
         }
 
-    monkeypatch.setattr(companies_mod, '_probe_candidate_url', _fake_probe)
+    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
 
     run = client.post('/api/companies/BOOT/bootstrap_probe', json={'apply_mode': True})
     assert run.status_code == 200
@@ -240,7 +240,8 @@ def test_bootstrap_probe_globenewswire_candidate_applies_rss(client, monkeypatch
             'evidence_date': None,
         }
 
-    monkeypatch.setattr(companies_mod, '_probe_candidate_url', _fake_probe)
+    import orchestration as orch_mod
+    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
 
     run = client.post('/api/companies/GNEW/bootstrap_probe', json={'apply_mode': True})
     assert run.status_code == 200
@@ -266,7 +267,7 @@ def test_bootstrap_probe_all_targets_governance_set(client, monkeypatch):
         })
         assert created.status_code == 201
 
-    import routes.companies as companies_mod
+    import orchestration as orch_mod
 
     def _fake_probe(source_type, url, timeout=12):
         return {
@@ -277,7 +278,7 @@ def test_bootstrap_probe_all_targets_governance_set(client, monkeypatch):
             'evidence_date': None,
         }
 
-    monkeypatch.setattr(companies_mod, '_probe_candidate_url', _fake_probe)
+    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
 
     # Seed one target with candidate URLs so the batch endpoint can probe it.
     add = client.post('/api/companies/AONE/discovery_candidates', json={

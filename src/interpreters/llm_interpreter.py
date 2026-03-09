@@ -741,7 +741,8 @@ class LLMInterpreter:
         # Per-metric anchor terms (from metric_keywords v31 SSOT, with exclude hints)
         if self._db is not None:
             try:
-                kw_rows = self._db.get_all_metric_keywords(active_only=True)
+                from infra.keyword_service import get_all_active_rows as _get_kw_rows
+                kw_rows = _get_kw_rows(self._db)
                 if kw_rows:
                     lines.append("=== ANCHOR TERMS ===")
                     lines.append(
@@ -1259,7 +1260,8 @@ class LLMInterpreter:
         # Per-metric anchor terms (from metric_keywords v31 SSOT, with exclude hints)
         if self._db is not None:
             try:
-                kw_rows = self._db.get_all_metric_keywords(active_only=True)
+                from infra.keyword_service import get_all_active_rows as _get_kw_rows
+                kw_rows = _get_kw_rows(self._db)
                 if kw_rows:
                     lines.append("=== ANCHOR TERMS ===")
                     lines.append(

@@ -76,18 +76,11 @@ _8K_SEARCH_TERMS: list = [
 def _build_edgar_query(db=None) -> str:
     """Build the EDGAR full-text search query from metric keywords (active only).
 
-    Reads per-metric keywords from metric_schema.keywords (v32+).
-    Falls back to the hardcoded _8K_SEARCH_TERMS list when db is None or no
-    keywords are configured.
+    Delegates to infra.keyword_service.build_edgar_search_query — single read-point for
+    all keyword consumers. Falls back to hardcoded _8K_SEARCH_TERMS when db is None.
     """
-    if db is not None:
-        try:
-            rows = db.get_all_metric_keywords(active_only=True)
-            if rows:
-                return ' OR '.join(f'"{r["phrase"]}"' for r in rows)
-        except Exception:
-            log.warning('Could not load metric keywords from DB; using hardcoded fallback', exc_info=True)
-    return ' OR '.join(_8K_SEARCH_TERMS)
+    from infra.keyword_service import build_edgar_search_query
+    return build_edgar_search_query(db)
 
 
 # ── Module-level helpers (public, used by tests) ──────────────────────────────
@@ -192,7 +185,13 @@ def parse_8k_exhibit_url(
             continue
 
         href = link_href
-        if not href.startswith('http'):
+        if href.startswith('http'):
+            pass  # already absolute
+        elif href.startswith('/Archives/') or href.startswith('/cgi-bin/'):
+            # Absolute EDGAR path — just prepend the host, do NOT re-append filing dir.
+            href = 'https://www.sec.gov' + href
+        else:
+            # Relative filename (e.g. "ex99_1.htm") — append to filing directory.
             href = base + href.lstrip('/')
 
         if 'EX-99.1' in row_type or 'EX-991' in row_type:

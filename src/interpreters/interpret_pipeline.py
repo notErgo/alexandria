@@ -841,7 +841,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
     try:
         log.info(
-            "Extracting report id=%s ticker=%s period=%s source=%s",
+            "event=interpret_start report_id=%s ticker=%s period=%s source=%s",
             report.get('id'), report.get('ticker'), report.get('report_date'),
             report.get('source_type'),
         )
@@ -859,10 +859,11 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # before a company's mining pivot can also slip through.
         if source_type == 'edgar_8k':
             try:
-                _kw_rows = db.get_all_metric_keywords(active_only=True)
+                from infra.keyword_service import get_all_active_rows as _get_kw_rows
+                _kw_rows = _get_kw_rows(db)
                 _kw_phrases = [r['phrase'].lower() for r in _kw_rows]
             except Exception as _kw_err:
-                log.debug("Could not load metric keywords for 8-K gate (non-fatal): %s", _kw_err)
+                log.debug("event=kw_gate_load_error error=%s", _kw_err)
                 _kw_phrases = []
             if _kw_phrases:
                 _text_lower = text.lower()
@@ -1008,13 +1009,18 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
     except Exception as e:
         log.error(
-            "Extraction failed for report id=%s ticker=%s: %s",
+            "event=interpret_error report_id=%s ticker=%s error=%s",
             report.get('id'), report.get('ticker'), e, exc_info=True,
         )
         summary.errors += 1
         db.mark_report_extraction_failed(report['id'], str(e)[:500])
         return summary
 
+    log.info(
+        "event=interpret_complete report_id=%s ticker=%s data_points=%s queued=%s errors=%s",
+        report.get('id'), report.get('ticker'),
+        summary.data_points_extracted, summary.review_flagged, summary.errors,
+    )
     db.mark_report_extracted(report['id'])
 
     return summary

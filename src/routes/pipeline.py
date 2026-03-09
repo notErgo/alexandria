@@ -225,7 +225,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
     from app_globals import get_db, get_registry
     from interpreters.interpret_pipeline import extract_report
     from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
-    from routes.companies import _run_bootstrap_probe_for_ticker
+    from orchestration import run_bootstrap_probe_for_ticker as _run_bootstrap_probe_for_ticker
     from routes.reports import _run_ir_ingest, _run_edgar_ingest
 
     db = get_db()
@@ -642,7 +642,8 @@ def pipeline_preflight():
         ).fetchone()[0] or 0
 
     try:
-        kw_rows = db.get_all_metric_keywords(active_only=True)
+        from infra.keyword_service import get_all_active_rows as _get_kw_rows
+        kw_rows = _get_kw_rows(db)
         keyword_count = len(kw_rows)
     except Exception:
         keyword_count = 0
@@ -790,7 +791,7 @@ def overnight_pipeline_cancel(run_id: int):
 def overnight_pipeline_apply_modes(run_id: int):
     """Analyst-triggered apply pass for recommended modes on run tickers."""
     from app_globals import get_db
-    from routes.companies import _run_bootstrap_probe_for_ticker
+    from orchestration import run_bootstrap_probe_for_ticker as _run_bootstrap_probe_for_ticker
 
     db = get_db()
     run = db.get_pipeline_run(run_id)

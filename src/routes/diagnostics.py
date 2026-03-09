@@ -16,28 +16,33 @@ log = logging.getLogger('miners.routes.diagnostics')
 
 bp = Blueprint('diagnostics', __name__)
 
-# All metrics and 13 tickers — used to fill zero-cells in the coverage heatmap
+# All metrics — used to fill zero-cells in the coverage heatmap
 _ALL_METRICS = [
-    'production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate',
+    'production_btc', 'holdings_btc', 'sales_btc', 'hashrate_eh', 'realization_rate',
     # v2 metrics
     'net_btc_balance_change', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
+    # v3 metrics
+    'unrestricted_holdings', 'restricted_holdings_btc',
 ]
 from config import get_all_tickers as _get_all_tickers
 _ALL_TICKERS = _get_all_tickers()
 _METRIC_LABELS = {
-    'production_btc':         'Production',
-    'hodl_btc':               'Holdings',
-    'sold_btc':               'Sold',
-    'hashrate_eh':            'Hashrate',
-    'realization_rate':       'Realization',
+    'production_btc':            'Production',
+    'holdings_btc':              'Holdings',
+    'sales_btc':                 'Sold',
+    'hashrate_eh':               'Hashrate',
+    'realization_rate':          'Realization',
     # v2 metrics
-    'net_btc_balance_change': 'Net BTC Change',
-    'encumbered_btc':         'Encumbered BTC',
-    'mining_mw':              'Mining MW',
-    'ai_hpc_mw':              'AI/HPC MW',
-    'hpc_revenue_usd':        'HPC Revenue',
-    'gpu_count':              'GPU Count',
+    'net_btc_balance_change':    'Net BTC Change',
+    'encumbered_btc':            'Encumbered BTC',
+    'mining_mw':                 'Mining MW',
+    'ai_hpc_mw':                 'AI/HPC MW',
+    'hpc_revenue_usd':           'HPC Revenue',
+    'gpu_count':                 'GPU Count',
+    # v3 metrics
+    'unrestricted_holdings':     'Unrestricted Holdings',
+    'restricted_holdings_btc':   'Restricted Holdings',
 }
 
 # Common English stopwords plus domain/document boilerplate to ignore

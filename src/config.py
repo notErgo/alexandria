@@ -259,12 +259,12 @@ SOURCE_TYPE_DISPLAY: dict = {
 # --- Quarterly/Annual Metric Classification ---
 # Metrics where quarterly total = sum of monthly values (can infer missing month from remainder)
 FLOW_METRICS: frozenset = frozenset({
-    'production_btc', 'sold_btc', 'net_btc_balance_change',
+    'production_btc', 'sales_btc', 'net_btc_balance_change',
 })
 
 # Metrics where quarterly value is a point-in-time snapshot (cannot disaggregate across months)
 SNAPSHOT_METRICS: frozenset = frozenset({
-    'hodl_btc', 'hodl_btc_restricted', 'hodl_btc_unrestricted',
+    'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'hashrate_eh', 'realization_rate', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
 })

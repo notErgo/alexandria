@@ -3482,15 +3482,13 @@ class MinerDB:
         """Return the earliest covering_period for reports that mention bitcoin mining.
 
         Scans raw_text for LIKE-pattern keywords indicating active mining operations.
-        Keywords are read from config_settings key 'bitcoin_mining_keywords'
-        (comma-separated, e.g. '%bitcoin%,%btc%') and fall back to hardcoded defaults.
+        Keywords are provided by infra.keyword_service.get_mining_detection_phrases()
+        which reads from metric_schema.keywords (SSOT) with config_settings as an
+        additive supplement and hardcoded fallback.
         Returns None if no such report exists for the ticker.
         """
-        raw = self.get_config('bitcoin_mining_keywords')
-        if raw:
-            keywords = [k.strip() for k in raw.split(',') if k.strip()]
-        else:
-            keywords = list(self._DEFAULT_BITCOIN_MINING_KEYWORDS)
+        from infra.keyword_service import get_mining_detection_phrases
+        keywords = get_mining_detection_phrases(self)
         clauses = ' OR '.join('LOWER(raw_text) LIKE ?' for _ in keywords)
         params = [ticker] + [k.lower() for k in keywords]
         with self._get_connection() as conn:

@@ -19,13 +19,13 @@ log = logging.getLogger('miners.routes.patterns')
 bp = Blueprint('patterns', __name__)
 
 _METRIC_ORDER = [
-    'production_btc', 'hodl_btc', 'sold_btc', 'hashrate_eh', 'realization_rate'
+    'production_btc', 'holdings_btc', 'sales_btc', 'hashrate_eh', 'realization_rate'
 ]
 _METRIC_LABELS = {
-    'production_btc': 'Production BTC',
-    'hodl_btc':       'Holdings BTC',
-    'sold_btc':'Sold BTC',
-    'hashrate_eh':    'Hashrate EH/s',
+    'production_btc':  'Production BTC',
+    'holdings_btc':    'Holdings BTC',
+    'sales_btc':       'Sold BTC',
+    'hashrate_eh':     'Hashrate EH/s',
     'realization_rate':'Realization Rate',
 }
 

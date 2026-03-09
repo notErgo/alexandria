@@ -17,14 +17,9 @@ from typing import Optional
 
 log = logging.getLogger('miners.interpreters.gap_fill')
 
-# Flow metrics: quarterly value = sum of monthly values.
-FLOW_METRICS = frozenset({'production_btc', 'sales_btc'})
-
-# Snapshot metrics: quarterly value = point-in-time at quarter-end.
-SNAPSHOT_METRICS = frozenset({
-    'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
-    'hashrate_eh',
-})
+# Import canonical metric classification from config (single source of truth).
+# Do NOT redefine these sets here — update config.py instead.
+from config import FLOW_METRICS, SNAPSHOT_METRICS
 
 # Analyst-protected extraction methods — never overwrite these.
 _PROTECTED_METHODS = frozenset({
