@@ -1,5 +1,5 @@
 // Module dependency DAG — OffChain/miners
-// Generated: 2026-03-08
+// Generated: 2026-03-09
 // Edge direction: A -> B means "A imports B"
 // Render: dot -Tsvg dag.dot -o dag.svg
 // Cycle check: python3 scripts/check_dag.py docs/architecture/dag.json
@@ -48,9 +48,12 @@ digraph miners_dag {
         scrapers_dedup      [label="scrapers.dedup"];
         scrapers_fetch_policy[label="scrapers.fetch_policy"];
         scrapers_source_contract[label="scrapers.source_contract"];
-        scrapers_crawl_context[label="scrapers.crawl_context"];
-        scrapers_llm_crawler[label="scrapers.llm_crawler"];
-        analysis_coverage   [label="analysis.coverage"];
+        scrapers_crawl_context[label="scrapers.crawl_context",
+                               tooltip="stdlib-only; db injected"];
+        scrapers_llm_crawler[label="scrapers.llm_crawler",
+                              tooltip="stdlib-only; db injected"];
+        analysis_coverage   [label="analysis.coverage",
+                              tooltip="stdlib-only"];
     }
 
     // -------------------------------------------------------------------------
@@ -77,12 +80,16 @@ digraph miners_dag {
         interp_llm          [label="interpreters.llm_interpreter"];
         interp_broad        [label="interpreters.broad_interpreter"];
         interp_pipeline     [label="interpreters.interpret_pipeline"];
+        interp_gap_fill     [label="interpreters.gap_fill",
+                             tooltip="stdlib-only; db injected at call site"];
 
         scrapers_archive    [label="scrapers.archive_ingestor"];
         scrapers_manifest   [label="scrapers.manifest_scanner"];
         scrapers_ir         [label="scrapers.ir_scraper"];
         scrapers_edgar      [label="scrapers.edgar_connector"];
         scrapers_html_dl    [label="scrapers.html_downloader"];
+        scrapers_edgar_ctx  [label="scrapers.edgar_context_builder",
+                             tooltip="stdlib-only; db injected at call site"];
     }
 
     // -------------------------------------------------------------------------
@@ -141,13 +148,16 @@ digraph miners_dag {
         r_metric_rules  [label="routes.metric_rules"];
         r_miner         [label="routes.miner",
                           tooltip="direct import of interpreters.regex_interpreter — inconsistent with other routes"];
-        r_operations    [label="routes.operations"];
+        r_operations    [label="routes.operations",
+                          tooltip="imports routes.reports + routes.companies — same-layer coupling"];
         r_patterns      [label="routes.patterns"];
-        r_pipeline      [label="routes.pipeline"];
+        r_pipeline      [label="routes.pipeline",
+                          tooltip="imports routes.reports + routes.companies (same-layer); scrapers.llm_crawler (skip-layer)"];
         r_qc            [label="routes.qc"];
         r_regime        [label="routes.regime"];
         r_reports       [label="routes.reports"];
-        r_review        [label="routes.review"];
+        r_review        [label="routes.review",
+                          tooltip="direct imports of llm_interpreter + regex_interpreter — bypasses app_globals"];
         r_scrape        [label="routes.scrape"];
         r_themes        [label="routes.themes"];
         r_timeseries    [label="routes.timeseries"];
@@ -183,6 +193,13 @@ digraph miners_dag {
     interp_llm          -> interp_confidence;
     interp_broad        -> config;
     interp_pipeline     -> interp_context_win;
+    interp_pipeline     -> interp_llm;
+    interp_pipeline     -> interp_regex;
+    interp_pipeline     -> interp_agreement;
+    interp_pipeline     -> interp_pattern_reg;
+    interp_pipeline     -> miner_types;
+    interp_pipeline     -> config;
+    interp_pipeline     -> infra_text_utils;
 
     // L2 scrapers
     scrapers_archive    -> config;
@@ -207,6 +224,8 @@ digraph miners_dag {
     scrapers_observer   -> scrapers_prim_reg;
     scrapers_observer   -> scrapers_source_contract;
     scrapers_worker     -> infra_db;
+    scrapers_worker     -> scrapers_ir;
+    scrapers_worker     -> scrapers_edgar;
     coverage_bridge     -> config;
     coverage_bridge     -> miner_types;
 
@@ -216,17 +235,89 @@ digraph miners_dag {
     app_globals         -> interp_pattern_reg;
     app_globals         -> scrapers_worker;
 
-    // L5 routes
-    r_companies         -> config;
-    r_data_points       -> app_globals;
-    r_diagnostics       -> config;
-    r_explorer          -> app_globals;
-    r_explorer          -> coverage_logic;
-    r_interpret         -> app_globals;
-    r_interpret         -> config;
-    r_miner             -> app_globals;
-    r_miner             -> interp_regex        [color="#cc4444",
-                            tooltip="direct interpreter import — bypasses app_globals boundary"];
-    r_regime            -> app_globals;
-    r_scrape            -> app_globals;
+    // L5 routes — standard (app_globals only)
+    r_benchmark     -> app_globals;
+    r_companies     -> app_globals;
+    r_companies     -> config;
+    r_crawl         -> app_globals;
+    r_dashboard     -> app_globals;
+    r_data_points   -> app_globals;
+    r_diagnostics   -> config;
+    r_explorer      -> app_globals;
+    r_explorer      -> coverage_logic;
+    r_facilities    -> app_globals;
+    r_interpret     -> app_globals;
+    r_interpret     -> config;
+    r_keywords      -> app_globals;
+    r_metric_rules  -> app_globals;
+    r_metric_rules  -> config;
+    r_patterns      -> config;
+    r_qc            -> app_globals;
+    r_regime        -> app_globals;
+    r_scrape        -> app_globals;
+    r_timeseries    -> app_globals;
+
+    // L5 routes — coverage (uses manifest_scanner directly)
+    r_coverage      -> app_globals;
+    r_coverage      -> config;
+    r_coverage      -> scrapers_manifest;
+
+    // L5 routes — llm_prompts (direct interpreter access)
+    r_llm_prompts   -> app_globals;
+    r_llm_prompts   -> interp_llm          [color="#cc4444",
+                        tooltip="direct interpreter import — bypasses app_globals boundary"];
+
+    // L5 routes — miner (known violation)
+    r_miner         -> app_globals;
+    r_miner         -> interp_regex        [color="#cc4444",
+                        tooltip="direct interpreter import — bypasses app_globals boundary"];
+
+    // L5 routes — review (direct interpreter imports)
+    r_review        -> app_globals;
+    r_review        -> interp_llm          [color="#cc4444",
+                        tooltip="direct interpreter import — bypasses app_globals boundary"];
+    r_review        -> interp_regex        [color="#cc4444",
+                        tooltip="direct interpreter import — bypasses app_globals boundary"];
+
+    // L5 routes — config (direct interpreter import)
+    r_config        -> app_globals;
+    r_config        -> interp_llm          [color="#cc4444",
+                        tooltip="direct interpreter import — bypasses app_globals boundary"];
+
+    // L5 routes — reports (full ingest fan-out)
+    r_reports       -> app_globals;
+    r_reports       -> config;
+    r_reports       -> interp_pipeline;
+    r_reports       -> scrapers_archive;
+    r_reports       -> scrapers_ir;
+    r_reports       -> scrapers_edgar;
+    r_reports       -> scrapers_html_dl;
+    r_reports       -> coverage_bridge;
+    r_reports       -> orchestration;
+    r_reports       -> infra_ollama_warmup;
+    r_reports       -> parsers_press;
+
+    // L5 routes — operations (orchestrates extraction)
+    r_operations    -> app_globals;
+    r_operations    -> config;
+    r_operations    -> scrapers_archive;
+    r_operations    -> interp_pipeline;
+    r_operations    -> interp_pattern_reg;
+    r_operations    -> infra_ollama_warmup;
+    r_operations    -> r_reports           [color="#cc4444", style=dashed,
+                        tooltip="same-layer coupling — route importing route"];
+    r_operations    -> r_companies         [color="#cc4444", style=dashed,
+                        tooltip="same-layer coupling — route importing route"];
+
+    // L5 routes — pipeline (full pipeline control)
+    r_pipeline      -> app_globals;
+    r_pipeline      -> config;
+    r_pipeline      -> interp_pipeline;
+    r_pipeline      -> infra_ollama_warmup;
+    r_pipeline      -> scrapers_llm_crawler [color="#cc4444",
+                        tooltip="L5 importing L1 directly — skips L2-L4 abstraction layers"];
+    r_pipeline      -> r_reports           [color="#cc4444", style=dashed,
+                        tooltip="same-layer coupling — route importing route"];
+    r_pipeline      -> r_companies         [color="#cc4444", style=dashed,
+                        tooltip="same-layer coupling — route importing route"];
 }
