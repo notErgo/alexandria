@@ -427,6 +427,7 @@ _NEXT_PAGE_SELECTORS: tuple[str, ...] = (
     ".pagination a[aria-label='Next']",
     "[aria-label='Next page']",
     ".listing-pagination a:last-child",
+    # Equisolve/Q4: numbered pager_button — handled dynamically in Strategy 4
 )
 
 
@@ -544,6 +545,24 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                                 break
                         except Exception:
                             continue
+
+                # Strategy 4: numbered pager buttons (Equisolve pager_button pattern).
+                # The widget renders <button class="pager_button pager_page"> elements
+                # with aria-current="true" on the active page.  Click the button whose
+                # text is page_num + 1 to advance.
+                if not next_clicked:
+                    try:
+                        next_num = str(page_num + 1)
+                        btn = pw_page.locator(
+                            f"button.pager_button:text-is('{next_num}')"
+                        ).first
+                        if btn.is_visible(timeout=1000):
+                            btn.click()
+                            pw_page.wait_for_load_state("networkidle", timeout=15000)
+                            pw_page.wait_for_timeout(1500)
+                            next_clicked = True
+                    except Exception:
+                        pass
 
                 if not next_clicked:
                     # Log all link texts at INFO to diagnose pagination selector
