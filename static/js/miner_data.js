@@ -39,11 +39,7 @@ function _assignMetricColor(key) {
 // Placing inside renderTable() would accumulate a listener on every filter change.
 document.addEventListener('DOMContentLoaded', function() {
   const _tbody = document.getElementById('timeline-tbody');
-  const docPanel = document.getElementById('doc-panel');
-  const docAnchor = document.getElementById('miner-review-doc-anchor');
-  if (docPanel && docAnchor && docPanel.parentElement !== docAnchor) {
-    docAnchor.appendChild(docPanel);
-  }
+  // doc-panel is already in its correct DOM position — no relocation needed.
 
   // Prevent text selection on Shift+click (standard multi-select UX)
   _tbody.addEventListener('mousedown', function(e) {
@@ -59,8 +55,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const period = row.getAttribute('data-period');
     if (_tableMode === 'view' && !e.target.classList.contains('row-select-cb')) {
-      const rowData = _rows.find(function(r) { return r.period === period; });
-      openDocumentFromRow(period, rowData && rowData.report_id ? String(rowData.report_id) : null);
+      // Expand the doc chips sub-row so all available docs for this period are visible,
+      // then open the doc panel for the period.
+      toggleRowDocs(period);
+      selectPeriod(period);
       return;
     }
     const metricTd = e.target.closest('td[data-metric]');
@@ -767,8 +765,8 @@ function toggleRowDocs(period) {
 }
 
 function openDocumentFromRow(period, reportId) {
+  if (!_ticker) return;
   const row = _rows.find(function(r) { return r.period === period; });
-  if (!row || !_ticker) return;
   _selectedPeriod = period;
   document.querySelectorAll('#timeline-tbody tr[data-period]').forEach(function(tr) {
     tr.classList.toggle('selected', tr.getAttribute('data-period') === period);
@@ -777,7 +775,6 @@ function openDocumentFromRow(period, reportId) {
   if (panel) {
     panel.classList.add('visible');
     panel.style.display = 'flex';
-    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
   document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${period.slice(0, 7)}${row && row.source_type ? ' · ' + row.source_type : ''}`;
@@ -1007,7 +1004,6 @@ function selectPeriod(period) {
   const panel = document.getElementById('doc-panel');
   panel.classList.add('visible');
   panel.style.display = 'flex';
-  panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
 

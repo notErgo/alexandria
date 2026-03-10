@@ -353,21 +353,20 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 
 /* ── Document viewer panel (fixed bottom drawer — no layout shift) ────────── */
 #doc-panel {
-  position: relative;
-  bottom: auto;
-  left: auto;
-  transform: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
   width: 100%;
   max-width: none;
-  z-index: 200;
+  z-index: 1000;
   display: none;
   flex-direction: column;
   background: var(--theme-bg-secondary);
-  border: 1px solid var(--theme-border);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  margin-top: 1rem;
-  max-height: none;
+  border-top: 2px solid var(--theme-border);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.3);
+  height: 420px;
+  max-height: 60vh;
   overflow: hidden;
 }
 #doc-panel.visible { display: flex; }
@@ -2234,55 +2233,6 @@ tr.is-reviewed td { opacity: 0.65; }
 
   </div><!-- /#view-interpret -->
 
-  <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
-  <div id="doc-panel" data-spec-id="MD5.2">
-    <div class="doc-panel-header">
-      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
-      <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem">⤢ Source</button>
-      <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
-    </div>
-    <div id="doc-search-bar">
-      <input id="doc-search-input" type="text" placeholder="Search... (Enter = next)" autocomplete="off" />
-      <button class="btn btn-secondary btn-sm" id="doc-search-prev" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8593;</button>
-      <button class="btn btn-secondary btn-sm" id="doc-search-next" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8595;</button>
-      <span id="doc-search-count"></span>
-      <button class="doc-panel-close" id="doc-search-close" title="Close search (Esc)" style="margin-left:auto">✕</button>
-    </div>
-    <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
-      <div id="miner-review-panel"></div>
-    </div>
-    <!-- Pattern generator — shown after text selection in source view -->
-    <div id="pattern-panel">
-      <div class="pattern-title">
-        Pattern Generator
-        <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
-          — select text in the document above
-        </span>
-      </div>
-      <div class="pattern-form-row">
-        <label>Selected</label>
-        <span id="selected-text-display"></span>
-      </div>
-      <div class="pattern-form-row">
-        <label>Metric</label>
-        <select id="pattern-metric">
-          <option value="">Loading metrics...</option>
-        </select>
-      </div>
-      <div class="pattern-form-row">
-        <label>Regex</label>
-        <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
-        <span class="pattern-match-count" id="match-count-display"></span>
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
-        <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
-        <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
-        <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-      <div id="apply-result"></div>
-    </div>
-  </div><!-- /#doc-panel -->
 
 </div><!-- /.md-page -->
 
@@ -2583,6 +2533,56 @@ tr.is-reviewed td { opacity: 0.65; }
     Coming soon: LLM-powered interrogation of the extracted time-series dataset.
   </div>
 </div>
+
+<!-- ── Document viewer panel (fixed bottom drawer, outside all ops-panes) ── -->
+<div id="doc-panel" data-spec-id="MD5.2" data-path="critical">
+  <div class="doc-panel-header">
+    <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
+    <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem">⤢ Source</button>
+    <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
+  </div>
+  <div id="doc-search-bar">
+    <input id="doc-search-input" type="text" placeholder="Search... (Enter = next)" autocomplete="off" />
+    <button class="btn btn-secondary btn-sm" id="doc-search-prev" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8593;</button>
+    <button class="btn btn-secondary btn-sm" id="doc-search-next" style="font-size:0.78rem;padding:0.15rem 0.4rem">&#8595;</button>
+    <span id="doc-search-count"></span>
+    <button class="doc-panel-close" id="doc-search-close" title="Close search (Esc)" style="margin-left:auto">✕</button>
+  </div>
+  <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
+    <div id="miner-review-panel"></div>
+  </div>
+  <!-- Pattern generator — shown after text selection in source view -->
+  <div id="pattern-panel">
+    <div class="pattern-title">
+      Pattern Generator
+      <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
+        — select text in the document above
+      </span>
+    </div>
+    <div class="pattern-form-row">
+      <label>Selected</label>
+      <span id="selected-text-display"></span>
+    </div>
+    <div class="pattern-form-row">
+      <label>Metric</label>
+      <select id="pattern-metric">
+        <option value="">Loading metrics...</option>
+      </select>
+    </div>
+    <div class="pattern-form-row">
+      <label>Regex</label>
+      <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
+      <span class="pattern-match-count" id="match-count-display"></span>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
+      <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
+      <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
+      <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="apply-result"></div>
+  </div>
+</div><!-- /#doc-panel -->
 
 <!-- ── Help overlay ──────────────────────────────────────────────────────── -->
 <div id="help-overlay" class="help-overlay">
