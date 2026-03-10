@@ -416,6 +416,19 @@ _HEADERS = {
 }
 
 
+# Pagination "Next" button selectors for JS-rendered IR widgets (Equisolve/Q4).
+# Tried in order; first visible match is used.
+_NEXT_PAGE_SELECTORS: tuple[str, ...] = (
+    "a.pager__item--next",
+    "li.pager-next a",
+    "li.next a",
+    "a[rel='next']",
+    ".pagination a[aria-label='Next']",
+    "[aria-label='Next page']",
+    ".listing-pagination a:last-child",
+)
+
+
 def _fetch_with_playwright(url: str) -> Optional[str]:
     """Fallback fetch using a headless Chromium browser for bot-protected pages.
 
@@ -450,6 +463,66 @@ def _fetch_with_playwright(url: str) -> Optional[str]:
     except Exception as exc:
         log.warning("Playwright fetch failed for %s: %s", url, exc)
         return None
+
+
+def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
+    """Use a single Playwright session to paginate through a JS-rendered listing.
+
+    Loads the URL, captures the page HTML, then clicks the "Next page" control
+    (Equisolve/Q4 widget pagination) and repeats until no next button is found or
+    max_pages is reached.  Returns a list of HTML strings, one per page.
+
+    Used for JS-rendered IR listing pages where ?page=N query params are ignored
+    by the JavaScript widget (Equisolve, Q4 IR sites).
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        log.warning("playwright not installed — cannot paginate JS-rendered listing %s", url)
+        return []
+    pages_html: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=_HEADERS["User-Agent"],
+                extra_http_headers={"Accept-Language": _HEADERS["Accept-Language"]},
+            )
+            pw_page = context.new_page()
+            pw_page.goto(url, wait_until="networkidle", timeout=30000)
+            pw_page.wait_for_timeout(2000)
+
+            for page_num in range(1, max_pages + 1):
+                html = pw_page.content()
+                if is_bot_challenge_page(html):
+                    log.warning("Playwright got bot challenge on page %d of %s", page_num, url)
+                    break
+                log.debug("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
+                pages_html.append(html)
+
+                # Try each known "Next" selector; stop paginating if none are visible
+                next_clicked = False
+                for selector in _NEXT_PAGE_SELECTORS:
+                    try:
+                        btn = pw_page.locator(selector).first
+                        if btn.is_visible(timeout=1000):
+                            btn.click()
+                            pw_page.wait_for_load_state("networkidle", timeout=15000)
+                            pw_page.wait_for_timeout(1500)
+                            next_clicked = True
+                            break
+                    except Exception:
+                        continue
+
+                if not next_clicked:
+                    log.debug("Playwright pagination: no next button found after page %d", page_num)
+                    break
+
+            browser.close()
+    except Exception as exc:
+        log.warning("Playwright paginated fetch failed for %s: %s", url, exc)
+    log.info("Playwright paginated fetch: %d pages collected for %s", len(pages_html), url)
+    return pages_html
 
 
 def _fetch_with_rate_limit(
@@ -750,29 +823,43 @@ class IRScraper:
             summary.errors += 1
             return summary
 
+        ir_url = (company.get("ir_url") or "").rstrip("/")
+        ir_host = urlparse(ir_url).netloc.lower() if ir_url else ""
+        use_playwright_pagination = ir_host in _JS_RENDERED_DOMAINS
+
+        # For JS-rendered listing pages (Equisolve/Q4 widgets) the ?page=N query
+        # parameter is ignored by the JavaScript widget — the server returns the
+        # same first-page content regardless.  Use a single Playwright session
+        # that clicks through pagination instead.
+        if use_playwright_pagination:
+            log.info("%s: JS-rendered listing — using Playwright pagination for %s", ticker, ir_url)
+            page_htmls_js = _playwright_collect_all_pages(ir_url)
+            # Build a synthetic (html, source_url) list mirroring the URL-based loop
+            page_sources: list[tuple[str, str]] = [
+                (html, ir_url) for html in page_htmls_js
+            ]
+            # For CLSK the page_urls list also includes prnewswire fallback pages —
+            # keep those as a static fallback after the JS pages are exhausted.
+            static_fallback_urls = [u for u in page_urls if urlparse(u).netloc.lower() != ir_host]
+        else:
+            page_sources = []
+            static_fallback_urls = page_urls
+
         seen_urls: set[str] = set()
         consecutive_empty = 0
         found_any = False
 
-        for page_idx, page_url in enumerate(page_urls, start=1):
-            self._emit('page_fetch', ticker=ticker, url=page_url, page=page_idx)
-            resp = _fetch_with_rate_limit(page_url, self.session)
-            if resp is None:
-                consecutive_empty += 1
-                if found_any and consecutive_empty >= 3:
-                    break
-                continue
-
-            candidates = discovery_links_from_html(company, resp.text, page_url)
+        def _process_page(html_text: str, page_url: str, page_idx: int) -> bool:
+            """Process one listing page; returns True if at least one recent candidate found."""
+            nonlocal consecutive_empty, found_any
+            candidates = discovery_links_from_html(company, html_text, page_url)
             if not candidates:
                 consecutive_empty += 1
-                if found_any and consecutive_empty >= 3:
-                    break
-                continue
+                return False
 
             consecutive_empty = 0
             found_any = True
-            page_has_recent_candidate = False
+            page_has_recent = False
 
             for title, full_url, hinted_period in candidates:
                 if full_url in seen_urls:
@@ -781,7 +868,7 @@ class IRScraper:
 
                 period_hint = hinted_period or infer_period_from_text(full_url)
                 if period_hint and period_hint.year >= start_year:
-                    page_has_recent_candidate = True
+                    page_has_recent = True
 
                 if period_hint and period_hint.year < start_year:
                     continue
@@ -832,7 +919,26 @@ class IRScraper:
                 if inserted:
                     log.info("Ingested discovery PR: %s %s from %s", ticker, page_period, full_url)
 
-            if found_any and not page_has_recent_candidate:
+            return page_has_recent
+
+        # Process Playwright-paginated pages first (JS-rendered listing)
+        for page_idx, (html_text, page_url) in enumerate(page_sources, start=1):
+            self._emit('page_fetch', ticker=ticker, url=page_url, page=page_idx)
+            _process_page(html_text, page_url, page_idx)
+
+        # Process static URL pages (regular requests, or prnewswire fallback)
+        page_offset = len(page_sources)
+        for page_idx, page_url in enumerate(static_fallback_urls, start=page_offset + 1):
+            self._emit('page_fetch', ticker=ticker, url=page_url, page=page_idx)
+            resp = _fetch_with_rate_limit(page_url, self.session)
+            if resp is None:
+                consecutive_empty += 1
+                if found_any and consecutive_empty >= 3:
+                    break
+                continue
+
+            has_recent = _process_page(resp.text, page_url, page_idx)
+            if found_any and not has_recent:
                 break
 
         return summary
