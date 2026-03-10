@@ -336,9 +336,16 @@ def discovery_page_urls_for_company(company: dict) -> list[str]:
     ir_url = (company.get("ir_url") or "").rstrip("/")
     prnewswire_url = (company.get("prnewswire_url") or "").rstrip("/")
 
-    if ticker == "CLSK" and prnewswire_url:
-        pages = [prnewswire_url]
-        pages.extend(f"{prnewswire_url}?page={page}" for page in range(2, 21))
+    if ticker == "CLSK":
+        # Primary: native IR listing page (more reliable, no bot challenge)
+        pages = []
+        if ir_url:
+            pages.append(ir_url)
+            pages.extend(f"{ir_url}?page={page}" for page in range(2, 11))
+        # Secondary: prnewswire archive (broader historical coverage, bot-challenged)
+        if prnewswire_url:
+            pages.append(prnewswire_url)
+            pages.extend(f"{prnewswire_url}?page={page}" for page in range(2, 21))
         return pages
 
     if ticker == "RIOT":
@@ -388,6 +395,12 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
     return results
 
 
+# Domains whose IR listing pages are JS-rendered (Equisolve/Q4 widgets).
+# requests returns a static shell with no article links; Playwright is required.
+_JS_RENDERED_DOMAINS: frozenset = frozenset({
+    "investors.cleanspark.com",
+})
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -423,8 +436,8 @@ def _fetch_with_playwright(url: str) -> Optional[str]:
                 },
             )
             page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Wait briefly for any JS challenge redirect to complete
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            # Extra settle time for JS widget rendering (Equisolve/Q4) and bot-challenge redirects
             page.wait_for_timeout(2000)
             html = page.content()
             browser.close()
@@ -449,6 +462,19 @@ def _fetch_with_rate_limit(
     Raises on 5xx (unexpected server errors that should surface).
     For bot-protected domains (prnewswire), falls back to Playwright.
     """
+    from urllib.parse import urlparse as _urlparse
+    if _urlparse(url).netloc.lower() in _JS_RENDERED_DOMAINS:
+        log.debug("JS-rendered domain — using Playwright for %s", url)
+        html = _fetch_with_playwright(url)
+        if html is None:
+            return None
+        import requests as _req
+        mock = _req.models.Response()
+        mock.status_code = 200
+        mock._content = html.encode("utf-8", errors="replace")
+        mock.encoding = "utf-8"
+        return mock
+
     time.sleep(IR_REQUEST_DELAY_SECONDS)
     try:
         resp = DEFAULT_RETRY_POLICY.execute(session.get, url, timeout=15, headers=_HEADERS)
