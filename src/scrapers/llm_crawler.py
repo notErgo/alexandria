@@ -76,8 +76,10 @@ def _estimate_ctx(messages: list) -> tuple[int, int]:
 _TASKS: dict = {}
 _TASKS_LOCK = threading.Lock()
 
-# Limit concurrent ticker crawls to avoid hammering the Anthropic API
-_SEMAPHORE = threading.Semaphore(3)
+# Limit concurrent ticker crawls. For Ollama, set OLLAMA_NUM_PARALLEL on the
+# server to match this value so requests are processed simultaneously rather
+# than queued. For Anthropic API, keep this low to respect rate limits.
+_SEMAPHORE = threading.Semaphore(4)
 
 
 # ---------------------------------------------------------------------------
