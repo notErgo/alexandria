@@ -802,6 +802,29 @@ def _interpret_quarterly_report(
         summary.errors += 1
         return summary
 
+    # Per-metric fallback: mirrors _run_llm_batch(). When batch returns {} (e.g.
+    # LLM responded with markdown prose instead of JSON), retry each metric
+    # individually — single-metric prompts are simpler and more reliably parsed.
+    if not llm_results:
+        log.warning(
+            "Quarterly LLM batch empty for %s %s — falling back to per-metric (%d calls)",
+            ticker, covering_period, len(all_metrics),
+        )
+        fallback: dict = {}
+        for _m in all_metrics:
+            try:
+                single = llm_interpreter.extract_quarterly_batch(
+                    text, [_m], ticker=ticker, period_type=period_type
+                )
+                if _m in single and single[_m] is not None:
+                    fallback[_m] = single[_m]
+            except Exception as _fb_err:
+                log.warning(
+                    "Quarterly per-metric fallback failed for %s %s %s: %s",
+                    ticker, covering_period, _m, _fb_err,
+                )
+        llm_results = fallback
+
     for metric, result in llm_results.items():
         if result is None:
             continue
@@ -945,6 +968,8 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # Uses broad mining detection phrases (%btc%, %bitcoin%, %hash rate%, etc.)
         # rather than the narrower anchor phrases — archive/IR text says "produced
         # 742 BTC" not "bitcoin production", so exact anchor matching is too strict.
+        # Hardcoded fallback so the gate ALWAYS fires even when DB/keyword service fails.
+        _KW_GATE_FALLBACK = ['bitcoin', 'btc', 'hash rate', 'hashrate', 'exahash', 'petahash', 'mining operations']
         try:
             from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
             # Strip SQL LIKE delimiters (%..%) to get plain Python substrings.
@@ -952,10 +977,10 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 p.strip('%').lower()
                 for p in _get_det_phrases(db)
                 if p.strip('%')
-            ]
+            ] or _KW_GATE_FALLBACK
         except Exception as _kw_err:
-            log.debug("event=kw_gate_load_error error=%s", _kw_err)
-            _det_phrases = []
+            log.warning("event=kw_gate_load_error error=%s — using hardcoded fallback", _kw_err)
+            _det_phrases = _KW_GATE_FALLBACK
         if _det_phrases:
             _text_lower = text.lower()
             if not any(phrase in _text_lower for phrase in _det_phrases):

@@ -500,13 +500,18 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         force_reextract = bool(config.get('force_reextract', False))
         reports = []
         for t in scrape_targets:
+            # Gate extraction by btc_first_filing_date so pre-pivot filings
+            # that were ingested before this guard existed are never re-processed.
+            first_filing = db.get_btc_first_filing_date(t)
             if force_reextract:
                 batch = db.get_all_reports_for_extraction(ticker=t)
                 for r in batch:
                     db.reset_report_extraction_status(r['id'])
+                if first_filing:
+                    batch = [r for r in batch if r.get('report_date', '') >= first_filing]
                 reports.extend(batch)
             else:
-                reports.extend(db.get_unextracted_reports(ticker=t))
+                reports.extend(db.get_unextracted_reports(ticker=t, from_period=first_filing))
         _event(db, run_id, 'extract', 'stage_preflight',
                total_pending=len(reports), force_reextract=int(force_reextract))
         if reports and bool(config.get('warm_model', True)):
@@ -568,6 +573,43 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         _event(db, run_id, 'extract', 'stage_end',
                reports_processed=processed, data_points=data_points,
                errors=errors, keyword_gated=keyword_gated)
+
+        # Stage: auto-gap-fill for quarterly/annual reporters.
+        # Expands quarterly data_points into monthly inferred rows so all companies
+        # share a common monthly time spine regardless of reporting cadence.
+        # Runs for every non-monthly company in scrape_targets (idempotent — skips
+        # months that already have real or analyst data).
+        from interpreters.gap_fill import fill_quarterly_gaps
+        gf_tickers = [
+            t for t in scrape_targets
+            if (db.get_company(t) or {}).get('reporting_cadence', 'monthly') != 'monthly'
+        ]
+        if gf_tickers:
+            _event(db, run_id, 'gap_fill', 'stage_start', tickers=gf_tickers)
+            gf_filled = gf_skipped = gf_errors = 0
+            for t in gf_tickers:
+                if _is_cancelled(run_id):
+                    raise _RunCancelled()
+                try:
+                    gf = fill_quarterly_gaps(t, db)
+                    gf_filled += gf.get('filled', 0)
+                    gf_skipped += gf.get('skipped', 0)
+                    gf_errors += gf.get('errors', 0)
+                    _event(db, run_id, 'gap_fill', 'ticker_done',
+                           ticker=t,
+                           filled=gf.get('filled', 0),
+                           skipped=gf.get('skipped', 0),
+                           errors=gf.get('errors', 0))
+                except Exception as _gf_err:
+                    gf_errors += 1
+                    _event(db, run_id, 'gap_fill', 'ticker_error',
+                           ticker=t, level='WARNING', error=str(_gf_err))
+            _event(db, run_id, 'gap_fill', 'stage_end',
+                   tickers_processed=len(gf_tickers),
+                   filled=gf_filled, skipped=gf_skipped, errors=gf_errors)
+        else:
+            _event(db, run_id, 'gap_fill', 'stage_skipped',
+                   reason='no_quarterly_or_annual_reporters_in_targets')
 
         snapshot = db.get_pipeline_observability()
         summary = {

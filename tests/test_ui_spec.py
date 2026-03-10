@@ -13,6 +13,7 @@ SPEC_FILE = ROOT / "static" / "data" / "ui_spec.json"
 TEMPLATES_DIR = ROOT / "templates"
 ROUTES_DIR = ROOT / "src" / "routes"
 RUN_WEB_FILE = ROOT / "run_web.py"
+OPERATIONS_FILE = ROOT / "docs" / "architecture" / "operations.json"
 
 # IDs in scope for the Display Ritual rollout.
 REQUIRED_COMPONENT_IDS = {
@@ -246,6 +247,82 @@ class TestUiSpec:
         assert not missing, (
             "Pipeline UI contract broken:\n" + "\n".join(f"- {m}" for m in missing)
         )
+
+    def test_operations_file_valid_json(self):
+        """operations.json must exist and be valid JSON with required top-level keys."""
+        assert OPERATIONS_FILE.exists(), f"operations.json not found at {OPERATIONS_FILE}"
+        data = json.loads(OPERATIONS_FILE.read_text(encoding="utf-8"))
+        assert "operations" in data
+        assert "ssot" in data
+        assert isinstance(data["operations"], list)
+        assert len(data["operations"]) > 0
+
+    def test_operations_components_are_valid_spec_ids(self):
+        """All component IDs in operation.components must exist in ui_spec.json."""
+        if not OPERATIONS_FILE.exists():
+            import pytest
+            pytest.skip("operations.json not found")
+        data = json.loads(OPERATIONS_FILE.read_text(encoding="utf-8"))
+        spec_ids = {c["id"] for c in load_spec()["components"]}
+        invalid = []
+        for op in data.get("operations", []):
+            for cid in op.get("components", []):
+                if cid not in spec_ids:
+                    invalid.append(f"operation '{op['id']}' references component '{cid}' not in ui_spec.json")
+        assert not invalid, "\n".join(invalid)
+
+    def test_operations_dag_files_exist(self):
+        """Every file referenced in operation dag steps must exist on disk."""
+        if not OPERATIONS_FILE.exists():
+            import pytest
+            pytest.skip("operations.json not found")
+        data = json.loads(OPERATIONS_FILE.read_text(encoding="utf-8"))
+        missing = []
+        for op in data.get("operations", []):
+            for step in op.get("dag", []):
+                f = step.get("file")
+                if f and not (ROOT / f).exists():
+                    missing.append(f"operation '{op['id']}' step {step['step']}: file '{f}' not found")
+        assert not missing, "\n".join(missing)
+
+    def test_operations_dag_functions_exist(self):
+        """Every fn referenced in operation dag steps must be defined in the named file."""
+        if not OPERATIONS_FILE.exists():
+            import pytest
+            pytest.skip("operations.json not found")
+        data = json.loads(OPERATIONS_FILE.read_text(encoding="utf-8"))
+        fn_pat = re.compile(r"\bdef\s+(\w+)\s*\(")
+        missing = []
+        for op in data.get("operations", []):
+            for step in op.get("dag", []):
+                f, fn = step.get("file"), step.get("fn")
+                if not f or not fn:
+                    continue
+                path = ROOT / f
+                if not path.exists():
+                    continue  # caught by test_operations_dag_files_exist
+                defined = fn_pat.findall(path.read_text(encoding="utf-8"))
+                if fn not in defined:
+                    missing.append(f"operation '{op['id']}' step {step['step']}: fn '{fn}' not in {f}")
+        assert not missing, "\n".join(missing)
+
+    def test_operations_triggers_exist_in_routes(self):
+        """Every operation trigger path must exist as a registered Flask route."""
+        if not OPERATIONS_FILE.exists():
+            import pytest
+            pytest.skip("operations.json not found")
+        data = json.loads(OPERATIONS_FILE.read_text(encoding="utf-8"))
+        all_routes = collect_route_paths()
+        missing = []
+        for op in data.get("operations", []):
+            trigger = op.get("trigger", {})
+            path = trigger.get("path", "")
+            if not path.startswith("/api/"):
+                continue
+            normalized = normalize_flask_path(path.replace("{", "<").replace("}", ">"))
+            if not any(endpoint_pattern_matches(normalized, r) for r in all_routes):
+                missing.append(f"operation '{op['id']}': trigger path '{path}' not found in routes")
+        assert not missing, "\n".join(missing)
 
     def test_source_badges_present_for_data_and_config(self):
         data = load_spec()

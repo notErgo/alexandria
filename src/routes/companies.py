@@ -296,6 +296,7 @@ def create_company():
     name = body.get('name', '').strip()
     sector = body.get('sector', 'BTC-miners').strip()
     scraper_mode = body.get('scraper_mode', 'skip').strip().lower()
+    reporting_cadence = (body.get('reporting_cadence') or 'monthly').strip().lower()
     ir_url = _normalize_optional_text(body, 'ir_url') or ''
     rss_url = _normalize_optional_text(body, 'rss_url')
     prnewswire_url = _normalize_optional_text(body, 'prnewswire_url')
@@ -311,6 +312,8 @@ def create_company():
         return jsonify({'success': False, 'error': {'message': 'name required (max 100 chars)'}}), 400
     if scraper_mode not in _VALID_SCRAPER_MODES:
         return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
+    if reporting_cadence not in ('monthly', 'quarterly', 'annual'):
+        return jsonify({'success': False, 'error': {'message': "reporting_cadence must be 'monthly', 'quarterly', or 'annual'"}}), 400
     if year_err:
         return jsonify({'success': False, 'error': {'message': year_err}}), 400
 
@@ -331,6 +334,7 @@ def create_company():
         company = db.add_company(
             ticker=ticker, name=name, sector=sector,
             scraper_mode=scraper_mode,
+            reporting_cadence=reporting_cadence,
             ir_url=ir_url,
             pr_base_url=body.get('pr_base_url'),
             cik=body.get('cik'),
@@ -352,6 +356,46 @@ def create_company():
     return jsonify({'success': True, 'data': company}), 201
 
 
+@bp.route('/api/companies/<ticker>/detect_btc_anchor', methods=['POST'])
+def detect_btc_anchor(ticker):
+    """Detect and store btc_first_filing_date for ticker via EDGAR full-text search.
+
+    Idempotent — returns the stored date immediately if already set.
+    Pass {"force": true} to re-detect even when already stored.
+    """
+    from app_globals import get_db
+    import requests as _req
+    from scrapers.edgar_connector import EdgarConnector
+
+    db = get_db()
+    ticker = ticker.upper()
+    company = db.get_company(ticker)
+    if company is None:
+        return jsonify({'success': False, 'error': {'code': 'NOT_FOUND', 'message': f'Company {ticker!r} not found'}}), 404
+    cik = company.get('cik')
+    if not cik:
+        return jsonify({'success': False, 'error': {'code': 'NO_CIK', 'message': f'{ticker} has no CIK — EDGAR detection requires a CIK'}}), 400
+
+    body = request.get_json(silent=True) or {}
+    if body.get('force'):
+        db.set_btc_first_filing_date(ticker, '')  # clear cached value to force re-detect
+    try:
+        connector = EdgarConnector(db=db, session=_req.Session())
+        detected = connector.detect_btc_first_filing_date(cik=cik, ticker=ticker)
+    except Exception:
+        log.error("detect_btc_anchor failed for %s", ticker, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'ticker': ticker,
+            'btc_first_filing_date': detected,
+            'detected': detected is not None,
+        },
+    })
+
+
 @bp.route('/api/companies/<ticker>', methods=['GET'])
 def get_company(ticker):
     from app_globals import get_db
@@ -366,10 +410,13 @@ def get_company(ticker):
 
 @bp.route('/api/companies/sync', methods=['POST'])
 def sync_companies():
-    """Re-sync companies table from companies.json config file.
+    """Update existing companies from companies.json. Respects cleared state.
 
-    Upserts all config fields (name, URLs, scraper settings).
-    Preserves operational fields (scraper_status, last_scrape_at, etc.).
+    When auto_sync_companies_on_startup='0' (set by hard delete), runs in
+    update-only mode: existing rows are updated but no new rows are inserted.
+    The companies table stays empty if it was cleared by a hard delete.
+
+    To restore deleted companies from JSON, use POST /api/companies/sync/restore.
     """
     from app_globals import get_db
     db = get_db()
@@ -377,11 +424,39 @@ def sync_companies():
     if not config_path.exists():
         return jsonify({'success': False, 'error': {'message': 'companies.json not found'}}), 404
     try:
-        result = db.sync_companies_from_config(str(config_path))
-        # Manual sync is an explicit operator action; re-enable startup auto-sync.
-        db.set_config('auto_sync_companies_on_startup', '1')
+        cleared = db.get_config('auto_sync_companies_on_startup') == '0'
+        result = db.sync_companies_from_config(str(config_path), insert_new=not cleared)
+        result['cleared_state'] = cleared
     except Exception:
         log.error("Failed to sync companies from config", exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+    return jsonify({'success': True, 'data': result})
+
+
+@bp.route('/api/companies/sync/restore', methods=['POST'])
+def restore_companies_from_config():
+    """Restore companies from companies.json, including rows deleted by hard delete.
+
+    Explicitly re-enables startup auto-sync and inserts any missing companies.
+    This is the only route that re-populates the table after a hard delete.
+    Requires {"confirm": true} in the request body.
+    """
+    from app_globals import get_db
+    db = get_db()
+    body = request.get_json(silent=True) or {}
+    if not body.get('confirm'):
+        return jsonify({'success': False, 'error': {
+            'message': 'Pass {"confirm": true} to restore companies from config'
+        }}), 400
+    config_path = Path(__file__).parent.parent.parent / 'config' / 'companies.json'
+    if not config_path.exists():
+        return jsonify({'success': False, 'error': {'message': 'companies.json not found'}}), 404
+    try:
+        result = db.sync_companies_from_config(str(config_path), insert_new=True)
+        db.set_config('auto_sync_companies_on_startup', '1')
+        result['cleared_state'] = False
+    except Exception:
+        log.error("Failed to restore companies from config", exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
     return jsonify({'success': True, 'data': result})
 
@@ -398,8 +473,9 @@ def update_company(ticker):
         'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
         'rss_url', 'prnewswire_url', 'globenewswire_url',
         'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
-        'active',
+        'active', 'btc_first_filing_date', 'reporting_cadence',
     }
+    _VALID_REPORTING_CADENCES = ('monthly', 'quarterly', 'annual')
     kwargs = {k: v for k, v in body.items() if k in allowed}
     # Normalize active flag: coerce to bool, then to 0/1 for the DB
     new_active = None
@@ -420,6 +496,22 @@ def update_company(ticker):
         if year_err:
             return jsonify({'success': False, 'error': {'message': year_err}}), 400
         kwargs['pr_start_year'] = year
+    if 'reporting_cadence' in kwargs:
+        rc = (kwargs['reporting_cadence'] or '').strip().lower()
+        if rc not in _VALID_REPORTING_CADENCES:
+            return jsonify({'success': False, 'error': {
+                'message': f'reporting_cadence must be one of {list(_VALID_REPORTING_CADENCES)}'
+            }}), 400
+        kwargs['reporting_cadence'] = rc
+    if 'btc_first_filing_date' in kwargs:
+        raw_date = (kwargs['btc_first_filing_date'] or '').strip()
+        if raw_date:
+            import re as _re
+            if not _re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw_date):
+                return jsonify({'success': False, 'error': {'message': 'btc_first_filing_date must be YYYY-MM-DD or empty'}}), 400
+            kwargs['btc_first_filing_date'] = raw_date
+        else:
+            kwargs['btc_first_filing_date'] = None  # clear → re-enables auto-detect
 
     existing = db.get_company(ticker) or {}
     effective_mode = (kwargs.get('scraper_mode') or existing.get('scraper_mode') or 'skip').strip().lower()

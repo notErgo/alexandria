@@ -86,6 +86,11 @@ OffChain/miners/
 ├── config/
 │   ├── companies.json          13 companies with CIKs
 │   └── patterns/               Active pattern JSON files (hodl_btc, production_btc, sold_btc); others archived under patterns/archived/
+├── docs/
+│   └── architecture/
+│       ├── dag.json            Module import graph (layer 0-5, edges = imports)
+│       ├── operations.json     Operation contracts: SSOT read priority + pipeline stage DAG + per-operation code paths (UI → route → DB). Validated by tests/test_ui_spec.py.
+│       └── README.md           Architecture docs index
 └── tests/
     └── 532 passing unit tests (T3)
 ```

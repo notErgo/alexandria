@@ -940,8 +940,10 @@ tr.is-reviewed td { opacity: 0.65; }
 <div class="ops-pane" id="pane-config" data-ui-id="1.1" data-spec-id="1.1">
   <div class="pipeline-sub-tabs">
     <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.3">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.4">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="companiestable" onclick="activatePipelineSubTab('config','companiestable')" data-ui-id="1.2">Companies Table <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="metricskeywords" onclick="activatePipelineSubTab('config','metricskeywords')" data-ui-id="1.3">Metrics &amp; Keywords <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.4">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.5">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Companies (1.1) -->
@@ -949,7 +951,6 @@ tr.is-reviewed td { opacity: 0.65; }
   <div class="section-header-row">
     <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
-    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
@@ -1014,6 +1015,14 @@ tr.is-reviewed td { opacity: 0.65; }
         <label style="font-size:0.75rem;display:block">Skip Reason</label>
         <input id="ac-skip-reason" type="text" style="width:320px" placeholder="Quarterly-only reporting since 2025">
       </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Reporting Cadence</label>
+        <select id="ac-reporting-cadence" style="font-size:0.8rem">
+          <option value="monthly" selected>monthly</option>
+          <option value="quarterly">quarterly</option>
+          <option value="annual">annual</option>
+        </select>
+      </div>
       <button class="btn btn-sm btn-primary" onclick="submitAddCompany()">Save</button>
       <button class="btn btn-sm btn-secondary" onclick="document.getElementById('add-company-form').style.display='none'">Cancel</button>
     </div>
@@ -1036,14 +1045,177 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
   </div>
 
-  <!-- 1.5.1 Metrics + Keywords (moved here from Metrics sub-tab — this is the SSOT) -->
+  <details class="offpath-details" id="companies-governance-details">
+    <summary><span class="offpath-label">Scraper Governance</span> <span class="offpath-desc">probe sources, apply modes</span></summary>
+  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem;margin-top:0.75rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:0.9rem">
+        <span class="spec-id">1.1.5</span>Scraper Governance Probe
+      </h3>
+      <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
+        stale days
+        <input id="gov-stale-days" type="number" min="1" max="365" value="30" style="width:64px">
+      </label>
+      <button class="btn btn-sm btn-secondary" onclick="loadScraperGovernance()">Refresh Governance</button>
+      <button class="btn btn-sm btn-secondary" onclick="runGovernanceBootstrapAll(false)">Probe Targets</button>
+      <button class="btn btn-sm btn-primary" onclick="runGovernanceBootstrapAll(true)">Probe + Apply Modes</button>
+      <span id="gov-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="gov-summary" style="font-size:0.78rem;color:var(--theme-text-secondary)">
+      Governance not loaded yet.
+    </div>
+  </div>
+  </details><!-- /companies-governance-details -->
+  </div><!-- /spane-config-companies -->
+
+  <!-- Sub-pane: Companies Table (1.2) -->
+  <div class="pipeline-sub-pane" id="spane-config-companiestable" data-ui-id="1.2" data-spec-id="1.2">
+  <div class="section-header-row">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.2</span>Companies Table</h2>
+    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
+    <button class="btn btn-sm btn-warning" onclick="restoreCompaniesFromConfig()" title="Re-insert all companies from companies.json and re-enable auto-sync">Restore from Config</button>
+    <span id="companiestable-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <table id="companies-table" data-ui-id="1.2.1" data-spec-id="1.2.1">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">1.2.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
+    </caption>
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="name">Name</th>
+        <th>Mode</th>
+        <th>IR / Feed URLs</th>
+        <th>Status</th>
+        <th>Last Scrape</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="companies-tbody">
+      <tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Regime editor: deprecated — routes kept, UI hidden -->
+  <div id="regime-editor" style="display:none" class="card" data-ui-id="1.2.2" data-spec-id="1.2.2">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">1.2.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
+      <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
+    </div>
+    <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
+    <div class="regime-form" style="margin-top:0.5rem">
+      <div>
+        <label style="font-size:0.72rem;display:block">Cadence</label>
+        <select id="rw-cadence">
+          <option value="monthly">monthly</option>
+          <option value="quarterly">quarterly</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Start date</label>
+        <input id="rw-start" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">End date (optional)</label>
+        <input id="rw-end" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Notes</label>
+        <input id="rw-notes" type="text" style="width:160px" placeholder="">
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="addRegimeWindow()">Add Window</button>
+    </div>
+    <div id="rw-error" style="color:var(--theme-danger);font-size:0.78rem;margin-top:0.3rem"></div>
+  </div>
+
+  <details class="offpath-details" id="companies-ops-details">
+    <summary><span class="offpath-label">Operations &amp; Maintenance</span> <span class="offpath-desc">scrape queue, danger zone</span></summary>
+
+  <!-- Scrape queue -->
+  <div style="margin-top:1rem" data-spec-id="1.2.2">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
+      <h2 style="font-size:1rem;margin:0"><span class="spec-id">1.2.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+      <button class="btn btn-sm btn-primary" onclick="enqueueAllScrapeJobs()" id="scrape-all-btn">Enqueue All Tickers</button>
+      <span id="scrape-all-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <table id="scrape-table" data-ui-id="1.2.2">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th data-sort="ticker">Ticker</th>
+          <th>Type</th>
+          <th data-sort="status">Status</th>
+          <th>Queued</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="scrape-tbody">
+        <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Danger Zone -->
+  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.2.3" data-spec-id="1.2.3">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.2.3</span>Danger Zone</h3>
+      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
+    </div>
+    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
+      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+        Purge modes:
+        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
+        <strong>Reset Only</strong> clears DATA only, and
+        <strong>Hard Delete</strong> performs a destructive wipe.
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Mode:</label>
+        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
+          <option value="archive">archive + reset (recommended)</option>
+          <option value="reset">reset only</option>
+          <option value="hard_delete">hard delete</option>
+        </select>
+        <span id="purge-autosync-note" style="display:none;font-size:0.75rem;color:var(--theme-text-muted)">
+          Hard delete clears company table permanently. Use Restore from Config to repopulate.
+        </span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Reason:</label>
+        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
+               style="width:360px;font-size:0.82rem;padding:3px 7px">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
+        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
+               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
+        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
+               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
+        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+  </div>
+  </details><!-- /companies-ops-details -->
+  </div><!-- /spane-config-companiestable -->
+
+  <!-- Sub-pane: Metrics & Keywords (1.3) -->
+  <div class="pipeline-sub-pane" id="spane-config-metricskeywords" data-ui-id="1.3" data-spec-id="1.3">
+  <div class="section-header-row" style="margin-bottom:0.75rem">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.3</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h2>
+  </div>
   <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
     Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt, all UI dropdowns, and the pattern editor.
     Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it and deactivates its LLM prompt override.
   </p>
-  <div class="card" data-spec-id="1.5.1" style="margin-bottom:0.7rem">
+  <div class="card" data-spec-id="1.3.1" style="margin-bottom:0.7rem">
     <div class="section-header-row" style="margin-bottom:0.75rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.5.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
     </div>
 
@@ -1103,177 +1275,26 @@ tr.is-reviewed td { opacity: 0.65; }
       <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
     </div>
   </div>
+  </div><!-- /spane-config-metricskeywords -->
 
-  <details class="offpath-details" id="companies-governance-details">
-    <summary><span class="offpath-label">Scraper Governance</span> <span class="offpath-desc">probe sources, apply modes</span></summary>
-  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem;margin-top:0.75rem">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">1.1.5</span>Scraper Governance Probe
-      </h3>
-      <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
-        stale days
-        <input id="gov-stale-days" type="number" min="1" max="365" value="30" style="width:64px">
-      </label>
-      <button class="btn btn-sm btn-secondary" onclick="loadScraperGovernance()">Refresh Governance</button>
-      <button class="btn btn-sm btn-secondary" onclick="runGovernanceBootstrapAll(false)">Probe Targets</button>
-      <button class="btn btn-sm btn-primary" onclick="runGovernanceBootstrapAll(true)">Probe + Apply Modes</button>
-      <span id="gov-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div id="gov-summary" style="font-size:0.78rem;color:var(--theme-text-secondary)">
-      Governance not loaded yet.
-    </div>
-  </div>
-  </details><!-- /companies-governance-details -->
-
-  <table id="companies-table" data-ui-id="1.1.1" data-spec-id="1.1.1">
-    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">1.1.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
-    </caption>
-    <thead>
-      <tr>
-        <th data-sort="ticker">Ticker</th>
-        <th data-sort="name">Name</th>
-        <th>Mode</th>
-        <th>IR / Feed URLs</th>
-        <th>Status</th>
-        <th>Last Scrape</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="companies-tbody">
-      <tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
-    </tbody>
-  </table>
-
-  <!-- Regime editor: deprecated — routes kept, UI hidden -->
-  <div id="regime-editor" style="display:none" class="card" data-ui-id="1.1.2" data-spec-id="1.1.2">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">1.1.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
-      <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
-    </div>
-    <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
-    <div class="regime-form" style="margin-top:0.5rem">
-      <div>
-        <label style="font-size:0.72rem;display:block">Cadence</label>
-        <select id="rw-cadence">
-          <option value="monthly">monthly</option>
-          <option value="quarterly">quarterly</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:0.72rem;display:block">Start date</label>
-        <input id="rw-start" type="date">
-      </div>
-      <div>
-        <label style="font-size:0.72rem;display:block">End date (optional)</label>
-        <input id="rw-end" type="date">
-      </div>
-      <div>
-        <label style="font-size:0.72rem;display:block">Notes</label>
-        <input id="rw-notes" type="text" style="width:160px" placeholder="">
-      </div>
-      <button class="btn btn-sm btn-primary" onclick="addRegimeWindow()">Add Window</button>
-    </div>
-    <div id="rw-error" style="color:var(--theme-danger);font-size:0.78rem;margin-top:0.3rem"></div>
-  </div>
-
-  <details class="offpath-details" id="companies-ops-details">
-    <summary><span class="offpath-label">Operations &amp; Maintenance</span> <span class="offpath-desc">scrape queue, danger zone</span></summary>
-
-  <!-- Scrape queue -->
-  <div style="margin-top:1rem" data-spec-id="1.1.2">
-    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
-      <h2 style="font-size:1rem;margin:0"><span class="spec-id">1.1.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
-      <button class="btn btn-sm btn-primary" onclick="enqueueAllScrapeJobs()" id="scrape-all-btn">Enqueue All Tickers</button>
-      <span id="scrape-all-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <table id="scrape-table" data-ui-id="1.1.2">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th data-sort="ticker">Ticker</th>
-          <th>Type</th>
-          <th data-sort="status">Status</th>
-          <th>Queued</th>
-          <th>Started</th>
-          <th>Finished</th>
-          <th>Error</th>
-        </tr>
-      </thead>
-      <tbody id="scrape-tbody">
-        <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Danger Zone -->
-  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.1.3" data-spec-id="1.1.3">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
-      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.1.3</span>Danger Zone</h3>
-      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
-    </div>
-    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
-      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
-        Purge modes:
-        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
-        <strong>Reset Only</strong> clears DATA only, and
-        <strong>Hard Delete</strong> performs a destructive wipe.
-      </p>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Mode:</label>
-        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
-          <option value="archive">archive + reset (recommended)</option>
-          <option value="reset">reset only</option>
-          <option value="hard_delete">hard delete</option>
-        </select>
-        <label style="font-size:0.78rem;display:flex;align-items:center;gap:4px">
-          <input id="purge-disable-autosync" type="checkbox">
-          disable company auto-sync on startup
-        </label>
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Reason:</label>
-        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
-               style="width:360px;font-size:0.82rem;padding:3px 7px">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
-        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
-               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
-        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
-               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
-        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
-      </div>
-    </div>
-  </div>
-  </details><!-- /companies-ops-details -->
-  </div><!-- /spane-config-companies -->
-
-
-
-  <!-- Sub-pane: Settings (1.3) -->
-  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.3" data-spec-id="1.3">
-    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.3</span>Settings</h2>
+  <!-- Sub-pane: Settings (1.4) -->
+  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.4" data-spec-id="1.4">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.4</span>Settings</h2>
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
       Runtime overrides for extraction thresholds, LLM parameters, crawl limits, and pipeline paths.
       Unset keys use hardcoded defaults. Changes take effect on the next pipeline run.
     </p>
     <div id="settings-groups"></div>
 
-    <!-- Metric Rules (1.3.R) — tune after first extraction cycle -->
-    <div class="card" style="margin-top:1.5rem" data-ui-id="1.3.R" data-spec-id="1.3.R" data-spec-id-alias="1.2"><span data-spec-id="1.2" style="display:none"></span>
+    <!-- Metric Rules (1.4.R) — tune after first extraction cycle -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.R" data-spec-id="1.4.R" data-spec-id-alias="1.4.1"><span data-spec-id="1.4.1" style="display:none"></span>
       <div class="section-header-row" style="margin-bottom:0.5rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
         <button class="btn btn-sm btn-secondary" onclick="syncMetricRules()" style="margin-left:auto">Sync to metric_schema</button>
         <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:0.5rem">Refresh</button>
       </div>
-      <table id="rules-table" data-spec-id="1.2.1" style="width:100%;font-size:0.82rem">
+      <table id="rules-table" data-spec-id="1.4.1" style="width:100%;font-size:0.82rem">
         <thead>
           <tr>
             <th data-sort="metric" style="text-align:left">Metric</th>
@@ -1306,9 +1327,9 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
   </div><!-- /spane-config-settings -->
 
-  <!-- Sub-pane: Crawl Setup (1.4) -->
-  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="1.4" data-spec-id="1.4">
-    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.4</span>Crawl Setup</h2>
+  <!-- Sub-pane: Crawl Setup (1.5) -->
+  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="1.5" data-spec-id="1.5">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.5</span>Crawl Setup</h2>
     <div class="card" style="background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
       <p style="margin:0 0 0.75rem;font-size:0.85rem;line-height:1.6">
         The LLM crawl provider, model selection, and prompt editor are available inline in
@@ -1382,7 +1403,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <!-- Shared ticker selector — selection applies to EDGAR fetch and LLM crawl -->
   <div data-spec-id="2.2.1" style="margin-bottom:1rem">
     <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Select companies</div>
-    <div id="crawl-ticker-selector" data-spec-id="1.4.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+    <div id="crawl-ticker-selector" data-spec-id="1.5.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
     <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">Selection applies to EDGAR fetch and LLM crawl. IR scrape and archive ingest always run for all configured companies.</div>
   </div>
 
@@ -1446,7 +1467,7 @@ tr.is-reviewed td { opacity: 0.65; }
       The bitcoin activity start date from Step 1 is automatically injected as a lower bound — run EDGAR first.
       Review the prompt below before launching; it is loaded from a per-ticker file or the master template.
     </p>
-    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="1.4.2" data-spec-id="1.4.2">
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="1.5.2" data-spec-id="1.5.2">
       <div>
         <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
         <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
@@ -1464,7 +1485,7 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
       </div>
     </div>
-    <div data-spec-id="1.4.3" style="margin-bottom:0.75rem">
+    <div data-spec-id="1.5.3" style="margin-bottom:0.75rem">
       <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">
         Crawl prompt (editable before launch — select a single ticker above to load its custom prompt)
         <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
@@ -1542,9 +1563,9 @@ tr.is-reviewed td { opacity: 0.65; }
   <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="3.1" data-spec-id="3.1">
 
     <!-- Prompt preview — review before running extraction -->
-    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.3.P" data-spec-id="1.3.P">
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.4.P" data-spec-id="1.4.P">
       <div class="section-header-row" style="margin-bottom:0.5rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.P</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.P</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Assembled prompt the LLM receives — verify before running extraction</span>
         <button class="btn btn-sm btn-secondary" onclick="loadPromptPreview()" style="margin-left:auto">Refresh</button>
       </div>
@@ -1565,9 +1586,9 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Prompt Editor — per-metric DB override -->
-    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.3.E">
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.4.E" data-spec-id="1.4.E">
       <div class="section-header-row" style="margin-bottom:0.6rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.E</span>Prompt Editor</h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.E</span>Prompt Editor</h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Edit and save a DB override for any metric — takes effect immediately on the next extraction run</span>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
@@ -3678,7 +3699,7 @@ function renderCompanies() {
         + escapeHtml(governance) + '</span>'
       : '';
 
-    const hasDetail = !!(c.url_template || c.sandbox_note || (c.skip_reason && c.skip_reason.length > 120));
+    const hasDetail = true;  // cadence + BTC anchor always shown
     const expandBtn = hasDetail
       ? '<button class="btn btn-sm btn-secondary" style="padding:1px 6px;font-size:0.7rem" data-ticker="' + escapeAttr(c.ticker) + '" onclick="toggleCompanyDetail(this.getAttribute(\'data-ticker\'))">+</button>'
       : '';
@@ -3714,6 +3735,48 @@ function renderCompanies() {
       }
       if (c.sandbox_note) {
         detailParts.push('<div style="margin-top:4px"><span style="color:var(--theme-text-muted);font-size:0.72rem">Notes: </span><span style="font-size:0.75rem">' + escapeHtml(c.sandbox_note) + '</span></div>');
+      }
+      // Reporting cadence — always show (affects gap-fill and time-spine merge)
+      {
+        const cadence = c.reporting_cadence || 'monthly';
+        const cadenceBadge = cadence === 'monthly'
+          ? '<span style="color:var(--theme-text-muted);font-size:0.75rem">monthly</span>'
+          : '<span style="color:var(--theme-highlight,#f59e0b);font-size:0.75rem;font-weight:600">' + escapeHtml(cadence) + '</span>';
+        detailParts.push(
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+          + '<span style="color:var(--theme-text-muted);font-size:0.72rem">Reporting cadence:</span>'
+          + cadenceBadge
+          + '<select id="cadence-sel-' + escapeAttr(c.ticker) + '" style="font-size:0.75rem">'
+          + ['monthly','quarterly','annual'].map(function(v) {
+              return '<option value="' + v + '"' + (v === cadence ? ' selected' : '') + '>' + v + '</option>';
+            }).join('')
+          + '</select>'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="saveCadence(this.getAttribute(\'data-ticker\'))">Save</button>'
+          + '<span id="cadence-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>'
+          + '</div>'
+        );
+      }
+      if (c.cik) {
+        const pivotDate = c.btc_first_filing_date || '';
+        const pivotDisplay = pivotDate
+          ? '<span style="color:var(--theme-success,#16a34a);font-size:0.75rem;font-weight:600">' + escapeHtml(pivotDate) + '</span>'
+          : '<span style="color:var(--theme-text-muted);font-size:0.75rem">not detected — auto-detect runs on next EDGAR ingest</span>';
+        detailParts.push(
+          '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + '<span style="color:var(--theme-text-muted);font-size:0.72rem">BTC mining pivot date:</span>'
+          + pivotDisplay
+          + '<input id="btc-anchor-input-' + escapeAttr(c.ticker) + '" type="text" maxlength="10" placeholder="YYYY-MM-DD"'
+          +   ' style="width:110px;font-size:0.75rem;padding:1px 4px" title="Override: set or clear the mining pivot date">'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="saveBtcAnchor(this.getAttribute(\'data-ticker\'))">Save</button>'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="detectBtcAnchor(this.getAttribute(\'data-ticker\'), false)">Detect</button>'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="detectBtcAnchor(this.getAttribute(\'data-ticker\'), true)">Re-detect</button>'
+          + '<span id="btc-anchor-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>'
+          + '</div>'
+        );
       }
       rows.push(
         '<tr id="' + escapeHtml(detailId) + '" style="display:none"><td colspan="7" style="background:var(--theme-bg-tertiary);padding:8px 16px">'
@@ -3831,7 +3894,6 @@ function toggleDangerZone() {
 function onPurgeInput() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
   const mode = (document.getElementById('purge-mode').value || 'archive').trim();
-  const disableSyncCb = document.getElementById('purge-disable-autosync');
   let base = 'ARCHIVE';
   if (mode === 'reset') base = 'RESET';
   if (mode === 'hard_delete') base = 'HARD_DELETE';
@@ -3842,23 +3904,14 @@ function onPurgeInput() {
   purgeBtn.disabled = (typed !== confirmWord);
   const labelPrefix = mode === 'archive' ? 'Archive+Reset' : (mode === 'reset' ? 'Reset' : 'Hard Delete');
   purgeBtn.textContent = ticker ? (labelPrefix + ' ' + ticker) : (labelPrefix + ' ALL');
-  if (disableSyncCb) {
-    const allowed = (mode === 'hard_delete' && !ticker);
-    if (!allowed) {
-      disableSyncCb.checked = false;
-    } else {
-      // Default to checked for full hard_delete — re-populating on restart contradicts the intent
-      disableSyncCb.checked = true;
-    }
-    disableSyncCb.disabled = !allowed;
-  }
+  const noteEl = document.getElementById('purge-autosync-note');
+  if (noteEl) noteEl.style.display = (mode === 'hard_delete' && !ticker) ? '' : 'none';
 }
 
 async function executePurge() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
   const mode = (document.getElementById('purge-mode').value || 'archive').trim();
   const reason = (document.getElementById('purge-reason').value || '').trim();
-  const disableAutoSync = !!document.getElementById('purge-disable-autosync').checked;
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
   let base = 'ARCHIVE';
   if (mode === 'reset') base = 'RESET';
@@ -3875,9 +3928,6 @@ async function executePurge() {
     const body = { confirm: true, purge_mode: mode };
     if (ticker) body.ticker = ticker;
     if (reason) body.reason = reason;
-    if (!ticker && mode === 'hard_delete' && disableAutoSync) {
-      body.suppress_auto_sync = true;
-    }
     const resp = await fetch('/api/data/purge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3898,7 +3948,7 @@ async function executePurge() {
       msgEl.textContent = 'Reset ' + total + ' DATA rows (' + purgedTicker + ').';
     } else {
       msgEl.textContent = 'Hard-deleted ' + total + ' rows (' + purgedTicker + ').'
-        + ((!ticker && disableAutoSync) ? ' Company auto-sync disabled.' : '');
+        + (!ticker ? ' Use Restore from Config to repopulate companies.' : '');
     }
     _applyPurgeToCompanyState(purgedTicker, mode);
     _companiesLoaded = false;
@@ -3944,7 +3994,24 @@ async function syncCompanyConfig() {
   const data = await resp.json();
   if (!data.success) { showToast(data.error?.message || 'Sync failed', true); msg.textContent = ''; return; }
   const r = data.data || {};
-  msg.textContent = 'Synced: ' + (r.added || 0) + ' added, ' + (r.updated || 0) + ' updated';
+  const note = r.cleared_state ? ' (cleared state — no new inserts)' : '';
+  msg.textContent = 'Synced: ' + (r.added || 0) + ' added, ' + (r.updated || 0) + ' updated' + note;
+  _companiesLoaded = false;
+  loadCompanies();
+}
+
+async function restoreCompaniesFromConfig() {
+  const msg = document.getElementById('companies-msg');
+  msg.textContent = 'Restoring…';
+  const resp = await fetch('/api/companies/sync/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
+  const data = await resp.json();
+  if (!data.success) { showToast(data.error?.message || 'Restore failed', true); msg.textContent = ''; return; }
+  const r = data.data || {};
+  msg.textContent = 'Restored: ' + (r.added || 0) + ' added, ' + (r.updated || 0) + ' updated. Auto-sync re-enabled.';
   _companiesLoaded = false;
   loadCompanies();
 }
@@ -4267,8 +4334,9 @@ async function submitAddCompany() {
   const urlTemplate = document.getElementById('ac-url-template').value.trim();
   const prStartYearRaw = document.getElementById('ac-pr-start-year').value.trim();
   const skipReason = document.getElementById('ac-skip-reason').value.trim();
+  const reportingCadence = document.getElementById('ac-reporting-cadence').value || 'monthly';
   document.getElementById('ac-error').textContent = '';
-  const payload = { ticker, name, sector, scraper_mode: mode };
+  const payload = { ticker, name, sector, scraper_mode: mode, reporting_cadence: reportingCadence };
   if (irUrl) payload.ir_url = irUrl;
   if (cik) payload.cik = cik;
   if (description) payload.sandbox_note = description;
@@ -4304,6 +4372,66 @@ async function triggerScrape(ticker) {
   if (!data.success) { showToast(data.error?.message || 'Failed to trigger scrape', true); return; }
   showToast('Scrape queued for ' + ticker);
   setTimeout(loadScrapeQueue, 1000);
+}
+
+async function saveCadence(ticker) {
+  const sel = document.getElementById('cadence-sel-' + ticker);
+  const msgEl = document.getElementById('cadence-msg-' + ticker);
+  const val = sel?.value || 'monthly';
+  msgEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/companies/' + encodeURIComponent(ticker), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reporting_cadence: val }),
+    });
+    const data = await resp.json();
+    if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }
+    msgEl.textContent = 'Saved';
+    await loadCompanies();
+  } catch (e) {
+    msgEl.textContent = 'Request failed';
+  }
+}
+
+async function saveBtcAnchor(ticker) {
+  const input = document.getElementById('btc-anchor-input-' + ticker);
+  const msgEl = document.getElementById('btc-anchor-msg-' + ticker);
+  const val = (input?.value || '').trim();
+  msgEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/companies/' + encodeURIComponent(ticker), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ btc_first_filing_date: val || null }),
+    });
+    const data = await resp.json();
+    if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }
+    msgEl.textContent = val ? 'Set to ' + val : 'Cleared (auto-detect on next ingest)';
+    if (input) input.value = '';
+    await loadCompanies();
+  } catch (e) {
+    msgEl.textContent = 'Request failed';
+  }
+}
+
+async function detectBtcAnchor(ticker, force) {
+  const msgEl = document.getElementById('btc-anchor-msg-' + ticker);
+  msgEl.textContent = 'Querying EDGAR…';
+  try {
+    const resp = await fetch('/api/companies/' + encodeURIComponent(ticker) + '/detect_btc_anchor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: !!force }),
+    });
+    const data = await resp.json();
+    if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }
+    const d = data.data || {};
+    msgEl.textContent = d.detected ? ('Detected: ' + d.btc_first_filing_date) : 'No BTC filings found in EDGAR';
+    await loadCompanies();
+  } catch (e) {
+    msgEl.textContent = 'Request failed';
+  }
 }
 
 async function enqueueAllScrapeJobs() {

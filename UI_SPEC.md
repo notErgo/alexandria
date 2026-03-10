@@ -1,6 +1,6 @@
 # Miners Platform — UI/API Component Spec
 
-Version: 1.4
+Version: 1.5
 Port: 5004
 
 ## Convention
@@ -57,21 +57,65 @@ Template: `landing.html`
 
 Template: `ops.html`
 
+**Track Config sub-tab layout (ops internal namespace):**
+
+| Sub-tab | ops ID | Label | Path |
+|---------|--------|-------|------|
+| 1.1 | Companies | Add company, governance probe | Critical |
+| 1.2 | Companies Table | Live table, scrape queue, danger zone | Critical |
+| 1.3 | Metrics & Keywords | Metric SSOT, keyword editor | Optional |
+| 1.4 | Settings | Runtime config, metric rules | Optional |
+| 1.5 | Crawl Setup | LLM crawl config | Optional |
+
 ### 2.1  Companies tab  (`/ops?tab=companies`)
 
-| ID    | Component              | Source  | API endpoint(s) | Script(s) |
-|-------|------------------------|---------|-----------------|-----------|
-| 2.1.1 | Companies table        | **CONFIG** | `GET /api/companies` | `sync_companies_from_config()` in `db.py`; auto-runs at boot from `companies.json`. Full purge clears rows; restart or Sync Config re-seeds them. |
-| 2.1.2 | Regime editor panel    | CONFIG  | `GET /api/regime/<ticker>` · `POST /api/regime/<ticker>` · `DELETE /api/regime/<ticker>/<id>` | — |
-| 2.1.3 | Scrape Queue table     | DATA    | `GET /api/scrape/queue` | `ScrapeWorker` thread (`run_web.py`); `IRScraper` (`scrapers/ir_scraper.py`) |
-| 2.1.4 | Danger Zone purge form | n/a     | `POST /api/data/purge` | Hidden by default; expands only after explicit click. Mode-based purge contract: `reset` (DATA only), `archive` (archive+reset), `hard_delete` (destructive full wipe) |
-| 2.1.5 | Add Company form + bulk spreadsheet paste | n/a | `POST /api/companies` · `PUT /api/companies/<ticker>` · `GET /api/companies` | Single-add includes explicit `CIK` and description fields. Bulk paste accepts TSV/CSV headers (Ticker, Name, Investor Relations Base URL, CIK, Description, PRNewswire, GlobeNewswire) and upserts by ticker. Mode contract remains enforced at API boundary: `rss -> rss_url OR prnewswire_url OR globenewswire_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
-| 2.1.5a | Scraper governance + discovery probes | n/a | `GET /api/companies/scraper_governance` · `POST /api/companies/bootstrap_probe_all` (optional `tickers[]`) · `POST /api/companies/<ticker>/discovery_candidates` · `GET /api/companies/<ticker>/discovery_candidates` · `POST /api/companies/<ticker>/bootstrap_probe` | Agent-proposed source candidates are probed deterministically, written to `source_audit`, and produce governed mode recommendations per ticker or batch |
-| 2.1.6 | Sync Config button     | n/a     | `POST /api/companies/sync` | `db.sync_companies_from_config()` |
+#### 1.1  Companies sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.1.4 | Add Company form + bulk spreadsheet paste | n/a | `POST /api/companies` · `PUT /api/companies/<ticker>` · `GET /api/companies` | Single-add includes CIK, reporting_cadence, scraper mode. Bulk paste accepts TSV/CSV. Mode contract enforced at API: `rss -> rss_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
+| 1.1.5 | Scraper governance + discovery probes | n/a | `GET /api/companies/scraper_governance` · `POST /api/companies/bootstrap_probe_all` · `POST /api/companies/<ticker>/bootstrap_probe` | Agent-proposed candidates probed deterministically, written to `source_audit`, produce governed mode recommendations |
+
+#### 1.2  Companies Table sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.2.1 | Companies table | **CONFIG** | `GET /api/companies` · `PUT /api/companies/<ticker>` | `sync_companies_from_config()` in `db.py` auto-runs at boot. Expandable detail row: reporting_cadence dropdown, BTC anchor date with Detect/Save/Clear. Sync Config = update-only when cleared; Restore from Config = full re-insert. |
+| 1.2.2 | Scrape Queue table | DATA | `GET /api/scrape/queue` · `POST /api/scrape/trigger/<ticker>` | `ScrapeWorker` thread (`run_web.py`); `IRScraper` (`scrapers/ir_scraper.py`) |
+| 1.2.3 | Danger Zone purge form | n/a | `POST /api/data/purge` | Hidden by default. `hard_delete` (full scope) also clears companies table and sets `auto_sync_companies_on_startup='0'`; use Restore from Config to repopulate. |
+
+**Companies table cleared-state contract:**
+- `hard_delete` (full scope): clears companies, sets `config_settings.auto_sync_companies_on_startup='0'`
+- `POST /api/companies/sync`: update-only when cleared (`insert_new=False`); returns `cleared_state: true` in response
+- `POST /api/companies/sync/restore`: explicit operator action; calls `sync_companies_from_config(insert_new=True)`, re-enables flag; requires `{confirm: true}`
+- `companies.btc_first_filing_date`: set by `POST /api/companies/<ticker>/detect_btc_anchor`; used as floor date for EDGAR ingest and extraction gate; force-detect with `{force: true}`
+- `companies.reporting_cadence`: `monthly` | `quarterly` | `annual`; drives auto-gap-fill in pipeline for non-monthly reporters
+
+#### 1.3  Metrics & Keywords sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.3.1 | Metrics & Keywords table + add form | **CONFIG** | `GET /api/metric_schema` · `POST /api/metric_schema` · `PATCH /api/metric_schema/<key>` · `DELETE /api/metric_schema/<key>` · `GET /api/metric_schema/<key>/keywords` · `POST /api/metric_schema/<key>/keywords` | SSOT for all metrics. Active metrics feed LLM prompt, all UI dropdowns, and pattern editor. Keywords are per-metric anchor phrases used for EDGAR detection and LLM context. |
+
+#### 1.4  Settings sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.4   | Config settings form | CONFIG | `GET /api/config/settings` · `POST /api/config/settings` | Runtime overrides for extraction thresholds, LLM params, crawl limits, pipeline paths |
+| 1.4.R | Metric Rules card | CONFIG | `GET /api/metric_schema` | Tune agreement/outlier thresholds per metric after first extraction cycle |
+| 1.4.1 | Rules table | CONFIG | `GET /api/metric_schema` | Per-metric: agree_threshold, outlier_threshold, valid_range_min/max, enabled |
+| 1.4.P | Rendered Prompt Preview card | n/a | `GET /api/llm_prompts` | Assembled LLM prompt with ticker context — verify before running extraction |
+| 1.4.E | Prompt Editor card | CONFIG | `GET /api/llm_prompts/<metric>` · `POST /api/llm_prompts/<metric>` | Per-metric DB override; takes effect on next extraction run |
+
+#### 1.5  Crawl Setup sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.5.1 | Crawl ticker bar | n/a | — | Reads `_companies` in-memory |
+| 1.5.2 | Crawl provider/model selector | n/a | — | Sets provider used by `startCrawlAll()` |
+| 1.5.3 | Crawl prompt editor | CONFIG | `GET /api/crawl/prompt/<ticker>` | Per-ticker crawl prompt; falls back to master template |
 
 **Note:** 2.1.7–2.1.9 (Data Acquisition, Extraction Monitor, Pipeline Observability) moved to Research tab (2.7) in v1.2.
-
-**Note on 2.1.1:** Full purge now clears the companies table for an immediate empty UI baseline. Companies rows reappear after server restart because `_init_db()` calls `sync_companies_from_config()`, or immediately via Sync Config.
 
 ### 2.2  Registry tab  (`/ops?tab=registry`)
 

@@ -337,6 +337,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 38")
                     version = 38
 
+                if version < 39:
+                    self._migrate_v39(conn)
+                    conn.execute("PRAGMA user_version = 39")
+                    version = 39
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1506,6 +1511,20 @@ class MinerDB:
             "UPDATE review_queue SET time_grain='monthly' WHERE time_grain IS NULL"
         )
 
+    def _migrate_v39(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v38 → v39: reporting_cadence on companies.
+
+        Adds companies.reporting_cadence TEXT NOT NULL DEFAULT 'monthly'.
+        Valid values: 'monthly', 'quarterly', 'annual'.
+        Controls auto-gap-fill in the overnight pipeline and downstream time-spine merge.
+        """
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(companies)").fetchall()}
+        if 'reporting_cadence' not in cols:
+            conn.execute(
+                "ALTER TABLE companies ADD COLUMN "
+                "reporting_cadence TEXT NOT NULL DEFAULT 'monthly'"
+            )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -1560,11 +1579,14 @@ class MinerDB:
         return row['btc_first_filing_date']
 
     def set_btc_first_filing_date(self, ticker: str, date_str: str) -> None:
-        """Store the earliest BTC-related SEC filing date (YYYY-MM-DD) for ticker."""
+        """Store the earliest BTC-related SEC filing date (YYYY-MM-DD) for ticker.
+        Pass empty string or None to clear (re-enables auto-detect on next ingest).
+        """
+        stored = date_str if date_str else None
         with self._get_connection() as conn:
             conn.execute(
                 "UPDATE companies SET btc_first_filing_date = ? WHERE ticker = ?",
-                (date_str, ticker),
+                (stored, ticker),
             )
 
     # ── Metric Keywords CRUD (v32: stored as JSON in metric_schema.keywords) ──────
@@ -1795,12 +1817,18 @@ class MinerDB:
 
     # ── Company CRUD ─────────────────────────────────────────────────────────
 
-    def sync_companies_from_config(self, config_path: str) -> dict:
-        """Upsert all companies from a companies.json config file into the DB.
+    def sync_companies_from_config(self, config_path: str, insert_new: bool = True) -> dict:
+        """Upsert companies from a companies.json config file into the DB.
 
         Config fields (name, URLs, scraper settings) are always updated from JSON.
         Operational fields (scraper_status, last_scrape_at, last_scrape_error,
         probe_completed_at, scraper_issues_log) are preserved from the existing row.
+
+        Args:
+            insert_new: When True (default), insert companies in JSON that are
+                missing from the DB. When False (update-only mode), only update
+                rows that already exist — respects operator-cleared state after
+                a hard delete so Sync Config cannot silently re-populate the table.
 
         Returns {'added': N, 'updated': N}.
         """
@@ -1822,6 +1850,8 @@ class MinerDB:
                 legacy_mode = c.get('scrape_mode')
 
                 if existing is None:
+                    if not insert_new:
+                        continue  # update-only mode: skip companies not already in DB
                     # New company — insert with all fields
                     conn.execute(
                         """INSERT INTO companies
@@ -1829,13 +1859,13 @@ class MinerDB:
                             rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
                             scraper_mode, sector, scraper_issues_log, scraper_status,
                             prnewswire_url, globenewswire_url,
-                            filing_regime, fiscal_year_end_month)
+                            filing_regime, fiscal_year_end_month, reporting_cadence)
                            VALUES
                            (:ticker,:name,:tier,:ir_url,:pr_base_url,:cik,:active,
                             :rss_url,:url_template,:pr_start_year,:skip_reason,:sandbox_note,
                             :scraper_mode,:sector,'','never_run',
                             :prnewswire_url,:globenewswire_url,
-                            :filing_regime,:fiscal_year_end_month)""",
+                            :filing_regime,:fiscal_year_end_month,:reporting_cadence)""",
                         {
                             'ticker':               ticker,
                             'name':                 c.get('name', ticker),
@@ -1855,6 +1885,7 @@ class MinerDB:
                             'globenewswire_url':    c.get('globenewswire_url'),
                             'filing_regime':        c.get('filing_regime', 'domestic'),
                             'fiscal_year_end_month': int(c.get('fiscal_year_end_month', 12)),
+                            'reporting_cadence':    c.get('reporting_cadence', 'monthly'),
                         },
                     )
                     added += 1
@@ -1870,7 +1901,8 @@ class MinerDB:
                            scraper_mode=:scraper_mode, sector=:sector,
                            prnewswire_url=:prnewswire_url, globenewswire_url=:globenewswire_url,
                            filing_regime=:filing_regime,
-                           fiscal_year_end_month=:fiscal_year_end_month
+                           fiscal_year_end_month=:fiscal_year_end_month,
+                           reporting_cadence=:reporting_cadence
                            WHERE ticker=:ticker""",
                         {
                             'ticker':               ticker,
@@ -1894,6 +1926,7 @@ class MinerDB:
                             'globenewswire_url':    c.get('globenewswire_url'),
                             'filing_regime':        c.get('filing_regime', 'domestic'),
                             'fiscal_year_end_month': int(c.get('fiscal_year_end_month', 12)),
+                            'reporting_cadence':    c.get('reporting_cadence', 'monthly'),
                         },
                     )
                     updated += 1
@@ -2999,11 +3032,13 @@ class MinerDB:
                         counts['scraper_discovery_candidates'] = _del('scraper_discovery_candidates')
                         _archive('companies')
                         counts['companies'] = _del('companies')
-                        if suppress_auto_sync:
-                            conn.execute(
-                                """INSERT OR REPLACE INTO config_settings (key, value, updated_at)
-                                   VALUES ('auto_sync_companies_on_startup', '0', datetime('now'))"""
-                            )
+                        # Full hard-delete always records cleared state so Sync Config
+                        # cannot silently re-populate the table on the next button press.
+                        # Operator must explicitly restore via "Restore from Config".
+                        conn.execute(
+                            """INSERT OR REPLACE INTO config_settings (key, value, updated_at)
+                               VALUES ('auto_sync_companies_on_startup', '0', datetime('now'))"""
+                        )
 
                 if archive_conn is not None:
                     archive_conn.commit()
@@ -4998,7 +5033,7 @@ class MinerDB:
         allowed = {
             'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
             'rss_url', 'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
-            'prnewswire_url', 'globenewswire_url',
+            'prnewswire_url', 'globenewswire_url', 'btc_first_filing_date', 'reporting_cadence',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if updates:
@@ -5099,6 +5134,7 @@ class MinerDB:
         pr_start_year: int = None, skip_reason: str = None,
         sandbox_note: str = None,
         prnewswire_url: str = None, globenewswire_url: str = None,
+        reporting_cadence: str = 'monthly',
     ) -> dict:
         """Add a new company. Returns the new company row as a dict."""
         with self._get_connection() as conn:
@@ -5106,12 +5142,12 @@ class MinerDB:
                 """INSERT INTO companies
                    (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log,
                     rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
-                    prnewswire_url, globenewswire_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    prnewswire_url, globenewswire_url, reporting_cadence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ticker, name, tier, ir_url, pr_base_url, cik, active,
                  sector, scraper_mode, scraper_issues_log,
                  rss_url, url_template, pr_start_year, skip_reason, sandbox_note,
-                 prnewswire_url, globenewswire_url),
+                 prnewswire_url, globenewswire_url, reporting_cadence),
             )
         return self.get_company(ticker)
 

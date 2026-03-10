@@ -1020,11 +1020,30 @@ class EdgarConnector:
         canadian: 6-K + 40-F (no 10-Q/10-K)
         foreign:  6-K + 20-F (no 10-Q/10-K)
 
+        Automatically detects and stores btc_first_filing_date when not yet set,
+        then uses max(since_date, btc_first_filing_date) as the effective floor so
+        pre-mining-pivot filings are never ingested.
+
         Updates last_edgar_at on the company row after completion.
         Returns a combined IngestSummary.
         """
         from miner_types import IngestSummary
         combined = IngestSummary()
+
+        # Auto-populate btc_first_filing_date if not yet stored, then gate since_date.
+        try:
+            btc_pivot = self.detect_btc_first_filing_date(cik=cik, ticker=ticker)
+            if btc_pivot:
+                from datetime import date as _date_cls
+                pivot_date = _date_cls.fromisoformat(btc_pivot[:10])
+                if pivot_date > since_date:
+                    log.info(
+                        "event=edgar_since_gated ticker=%s since_date=%s btc_first_filing=%s",
+                        ticker, since_date, btc_pivot,
+                    )
+                    since_date = pivot_date
+        except Exception as _det_err:
+            log.warning("event=btc_first_filing_detect_error ticker=%s error=%s", ticker, _det_err)
 
         regime = (filing_regime or 'domestic').lower()
         if regime == 'domestic':

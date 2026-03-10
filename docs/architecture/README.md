@@ -6,8 +6,9 @@ Machine-readable module dependency graph for `OffChain/miners`.
 
 | File | Format | Purpose |
 |------|--------|---------|
-| `dag.json` | JSON | Adjacency list — nodes with layer metadata, edges with optional notes |
-| `dag.dot` | Graphviz DOT | Visual render source |
+| `dag.json` | JSON | Module import graph — nodes with layer metadata, edges with optional notes |
+| `dag.dot` | Graphviz DOT | Visual render source for `dag.json` |
+| `operations.json` | JSON | Operation contracts — SSOT read priority, pipeline stage DAG, per-operation code paths (UI → route → DB). Read by `tests/test_ui_spec.py` validators. |
 
 ## Conventions
 

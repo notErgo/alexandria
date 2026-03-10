@@ -421,18 +421,23 @@ def operations_extract():
 
                 source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
 
+                # Auto-gate by btc_first_filing_date when no explicit from_period given.
+                _effective_from = _from_period
+                if _effective_from is None and ticker:
+                    _effective_from = db.get_btc_first_filing_date(ticker)
+
                 if force:
                     reports = db.get_all_reports_for_extraction(
                         ticker=ticker,
                         source_types=source_types,
-                        from_period=_from_period,
+                        from_period=_effective_from,
                         to_period=_to_period,
                     )
                 else:
                     reports = db.get_unextracted_reports(
                         ticker=ticker,
                         source_types=source_types,
-                        from_period=_from_period,
+                        from_period=_effective_from,
                         to_period=_to_period,
                     )
 
