@@ -333,6 +333,15 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 .src-icon { font-size: 0.75rem; }
 .src-icon.has-doc { color: var(--theme-accent); }
 .src-icon.no-doc { color: var(--theme-text-muted); }
+.md-mode-toggle { display:flex; align-items:center; gap:0.4rem; }
+.md-mode-toggle .btn.active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
+.md-edit-banner { font-size:0.76rem; color:var(--theme-text-muted); }
+.timeline-docs-subrow { position: relative; z-index: 3; }
+.timeline-docs-subrow td { position: relative; z-index: 3; background: var(--theme-bg-primary) !important; border-top: 1px dashed var(--theme-border); }
+.timeline-docs-subrow:hover td { background: var(--theme-bg-primary) !important; }
+.timeline-doc-chip { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; width:100%; margin:0 0 0.4rem 0; padding:0.42rem 0.6rem; border:1px solid var(--theme-border); border-radius:8px; font-size:0.75rem; background:var(--theme-bg-secondary); color:var(--theme-text-primary); cursor:pointer; text-align:left; }
+.timeline-doc-chip.selected { border-color:#22c55e; color:#22c55e; }
+.timeline-type-expand { color: var(--theme-text-muted); font-size: 0.68rem; margin-left: 4px; }
 
 /* Empty / loading states */
 .md-table-empty {
@@ -344,20 +353,21 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 
 /* ── Document viewer panel (fixed bottom drawer — no layout shift) ────────── */
 #doc-panel {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
   width: 100%;
-  max-width: 1400px;
+  max-width: none;
   z-index: 200;
   display: none;
   flex-direction: column;
   background: var(--theme-bg-secondary);
-  border-top: 2px solid var(--theme-border);
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 -4px 24px rgba(0,0,0,0.35);
-  max-height: 60vh;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  margin-top: 1rem;
+  max-height: none;
   overflow: hidden;
 }
 #doc-panel.visible { display: flex; }
@@ -417,7 +427,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
 .doc-panel-body {
   display: grid;
   grid-template-columns: 1fr 280px;
-  height: 420px;
+  min-height: 420px;
   overflow: hidden;
 }
 #doc-placeholder {
@@ -1066,6 +1076,50 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
   </div>
   </details><!-- /companies-governance-details -->
+
+  <!-- Danger Zone -->
+  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.1.6" data-spec-id="1.1.6">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
+      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.1.6</span>Danger Zone</h3>
+      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
+    </div>
+    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
+      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+        Purge modes:
+        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
+        <strong>Reset Only</strong> clears DATA only, and
+        <strong>Hard Delete</strong> performs a destructive wipe.
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Mode:</label>
+        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
+          <option value="archive">archive + reset (recommended)</option>
+          <option value="reset">reset only</option>
+          <option value="hard_delete">hard delete</option>
+        </select>
+        <span id="purge-autosync-note" style="display:none;font-size:0.75rem;color:var(--theme-text-muted)">
+          Hard delete clears company table permanently. Use Restore from Config to repopulate.
+        </span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Reason:</label>
+        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
+               style="width:360px;font-size:0.82rem;padding:3px 7px">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
+        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
+               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
+        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
+               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
+        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+  </div>
   </div><!-- /spane-config-companies -->
 
   <!-- Sub-pane: Companies Table (1.2) -->
@@ -1158,49 +1212,6 @@ tr.is-reviewed td { opacity: 0.65; }
     </table>
   </div>
 
-  <!-- Danger Zone -->
-  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.2.3" data-spec-id="1.2.3">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
-      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.2.3</span>Danger Zone</h3>
-      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
-    </div>
-    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
-      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
-        Purge modes:
-        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
-        <strong>Reset Only</strong> clears DATA only, and
-        <strong>Hard Delete</strong> performs a destructive wipe.
-      </p>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Mode:</label>
-        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
-          <option value="archive">archive + reset (recommended)</option>
-          <option value="reset">reset only</option>
-          <option value="hard_delete">hard delete</option>
-        </select>
-        <span id="purge-autosync-note" style="display:none;font-size:0.75rem;color:var(--theme-text-muted)">
-          Hard delete clears company table permanently. Use Restore from Config to repopulate.
-        </span>
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Reason:</label>
-        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
-               style="width:360px;font-size:0.82rem;padding:3px 7px">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
-        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
-               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
-        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
-               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
-        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
-      </div>
-    </div>
-  </div>
   </details><!-- /companies-ops-details -->
   </div><!-- /spane-config-companiestable -->
 
@@ -1366,6 +1377,13 @@ tr.is-reviewed td { opacity: 0.65; }
       Leave it unchecked for faster runs when crawl-sourced documents are not needed.
       After this pipeline completes, review disagreements in the <strong>Review</strong> tab.
     </p>
+    <div style="margin-bottom:0.65rem">
+      <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Ticker scope</div>
+      <div id="pipeline-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
+        Leave empty to run all active companies. Selection scopes IR ingest, EDGAR ingest, optional crawl, and extraction.
+      </div>
+    </div>
     <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
         <input id="pipeline-include-ir" type="checkbox">
@@ -1978,11 +1996,16 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Right: filters + table -->
-    <div class="md-table-panel" data-spec-id="MD5.1">
+    <div class="md-table-panel" id="miner-review-table-panel" data-spec-id="MD5.1">
       <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
         <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
       </div>
       <div class="md-table-filters">
+        <div class="md-mode-toggle">
+          <button class="btn btn-secondary btn-sm active" id="table-mode-view-btn" onclick="setMinerTableMode('view')">View</button>
+          <button class="btn btn-secondary btn-sm" id="table-mode-edit-btn" onclick="setMinerTableMode('edit')">Edit</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="add-row-btn" onclick="toggleAddRowPanel()" style="display:none">Add Row</button>
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
         </label>
@@ -2012,6 +2035,13 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       </div>
+      <div id="add-row-panel" style="display:none;padding:0.5rem 0.75rem;border-bottom:1px solid var(--theme-border);background:var(--theme-bg-primary)">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <label style="font-size:0.78rem">Period <input type="month" id="add-row-period" style="margin-left:0.3rem"></label>
+          <button class="btn btn-primary btn-sm" onclick="addManualRow()">Create Empty Row</button>
+          <span id="add-row-status" style="font-size:0.76rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
       <!-- Coverage summary bar — populated by loadCoverageSummary() -->
       <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
         <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
@@ -2022,9 +2052,10 @@ tr.is-reviewed td { opacity: 0.65; }
       <details id="table-help" style="flex-shrink:0;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.78rem;color:var(--theme-text-muted)">
         <summary style="cursor:pointer;user-select:none;color:var(--theme-accent)">How to use this table</summary>
         <ul style="margin:0.4rem 0 0.3rem 1.1rem;padding:0;line-height:1.7;color:var(--theme-text-secondary)">
-          <li><strong>Click the period label</strong> — opens the Document Viewer as a fixed bottom panel. Click X or press Escape to close it.</li>
-          <li><strong>Checkbox / click anywhere on a row</strong> — selects the row for batch accept. <strong>Shift+click</strong> selects a range. <strong>Ctrl+click</strong> toggles individual rows.</li>
-          <li><strong>Double-click a numeric value cell</strong> — opens an inline editor in the cell. Type a number and press Enter or OK. Escape restores the original value.</li>
+          <li><strong>View/Edit toggle</strong> controls interaction. In View mode, left click does not mutate table state. In Edit mode, click a metric cell to edit it and use Add Row to create a manual month.</li>
+          <li><strong>Click a row in View mode</strong> — opens the document list directly below that row in the table.</li>
+          <li><strong>Click a document in that row list</strong> — opens the review panel below the table for that specific source document.</li>
+          <li><strong>Checkboxes only</strong> select rows for batch accept. <strong>Shift+click</strong> on checkboxes selects a range.</li>
           <li><strong>Hover over a value cell</strong> — browser tooltip shows the raw source snippet that produced the value.</li>
           <li><strong>Method badges</strong> next to values: R = regex, L = LLM, A = analyst, F = finalized, D = derived, S = SEC filing, P = pipeline.</li>
           <li><strong>Columns button</strong> — toggle individual metric columns on/off.</li>
@@ -2032,9 +2063,9 @@ tr.is-reviewed td { opacity: 0.65; }
       </details>
       <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border)">
         <button id="batch-accept-btn" class="btn btn-primary btn-sm" disabled onclick="batchAcceptSelected()">Batch Accept</button>
-        <span style="font-size:0.75rem;color:var(--theme-text-muted)">Check rows to select &bull; Shift+click for range &bull; Ctrl+click to toggle &bull; Click period label to open doc viewer</span>
+        <span class="md-edit-banner" id="table-mode-banner">View mode: checkbox-only selection, right-click rows for documents.</span>
       </div>
-      <div class="md-table-scroll">
+      <div class="md-table-scroll" id="miner-review-table-scroll">
         <table id="timeline-table">
           <thead>
             <tr id="timeline-thead-row">
@@ -2051,6 +2082,7 @@ tr.is-reviewed td { opacity: 0.65; }
           </tbody>
         </table>
       </div>
+      <div id="miner-review-doc-anchor"></div>
     </div>
 
   </div><!-- /.md-upper -->
@@ -2350,6 +2382,7 @@ tr.is-reviewed td { opacity: 0.65; }
       <table class="review-table" id="review-table" data-ui-id="4.1.2" data-spec-id="4.1.2">
         <thead>
           <tr>
+            <th>Docs</th>
             <th><input type="checkbox" id="rv-select-all" onclick="toggleSelectAll()"></th>
             <th>Ticker</th>
             <th>Period</th>
@@ -2363,7 +2396,7 @@ tr.is-reviewed td { opacity: 0.65; }
           </tr>
         </thead>
         <tbody id="review-tbody">
-          <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
+          <tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -5205,6 +5238,8 @@ async function submitReextract() {
 let _reviewLoaded = false;
 let _reviewItems = [];
 let _reviewIdx = -1;
+let _reviewExpandedIdx = -1;
+let _reviewDocsCache = {};
 
 async function loadReview() {
   _reviewLoaded = true;
@@ -5260,29 +5295,168 @@ function renderReview() {
   const tbody = document.getElementById('review-tbody');
   if (!tbody) return;
   if (!_reviewItems.length) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Queue is empty.</td></tr>';
     return;
   }
   tbody.innerHTML = _reviewItems.map(function(item, idx) {
-    return '<tr data-idx="' + idx + '">'
-      + '<td><input type="checkbox" class="rv-cb" data-id="' + escapeAttr(String(item.id)) + '"></td>'
-      + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
-      + '<td>' + escapeHtml(item.period || '') + '</td>'
-      + '<td style="font-size:0.75rem">' + escapeHtml(item.metric || '') + '</td>'
-      + '<td>' + _sourceTypeBadge(item.source_type) + '</td>'
-      + '<td style="text-align:right">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
-      + '<td style="text-align:right">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
-      + '<td style="font-size:0.75rem">' + escapeHtml(item.agreement_status || '') + '</td>'
-      + '<td>' + _statusBadge(item.status) + '</td>'
-      + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
-        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="acceptItem(this.getAttribute(\'data-id\'))">Accept</button>'
-        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="rejectItem(this.getAttribute(\'data-id\'))">R</button>'
+    const docsKey = (item.ticker || '') + '|' + (item.period || '');
+    const docsState = _reviewDocsCache[docsKey];
+    const isExpanded = idx === _reviewExpandedIdx;
+    let docsHtml = '';
+    if (isExpanded) {
+      if (!docsState || docsState.loading) {
+        docsHtml = '<div style="color:var(--theme-text-muted)">Loading documents...</div>';
+      } else if (docsState.error) {
+        docsHtml = '<div style="color:var(--theme-danger)">Failed to load documents: ' + escapeHtml(docsState.error) + '</div>';
+      } else {
+        const docs = [];
+        if (docsState.selected) docs.push(Object.assign({is_selected: true}, docsState.selected));
+        (docsState.alternatives || []).forEach(function(doc) { docs.push(doc); });
+        docsHtml = docs.length
+          ? docs.map(function(doc) {
+              const badge = doc.is_selected
+                ? '<span style="font-size:0.7rem;color:#22c55e;background:#22c55e1a;border-radius:10px;padding:1px 6px;margin-left:6px">priority</span>'
+                : '';
+              return '<button class="btn btn-sm btn-secondary" style="text-align:left;justify-content:flex-start"'
+                + ' onclick="event.stopPropagation();openReviewItemByIndex(' + idx + ')">'
+                + escapeHtml(doc.source_type || 'document')
+                + (doc.report_date ? ' · ' + escapeHtml(doc.report_date) : '')
+                + badge
+                + '</button>';
+            }).join(' ')
+          : '<div style="color:var(--theme-text-muted)">No documents found for this period.</div>';
+      }
+      docsHtml = '<tr class="review-docs-row">'
+        + '<td colspan="11" style="background:var(--theme-bg-primary);padding:0.75rem 0.9rem;border-bottom:1px solid var(--theme-border)">'
+        + '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.35rem">'
+        + '<strong style="font-size:0.78rem">Documents</strong>'
+        + '<span style="font-size:0.72rem;color:var(--theme-text-muted)">Open the drawer from here if row click is unreliable.</span>'
+        + '</div>'
+        + '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">' + docsHtml + '</div>'
+        + '</td></tr>';
+    }
+    return '<tr data-idx="' + idx + '" onclick="openReviewItemByIndex(' + idx + ')">'
+      + '<td style="width:1%;white-space:nowrap" onclick="event.stopPropagation()">'
+      + '<button class="btn btn-xs btn-secondary" onclick="event.stopPropagation();toggleReviewDocs(' + idx + ')">' + (isExpanded ? 'Hide' : 'Docs') + '</button>'
+      + '</td>'
+      + '<td onclick="event.stopPropagation()"><input type="checkbox" class="rv-cb" data-id="' + escapeAttr(String(item.id)) + '"></td>'
+      + '<td style="font-weight:600;cursor:pointer">' + escapeHtml(item.ticker || '') + '</td>'
+      + '<td style="cursor:pointer">' + escapeHtml(item.period || '') + '</td>'
+      + '<td style="font-size:0.75rem;cursor:pointer">' + escapeHtml(item.metric || '') + '</td>'
+      + '<td style="cursor:pointer">' + _sourceTypeBadge(item.source_type) + '</td>'
+      + '<td style="text-align:right;cursor:pointer">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
+      + '<td style="text-align:right;cursor:pointer">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
+      + '<td style="font-size:0.75rem;cursor:pointer">' + escapeHtml(item.agreement_status || '') + '</td>'
+      + '<td style="cursor:pointer">' + _statusBadge(item.status) + '</td>'
+      + '<td style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">'
+        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();acceptItem(this.getAttribute(\'data-id\'))">Accept</button>'
+        + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();rejectItem(this.getAttribute(\'data-id\'))">R</button>'
         + (item.source_snippet ? '<button class="btn btn-sm btn-secondary rv-gen-btn" title="Generate regex pattern from this snippet"'
             + ' data-metric="' + escapeAttr(item.metric || '') + '"'
-            + ' data-snippet="' + escapeAttr(item.source_snippet || '') + '">Gen</button>' : '')
+            + ' data-snippet="' + escapeAttr(item.source_snippet || '') + '" onclick="event.stopPropagation()">Gen</button>' : '')
       + '</td>'
-      + '</tr>';
+      + '</tr>'
+      + docsHtml;
   }).join('');
+}
+
+async function toggleReviewDocs(idx) {
+  if (_reviewExpandedIdx === idx) {
+    _reviewExpandedIdx = -1;
+    renderReview();
+    return;
+  }
+  _reviewExpandedIdx = idx;
+  renderReview();
+  const item = _reviewItems[idx];
+  if (!item || !item.ticker || !item.period) return;
+  const docsKey = (item.ticker || '') + '|' + (item.period || '');
+  if (_reviewDocsCache[docsKey] && !_reviewDocsCache[docsKey].loading) {
+    renderReview();
+    return;
+  }
+  _reviewDocsCache[docsKey] = {loading: true};
+  renderReview();
+  try {
+    const period = String(item.period).slice(0, 7);
+    const resp = await fetch('/api/miner/' + encodeURIComponent(item.ticker) + '/' + encodeURIComponent(period) + '/reports');
+    const data = await resp.json().catch(function() { return {}; });
+    if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    _reviewDocsCache[docsKey] = data.data || {selected: null, alternatives: []};
+  } catch (err) {
+    _reviewDocsCache[docsKey] = {error: err.message || String(err)};
+  }
+  renderReview();
+}
+
+function openReviewItemByIndex(idx) {
+  const item = _reviewItems[idx];
+  if (!item) return;
+  _reviewIdx = idx;
+  document.querySelectorAll('#review-tbody tr[data-idx]').forEach(function(row, rowIdx) {
+    row.classList.toggle('selected', rowIdx === idx);
+  });
+  const panel = document.getElementById('doc-panel');
+  if (panel) panel.classList.add('visible');
+  const titleEl = document.getElementById('doc-panel-title-text');
+  if (titleEl) {
+    titleEl.textContent = (item.ticker || '')
+      + (item.period ? ' · ' + item.period : '')
+      + (item.metric ? ' · ' + item.metric : '')
+      + (item.source_type ? ' · ' + item.source_type : '');
+  }
+  const patternPanel = document.getElementById('pattern-panel');
+  if (patternPanel) patternPanel.style.display = 'none';
+  const patternStatus = document.getElementById('pattern-save-status');
+  if (patternStatus) patternStatus.textContent = '';
+  const applyResult = document.getElementById('apply-result');
+  if (applyResult) applyResult.style.display = 'none';
+  ReviewPanel.openItem(item.id);
+}
+
+function clearReviewSelection() {
+  _reviewIdx = -1;
+  document.querySelectorAll('#review-tbody tr.selected').forEach(function(row) {
+    row.classList.remove('selected');
+  });
+}
+
+function _isReviewQueueContext() {
+  const pane = document.getElementById('spane-review-queue');
+  const panel = document.getElementById('doc-panel');
+  return !!(pane && pane.classList.contains('active') && panel && panel.classList.contains('visible') && _reviewIdx >= 0);
+}
+
+function _configureSharedReviewPanelCallbacks() {
+  ReviewPanel.setOnFilled(function(e) {
+    showToast('Submitted to review queue');
+    selectCompany(_ticker);
+  });
+  ReviewPanel.setOnWritten(function(e) {
+    showToast('Written to timeline: ' + e.metric + ' = ' + e.value);
+    selectCompany(_ticker);
+  });
+  ReviewPanel.setOnApproved(function() {
+    if (_isReviewQueueContext()) {
+      showToast('Approved');
+      clearReviewSelection();
+      closeDocPanel();
+      loadReview();
+      return;
+    }
+    showToast('Approved');
+    selectCompany(_ticker);
+  });
+  ReviewPanel.setOnRejected(function() {
+    if (_isReviewQueueContext()) {
+      showToast('Rejected');
+      clearReviewSelection();
+      closeDocPanel();
+      loadReview();
+      return;
+    }
+    showToast('Rejected');
+  });
 }
 
 function toggleSelectAll() {
@@ -5295,6 +5469,7 @@ function toggleSelectAll() {
 document.addEventListener('DOMContentLoaded', function() {
   const reviewTbody = document.getElementById('review-tbody');
   if (!reviewTbody) return;
+  _configureSharedReviewPanelCallbacks();
   reviewTbody.addEventListener('change', function(e) {
     if (!e.target.classList.contains('rv-cb')) return;
     const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
@@ -5302,8 +5477,9 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   reviewTbody.addEventListener('click', function(e) {
     const btn = e.target.closest('.rv-gen-btn');
-    if (!btn) return;
-    prefillPatternGenerator(btn.dataset.metric, btn.dataset.snippet);
+    if (btn) {
+      prefillPatternGenerator(btn.dataset.metric, btn.dataset.snippet);
+    }
   });
 });
 
@@ -5312,6 +5488,8 @@ async function acceptItem(id) {
   const data = await resp.json();
   if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
   showToast('Finalized');
+  const active = _reviewItems[_reviewIdx];
+  if (active && String(active.id) === String(id)) closeDocPanel();
   loadReview();
 }
 
@@ -5325,6 +5503,8 @@ async function rejectItem(id) {
   const data = await resp.json();
   if (!data.success) { showToast(data.error?.message || 'Error', true); return; }
   showToast('Rejected');
+  const active = _reviewItems[_reviewIdx];
+  if (active && String(active.id) === String(id)) closeDocPanel();
   loadReview();
 }
 
@@ -5356,10 +5536,10 @@ document.addEventListener('keydown', function(e) {
   if (!rows.length) return;
   if (e.key === 'j' || e.key === 'J') {
     _reviewIdx = Math.min(_reviewIdx + 1, rows.length - 1);
-    highlightReviewRow(rows);
+    openReviewItemByIndex(_reviewIdx);
   } else if (e.key === 'k' || e.key === 'K') {
     _reviewIdx = Math.max(_reviewIdx - 1, 0);
-    highlightReviewRow(rows);
+    openReviewItemByIndex(_reviewIdx);
   } else if ((e.key === 'a' || e.key === 'A') && _reviewIdx >= 0) {
     const row = rows[_reviewIdx];
     const btn = row ? row.querySelector('[data-id]') : null;
@@ -6256,6 +6436,7 @@ function loadIngest() {
 
 function _renderAllTickerBars() {
   _renderCrawlTickerSelector('crawl-ticker-selector', false);
+  _renderCrawlTickerSelector('pipeline-ticker-selector', false);
   _renderInterpretTickerBar();
 }
 
@@ -7324,11 +7505,12 @@ async function runFullPipeline() {
   var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
   var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
   var forceReextract = document.getElementById('pipeline-force-reextract')?.checked === true;
+  var tickers = _getSharedSelectedTickers();
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract, tickers: tickers}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');

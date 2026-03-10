@@ -811,6 +811,8 @@ const ReviewPanel = (function () {
     _currentMetric = metric;
     _currentItemId = null;
     const nullMetrics = (opts && opts.nullMetrics) || (metric ? [metric] : []);
+    const requestedReportId = (opts && opts.reportId != null) ? opts.reportId : null;
+    const bypassReviewItem = requestedReportId != null;
 
     // Reset sidebar
     const candidatesEl = _el('rp-candidates');
@@ -832,24 +834,26 @@ const ReviewPanel = (function () {
     if (repromptBar) repromptBar.style.display = 'none';
 
     try {
-      // Look for a PENDING review item
-      let qs = '?ticker=' + encodeURIComponent(ticker)
-        + '&period=' + encodeURIComponent(period)
-        + '&status=PENDING&limit=1';
-      if (metric) qs += '&metric=' + encodeURIComponent(metric);
-      const rResp = await fetch('/api/review' + qs);
-      if (rResp.ok) {
-        const rData = await rResp.json();
-        if (rData.success && rData.data.items.length > 0) {
-          // Delegate to openItem — sets _currentItemId
-          await openItem(rData.data.items[0].id);
-          return;
+      // Look for a PENDING review item unless caller explicitly requested a specific document.
+      if (!bypassReviewItem) {
+        let qs = '?ticker=' + encodeURIComponent(ticker)
+          + '&period=' + encodeURIComponent(period)
+          + '&status=PENDING&limit=1';
+        if (metric) qs += '&metric=' + encodeURIComponent(metric);
+        const rResp = await fetch('/api/review' + qs);
+        if (rResp.ok) {
+          const rData = await rResp.json();
+          if (rData.success && rData.data.items.length > 0) {
+            // Delegate to openItem — sets _currentItemId
+            await openItem(rData.data.items[0].id);
+            return;
+          }
         }
       }
 
       // No pending item — show analysis + raw source + fill form
       const [rawText, matches, selectionData] = await Promise.all([
-        _fetchRawSource(ticker, period, null),
+        _fetchRawSource(ticker, period, requestedReportId),
         _fetchAnalysis(ticker, period).catch(function () { return []; }),
         _fetchPeriodReports(ticker, period).catch(function () { return null; }),
       ]);
@@ -858,7 +862,7 @@ const ReviewPanel = (function () {
       _renderDocText(rawText, matches);
 
       // Show selection rationale and alternative doc switcher in the header
-      _renderSourceHeader(selectionData, null, function(reportId) {
+      _renderSourceHeader(selectionData, requestedReportId, function(reportId) {
         _fetchRawSource(ticker, period, reportId).then(function(altText) {
           _renderDocText(altText, []);
         });

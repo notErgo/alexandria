@@ -8,6 +8,8 @@ let _rows = [];                   // full unfiltered row list from API
 let _selectedPeriod = null;       // period of the currently open doc panel
 let _currentDocText = '';         // raw text for pattern generator (set when doc is loaded)
 let _lastSelectedRowIdx = -1;     // row index of the last selected row (for Shift+click range)
+let _tableMode = 'view';
+let _expandedDocsPeriod = null;
 
 // Metric highlight colours — 5 known colours; extras assigned from a palette.
 const _METRIC_COLORS_KNOWN = {
@@ -37,6 +39,11 @@ function _assignMetricColor(key) {
 // Placing inside renderTable() would accumulate a listener on every filter change.
 document.addEventListener('DOMContentLoaded', function() {
   const _tbody = document.getElementById('timeline-tbody');
+  const docPanel = document.getElementById('doc-panel');
+  const docAnchor = document.getElementById('miner-review-doc-anchor');
+  if (docPanel && docAnchor && docPanel.parentElement !== docAnchor) {
+    docAnchor.appendChild(docPanel);
+  }
 
   // Prevent text selection on Shift+click (standard multi-select UX)
   _tbody.addEventListener('mousedown', function(e) {
@@ -47,27 +54,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const row = e.target.closest('tr[data-period]');
     if (!row) return;
 
-    // Period label cell: open doc panel (only trigger point)
-    if (e.target.closest('.td-period')) {
-      selectPeriod(row.getAttribute('data-period'));
-      return;
-    }
-
-    // Value / empty cells: dblclick handles inline edit — ignore single click
-    if (e.target.closest('.td-value, .td-empty')) return;
-
     // Accept button handled by its own onclick
     if (e.target.closest('button')) return;
 
-    // All other row areas (including the checkbox itself): handle selection
+    const period = row.getAttribute('data-period');
+    if (_tableMode === 'view' && !e.target.classList.contains('row-select-cb')) {
+      const rowData = _rows.find(function(r) { return r.period === period; });
+      openDocumentFromRow(period, rowData && rowData.report_id ? String(rowData.report_id) : null);
+      return;
+    }
+    const metricTd = e.target.closest('td[data-metric]');
+    if (_tableMode === 'edit' && metricTd) {
+      _beginInlineEdit(metricTd, period, metricTd.getAttribute('data-metric'));
+      return;
+    }
+
+    // Checkbox-only selection for batch accept
     const rows = Array.from(_tbody.querySelectorAll('tr[data-period]'));
     const idx = rows.indexOf(row);
     const isCbTarget = e.target.classList && e.target.classList.contains('row-select-cb');
-    const rowCb = row.querySelector('.row-select-cb');
+    if (!isCbTarget) return;
 
     if (e.shiftKey && _lastSelectedRowIdx >= 0) {
-      // Range select: check all rows from _lastSelectedRowIdx to idx
-      if (isCbTarget) e.preventDefault(); // block checkbox toggle, we handle it
+      e.preventDefault();
       const lo = Math.min(idx, _lastSelectedRowIdx);
       const hi = Math.max(idx, _lastSelectedRowIdx);
       rows.forEach(function(r, i) {
@@ -78,19 +87,12 @@ document.addEventListener('DOMContentLoaded', function() {
       _lastSelectedRowIdx = idx;
       _updateBatchAcceptBtn();
       _syncSelectAllHeader();
-    } else if (isCbTarget) {
-      // Plain checkbox click: let browser handle the toggle, then sync state
+    } else {
       _lastSelectedRowIdx = idx;
       Promise.resolve().then(function() {
         _updateBatchAcceptBtn();
         _syncSelectAllHeader();
       });
-    } else {
-      // Click anywhere else on the row: toggle this row's checkbox
-      if (rowCb) rowCb.checked = !rowCb.checked;
-      _lastSelectedRowIdx = idx;
-      _updateBatchAcceptBtn();
-      _syncSelectAllHeader();
     }
   });
 
@@ -138,6 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Manual fill is now handled by ReviewPanel.setOnFilled (wired above).
+  setMinerTableMode('view');
 });
 
 // ── Coverage summary ───────────────────────────────────────────────────────
@@ -281,24 +284,27 @@ async function batchAcceptSelected() {
 // ── Inline cell editing ────────────────────────────────────────────────────
 let _editingCell = null;
 
-function inlineEditCell(event, period, metric) {
-  event.stopPropagation();
-  if (_editingCell) return; // one edit at a time
-  const td = event.currentTarget;
+function _beginInlineEdit(td, period, metric) {
+  if (!td || _editingCell) return;
   const row = _rows.find(function(r) { return r.period === period; });
   const m = row && row.metrics && row.metrics[metric];
   const currentVal = m ? m.value : null;
 
   _editingCell = {td: td, period: period, metric: metric, original: td.innerHTML};
-  td.innerHTML = `<input type="number" step="any" style="width:80px;font-size:0.82rem;background:var(--theme-bg-input);border:1px solid var(--theme-accent);border-radius:3px;color:var(--theme-text-primary);padding:1px 3px" value="${currentVal != null ? currentVal : ''}" id="inline-edit-input">` +
-    `<button style="margin-left:2px;font-size:0.7rem;padding:1px 4px;background:var(--theme-accent);color:#fff;border:none;border-radius:2px;cursor:pointer" onclick="confirmInlineEdit(event,'${escapeHtml(period)}','${escapeHtml(metric)}')">OK</button>`;
+  td.innerHTML = `<input type="number" step="any" style="width:80px;font-size:0.82rem;background:var(--theme-bg-input);border:1px solid var(--theme-accent);border-radius:3px;color:var(--theme-text-primary);padding:1px 3px" value="${currentVal != null ? currentVal : ''}" id="inline-edit-input">`
+    + `<button style="margin-left:2px;font-size:0.7rem;padding:1px 4px;background:var(--theme-accent);color:#fff;border:none;border-radius:2px;cursor:pointer" onclick="confirmInlineEdit(event,'${escapeHtml(period)}','${escapeHtml(metric)}')">OK</button>`;
   const input = td.querySelector('#inline-edit-input');
   if (input) { input.focus(); input.select(); }
-
   input.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') confirmInlineEdit(e, period, metric);
     if (e.key === 'Escape') cancelInlineEdit();
   });
+}
+
+function inlineEditCell(event, period, metric) {
+  event.stopPropagation();
+  if (_tableMode !== 'edit') return;
+  _beginInlineEdit(event.currentTarget, period, metric);
 }
 
 async function confirmInlineEdit(event, period, metric) {
@@ -474,11 +480,16 @@ async function selectCompany(ticker) {
   _ticker = ticker;
   localStorage.setItem('miner-data-ticker', ticker);
   closeDocPanel();
+  _expandedDocsPeriod = null;
 
   // Reset cached SEC + finalized data on company switch
   _secRows = [];
   _finalizedValues = [];
   _stagedValues = [];
+  const addRowStatus = document.getElementById('add-row-status');
+  if (addRowStatus) addRowStatus.textContent = '';
+  const addRowPanel = document.getElementById('add-row-panel');
+  if (addRowPanel && _tableMode !== 'edit') addRowPanel.style.display = 'none';
 
   // Highlight active tab
   document.querySelectorAll('.md-tab').forEach(function(btn) {
@@ -625,7 +636,7 @@ function renderTable(allRows) {
 
   if (rows.length === 0) {
     tbody.innerHTML =
-      `<tr><td colspan="${METRICS_ORDER.length + 2}" class="md-table-empty">No rows match current filters.</td></tr>`;
+      `<tr><td colspan="${METRICS_ORDER.length + 5}" class="md-table-empty">No rows match current filters.</td></tr>`;
     return;
   }
 
@@ -678,13 +689,13 @@ function renderTable(allRows) {
           tooltipText = m.source_snippet ? m.source_snippet.slice(0, 200) : '';
         }
         const tooltip = escapeHtml(tooltipText);
-        return `<td class="td-value" title="${tooltip}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">${formatted}${m.is_finalized ? finalBadge : badge}</td>`;
+        return `<td class="td-value" data-metric="${escapeHtml(metric)}" title="${tooltip}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">${formatted}${m.is_finalized ? finalBadge : badge}</td>`;
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
-        return `<td class="td-empty" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+        return `<td class="td-empty" data-metric="${escapeHtml(metric)}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       }
-      return `<td class="td-nodoc" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+      return `<td class="td-nodoc" data-metric="${escapeHtml(metric)}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
     });
 
     // Type and Date columns
@@ -699,7 +710,7 @@ function renderTable(allRows) {
     const altBadge = altDocs.length > 0
       ? `<span class="badge-alt-docs" title="${altTip}">+${altDocs.length}</span>`
       : '';
-    const typeCell = `<td class="td-type-col" title="${altTip}">${escapeHtml(typeLabel)}${altBadge}</td>`;
+    const typeCell = `<td class="td-type-col" title="${altTip}">${escapeHtml(typeLabel)}${altBadge}${altDocs.length > 0 ? '<span class="timeline-type-expand">docs</span>' : ''}</td>`;
     const dateVal = row.report_date ? row.report_date.slice(0, 10) : '—';
     const dateCell = `<td class="td-date-col">${escapeHtml(dateVal)}</td>`;
 
@@ -725,9 +736,119 @@ function renderTable(allRows) {
         ${metricCells.join('')}
         ${typeCell}${dateCell}${acceptBtn}
       </tr>`);
+    if (_expandedDocsPeriod === row.period) {
+      const docs = [{
+        id: row.report_id,
+        source_type: row.source_type,
+        report_date: row.report_date,
+        priority: row.doc_priority,
+        selected: true,
+      }].concat(altDocs);
+      parts.push(`<tr class="timeline-docs-subrow"><td colspan="${METRICS_ORDER.length + 5}">`
+        + `<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong style="font-size:0.78rem">Documents for ${escapeHtml(row.period_label)}</strong>`
+        + `<span style="font-size:0.72rem;color:var(--theme-text-muted)">Click a document below to open the review panel for that source.</span></div>`
+        + `<div style="margin-top:0.4rem">`
+        + docs.map(function(doc) {
+            const cls = doc.selected ? 'timeline-doc-chip selected' : 'timeline-doc-chip';
+            const pr = doc.priority != null ? 'p' + doc.priority + '/3' : '';
+            const docId = doc.id != null ? String(doc.id) : '';
+            return `<button type="button" class="${cls}" onclick="event.stopPropagation();openDocumentFromRow('${escapeHtml(row.period)}','${escapeHtml(docId)}')"><span>${escapeHtml(srcTypeLabel(doc.source_type || ''))} ${doc.report_date ? '· ' + escapeHtml(String(doc.report_date).slice(0, 10)) : ''}</span><span style="font-size:0.7rem;color:inherit">${escapeHtml(pr)}</span></button>`;
+          }).join('')
+        + `</div></td></tr>`);
+    }
   }
   tbody.innerHTML = parts.join('');
   applyColVisibility();
+}
+
+function toggleRowDocs(period) {
+  _expandedDocsPeriod = _expandedDocsPeriod === period ? null : period;
+  renderTable(_rows);
+}
+
+function openDocumentFromRow(period, reportId) {
+  const row = _rows.find(function(r) { return r.period === period; });
+  if (!row || !_ticker) return;
+  _selectedPeriod = period;
+  document.querySelectorAll('#timeline-tbody tr[data-period]').forEach(function(tr) {
+    tr.classList.toggle('selected', tr.getAttribute('data-period') === period);
+  });
+  const panel = document.getElementById('doc-panel');
+  if (panel) {
+    panel.classList.add('visible');
+    panel.style.display = 'flex';
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  document.getElementById('doc-panel-title-text').textContent =
+    `${_ticker} · ${period.slice(0, 7)}${row && row.source_type ? ' · ' + row.source_type : ''}`;
+  document.getElementById('pattern-panel').style.display = 'none';
+  document.getElementById('pattern-save-status').textContent = '';
+  document.getElementById('apply-result').style.display = 'none';
+  const nullMetrics = row
+    ? METRICS_ORDER.filter(function(m) { return !row.metrics[m] || row.metrics[m].value == null; })
+    : METRICS_ORDER.slice();
+  ReviewPanel.openCell(_ticker, period, null, {
+    nullMetrics: nullMetrics,
+    reportId: reportId ? parseInt(reportId, 10) : null,
+  });
+}
+
+function setMinerTableMode(mode) {
+  _tableMode = mode === 'edit' ? 'edit' : 'view';
+  const viewBtn = document.getElementById('table-mode-view-btn');
+  const editBtn = document.getElementById('table-mode-edit-btn');
+  const addRowBtn = document.getElementById('add-row-btn');
+  const addRowPanel = document.getElementById('add-row-panel');
+  const banner = document.getElementById('table-mode-banner');
+  if (viewBtn) viewBtn.classList.toggle('active', _tableMode === 'view');
+  if (editBtn) editBtn.classList.toggle('active', _tableMode === 'edit');
+  if (addRowBtn) addRowBtn.style.display = _tableMode === 'edit' ? '' : 'none';
+  if (addRowPanel && _tableMode === 'view') addRowPanel.style.display = 'none';
+  if (banner) {
+    banner.textContent = _tableMode === 'edit'
+      ? 'Edit mode: click any metric cell to change it or fill an empty value. Use Add Row for a manual month.'
+      : 'View mode: click a row to open its document. Use the checkbox to select rows for batch accept.';
+  }
+}
+
+function toggleAddRowPanel() {
+  if (_tableMode !== 'edit') return;
+  const panel = document.getElementById('add-row-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+}
+
+function addManualRow() {
+  if (_tableMode !== 'edit') return;
+  const input = document.getElementById('add-row-period');
+  const status = document.getElementById('add-row-status');
+  const ym = input ? input.value : '';
+  if (!ym) {
+    if (status) { status.textContent = 'Choose a month first.'; status.style.color = 'var(--theme-danger)'; }
+    return;
+  }
+  const period = ym + '-01';
+  if (_rows.some(function(r) { return r.period === period; })) {
+    if (status) { status.textContent = 'That period already exists.'; status.style.color = 'var(--theme-danger)'; }
+    return;
+  }
+  const metrics = {};
+  METRICS_ORDER.forEach(function(metric) { metrics[metric] = null; });
+  _rows.unshift({
+    period: period,
+    period_label: ym,
+    metrics: metrics,
+    has_report: false,
+    is_gap: false,
+    source_type: '',
+    report_date: '',
+    alt_docs: [],
+    doc_priority: null,
+    is_reviewed: false,
+  });
+  _rows.sort(function(a, b) { return String(b.period).localeCompare(String(a.period)); });
+  if (status) { status.textContent = 'Row created. Click a metric cell to enter a value.'; status.style.color = 'var(--theme-success)'; }
+  renderTable(_rows);
 }
 
 // ── Source type → display label ────────────────────────────────────────────
@@ -885,6 +1006,8 @@ function selectPeriod(period) {
   // Show doc panel
   const panel = document.getElementById('doc-panel');
   panel.classList.add('visible');
+  panel.style.display = 'flex';
+  panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
 
@@ -906,6 +1029,7 @@ function closeDocPanel() {
   _selectedPeriod = null;
   const panel = document.getElementById('doc-panel');
   panel.classList.remove('visible');
+  panel.style.display = 'none';
   _docSearchClose();
   document.getElementById('pattern-panel').style.display = 'none';
   ReviewPanel.close();
@@ -913,6 +1037,10 @@ function closeDocPanel() {
   document.querySelectorAll('#timeline-tbody tr.selected').forEach(function(r) {
     r.classList.remove('selected');
   });
+  document.querySelectorAll('#review-tbody tr.selected').forEach(function(r) {
+    r.classList.remove('selected');
+  });
+  if (typeof _reviewIdx !== 'undefined') _reviewIdx = -1;
 }
 
 // ── Panel 5.2 in-panel search (Ctrl+F) ────────────────────────────────────
