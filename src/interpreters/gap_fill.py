@@ -286,19 +286,21 @@ def _write_inferred(
 ):
     """Write one inferred data_point row and append a result entry."""
     dp = {
-        'report_id':          q_row.get('report_id'),
-        'ticker':             ticker,
-        'period':             period + '-01' if len(period) == 7 else period,
-        'metric':             metric,
-        'value':              value,
-        'unit':               q_row.get('unit', 'BTC'),
-        'confidence':         0.5,
-        'extraction_method':  extraction_method,
-        'source_snippet':     f'inferred from {covering_period}',
-        'source_period_type': 'inferred',
-        'covering_report_id': q_row.get('report_id'),
-        'covering_period':    covering_period,
-        'inference_notes':    inference_notes,
+        'report_id':            q_row.get('report_id'),
+        'ticker':               ticker,
+        'period':               period + '-01' if len(period) == 7 else period,
+        'metric':               metric,
+        'value':                value,
+        'unit':                 q_row.get('unit', 'BTC'),
+        'confidence':           0.5,
+        'extraction_method':    extraction_method,
+        'source_snippet':       f'inferred from {covering_period}',
+        'source_period_type':   'inferred',
+        'covering_report_id':   q_row.get('report_id'),
+        'covering_period':      covering_period,
+        'inference_notes':      inference_notes,
+        'expected_granularity': 'monthly',
+        'time_grain':           'monthly',
     }
 
     detail = {

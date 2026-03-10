@@ -332,6 +332,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 37")
                     version = 37
 
+                if version < 38:
+                    self._migrate_v38(conn)
+                    conn.execute("PRAGMA user_version = 38")
+                    version = 38
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1427,6 +1432,80 @@ class MinerDB:
                 "ALTER TABLE metric_schema ADD COLUMN show_on_scorecard INTEGER NOT NULL DEFAULT 1"
             )
 
+    def _migrate_v38(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v37 → v38: temporal granularity columns.
+
+        Adds:
+        - data_points.expected_granularity: granularity expected by the pipeline run
+        - data_points.time_grain: granularity of the extracted period
+        - review_queue.expected_granularity: granularity expected by the pipeline run
+        - review_queue.time_grain: granularity of the extracted period
+        - final_data_points.time_grain: granularity of the finalized period
+
+        Backfills existing rows by inspecting period format:
+        - YYYY-QN  → quarterly
+        - YYYY-FY  → annual
+        - otherwise → monthly (default)
+        """
+        dp_cols = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
+        rq_cols = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+        fdp_cols = {row[1] for row in conn.execute("PRAGMA table_info(final_data_points)").fetchall()}
+
+        # data_points
+        if 'expected_granularity' not in dp_cols:
+            conn.execute(
+                "ALTER TABLE data_points ADD COLUMN expected_granularity TEXT NOT NULL DEFAULT 'monthly'"
+            )
+        if 'time_grain' not in dp_cols:
+            conn.execute(
+                "ALTER TABLE data_points ADD COLUMN time_grain TEXT NOT NULL DEFAULT 'monthly'"
+            )
+
+        # review_queue (nullable — items may predate granularity tracking)
+        if 'expected_granularity' not in rq_cols:
+            conn.execute(
+                "ALTER TABLE review_queue ADD COLUMN expected_granularity TEXT"
+            )
+        if 'time_grain' not in rq_cols:
+            conn.execute(
+                "ALTER TABLE review_queue ADD COLUMN time_grain TEXT"
+            )
+
+        # final_data_points
+        if 'time_grain' not in fdp_cols:
+            conn.execute(
+                "ALTER TABLE final_data_points ADD COLUMN time_grain TEXT NOT NULL DEFAULT 'monthly'"
+            )
+
+        # Backfill data_points: quarterly periods
+        conn.execute(
+            "UPDATE data_points SET time_grain='quarterly' WHERE period GLOB '????-Q[1-4]'"
+        )
+        # Backfill data_points: annual periods
+        conn.execute(
+            "UPDATE data_points SET time_grain='annual' WHERE period GLOB '????-FY'"
+        )
+
+        # Backfill final_data_points: quarterly periods
+        conn.execute(
+            "UPDATE final_data_points SET time_grain='quarterly' WHERE period GLOB '????-Q[1-4]'"
+        )
+        # Backfill final_data_points: annual periods
+        conn.execute(
+            "UPDATE final_data_points SET time_grain='annual' WHERE period GLOB '????-FY'"
+        )
+
+        # Backfill review_queue: quarterly, then annual, then monthly for NULL
+        conn.execute(
+            "UPDATE review_queue SET time_grain='quarterly' WHERE period GLOB '????-Q[1-4]'"
+        )
+        conn.execute(
+            "UPDATE review_queue SET time_grain='annual' WHERE period GLOB '????-FY'"
+        )
+        conn.execute(
+            "UPDATE review_queue SET time_grain='monthly' WHERE time_grain IS NULL"
+        )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -2209,31 +2288,36 @@ class MinerDB:
         The UNIQUE key is (ticker, period, metric) — quarterly rows use
         covering_period as the period value (e.g. '2025-Q1').
         """
+        period = dp['period']
+        time_grain = dp.get('time_grain') or self._derive_time_grain(period)
+        expected_granularity = dp.get('expected_granularity') or 'monthly'
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
                     source_period_type, covering_report_id, covering_period,
-                    inference_notes)
+                    inference_notes, expected_granularity, time_grain)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
                            :source_period_type, :covering_report_id, :covering_period,
-                           :inference_notes)""",
+                           :inference_notes, :expected_granularity, :time_grain)""",
                 {
-                    'report_id':         dp.get('report_id'),
-                    'ticker':            dp['ticker'],
-                    'period':            dp['period'],
-                    'metric':            dp['metric'],
-                    'value':             dp['value'],
-                    'unit':              dp.get('unit', ''),
-                    'confidence':        dp['confidence'],
-                    'extraction_method': dp.get('extraction_method'),
-                    'source_snippet':    dp.get('source_snippet'),
-                    'source_period_type': dp.get('source_period_type', 'quarterly'),
-                    'covering_report_id': dp.get('covering_report_id'),
-                    'covering_period':   dp.get('covering_period'),
-                    'inference_notes':   dp.get('inference_notes'),
+                    'report_id':            dp.get('report_id'),
+                    'ticker':               dp['ticker'],
+                    'period':               period,
+                    'metric':               dp['metric'],
+                    'value':                dp['value'],
+                    'unit':                 dp.get('unit', ''),
+                    'confidence':           dp['confidence'],
+                    'extraction_method':    dp.get('extraction_method'),
+                    'source_snippet':       dp.get('source_snippet'),
+                    'source_period_type':   dp.get('source_period_type', 'quarterly'),
+                    'covering_report_id':   dp.get('covering_report_id'),
+                    'covering_period':      dp.get('covering_period'),
+                    'inference_notes':      dp.get('inference_notes'),
+                    'expected_granularity': expected_granularity,
+                    'time_grain':           time_grain,
                 },
             )
             return cursor.lastrowid
@@ -2562,34 +2646,49 @@ class MinerDB:
 
     # ── DataPoint CRUD ───────────────────────────────────────────────────────
 
+    @staticmethod
+    def _derive_time_grain(period: str) -> str:
+        """Return 'quarterly' if period matches YYYY-QN, 'annual' if YYYY-FY, else 'monthly'."""
+        import re as _re
+        if _re.match(r'^\d{4}-Q[1-4]$', period or ''):
+            return 'quarterly'
+        if _re.match(r'^\d{4}-FY$', period or ''):
+            return 'annual'
+        return 'monthly'
+
     def insert_data_point(self, dp: dict) -> int:
+        period = dp['period']
+        time_grain = dp.get('time_grain') or self._derive_time_grain(period)
+        expected_granularity = dp.get('expected_granularity') or 'monthly'
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
                     run_id, model_name, extractor_version, prompt_version, chunk_id,
-                    inference_notes)
+                    inference_notes, expected_granularity, time_grain)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
                            :run_id, :model_name, :extractor_version, :prompt_version, :chunk_id,
-                           :inference_notes)""",
+                           :inference_notes, :expected_granularity, :time_grain)""",
                 {
-                    'report_id':         dp.get('report_id'),
-                    'ticker':            dp['ticker'],
-                    'period':            dp['period'],
-                    'metric':            dp['metric'],
-                    'value':             dp['value'],
-                    'unit':              dp.get('unit', ''),
-                    'confidence':        dp['confidence'],
-                    'extraction_method': dp.get('extraction_method'),
-                    'source_snippet':    dp.get('source_snippet'),
-                    'run_id':            dp.get('run_id'),
-                    'model_name':        dp.get('model_name'),
-                    'extractor_version': dp.get('extractor_version'),
-                    'prompt_version':    dp.get('prompt_version'),
-                    'chunk_id':          dp.get('chunk_id'),
-                    'inference_notes':   dp.get('inference_notes'),
+                    'report_id':            dp.get('report_id'),
+                    'ticker':               dp['ticker'],
+                    'period':               period,
+                    'metric':               dp['metric'],
+                    'value':                dp['value'],
+                    'unit':                 dp.get('unit', ''),
+                    'confidence':           dp['confidence'],
+                    'extraction_method':    dp.get('extraction_method'),
+                    'source_snippet':       dp.get('source_snippet'),
+                    'run_id':               dp.get('run_id'),
+                    'model_name':           dp.get('model_name'),
+                    'extractor_version':    dp.get('extractor_version'),
+                    'prompt_version':       dp.get('prompt_version'),
+                    'chunk_id':             dp.get('chunk_id'),
+                    'inference_notes':      dp.get('inference_notes'),
+                    'expected_granularity': expected_granularity,
+                    'time_grain':           time_grain,
                 },
             )
             return cursor.lastrowid
@@ -2998,23 +3097,25 @@ class MinerDB:
         confidence: float = 1.0,
         analyst_note: Optional[str] = None,
         source_ref: Optional[str] = None,
+        time_grain: str = 'monthly',
     ) -> int:
         """INSERT OR REPLACE into final_data_points. Returns the row id."""
         with self._get_connection() as conn:
             cur = conn.execute(
                 """INSERT INTO final_data_points
                        (ticker, period, metric, value, unit, confidence,
-                        analyst_note, source_ref, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        analyst_note, source_ref, updated_at, time_grain)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
                    ON CONFLICT(ticker, period, metric) DO UPDATE SET
                        value        = excluded.value,
                        unit         = excluded.unit,
                        confidence   = excluded.confidence,
                        analyst_note = excluded.analyst_note,
                        source_ref   = excluded.source_ref,
-                       updated_at   = datetime('now')""",
+                       updated_at   = datetime('now'),
+                       time_grain   = excluded.time_grain""",
                 (ticker, period, metric, value, unit, confidence,
-                 analyst_note, source_ref),
+                 analyst_note, source_ref, time_grain),
             )
             return int(cur.lastrowid)
 
@@ -3172,27 +3273,34 @@ class MinerDB:
     # ── Review Queue CRUD ────────────────────────────────────────────────────
 
     def insert_review_item(self, item: dict) -> int:
+        period = item['period']
+        time_grain = item.get('time_grain') or self._derive_time_grain(period)
+        expected_granularity = item.get('expected_granularity')
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT INTO review_queue
                    (data_point_id, ticker, period, metric, raw_value, confidence,
-                    source_snippet, status, llm_value, regex_value, agreement_status, report_id)
+                    source_snippet, status, llm_value, regex_value, agreement_status, report_id,
+                    expected_granularity, time_grain)
                    VALUES (:data_point_id, :ticker, :period, :metric, :raw_value,
                            :confidence, :source_snippet, :status,
-                           :llm_value, :regex_value, :agreement_status, :report_id)""",
+                           :llm_value, :regex_value, :agreement_status, :report_id,
+                           :expected_granularity, :time_grain)""",
                 {
-                    'data_point_id': item.get('data_point_id'),
-                    'ticker': item['ticker'],
-                    'period': item['period'],
-                    'metric': item['metric'],
-                    'raw_value': item['raw_value'],
-                    'confidence': item['confidence'],
-                    'source_snippet': item.get('source_snippet'),
-                    'status': item.get('status', 'PENDING'),
-                    'llm_value': item.get('llm_value'),
-                    'regex_value': item.get('regex_value'),
-                    'agreement_status': item.get('agreement_status'),
-                    'report_id': item.get('report_id'),
+                    'data_point_id':        item.get('data_point_id'),
+                    'ticker':               item['ticker'],
+                    'period':               period,
+                    'metric':               item['metric'],
+                    'raw_value':            item['raw_value'],
+                    'confidence':           item['confidence'],
+                    'source_snippet':       item.get('source_snippet'),
+                    'status':               item.get('status', 'PENDING'),
+                    'llm_value':            item.get('llm_value'),
+                    'regex_value':          item.get('regex_value'),
+                    'agreement_status':     item.get('agreement_status'),
+                    'report_id':            item.get('report_id'),
+                    'expected_granularity': expected_granularity,
+                    'time_grain':           time_grain,
                 },
             )
             return cursor.lastrowid
@@ -3310,23 +3418,27 @@ class MinerDB:
             if not row:
                 raise ValueError(f"Review item {id} not found")
             item = dict(row)
+            _time_grain = item.get('time_grain') or 'monthly'
             dp = {
-                "report_id": item.get("report_id"),
-                "ticker": item["ticker"],
-                "period": item["period"],
-                "metric": item["metric"],
-                "value": float(item["raw_value"]),
-                "unit": _metric_unit(item["metric"]),
-                "confidence": item["confidence"],
-                "extraction_method": "review_approved",
-                "source_snippet": item["source_snippet"],
+                "report_id":            item.get("report_id"),
+                "ticker":               item["ticker"],
+                "period":               item["period"],
+                "metric":               item["metric"],
+                "value":                float(item["raw_value"]),
+                "unit":                 _metric_unit(item["metric"]),
+                "confidence":           item["confidence"],
+                "extraction_method":    "review_approved",
+                "source_snippet":       item["source_snippet"],
+                "time_grain":           _time_grain,
+                "expected_granularity": item.get("expected_granularity") or 'monthly',
             }
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
-                    extraction_method, source_snippet)
+                    extraction_method, source_snippet, time_grain, expected_granularity)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
-                           :confidence, :extraction_method, :source_snippet)""",
+                           :confidence, :extraction_method, :source_snippet,
+                           :time_grain, :expected_granularity)""",
                 dp,
             )
             dp_id = cursor.lastrowid
@@ -3346,6 +3458,7 @@ class MinerDB:
             confidence=item['confidence'],
             analyst_note='review_approved',
             source_ref=f"review_queue:{id}",
+            time_grain=_time_grain,
         )
         return dp
 
@@ -3365,23 +3478,27 @@ class MinerDB:
             if not row:
                 raise ValueError(f"Review item {id} not found")
             item = dict(row)
+            _time_grain = item.get('time_grain') or 'monthly'
             dp = {
-                "report_id": item.get("report_id"),
-                "ticker": item["ticker"],
-                "period": item["period"],
-                "metric": item["metric"],
-                "value": corrected_value,
-                "unit": _metric_unit(item["metric"]),
-                "confidence": 1.0,
-                "extraction_method": "review_edited",
-                "source_snippet": item["source_snippet"],
+                "report_id":            item.get("report_id"),
+                "ticker":               item["ticker"],
+                "period":               item["period"],
+                "metric":               item["metric"],
+                "value":                corrected_value,
+                "unit":                 _metric_unit(item["metric"]),
+                "confidence":           1.0,
+                "extraction_method":    "review_edited",
+                "source_snippet":       item["source_snippet"],
+                "time_grain":           _time_grain,
+                "expected_granularity": item.get("expected_granularity") or 'monthly',
             }
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
-                    extraction_method, source_snippet)
+                    extraction_method, source_snippet, time_grain, expected_granularity)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
-                           :confidence, :extraction_method, :source_snippet)""",
+                           :confidence, :extraction_method, :source_snippet,
+                           :time_grain, :expected_granularity)""",
                 dp,
             )
             dp_id = cursor.lastrowid
@@ -3403,6 +3520,7 @@ class MinerDB:
             confidence=1.0,
             analyst_note=note or 'review_edited',
             source_ref=f"review_queue:{id}",
+            time_grain=_time_grain,
         )
         return dp
 

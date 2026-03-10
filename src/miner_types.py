@@ -155,6 +155,7 @@ class ExtractionSummary:
     prompt_tokens: int = 0
     response_tokens: int = 0
     keyword_gated: int = 0
+    temporal_rejects: int = 0
 
 
 class IngestState(str, Enum):
@@ -288,3 +289,23 @@ class MetricSchemaDef:
     has_extraction_pattern: bool
     analyst_defined:        bool
     id:                     Optional[int] = None
+
+
+@dataclass
+class ExtractionRunConfig:
+    """Configuration for a single extraction run.
+
+    expected_granularity controls which time-period figures the LLM and
+    write-time validator will accept. Invalid values raise ValueError.
+    """
+    expected_granularity: str
+    ticker: str = ''
+    run_id: Optional[int] = None
+
+    def __post_init__(self):
+        valid = {'monthly', 'quarterly', 'annual'}
+        if self.expected_granularity not in valid:
+            raise ValueError(
+                f"expected_granularity must be one of {valid}, "
+                f"got {self.expected_granularity!r}"
+            )

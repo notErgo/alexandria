@@ -1619,6 +1619,20 @@ tr.is-reviewed td { opacity: 0.65; }
         <span style="font-size:0.72rem;color:var(--theme-text-muted)">Leave blank = all periods</span>
       </div>
 
+      <!-- Expected granularity selector -->
+      <div class="form-group" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Expected granularity</label>
+        <div class="btn-group" role="group" id="granularity-selector">
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-monthly" value="monthly" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary btn-sm" for="gran-monthly">Monthly</label>
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-quarterly" value="quarterly" autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="gran-quarterly">Quarterly</label>
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-annual" value="annual" autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="gran-annual">Annual</label>
+        </div>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">LLM results with a different period scope are rejected at write time</span>
+      </div>
+
       <!-- Gap-fill option — shown when source includes 10-Q or 10-K -->
       <div id="extract-gapfill-row" style="display:none;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
         <label style="font-size:0.78rem;color:var(--theme-text-muted)">
@@ -3362,6 +3376,13 @@ function onSourceDocsChange() {
     // Show gap-fill option when processing 10-Q or 10-K — those don't produce monthly rows directly
     gapfillRow.style.display = (cadence === 'quarterly' || cadence === 'annual' || cadence === 'all') ? 'flex' : 'none';
   }
+  // Auto-sync granularity selector to match cadence selection
+  const granMap = { monthly: 'gran-monthly', quarterly: 'gran-quarterly', annual: 'gran-annual' };
+  const granId = granMap[cadence];
+  if (granId) {
+    const el = document.getElementById(granId);
+    if (el) el.checked = true;
+  }
 }
 
 async function startExtractionRun() {
@@ -3392,6 +3413,8 @@ async function startExtractionRun() {
   _setExtractStatus('Extraction ' + (ticker || 'ALL') + filterLabel + ': queued', false);
   _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : '') + filterLabel);
   try {
+    const _granEl = document.querySelector('input[name="expected_granularity"]:checked');
+    const expectedGranularity = _granEl ? _granEl.value : 'monthly';
     const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3402,6 +3425,7 @@ async function startExtractionRun() {
         from_period: fromPeriod,
         to_period: toPeriod,
         sample: sampleN || null,
+        expected_granularity: expectedGranularity,
       }),
     });
     const data = await resp.json();

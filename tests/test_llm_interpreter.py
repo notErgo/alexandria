@@ -286,8 +286,14 @@ class TestBatchExtraction:
         result = extractor.extract_batch("MARA mined 700 BTC", ["production_btc"])
         assert result["production_btc"].extraction_method.startswith("llm_")
 
-    def test_extract_batch_drops_quarterly_result_for_monthly_doc(self):
-        """Monthly doc (expected_granularity='monthly') drops metric where LLM reports quarterly."""
+    def test_extract_batch_returns_quarterly_result_for_monthly_doc(self):
+        """_parse_batch_response no longer drops results based on period_granularity.
+
+        After Step 14, the soft-drop block in _parse_batch_response was removed.
+        The write-time validator (validate_period_granularity in interpret_pipeline)
+        is now the single authoritative gate. The parser returns all valid results
+        regardless of their period_granularity label.
+        """
         session = MagicMock()
         session.post.return_value = self._batch_response({
             "production_btc": {
@@ -300,8 +306,11 @@ class TestBatchExtraction:
         result = extractor.extract_batch(
             "some text", ["production_btc"], expected_granularity='monthly'
         )
-        assert "production_btc" not in result, \
-            "Quarterly result must be dropped when expected_granularity is monthly"
+        assert "production_btc" in result, (
+            "_parse_batch_response must NOT drop quarterly results — "
+            "validate_period_granularity in interpret_pipeline handles the gate"
+        )
+        assert result["production_btc"].period_granularity == "quarterly"
 
     def test_extract_batch_accepts_monthly_result_for_monthly_doc(self):
         """Monthly doc accepts metric where LLM reports monthly period_granularity."""

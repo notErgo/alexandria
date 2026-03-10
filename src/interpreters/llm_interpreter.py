@@ -524,15 +524,50 @@ class LLMInterpreter:
         except Exception:
             return False
 
-    def extract(self, text: str, metric: str) -> Optional[ExtractionResult]:
+    @staticmethod
+    def _build_temporal_anchor(expected_granularity: str, period: str = None) -> str:
+        """Build a TEMPORAL SCOPE block for LLM prompts.
+
+        Instructs the LLM to extract only figures whose time scope matches
+        expected_granularity and to reject figures that belong to a broader or
+        narrower period.
+        """
+        _other_map = {
+            'monthly': 'quarterly or annual',
+            'quarterly': 'annual',
+            'annual': 'N/A',
+        }
+        other = _other_map.get(expected_granularity, 'other')
+        period_line = period if period else 'see document'
+        lines = [
+            "=== TEMPORAL SCOPE (HARD CONSTRAINT) ===",
+            f"Expected granularity: {expected_granularity}",
+            f"Target period: {period_line}",
+            f"Extract only {expected_granularity} figures. "
+            f"If the document contains only a {other} figure for a metric, "
+            f"return null for that metric. "
+            f"Do NOT decompose {other} totals into estimated {expected_granularity} fractions.",
+            "===",
+            "",
+        ]
+        return "\n".join(lines)
+
+    def extract(self, text: str, metric: str, config=None, period: str = None) -> Optional[ExtractionResult]:
         """
         Extract a metric value from document text using the LLM.
 
         Returns ExtractionResult or None on any failure.
         Never raises exceptions.
+
+        config: Optional ExtractionRunConfig. When supplied, a temporal anchor
+            block is prepended to the prompt.
+        period: Optional period string forwarded to the temporal anchor.
         """
         try:
             prompt = self._get_prompt(metric).replace('{text}', text)
+            if config is not None:
+                anchor = self._build_temporal_anchor(config.expected_granularity, period)
+                prompt = anchor + prompt
             raw_response = self._call_ollama(prompt)
             if raw_response is None:
                 return None
@@ -551,6 +586,8 @@ class LLMInterpreter:
         metrics: list,
         ticker: str = None,
         expected_granularity: str = 'monthly',
+        config=None,
+        period: str = None,
     ) -> dict:
         """
         Extract all metrics in a single Ollama call.
@@ -560,18 +597,20 @@ class LLMInterpreter:
         value was found. Returns {} on any failure so the caller can fall back
         to per-metric extract() calls.
 
-        expected_granularity: 'monthly' | 'quarterly' | 'annual' | None
-            When 'monthly', any metric whose LLM response carries
-            period_granularity='quarterly' or 'annual' is silently dropped —
-            the document is a monthly press release and a quarterly figure
-            (e.g. Q3 total) is not what we want.
+        config: Optional ExtractionRunConfig. When supplied, config.expected_granularity
+            overrides the expected_granularity param and a temporal anchor block is
+            prepended to the prompt.
+        expected_granularity: legacy param, used when config is None.
+        period: Optional period string forwarded to the temporal anchor.
         """
+        # config wins over legacy param
+        _eg = config.expected_granularity if config is not None else expected_granularity
         try:
-            prompt = self._build_batch_prompt(text, metrics, ticker=ticker)
+            prompt = self._build_batch_prompt(text, metrics, ticker=ticker, config=config, period=period)
             raw = self._call_ollama(prompt)
             if raw is None:
                 return {}
-            return self._parse_batch_response(raw, metrics, expected_granularity=expected_granularity)
+            return self._parse_batch_response(raw, metrics)
         except Exception as e:
             log.error("LLM batch extraction failed: %s", e, exc_info=True)
             return {}
@@ -696,11 +735,13 @@ class LLMInterpreter:
         # No sentinel found — return whole prompt minus trailing whitespace
         return full_prompt.rstrip()
 
-    def _build_batch_prompt(self, text: str, metrics: list, ticker: str = None) -> str:
+    def _build_batch_prompt(self, text: str, metrics: list, ticker: str = None,
+                            config=None, period: str = None) -> str:
         """
         Build a single prompt that asks the LLM to extract all metrics at once.
 
         Structure:
+          [temporal anchor — when config is supplied]
           [preamble — from DB config_settings or _DEFAULT_BATCH_PREAMBLE]
           [=== COMPANY CONTEXT: {ticker} === if hint is set]
           === METRIC: <name> ===
@@ -714,7 +755,14 @@ class LLMInterpreter:
         Unit hints are defined in the module-level _BATCH_UNIT_HINTS dict.
         NOTE: when new metrics are added to _DEFAULT_PROMPTS, add their unit
         hint to _BATCH_UNIT_HINTS at module level.
+        config: Optional ExtractionRunConfig. When supplied, prepend a TEMPORAL SCOPE block.
+        period: Optional period string forwarded to the temporal anchor.
         """
+        # Temporal anchor block (prepended before preamble when config is supplied)
+        _temporal_prefix = ''
+        if config is not None:
+            _temporal_prefix = self._build_temporal_anchor(config.expected_granularity, period)
+
         # Preamble: use DB override if available, otherwise hardcoded constant
         preamble = _DEFAULT_BATCH_PREAMBLE
         if self._db is not None:
@@ -725,7 +773,7 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch llm_batch_preamble from DB: %s", e)
 
-        lines = [preamble]
+        lines = [_temporal_prefix + preamble] if _temporal_prefix else [preamble]
 
         # Per-ticker context hint (injected after preamble if set)
         if ticker and self._db is not None:
@@ -985,7 +1033,7 @@ class LLMInterpreter:
         return "\n".join(lines)
 
     def _parse_batch_response(
-        self, raw: str, metrics: list, expected_granularity: str = 'monthly'
+        self, raw: str, metrics: list
     ) -> dict:
         """
         Parse the LLM's batch JSON response.
@@ -994,11 +1042,11 @@ class LLMInterpreter:
         Applies the same null/float/range/clamp checks as _parse_response.
         Returns dict of {metric: ExtractionResult} for valid entries only.
 
-        expected_granularity: when 'monthly', quarterly/annual entries are dropped
-        only if the batch also contains at least one monthly result.  If no monthly
-        result exists (early-era docs that only reported quarterly figures), the
-        quarterly results are kept so the agreement pipeline can route them to
-        review_queue rather than silently discarding them.
+        Granularity filtering is NOT performed here — it is the responsibility of
+        the write-time validator (validate_period_granularity in interpret_pipeline.py)
+        to reject results whose period_granularity does not match the expected
+        granularity for the document. This allows the parser to remain neutral and
+        the decision to be made at a single authoritative location.
         """
         start = raw.find('{')
         end = raw.rfind('}') + 1
@@ -1068,29 +1116,6 @@ class LLMInterpreter:
                 pattern_id=f"llm_{_model}",
                 period_granularity=period_granularity,
             )
-
-        # Drop quarterly/annual entries only when the batch also contains at least
-        # one monthly result.  If every metric came back quarterly (early-era docs
-        # that pre-date monthly reporting), keep them so the agreement/review
-        # pipeline can handle them rather than silently discarding the data.
-        # When monthly data IS present, quarterly entries are spurious aggregates
-        # (e.g. "Produced 341 BTC in Sep and 1,252 BTC in Q3") and must be dropped.
-        if expected_granularity == 'monthly':
-            has_monthly = any(
-                r.period_granularity == 'monthly' for r in results.values()
-            )
-            if has_monthly:
-                to_drop = [
-                    m for m, r in results.items()
-                    if r.period_granularity in ('quarterly', 'annual')
-                ]
-                for m in to_drop:
-                    r = results.pop(m)
-                    log.info(
-                        "LLM period_granularity=%r dropped (monthly found in same batch, "
-                        "metric=%s snippet=%r)",
-                        r.period_granularity, m, r.source_snippet[:60],
-                    )
 
         return results
 

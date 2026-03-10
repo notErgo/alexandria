@@ -213,14 +213,23 @@ class TestExtractReportBatchPath:
     def test_pipeline_falls_back_to_per_metric_when_batch_empty(
         self, db_with_company, registry, monkeypatch
     ):
-        """When extract_batch returns {}, extract() called once per metric."""
+        """When extract_batch returns {}, fallback calls extract_batch([metric]) per metric.
+
+        Step 6 changed the per-metric fallback from extract() to extract_batch([metric])
+        so that ExtractionRunConfig is forwarded uniformly. extract() must NOT be called.
+        """
         import interpreters.interpret_pipeline as _ep
 
+        batch_call_count = []
         extract_called = []
 
+        def fake_batch(text, metrics, ticker=None, **kw):
+            batch_call_count.append(len(metrics))
+            return {}
+
         mock_llm = _make_mock_llm()
-        mock_llm.extract_batch = lambda text, metrics, ticker=None, **kw: {}
-        mock_llm.extract = lambda text, metric: extract_called.append(metric) or None
+        mock_llm.extract_batch = fake_batch
+        mock_llm.extract = lambda text, metric, **kw: extract_called.append(metric) or None
         mock_llm.extract_for_period.return_value = {}
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
@@ -233,8 +242,15 @@ class TestExtractReportBatchPath:
         from interpreters.interpret_pipeline import extract_report
         extract_report(report, db_with_company, registry)
 
-        assert len(extract_called) == len(registry.metrics), (
-            "Fallback must call extract() once per metric"
+        # Per-metric fallback calls extract_batch, NOT extract()
+        assert len(extract_called) == 0, (
+            "extract() must NOT be called in the fallback path; "
+            "extract_batch([metric]) is used instead"
+        )
+        # 1 batch call + N per-metric fallback calls
+        n_metrics = len(registry.metrics)
+        assert len(batch_call_count) == 1 + n_metrics, (
+            f"Expected 1 batch + {n_metrics} per-metric calls, got {len(batch_call_count)}"
         )
 
     def test_pipeline_batch_marks_report_extracted(

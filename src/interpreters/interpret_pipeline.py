@@ -54,6 +54,23 @@ _QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
 _ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
 
 
+def validate_period_granularity(result_granularity: Optional[str], expected_granularity: str) -> bool:
+    """Return True if result_granularity is acceptable for expected_granularity.
+
+    None and 'unknown' always pass — the LLM did not label the period.
+    Monthly expectation rejects quarterly and annual results.
+    Quarterly expectation rejects annual results.
+    Annual expectation accepts anything.
+    """
+    if result_granularity is None or result_granularity == 'unknown':
+        return True
+    if expected_granularity == 'monthly':
+        return result_granularity not in ('quarterly', 'annual')
+    if expected_granularity == 'quarterly':
+        return result_granularity != 'annual'
+    return True
+
+
 def _active_metric_keys(db, registry) -> list:
     """Return the list of metric keys to send to the LLM.
 
@@ -358,19 +375,28 @@ def _run_llm_batch(
     metrics: list,
     ticker: str = None,
     expected_granularity: str = 'monthly',
+    config=None,
 ) -> tuple:
     """
     Try batch extraction first (1 Ollama call for all metrics).
-    Falls back to per-metric extract() if batch returns empty.
+    Falls back to per-metric extract_batch([metric]) if batch returns empty.
 
     Returns (results: dict, meta: dict) where meta contains timing info from
     llm_interpreter._last_call_meta (populated by _call_ollama).
 
-    expected_granularity is forwarded to extract_batch so monthly documents
-    reject LLM responses that report a quarterly or annual period_granularity.
+    config: Optional ExtractionRunConfig. When supplied, it takes precedence
+        over expected_granularity and is forwarded to extract_batch so the
+        temporal anchor is included in the prompt.
+    expected_granularity: legacy param used when config is None.
     """
-    result = llm_interpreter.extract_batch(text, metrics, ticker=ticker,
-                                           expected_granularity=expected_granularity)
+    # Resolve config — create one if not supplied so callers get consistent behaviour
+    if config is None:
+        from miner_types import ExtractionRunConfig
+        config = ExtractionRunConfig(
+            expected_granularity=expected_granularity,
+            ticker=ticker or '',
+        )
+    result = llm_interpreter.extract_batch(text, metrics, ticker=ticker, config=config)
     meta = dict(llm_interpreter._last_call_meta)
     if result:
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
@@ -378,7 +404,8 @@ def _run_llm_batch(
     log.warning("  LLM batch empty — falling back to per-metric (%d calls)", len(metrics))
     fallback = {}
     for metric in metrics:
-        r = llm_interpreter.extract(text, metric)
+        single = llm_interpreter.extract_batch(text, [metric], ticker=ticker, config=config)
+        r = single.get(metric)
         if r is not None:
             fallback[metric] = r
         # Update meta with the last per-metric call (best-effort; final call wins)
@@ -398,6 +425,7 @@ def _apply_agreement(
     attribution: Optional[str] = None,
     llm_interpreter=None,
     metric_rule: Optional[dict] = None,
+    run_config=None,
 ) -> None:
     """Apply the agreement engine for one metric in one report. Writes to DB.
 
@@ -407,6 +435,10 @@ def _apply_agreement(
 
     llm_interpreter is passed so the self-correction pass can make a targeted
     retry call when disagreement or outlier is detected.
+
+    run_config: Optional ExtractionRunConfig. When supplied, each LLM result is
+        validated against its expected_granularity before being written to DB.
+        Rejected results are counted in summary.temporal_rejects.
     """
     from interpreters.agreement import evaluate_agreement
 
@@ -425,6 +457,26 @@ def _apply_agreement(
             if row and row[0] in _PROTECTED_METHODS:
                 log.debug("Skipping analyst-protected %s %s %s", ticker, period_str, metric)
                 return
+
+    # Temporal granularity gate: reject LLM results whose period_granularity does not
+    # match the expected granularity for this document. Applied before the write path.
+    # Regex results are always accepted (they do not carry period_granularity).
+    _expected_grain = run_config.expected_granularity if run_config is not None else 'monthly'
+    if llm_result is not None:
+        _result_grain = getattr(llm_result, 'period_granularity', None)
+        if not validate_period_granularity(_result_grain, _expected_grain):
+            log.warning(
+                "event=temporal_reject ticker=%s period=%s metric=%s "
+                "result_grain=%r expected=%r snippet=%r",
+                ticker, period_str, metric,
+                _result_grain, _expected_grain,
+                (llm_result.source_snippet or '')[:60],
+            )
+            summary.temporal_rejects += 1
+            llm_result = None  # neutralize; regex-only path takes over below
+
+    # Derive time_grain for DB writes from period format
+    _time_grain = db._derive_time_grain(period_str)
 
     if llm_available:
         # Use metric_rule overrides only when the rule is enabled
@@ -511,6 +563,8 @@ def _apply_agreement(
                                     "confidence": corrected.confidence,
                                     "extraction_method": attribution or 'llm_corrected',
                                     "source_snippet": corrected.source_snippet,
+                                    "expected_granularity": _expected_grain,
+                                    "time_grain": _time_grain,
                                 })
                                 summary.data_points_extracted += 1
                                 return  # Skip review_queue write below
@@ -534,6 +588,8 @@ def _apply_agreement(
                 "confidence": regex_best.confidence,
                 "extraction_method": attribution or regex_best.extraction_method,
                 "source_snippet": regex_best.source_snippet,
+                "expected_granularity": _expected_grain,
+                "time_grain": _time_grain,
             })
             summary.data_points_extracted += 1
 
@@ -552,6 +608,8 @@ def _apply_agreement(
                     "confidence": llm_result.confidence,
                     "extraction_method": attribution or llm_result.extraction_method,
                     "source_snippet": llm_result.source_snippet,
+                    "expected_granularity": _expected_grain,
+                    "time_grain": _time_grain,
                 })
                 summary.data_points_extracted += 1
             else:
@@ -568,6 +626,8 @@ def _apply_agreement(
                     "llm_value": llm_result.value,
                     "regex_value": None,
                     "agreement_status": "LLM_ONLY",
+                    "expected_granularity": _expected_grain,
+                    "time_grain": _time_grain,
                 })
                 summary.review_flagged += 1
 
@@ -599,6 +659,8 @@ def _apply_agreement(
                 "llm_value": decision.llm_value,
                 "regex_value": decision.regex_value,
                 "agreement_status": agreement_status,
+                "expected_granularity": _expected_grain,
+                "time_grain": _time_grain,
             })
             summary.review_flagged += 1
         # NO_EXTRACTION → period gap, skip
@@ -617,6 +679,8 @@ def _apply_agreement(
             "confidence": regex_best.confidence,
             "extraction_method": attribution or regex_best.extraction_method,
             "source_snippet": regex_best.source_snippet,
+            "expected_granularity": _expected_grain,
+            "time_grain": _time_grain,
         }
         if regex_best.confidence >= confidence_threshold:
             db.insert_data_point(dp)
@@ -635,6 +699,8 @@ def _apply_agreement(
                 "llm_value": None,
                 "regex_value": regex_best.value,
                 "agreement_status": "REGEX_ONLY",
+                "expected_granularity": _expected_grain,
+                "time_grain": _time_grain,
             })
             summary.review_flagged += 1
 
@@ -793,7 +859,7 @@ def _interpret_quarterly_report(
     return summary
 
 
-def extract_report(report: dict, db, registry, attribution: Optional[str] = None) -> 'ExtractionSummary':
+def extract_report(report: dict, db, registry, attribution: Optional[str] = None, config=None) -> 'ExtractionSummary':
     """
     Run LLM+regex+agreement on one stored report.
 
@@ -848,6 +914,22 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         )
 
         source_type = report.get('source_type', '')
+
+        # Build ExtractionRunConfig if not supplied by caller.
+        # Annual SEC sources → annual; quarterly SEC → quarterly; all else → monthly.
+        if config is None:
+            from miner_types import ExtractionRunConfig
+            if source_type in _ANNUAL_SOURCES:
+                _eg = 'annual'
+            elif source_type in _QUARTERLY_SOURCES:
+                _eg = 'quarterly'
+            else:
+                _eg = 'monthly'
+            config = ExtractionRunConfig(
+                expected_granularity=_eg,
+                ticker=report.get('ticker', ''),
+            )
+        _run_config = config
 
         # Route quarterly and annual SEC filings to the dedicated extraction path.
         # These do not use regex extraction — LLM only with wider text window.
@@ -923,11 +1005,12 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         ticker = report.get('ticker')
 
         # Primary batch LLM call — pays prefill once for all metrics on window 0.
-        # Falls back to per-metric extract() if batch returns empty.
+        # Falls back to per-metric extract_batch([metric]) if batch returns empty.
         llm_by_metric = {}
         if llm_available:
             llm_by_metric, _batch_meta = _run_llm_batch(
-                llm_interpreter, llm_text, all_metrics, ticker=ticker
+                llm_interpreter, llm_text, all_metrics, ticker=ticker,
+                config=_run_config,
             )
             _batch_summary = getattr(llm_interpreter, '_last_batch_summary', '')
             if _batch_summary:
@@ -972,14 +1055,14 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 _fb_windows = _ctx_selector.select_windows(
                     report['id'], _clean_text, _fb_metric, db
                 )
-                for _fb_window in _fb_windows[1:]:
+                for _fb_window in _fb_windows[1:2]:
                     log.debug(
                         "Fallback window %d: retrying %s for %s %s",
                         _fb_window['window_index'], _fb_metric,
                         ticker, report.get('report_date'),
                     )
-                    _fb_results, _ = _run_llm_batch(
-                        llm_interpreter, _fb_window['text'], [_fb_metric], ticker=ticker
+                    _fb_results = llm_interpreter.extract_batch(
+                        _fb_window['text'], [_fb_metric], ticker=ticker, config=_run_config
                     )
                     if _fb_metric in _fb_results and not _ctx_selector.needs_fallback(
                         _fb_results[_fb_metric], db
@@ -1005,6 +1088,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 attribution=attribution,
                 llm_interpreter=llm_interpreter,
                 metric_rule=metric_rules_by_name.get(metric),
+                run_config=_run_config,
             )
 
         # Second-pass: try to fill prior-period gaps if LLM found figures for last month

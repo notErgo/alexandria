@@ -362,6 +362,12 @@ def operations_extract():
         to_period = (body.get('to_period') or '').strip() or None
         sample_n = int(body.get('sample') or 0)
         sample_n = max(0, min(sample_n, 10))  # clamp 0-10
+        # expected_granularity: caller may supply explicitly; otherwise derive from cadence.
+        # When cadence='all', granularity is inferred per-report inside extract_report().
+        _cadence_grain_map = {'monthly': 'monthly', 'quarterly': 'quarterly', 'annual': 'annual'}
+        expected_granularity = (body.get('expected_granularity') or '').strip().lower() or None
+        if expected_granularity is None and cadence in _cadence_grain_map:
+            expected_granularity = _cadence_grain_map[cadence]
         run_key = ticker or '__ALL__'
 
         # 409 guard — prevent duplicate extraction runs
@@ -399,6 +405,7 @@ def operations_extract():
         _from_period = from_period
         _to_period = to_period
         _sample_n = sample_n
+        _expected_granularity = expected_granularity
 
         def _run():
             try:
@@ -456,7 +463,16 @@ def operations_extract():
                     r_period = report.get('covering_period') or report.get('report_date') or '?'
                     r_type = report.get('source_type', '?')
                     try:
-                        summary = extract_report(report, db, registry)
+                        # Build per-report ExtractionRunConfig when expected_granularity
+                        # was supplied by the caller; otherwise extract_report() infers it.
+                        _run_config = None
+                        if _expected_granularity:
+                            from miner_types import ExtractionRunConfig
+                            _run_config = ExtractionRunConfig(
+                                expected_granularity=_expected_granularity,
+                                ticker=report.get('ticker', ''),
+                            )
+                        summary = extract_report(report, db, registry, config=_run_config)
                         pts = summary.data_points_extracted
                         rev = summary.review_flagged
                         ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
