@@ -1019,8 +1019,34 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
       <button class="btn btn-primary btn-sm" id="reprompt-btn" onclick="doReprompt()">Reprompt LLM</button>
       <button class="btn btn-secondary btn-sm" id="rerun-sec-btn" onclick="doRerunSec()" style="margin-left:0.5rem">Re-interpret SEC filings</button>
+      <button class="btn btn-secondary btn-sm" id="custom-prompt-toggle" onclick="toggleCustomPrompt()" style="margin-left:0.5rem">Custom prompt</button>
       <span id="reprompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
       <span id="rerun-sec-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+    </div>
+
+    <!-- Custom prompt panel (hidden by default) -->
+    <div id="custom-prompt-panel" data-spec-id="MD5.3" style="display:none;margin-top:0.5rem">
+      <div style="margin-bottom:0.3rem">
+        <input id="prompt-goal-input" type="text"
+          placeholder="Describe what you want to extract (optional — used to generate a prompt)"
+          style="width:100%;box-sizing:border-box;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:0.25rem 0.5rem">
+      </div>
+      <div style="margin-bottom:0.3rem">
+        <button class="btn btn-secondary btn-sm" id="generate-prompt-btn" onclick="doGeneratePrompt()">Generate prompt</button>
+        <span id="generate-prompt-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      </div>
+      <textarea id="custom-prompt-input" rows="6"
+        placeholder="Write your own extraction prompt, or use Generate prompt above…"
+        style="width:100%;box-sizing:border-box;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:0.35rem 0.5rem;resize:vertical"></textarea>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.15rem">
+        Prompt sent directly to Ollama. Must instruct the model to return a JSON array.
+      </div>
+    </div>
+
+    <!-- LLM CSV export (unreviewed direct output) -->
+    <div data-spec-id="MD5.4" style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
+      <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
+      <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.5rem">Direct LLM output — not validated by agreement engine.</span>
     </div>
 
     <!-- Suggestion cards -->
@@ -2294,19 +2320,24 @@ function renderFinalizedTable() {
 async function doReprompt() {
   if (!_ticker) { showToast('Select a company first', true); return; }
   const commentary = document.getElementById('interp-commentary').value.trim();
+  const customPromptEl = document.getElementById('custom-prompt-input');
+  const customPrompt = (customPromptEl && document.getElementById('custom-prompt-panel').style.display !== 'none')
+    ? customPromptEl.value.trim() : '';
   const btn = document.getElementById('reprompt-btn');
   const statusEl = document.getElementById('reprompt-status');
   btn.disabled = true;
   statusEl.textContent = 'Calling LLM…';
   document.getElementById('suggestions-area').style.display = 'none';
   try {
+    const payload = {
+      commentary,
+      metrics: Array.from(document.getElementById('reprompt-metrics-filter').selectedOptions).map(function(o) { return o.value; }),
+    };
+    if (customPrompt) payload.custom_prompt = customPrompt;
     const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reprompt`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-      commentary,
-      metrics: Array.from(document.getElementById('reprompt-metrics-filter').selectedOptions).map(function(o) { return o.value; }),
-    }),
+      body: JSON.stringify(payload),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const body = await resp.json();
@@ -2355,6 +2386,45 @@ async function doRerunSec() {
   } finally {
     btn.disabled = false;
   }
+}
+
+function toggleCustomPrompt() {
+  const panel = document.getElementById('custom-prompt-panel');
+  const btn = document.getElementById('custom-prompt-toggle');
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : '';
+  btn.textContent = visible ? 'Custom prompt' : 'Hide custom prompt';
+}
+
+async function doGeneratePrompt() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  const goal = document.getElementById('prompt-goal-input').value.trim();
+  const btn = document.getElementById('generate-prompt-btn');
+  const statusEl = document.getElementById('generate-prompt-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Generating…';
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/generate_prompt`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({goal}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    document.getElementById('custom-prompt-input').value = body.data.generated_prompt;
+    statusEl.textContent = 'Generated. Review and edit before submitting.';
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+    showToast(`Prompt generation failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function exportLLMCsv() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  window.location = `/api/export_llm_csv?ticker=${encodeURIComponent(_ticker)}`;
 }
 
 function renderSuggestions(suggestions) {

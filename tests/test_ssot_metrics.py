@@ -84,11 +84,11 @@ def test_interpret_fallback_matches_data_points_fallback():
 
 
 def test_diagnostics_all_metrics_no_retired_names():
-    """routes.diagnostics._ALL_METRICS must not contain retired metric names."""
-    from routes.diagnostics import _ALL_METRICS
-    retired_found = set(_ALL_METRICS) & RETIRED_NAMES
+    """routes.diagnostics._ALL_METRICS_FALLBACK must not contain retired metric names."""
+    from routes.diagnostics import _ALL_METRICS_FALLBACK
+    retired_found = set(_ALL_METRICS_FALLBACK) & RETIRED_NAMES
     assert not retired_found, (
-        f"routes.diagnostics._ALL_METRICS contains retired names: {retired_found}"
+        f"routes.diagnostics._ALL_METRICS_FALLBACK contains retired names: {retired_found}"
     )
 
 

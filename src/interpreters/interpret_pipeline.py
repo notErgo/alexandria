@@ -683,7 +683,8 @@ def _interpret_quarterly_report(
     # (e.g. CLSK 2019-2020 before their Bitcoin pivot, RIOT pre-mining 10-Ks, etc.).
     # The gate is bypassed when no keywords are configured (fresh DB).
     try:
-        kw_rows = db.get_all_metric_keywords(active_only=True)
+        from infra.keyword_service import get_all_active_rows as _get_kw_rows_q
+        kw_rows = _get_kw_rows_q(db)
         kw_phrases = [r['phrase'].lower() for r in kw_rows]
     except Exception as _kw_err:
         log.warning("Could not load metric keywords for quarterly gate (non-fatal): %s", _kw_err)
@@ -853,30 +854,38 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES:
             return _interpret_quarterly_report(report, db, registry, summary, attribution)
 
-        # Keyword gate for 8-K and all non-quarterly sources: skip LLM if no active
-        # BTC mining keywords appear in the document. This is a safety net — 8-K
-        # ingest is already gated by btc_first_filing_date, but archived/IR docs from
-        # before a company's mining pivot can also slip through.
-        if source_type == 'edgar_8k':
-            try:
-                from infra.keyword_service import get_all_active_rows as _get_kw_rows
-                _kw_rows = _get_kw_rows(db)
-                _kw_phrases = [r['phrase'].lower() for r in _kw_rows]
-            except Exception as _kw_err:
-                log.debug("event=kw_gate_load_error error=%s", _kw_err)
-                _kw_phrases = []
-            if _kw_phrases:
-                _text_lower = text.lower()
-                if not any(phrase in _text_lower for phrase in _kw_phrases):
-                    log.info(
-                        "event=8k_keyword_gate_skip ticker=%s period=%s "
-                        "— no BTC mining keywords found, skipping",
-                        report.get('ticker'), report.get('report_date'),
-                    )
-                    db.mark_report_extracted(report['id'])
-                    summary.reports_processed += 1
-                    summary.keyword_gated += 1
-                    return summary
+        # Keyword gate for ALL non-quarterly/annual sources: skip LLM if no BTC
+        # mining signals appear in the document.
+        # 8-K ingest is already gated by btc_first_filing_date upstream, but
+        # archived and IR docs from before a company's mining pivot (e.g. CLSK 2019)
+        # have no ingest-level date gate and must be screened here.
+        #
+        # Uses broad mining detection phrases (%btc%, %bitcoin%, %hash rate%, etc.)
+        # rather than the narrower anchor phrases — archive/IR text says "produced
+        # 742 BTC" not "bitcoin production", so exact anchor matching is too strict.
+        try:
+            from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
+            # Strip SQL LIKE delimiters (%..%) to get plain Python substrings.
+            _det_phrases = [
+                p.strip('%').lower()
+                for p in _get_det_phrases(db)
+                if p.strip('%')
+            ]
+        except Exception as _kw_err:
+            log.debug("event=kw_gate_load_error error=%s", _kw_err)
+            _det_phrases = []
+        if _det_phrases:
+            _text_lower = text.lower()
+            if not any(phrase in _text_lower for phrase in _det_phrases):
+                log.info(
+                    "event=keyword_gate_skip ticker=%s period=%s source=%s "
+                    "— no BTC mining signals found, skipping",
+                    report.get('ticker'), report.get('report_date'), source_type,
+                )
+                db.mark_report_extracted(report['id'])
+                summary.reports_processed += 1
+                summary.keyword_gated += 1
+                return summary
 
         report_date = report.get('report_date')
 

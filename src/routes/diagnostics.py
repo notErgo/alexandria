@@ -16,34 +16,24 @@ log = logging.getLogger('miners.routes.diagnostics')
 
 bp = Blueprint('diagnostics', __name__)
 
-# All metrics — used to fill zero-cells in the coverage heatmap
-_ALL_METRICS = [
+# Fallback metric list — used when DB is unavailable
+_ALL_METRICS_FALLBACK = [
     'production_btc', 'holdings_btc', 'sales_btc', 'hashrate_eh', 'realization_rate',
-    # v2 metrics
     'net_btc_balance_change', 'encumbered_btc',
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
-    # v3 metrics
     'unrestricted_holdings', 'restricted_holdings_btc',
 ]
+# Fallback labels — used when DB is unavailable
+_METRIC_LABELS_FALLBACK = {
+    'production_btc': 'Production', 'holdings_btc': 'Holdings', 'sales_btc': 'Sold',
+    'hashrate_eh': 'Hashrate', 'realization_rate': 'Realization',
+    'net_btc_balance_change': 'Net BTC Change', 'encumbered_btc': 'Encumbered BTC',
+    'mining_mw': 'Mining MW', 'ai_hpc_mw': 'AI/HPC MW', 'hpc_revenue_usd': 'HPC Revenue',
+    'gpu_count': 'GPU Count', 'unrestricted_holdings': 'Unrestricted Holdings',
+    'restricted_holdings_btc': 'Restricted Holdings',
+}
 from config import get_all_tickers as _get_all_tickers
 _ALL_TICKERS = _get_all_tickers()
-_METRIC_LABELS = {
-    'production_btc':            'Production',
-    'holdings_btc':              'Holdings',
-    'sales_btc':                 'Sold',
-    'hashrate_eh':               'Hashrate',
-    'realization_rate':          'Realization',
-    # v2 metrics
-    'net_btc_balance_change':    'Net BTC Change',
-    'encumbered_btc':            'Encumbered BTC',
-    'mining_mw':                 'Mining MW',
-    'ai_hpc_mw':                 'AI/HPC MW',
-    'hpc_revenue_usd':           'HPC Revenue',
-    'gpu_count':                 'GPU Count',
-    # v3 metrics
-    'unrestricted_holdings':     'Unrestricted Holdings',
-    'restricted_holdings_btc':   'Restricted Holdings',
-}
 
 # Common English stopwords plus domain/document boilerplate to ignore
 _STOPWORDS = {
@@ -109,6 +99,20 @@ def get_diagnostics():
         from app_globals import get_db
         db = get_db()
 
+        # Load metrics and labels from DB SSOT at request time
+        try:
+            schema_rows = db.get_metric_schema('BTC-miners', active_only=False)
+            if schema_rows:
+                all_metrics = [r['key'] for r in schema_rows]
+                metric_labels = {r['key']: r.get('label', r['key']) for r in schema_rows}
+            else:
+                all_metrics = _ALL_METRICS_FALLBACK
+                metric_labels = _METRIC_LABELS_FALLBACK
+        except Exception:
+            log.warning("Failed to load metric_schema for diagnostics, using fallback", exc_info=True)
+            all_metrics = _ALL_METRICS_FALLBACK
+            metric_labels = _METRIC_LABELS_FALLBACK
+
         pattern_usage = db.get_pattern_usage()
         raw_coverage = db.get_metric_coverage()
         confidence_buckets = db.get_confidence_buckets()
@@ -117,14 +121,14 @@ def get_diagnostics():
         raw_status = db.get_company_status()
         company_config = _load_company_config()
 
-        # Build complete coverage matrix: all 13 tickers × 5 metrics, fill 0 for gaps
+        # Build complete coverage matrix: all tickers × all metrics, fill 0 for gaps
         coverage_index = {(r['ticker'], r['metric']): r['period_count'] for r in raw_coverage}
         coverage = []
         for ticker in _ALL_TICKERS:
-            for metric in _ALL_METRICS:
+            for metric in all_metrics:
                 coverage.append({
                     'ticker': ticker,
-                    'metric': _METRIC_LABELS.get(metric, metric),
+                    'metric': metric_labels.get(metric, metric),
                     'count': coverage_index.get((ticker, metric), 0),
                 })
 
@@ -169,7 +173,7 @@ def get_diagnostics():
                 'pattern_usage':   pattern_usage,
                 'coverage':        coverage,
                 'all_tickers':     _ALL_TICKERS,
-                'all_metrics':     [_METRIC_LABELS[m] for m in _ALL_METRICS],
+                'all_metrics':     [metric_labels.get(m, m) for m in all_metrics],
                 'confidence_buckets': confidence_buckets,
                 'keywords':        keywords,
                 'company_status':  company_status,

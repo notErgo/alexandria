@@ -15,6 +15,7 @@ log = logging.getLogger('miners.routes.llm_prompts')
 
 bp = Blueprint('llm_prompts', __name__)
 
+# SYNC: keep identical to sibling _VALID_METRICS_FALLBACK in interpret.py / data_points.py / dashboard.py
 _VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
@@ -71,7 +72,7 @@ def preview_llm_prompt():
         else:
             try:
                 rows = db.get_metric_schema('BTC-miners', active_only=True)
-                metrics = [r['key'] for r in rows] if rows else ['production_btc', 'hodl_btc', 'sold_btc']
+                metrics = [r['key'] for r in rows] if rows else ['production_btc', 'holdings_btc', 'sales_btc']
             except Exception:
                 log.warning('Could not load active metrics for preview', exc_info=True)
                 metrics = ['production_btc', 'holdings_btc', 'sales_btc']

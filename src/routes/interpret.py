@@ -124,7 +124,11 @@ def _build_reprompt(ticker: str, monthly: list, sec: list, finals: list, comment
 
 @bp.route('/api/interpret/<ticker>/reprompt', methods=['POST'])
 def reprompt(ticker: str):
-    """Ask the LLM to reconcile monthly and SEC data into suggestions."""
+    """Ask the LLM to reconcile monthly and SEC data into suggestions.
+
+    Optional body field ``custom_prompt`` (str): if provided and non-empty,
+    bypasses ``_build_reprompt`` and sends the custom text directly to Ollama.
+    """
     db = get_db()
     ticker_upper = ticker.upper()
     if not db.get_company(ticker_upper):
@@ -133,6 +137,7 @@ def reprompt(ticker: str):
         }}), 404
 
     body = request.get_json(silent=True) or {}
+    custom_prompt = str(body.get('custom_prompt') or '').strip()
     commentary = str(body.get('commentary') or '').strip()
     valid_metrics = _get_valid_metrics(db)
     metrics_filter = body.get('metrics') or []
@@ -143,11 +148,16 @@ def reprompt(ticker: str):
                 'code': 'INVALID_METRIC', 'message': f'Unknown metrics: {invalid}',
             }}), 400
 
-    monthly = db.query_data_points(ticker=ticker_upper, source_period_types=['monthly'], limit=2000)
-    sec = db.query_data_points(ticker=ticker_upper, source_period_types=['quarterly', 'annual'], limit=500)
-    finals = db.get_final_data_points(ticker_upper)
+    if custom_prompt:
+        if 'JSON' not in custom_prompt and 'json' not in custom_prompt:
+            log.warning("event=reprompt_custom_prompt_no_json ticker=%s", ticker_upper)
+        prompt = custom_prompt
+    else:
+        monthly = db.query_data_points(ticker=ticker_upper, source_period_types=['monthly'], limit=2000)
+        sec = db.query_data_points(ticker=ticker_upper, source_period_types=['quarterly', 'annual'], limit=500)
+        finals = db.get_final_data_points(ticker_upper)
+        prompt = _build_reprompt(ticker_upper, monthly, sec, finals, commentary, metrics_filter)
 
-    prompt = _build_reprompt(ticker_upper, monthly, sec, finals, commentary, metrics_filter)
     model = _active_model(db)
 
     # Warm-up check: verify Ollama is reachable and the model is loaded before calling.
@@ -231,6 +241,71 @@ def reprompt(ticker: str):
         })
 
     return jsonify({'success': True, 'data': {'suggestions': clean}})
+
+
+@bp.route('/api/interpret/<ticker>/generate_prompt', methods=['POST'])
+def generate_prompt(ticker: str):
+    """Generate a custom extraction prompt via meta-prompt to Ollama.
+
+    Input:  { "goal": "I want to extract monthly production for 2023" }
+    Output: { "success": true, "data": { "generated_prompt": "..." } }
+    """
+    db = get_db()
+    ticker_upper = ticker.upper()
+    if not db.get_company(ticker_upper):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    body = request.get_json(silent=True) or {}
+    goal = str(body.get('goal') or '').strip()
+
+    valid_metrics = sorted(_get_valid_metrics(db))
+    model = _active_model(db)
+
+    meta_prompt = (
+        f"You are a prompt engineering assistant for a Bitcoin mining data extraction system.\n"
+        f"Available metrics: {', '.join(valid_metrics)}\n"
+        f"Company ticker: {ticker_upper}\n\n"
+        f"User goal: {goal or 'Extract all available Bitcoin mining operational data.'}\n\n"
+        "Write an extraction prompt that instructs an LLM to extract the relevant data from a document.\n"
+        "The prompt must instruct the LLM to return a JSON array only (no prose), in this format:\n"
+        '[{"metric":"<key>","period":"<YYYY-MM-01 or YYYY-Qn or YYYY-FY>","value":<number>,'
+        '"confidence":<0-1>,"rationale":"<brief>"}]\n'
+        "Return only the extraction prompt text. Do not explain or wrap it in JSON."
+    )
+
+    try:
+        from interpreters.llm_interpreter import LLMInterpreter
+        _llm_check = LLMInterpreter(session=requests.Session(), db=db)
+        if not _llm_check.check_connectivity():
+            log.warning("event=generate_prompt_ollama_unavailable ticker=%s", ticker_upper)
+            return jsonify({'success': False, 'error': {
+                'code': 'LLM_UNAVAILABLE',
+                'message': 'Ollama is not reachable or the model is not loaded',
+            }}), 503
+    except Exception:
+        log.error("generate_prompt connectivity check failed ticker=%s", ticker_upper, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'LLM_UNAVAILABLE', 'message': 'LLM connectivity check failed',
+        }}), 503
+
+    try:
+        resp = requests.post(
+            f"{LLM_BASE_URL}/api/generate",
+            json={'model': model, 'prompt': meta_prompt, 'stream': False},
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        generated = resp.json().get('response', '').strip()
+    except Exception:
+        log.error("generate_prompt LLM call failed ticker=%s", ticker_upper, exc_info=True)
+        return jsonify({'success': False, 'error': {
+            'code': 'LLM_ERROR', 'message': 'LLM request failed',
+        }}), 502
+
+    log.info("event=generate_prompt_complete ticker=%s goal=%r", ticker_upper, goal[:80] if goal else '')
+    return jsonify({'success': True, 'data': {'generated_prompt': generated}})
 
 
 @bp.route('/api/interpret/<ticker>/finalize', methods=['POST'])

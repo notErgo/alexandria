@@ -1488,57 +1488,6 @@ class MinerDB:
                 (date_str, ticker),
             )
 
-    # ── Search Keywords CRUD (legacy shim — table kept empty after v30) ───────────
-
-    def get_search_keywords(self, active_only: bool = True) -> list:
-        with self._get_connection() as conn:
-            if active_only:
-                rows = conn.execute(
-                    "SELECT * FROM search_keywords WHERE active=1 ORDER BY id"
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM search_keywords ORDER BY id"
-                ).fetchall()
-        return [dict(r) for r in rows]
-
-    def add_search_keyword(self, phrase: str, notes: str = None) -> int:
-        with self._get_connection() as conn:
-            cur = conn.execute(
-                "INSERT INTO search_keywords (phrase, notes) VALUES (?, ?)",
-                (phrase, notes),
-            )
-            return cur.lastrowid
-
-    def update_search_keyword(self, kw_id: int, active: int = None, notes: str = None) -> bool:
-        sets, params = [], []
-        if active is not None:
-            sets.append("active = ?")
-            params.append(int(active))
-        if notes is not None:
-            sets.append("notes = ?")
-            params.append(notes)
-        if not sets:
-            return False
-        sets.append("updated_at = datetime('now')")
-        params.append(kw_id)
-        with self._get_connection() as conn:
-            cur = conn.execute(
-                f"UPDATE search_keywords SET {', '.join(sets)} WHERE id = ?", params
-            )
-        return cur.rowcount > 0
-
-    def delete_search_keyword(self, kw_id: int) -> bool:
-        with self._get_connection() as conn:
-            cur = conn.execute("DELETE FROM search_keywords WHERE id = ?", (kw_id,))
-        return cur.rowcount > 0
-
-    def bump_keyword_hit_counts(self) -> None:
-        with self._get_connection() as conn:
-            conn.execute(
-                "UPDATE search_keywords SET hit_count = hit_count + 1 WHERE active = 1"
-            )
-
     # ── Metric Keywords CRUD (v32: stored as JSON in metric_schema.keywords) ──────
 
     def _kw_next_id(self, conn: sqlite3.Connection) -> int:
@@ -1966,16 +1915,113 @@ class MinerDB:
             if bin((r['content_simhash'] & mask) ^ sh2).count('1') <= threshold
         ]
 
-    def get_reports_with_text(self) -> list:
-        """Return all reports that have non-empty raw_text, for pattern application."""
+    def get_reports_with_text(self, ticker=None, from_period=None, to_period=None) -> list:
+        """Return reports that have non-empty raw_text.
+
+        Args:
+            ticker: optional ticker filter
+            from_period: optional lower bound (YYYY-MM-DD), inclusive
+            to_period: optional upper bound (YYYY-MM-DD), inclusive
+        """
+        clauses = ["raw_text IS NOT NULL", "raw_text != ''"]
+        params = []
+        if ticker:
+            clauses.append("ticker = ?")
+            params.append(ticker.upper())
+        if from_period:
+            clauses.append("report_date >= ?")
+            params.append(from_period)
+        if to_period:
+            clauses.append("report_date <= ?")
+            params.append(to_period)
+        where = " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
-                """SELECT id, ticker, report_date, source_type
-                   FROM reports
-                   WHERE raw_text IS NOT NULL AND raw_text != ''
-                   ORDER BY ticker, report_date"""
+                f"SELECT id, ticker, report_date, source_type FROM reports WHERE {where} ORDER BY ticker, report_date",
+                params,
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # ── Data Explorer search ───────────────────────────────────────────────
+
+    _VALID_SOURCE_TYPES = frozenset({
+        'archive_html', 'archive_pdf', 'ir_press_release',
+        'edgar_8k', 'edgar_10q', 'edgar_10k',
+    })
+    _VALID_EXTRACTION_STATUSES = frozenset({
+        'pending', 'running', 'done', 'failed', 'dead_letter',
+    })
+
+    def search_reports(
+        self,
+        ticker: Optional[str] = None,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        source_type: Optional[str] = None,
+        extraction_status: Optional[str] = None,
+        limit: int = 500,
+    ) -> list:
+        """Search reports with metadata and aggregated data_point counts.
+
+        Returns a list of dicts with shape:
+          {id, ticker, report_date, source_type, extraction_status, source_url,
+           data_point_count}
+
+        raw_text is intentionally excluded; use get_report_raw_text() for the
+        document viewer endpoint.
+        """
+        clauses: list = []
+        params: list = []
+        if ticker:
+            clauses.append("r.ticker = ?")
+            params.append(ticker.upper())
+        if from_date:
+            clauses.append("r.report_date >= ?")
+            params.append(from_date)
+        if to_date:
+            clauses.append("r.report_date <= ?")
+            params.append(to_date)
+        if source_type:
+            clauses.append("r.source_type = ?")
+            params.append(source_type)
+        if extraction_status:
+            clauses.append("r.extraction_status = ?")
+            params.append(extraction_status)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"""SELECT r.id, r.ticker, r.report_date, r.source_type,
+                           r.extraction_status, r.source_url,
+                           COUNT(dp.id) AS data_point_count
+                    FROM reports r
+                    LEFT JOIN data_points dp ON dp.report_id = r.id
+                    {where}
+                    GROUP BY r.id
+                    ORDER BY r.ticker, r.report_date DESC
+                    LIMIT ?""",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_data_points_by_report(self, report_id: int) -> list:
+        """Return all data_points extracted from a specific report.
+
+        Returns safe subset of fields suitable for the document viewer matches
+        array (no internal id or report_id).
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT metric, period, value, unit, confidence,
+                          extraction_method, source_snippet
+                   FROM data_points
+                   WHERE report_id = ?
+                   ORDER BY metric, period""",
+                (report_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Report raw text and HTML ───────────────────────────────────────────
 
     def get_report_raw_text(self, report_id: int) -> Optional[str]:
         """Return only the raw_text for a report."""
@@ -4764,11 +4810,24 @@ class MinerDB:
         return cur.rowcount > 0
 
     def delete_metric_schema(self, row_id: int) -> bool:
-        """Permanently delete a metric_schema row by id. Returns True if deleted."""
+        """Permanently delete a metric_schema row by id. Returns True if deleted.
+
+        Cascade: deactivates any llm_prompts row for the same metric key so the
+        prompt manager UI does not surface orphan entries after deletion.
+        """
         with self._get_connection() as conn:
+            # Retrieve the key before deleting so we can cascade.
+            row = conn.execute(
+                "SELECT key FROM metric_schema WHERE id = ?", (row_id,)
+            ).fetchone()
             cur = conn.execute(
                 "DELETE FROM metric_schema WHERE id = ?", (row_id,)
             )
+            if cur.rowcount and row:
+                conn.execute(
+                    "UPDATE llm_prompts SET active = 0 WHERE metric = ?",
+                    (row['key'],),
+                )
         return cur.rowcount > 0
 
     def add_analyst_metric(self, key: str, label: str, unit: str, sector: str) -> dict:

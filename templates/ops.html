@@ -940,7 +940,6 @@ tr.is-reviewed td { opacity: 0.65; }
 <div class="ops-pane" id="pane-config" data-ui-id="1.1" data-spec-id="1.1">
   <div class="pipeline-sub-tabs">
     <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="metrics" onclick="activatePipelineSubTab('config','metrics')" data-ui-id="1.5">Metrics <span class="wf-path-badge wf-critical">Critical</span></button>
     <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.3">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.4">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
@@ -950,7 +949,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <div class="section-header-row">
     <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
-    <button class="btn btn-sm btn-secondary" data-spec-id="1.1.6" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
+    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
@@ -1037,32 +1036,72 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
   </div>
 
-  <div class="card" data-spec-id="1.1.6" style="margin-bottom:0.7rem"><span data-spec-id="1.2.2" style="display:none"></span>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">1.1.6</span>Search Keywords <span class="wf-path-badge wf-critical">Critical</span>
-      </h3>
-      <span style="font-size:0.76rem;color:var(--theme-text-muted)">Active keywords gate EDGAR 8-K discovery and are injected into every LLM prompt.</span>
+  <!-- 1.5.1 Metrics + Keywords (moved here from Metrics sub-tab — this is the SSOT) -->
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+    Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt, all UI dropdowns, and the pattern editor.
+    Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it and deactivates its LLM prompt override.
+  </p>
+  <div class="card" data-spec-id="1.5.1" style="margin-bottom:0.7rem">
+    <div class="section-header-row" style="margin-bottom:0.75rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.5.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
+      <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
     </div>
-    <table id="kw-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:0.6rem">
+
+    <!-- Bulk paste -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:0.73rem;color:var(--theme-text-muted);margin-bottom:6px;line-height:1.6">
+        Paste from spreadsheet &mdash; <strong>Key&nbsp;&nbsp;Label&nbsp;&nbsp;Unit&nbsp;&nbsp;Pattern&nbsp;&nbsp;Keywords(pipe-separated)</strong>.
+        Creates metric if missing, adds all pipe-separated keywords.
+        Or use keyword-only format: <code style="font-size:0.71rem">metric_key, phrase[, exclude_terms]</code>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:flex-start">
+        <textarea id="kw-bulk-paste" rows="3"
+          placeholder="Key&#9;Label&#9;Unit&#9;Pattern&#9;Keywords&#10;production_btc&#9;Production&#9;BTC&#9;&#9;bitcoin mined|btc produced|self-mined"
+          style="flex:1;font-family:monospace;font-size:0.78rem;padding:4px 6px;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
+          <button class="btn btn-sm btn-primary" onclick="submitBulkKeywords()" style="white-space:nowrap">Add All</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('kw-bulk-paste').value=''" style="white-space:nowrap">Clear</button>
+        </div>
+      </div>
+      <div id="kw-bulk-status" style="font-size:0.75rem;margin-top:4px;display:none"></div>
+    </div>
+
+    <!-- Combined table -->
+    <table id="metric-schema-table" style="width:100%;font-size:0.82rem;border-collapse:collapse">
       <thead>
-        <tr style="border-bottom:1px solid var(--theme-border);text-align:left">
-          <th style="padding:4px 8px;font-weight:600">Phrase</th>
-          <th style="padding:4px 8px;font-weight:600">Status</th>
-          <th style="padding:4px 8px;font-weight:600">Notes</th>
-          <th style="padding:4px 8px;font-weight:600">Added</th>
-          <th style="padding:4px 8px;font-weight:600;text-align:right">Searches</th>
-          <th style="padding:4px 8px"></th>
+        <tr style="border-bottom:1px solid var(--theme-border)">
+          <th style="text-align:left;padding:3px 6px;white-space:nowrap">Key</th>
+          <th style="text-align:left;padding:3px 6px">Label</th>
+          <th style="text-align:left;padding:3px 6px;width:70px">Unit</th>
+          <th style="text-align:left;padding:3px 6px">Keywords</th>
+          <th style="text-align:center;padding:3px 4px;width:50px">Active</th>
+          <th style="text-align:left;padding:3px 4px;width:60px"></th>
         </tr>
       </thead>
-      <tbody id="kw-tbody"></tbody>
+      <tbody id="metric-schema-tbody">
+        <tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
+      </tbody>
     </table>
-    <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
-      <input id="kw-phrase" type="text" placeholder="new phrase (quotes added automatically)" style="width:280px;font-size:0.82rem">
-      <input id="kw-notes" type="text" placeholder="notes (optional)" style="width:160px;font-size:0.82rem">
-      <button class="btn btn-sm btn-primary" onclick="addKeyword()">Add</button>
+
+    <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--theme-border)">
+      <h4 style="font-size:0.85rem;margin:0 0 0.5rem">Add metric</h4>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Key <span style="color:var(--theme-text-muted)">(no spaces)</span></label>
+          <input id="ms-add-key" type="text" placeholder="my_metric" style="font-size:0.82rem;padding:3px 6px;width:140px">
+        </div>
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Label</label>
+          <input id="ms-add-label" type="text" placeholder="My Metric" style="font-size:0.82rem;padding:3px 6px;width:160px">
+        </div>
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Unit</label>
+          <input id="ms-add-unit" type="text" placeholder="BTC" style="font-size:0.82rem;padding:3px 6px;width:80px">
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="addMetricSchema()">Add</button>
+      </div>
+      <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
     </div>
-    <div id="kw-error" style="font-size:0.76rem;color:var(--theme-danger,#c0392b);margin-top:0.3rem"></div>
   </div>
 
   <details class="offpath-details" id="companies-governance-details">
@@ -1216,78 +1255,6 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-companies -->
 
 
-  <!-- Sub-pane: Metrics (1.5) — SSOT for all tracked metrics -->
-  <div class="pipeline-sub-pane" id="spane-config-metrics" data-ui-id="1.5" data-spec-id="1.5">
-    <h2 style="font-size:1rem;margin:0 0 0.25rem"><span class="spec-id">1.5</span>Metric Schema</h2>
-    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
-      Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt, all UI dropdowns, and the pattern editor.
-      Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it.
-    </p>
-
-    <!-- 1.5.1 Metrics + Keywords — single consolidated table -->
-    <div class="card" data-spec-id="1.5.1">
-      <div class="section-header-row" style="margin-bottom:0.75rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.5.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
-        <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
-      </div>
-
-      <!-- Bulk paste -->
-      <div style="margin-bottom:1rem">
-        <div style="font-size:0.73rem;color:var(--theme-text-muted);margin-bottom:6px;line-height:1.6">
-          Paste from spreadsheet &mdash; <strong>Key&nbsp;&nbsp;Label&nbsp;&nbsp;Unit&nbsp;&nbsp;Pattern&nbsp;&nbsp;Keywords(pipe-separated)</strong>.
-          Creates metric if missing, adds all pipe-separated keywords.
-          Or use keyword-only format: <code style="font-size:0.71rem">metric_key, phrase[, exclude_terms]</code>
-        </div>
-        <div style="display:flex;gap:0.5rem;align-items:flex-start">
-          <textarea id="kw-bulk-paste" rows="3"
-            placeholder="Key&#9;Label&#9;Unit&#9;Pattern&#9;Keywords&#10;production_btc&#9;Production&#9;BTC&#9;&#9;bitcoin mined|btc produced|self-mined"
-            style="flex:1;font-family:monospace;font-size:0.78rem;padding:4px 6px;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text)"></textarea>
-          <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
-            <button class="btn btn-sm btn-primary" onclick="submitBulkKeywords()" style="white-space:nowrap">Add All</button>
-            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('kw-bulk-paste').value=''" style="white-space:nowrap">Clear</button>
-          </div>
-        </div>
-        <div id="kw-bulk-status" style="font-size:0.75rem;margin-top:4px;display:none"></div>
-      </div>
-
-      <!-- Combined table -->
-      <table id="metric-schema-table" style="width:100%;font-size:0.82rem;border-collapse:collapse">
-        <thead>
-          <tr style="border-bottom:1px solid var(--theme-border)">
-            <th style="text-align:left;padding:3px 6px;white-space:nowrap">Key</th>
-            <th style="text-align:left;padding:3px 6px">Label</th>
-            <th style="text-align:left;padding:3px 6px;width:70px">Unit</th>
-            <th style="text-align:left;padding:3px 6px">Keywords</th>
-            <th style="text-align:center;padding:3px 4px;width:50px">Active</th>
-            <th style="text-align:left;padding:3px 4px;width:60px"></th>
-          </tr>
-        </thead>
-        <tbody id="metric-schema-tbody">
-          <tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
-        </tbody>
-      </table>
-
-      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--theme-border)">
-        <h4 style="font-size:0.85rem;margin:0 0 0.5rem">Add metric</h4>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
-          <div>
-            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Key <span style="color:var(--theme-text-muted)">(no spaces)</span></label>
-            <input id="ms-add-key" type="text" placeholder="my_metric" style="font-size:0.82rem;padding:3px 6px;width:140px">
-          </div>
-          <div>
-            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Label</label>
-            <input id="ms-add-label" type="text" placeholder="My Metric" style="font-size:0.82rem;padding:3px 6px;width:160px">
-          </div>
-          <div>
-            <label style="font-size:0.75rem;display:block;margin-bottom:2px">Unit</label>
-            <input id="ms-add-unit" type="text" placeholder="BTC" style="font-size:0.82rem;padding:3px 6px;width:80px">
-          </div>
-          <button class="btn btn-sm btn-primary" onclick="addMetricSchema()">Add</button>
-        </div>
-        <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
-      </div>
-    </div>
-  </div><!-- /spane-config-metrics -->
 
   <!-- Sub-pane: Settings (1.3) -->
   <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.3" data-spec-id="1.3">
@@ -2983,7 +2950,7 @@ function activateTab(name) {
   if (name === 'config') {
     if (!_companiesLoaded) loadCompanies();
     loadSettings();
-    loadKeywords();
+    loadMetricSchemaTable();
   }
   if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!window._minerDataBooted) { window._minerDataBooted = true; if (typeof boot === 'function') boot(); } }
 
@@ -3003,7 +2970,7 @@ function activatePipelineSubTab(pane, name) {
     p.classList.toggle('active', p.id === 'spane-' + pane + '-' + name);
   });
   // Lazy-load on sub-tab activation
-  if (pane === 'config' && name === 'metrics') { loadMetricSchemaTable(); loadAllKeywordsTable(); }
+  if (pane === 'config' && name === 'companies') { loadMetricSchemaTable(); }
   if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
   if (pane === 'review' && name === 'patterns') { loadPatterns(); loadPatternMetricSelects(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
@@ -4260,83 +4227,6 @@ async function submitBulkCompanies() {
       msgEl.textContent = 'Import failed: ' + String(err);
     }
   }
-}
-
-// ── Search Keywords (1.1.6) ──────────────────────────────────────────────────
-
-async function loadKeywords() {
-  const tbody = document.getElementById('kw-tbody');
-  if (!tbody) return;
-  try {
-    const resp = await fetch('/api/keywords?all=1', { cache: 'no-store' });
-    const body = await resp.json();
-    if (!body.success) { tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">Error loading keywords.</td></tr>'; return; }
-    tbody.innerHTML = '';
-    for (const kw of body.data.keywords) {
-      const tr = document.createElement('tr');
-      tr.style.borderBottom = '1px solid var(--theme-border)';
-      const added = kw.created_at ? kw.created_at.slice(0, 10) : '';
-      const statusBadge = kw.active
-        ? '<span style="font-size:0.72rem;padding:1px 6px;border-radius:10px;background:var(--theme-success-muted,#d4edda);color:var(--theme-success,#155724)">active</span>'
-        : '<span style="font-size:0.72rem;padding:1px 6px;border-radius:10px;background:var(--theme-bg-muted,#f5f5f5);color:var(--theme-text-muted)">inactive</span>';
-      tr.innerHTML = `
-        <td style="padding:5px 8px;font-family:monospace">${kw.phrase}</td>
-        <td style="padding:5px 8px">${statusBadge}</td>
-        <td style="padding:5px 8px;color:var(--theme-text-muted);font-size:0.78rem">${kw.notes || ''}</td>
-        <td style="padding:5px 8px;color:var(--theme-text-muted);font-size:0.78rem;white-space:nowrap">${added}</td>
-        <td style="padding:5px 8px;text-align:right;color:var(--theme-text-muted);font-size:0.78rem">${kw.hit_count ?? 0}</td>
-        <td style="padding:5px 8px;white-space:nowrap">
-          <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px" onclick="toggleKeyword(${kw.id}, ${kw.active ? 0 : 1})">${kw.active ? 'Disable' : 'Enable'}</button>
-          <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 7px;color:var(--theme-danger,#c0392b);border-color:var(--theme-danger,#c0392b)" onclick="deleteKeyword(${kw.id})">Delete</button>
-        </td>`;
-      tbody.appendChild(tr);
-    }
-    if (!body.data.keywords.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">No keywords defined.</td></tr>';
-    }
-  } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:6px 8px;color:var(--theme-text-muted)">Error loading keywords.</td></tr>';
-  }
-}
-
-async function addKeyword() {
-  const phrase = document.getElementById('kw-phrase').value.trim();
-  const notes  = document.getElementById('kw-notes').value.trim();
-  const errEl  = document.getElementById('kw-error');
-  errEl.textContent = '';
-  if (!phrase) { errEl.textContent = 'Phrase is required.'; return; }
-  try {
-    const resp = await fetch('/api/keywords', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phrase, notes }),
-    });
-    const body = await resp.json();
-    if (!body.success) { errEl.textContent = body.error?.message || 'Error adding keyword.'; return; }
-    document.getElementById('kw-phrase').value = '';
-    document.getElementById('kw-notes').value = '';
-    loadKeywords();
-  } catch (e) {
-    errEl.textContent = 'Network error.';
-  }
-}
-
-async function toggleKeyword(id, active) {
-  try {
-    await fetch(`/api/keywords/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active }),
-    });
-    loadKeywords();
-  } catch (e) { /* silent */ }
-}
-
-async function deleteKeyword(id) {
-  try {
-    await fetch(`/api/keywords/${id}`, { method: 'DELETE' });
-    loadKeywords();
-  } catch (e) { /* silent */ }
 }
 
 async function submitAddCompany() {

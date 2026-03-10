@@ -1,93 +1,383 @@
 {% extends "base.html" %}
 {% block title %}Data Explorer{% endblock %}
 
-{% block styles %}{% endblock %}
+{% block styles %}
+<style>
+/* ── Mode toggle ──────────────────────────────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.mode-btn {
+  padding: 0.3rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-bg-secondary);
+  color: var(--theme-text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mode-btn.active {
+  background: var(--theme-accent);
+  color: #fff;
+  border-color: var(--theme-accent);
+}
+
+/* ── Mode B two-panel layout ─────────────────────────────────────────────── */
+.doc-browse-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+@media (max-width: 900px) {
+  .doc-browse-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Document list (Mode B left panel) ───────────────────────────────────── */
+.doc-list-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.doc-list-header {
+  padding: 0.6rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.doc-list-items {
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+}
+.doc-list-item {
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--theme-border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.doc-list-item:hover { background: rgba(255,255,255,0.03); }
+.doc-list-item.selected { background: rgba(59,130,246,0.1); }
+.doc-list-item-ticker {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--theme-text-primary);
+}
+.doc-list-item-meta {
+  font-size: 0.72rem;
+  color: var(--theme-text-muted);
+  margin-top: 0.15rem;
+}
+.doc-list-item-count {
+  font-size: 0.7rem;
+  color: var(--theme-accent);
+  font-weight: 500;
+}
+.doc-list-empty {
+  padding: 1.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--theme-text-muted);
+}
+
+/* ── Document viewer (Mode B right panel) ────────────────────────────────── */
+.doc-viewer-panel {
+  background: var(--theme-bg-secondary);
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.doc-viewer-header {
+  padding: 0.6rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--theme-text-muted);
+  border-bottom: 1px solid var(--theme-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.doc-viewer-meta {
+  font-size: 0.75rem;
+  color: var(--theme-text-muted);
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--theme-border);
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.doc-viewer-meta a {
+  color: var(--theme-accent);
+  text-decoration: none;
+  font-size: 0.75rem;
+}
+.doc-viewer-body {
+  padding: 0.9rem;
+  font-family: monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+  color: var(--theme-text-secondary);
+}
+.doc-viewer-placeholder {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--theme-text-muted);
+}
+.doc-hl {
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Mode A lineage panel ─────────────────────────────────────────────────── */
+.lineage-card {
+  margin-top: 1rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<h1 class="page-title" data-spec-id="DE4.0"><span class="spec-id">4.0</span>Bitcoin Miner Data Explorer</h1>
+<h1 class="page-title" data-spec-id="DE4.0"><span class="spec-id">4.0</span>Data Explorer</h1>
 
-<!-- ── Pipeline status bar ─────────────────────────────────────────── -->
+<!-- ── Pipeline status bar ─────────────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
-  <span id="pipeline-status" style="font-size:0.85rem;color:var(--theme-text-secondary)">Loading pipeline status…</span>
-  <a href="/operations" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">→ Operations</a>
-  <a href="/review?status=PENDING" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">→ Review Queue</a>
+  <span id="pipeline-status" style="font-size:0.85rem;color:var(--theme-text-secondary)">Loading pipeline status...</span>
+  <a href="/operations" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">Operations</a>
+  <a href="/review?status=PENDING" style="font-size:0.82rem;color:var(--theme-accent);white-space:nowrap">Review Queue</a>
 </div>
 
-<div class="card">
-  <form class="filter-form" id="filter-form" onsubmit="return false" data-spec-id="DE4.1">
-    <span class="spec-id">4.1</span>
-    <div class="form-group">
-      <label>Company</label>
-      <select id="f-ticker" multiple size="4">
-        {% for c in companies %}
-        <option value="{{ c.ticker }}">{{ c.ticker }} — {{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Metric</label>
-      <select id="f-metric">
-        <option value="">All metrics</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>From (YYYY-MM)</label>
-      <input type="month" id="f-from" />
-    </div>
-    <div class="form-group">
-      <label>To (YYYY-MM)</label>
-      <input type="month" id="f-to" />
-    </div>
-    <div class="form-group">
-      <label>Min Confidence: <span id="conf-label">0.00</span></label>
-      <input type="range" id="f-confidence" min="0" max="1" step="0.05" value="0"
-             oninput="document.getElementById('conf-label').textContent = parseFloat(this.value).toFixed(2)">
-    </div>
-    <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
-      <span id="results-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
-      <button class="btn btn-primary" onclick="fetchData()">Search</button>
-      <button class="btn btn-secondary" data-spec-id="DE4.3" onclick="exportCsv()">Export CSV</button>
-    </div>
-  </form>
-</div>
-
-<div id="error-banner" class="error-banner" hidden></div>
-
-<div class="card" data-spec-id="DE4.2">
-  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-    <span class="spec-id">4.2</span>Data Points <span class="source-badge source-badge-data">DATA</span>
+<!-- ── Mode toggle ─────────────────────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap" data-spec-id="DE4.5">
+  <span style="font-size:0.8rem;font-weight:600;color:var(--theme-text-muted)">Mode:</span>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="mode-btn-datapoints" onclick="switchMode('datapoints')">Data Points</button>
+    <button class="mode-btn" id="mode-btn-documents" onclick="switchMode('documents')">Documents</button>
   </div>
-  <table id="results-table">
-    <thead>
-      <tr>
-        <th data-sort="ticker">Ticker</th>
-        <th data-sort="period">Period</th>
-        <th data-sort="metric">Metric</th>
-        <th data-sort="value" data-sort-type="num">Value</th>
-        <th data-sort="unit">Unit</th>
-        <th data-sort="confidence" data-sort-type="num">Confidence</th>
-        <th data-sort="method">Method</th>
-        <th>Snippet</th>
-      </tr>
-    </thead>
-    <tbody id="results-body">
-      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
-    </tbody>
-  </table>
+  <span style="font-size:0.75rem;color:var(--theme-text-muted)" id="mode-hint">Search extracted values across all companies and periods.</span>
 </div>
 
-<div class="card" data-spec-id="DE4.4" style="margin-top:1rem">
-  <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-    <span class="spec-id">4.4</span>Lineage <span class="source-badge source-badge-data">DATA</span>
+<!-- ════════════════════════════════════════════════════════════════════════════
+     MODE A — Data Point Search
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div id="mode-a">
+
+  <div class="card">
+    <form class="filter-form" id="filter-form" onsubmit="return false" data-spec-id="DE4.1">
+      <span class="spec-id">4.1</span>
+      <div class="form-group">
+        <label>Company</label>
+        <select id="f-ticker" multiple size="4">
+          {% for c in companies %}
+          <option value="{{ c.ticker }}">{{ c.ticker }} — {{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Metric</label>
+        <select id="f-metric">
+          <option value="">All metrics</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>From (YYYY-MM)</label>
+        <input type="month" id="f-from" />
+      </div>
+      <div class="form-group">
+        <label>To (YYYY-MM)</label>
+        <input type="month" id="f-to" />
+      </div>
+      <div class="form-group">
+        <label>Min Confidence: <span id="conf-label">0.00</span></label>
+        <input type="range" id="f-confidence" min="0" max="1" step="0.05" value="0"
+               oninput="document.getElementById('conf-label').textContent = parseFloat(this.value).toFixed(2)">
+      </div>
+      <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
+        <span id="results-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+        <button class="btn btn-primary" onclick="fetchData()">Search</button>
+        <button class="btn btn-secondary" data-spec-id="DE4.3" onclick="exportCsv()">Export CSV</button>
+      </div>
+    </form>
   </div>
-  <div id="lineage-panel" style="font-size:0.82rem;color:var(--theme-text-muted)">Click a row to load provenance details.</div>
-</div>
+
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <div class="card" data-spec-id="DE4.2">
+    <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+      <span class="spec-id">4.2</span>Data Points <span class="source-badge source-badge-data">DATA</span>
+    </div>
+    <table id="results-table">
+      <thead>
+        <tr>
+          <th data-sort="ticker">Ticker</th>
+          <th data-sort="period">Period</th>
+          <th data-sort="metric">Metric</th>
+          <th data-sort="value" data-sort-type="num">Value</th>
+          <th data-sort="unit">Unit</th>
+          <th data-sort="confidence" data-sort-type="num">Confidence</th>
+          <th data-sort="method">Method</th>
+          <th>Snippet</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="results-body">
+        <tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Lineage + doc panel (Mode A) -->
+  <div class="lineage-card card" data-spec-id="DE4.4">
+    <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+      <span class="spec-id">4.4</span>Lineage <span class="source-badge source-badge-data">DATA</span>
+    </div>
+    <div id="lineage-panel" style="font-size:0.82rem;color:var(--theme-text-muted)">Click a row to load provenance details.</div>
+  </div>
+
+  <!-- Inline document panel (Mode A — slides in from right, shares doc_panel.js) -->
+  <div id="de-doc-panel" class="doc-panel">
+    <div class="doc-panel-header">
+      <span class="doc-panel-title"></span>
+      <button class="btn btn-secondary" style="padding:0.2rem 0.5rem;font-size:0.75rem" onclick="DocPanel.close()">Close</button>
+    </div>
+    <div class="doc-panel-body">
+      <pre class="doc-source-view" style="white-space:pre-wrap;word-break:break-word;font-size:0.78rem"></pre>
+    </div>
+  </div>
+
+</div><!-- /mode-a -->
+
+<!-- ════════════════════════════════════════════════════════════════════════════
+     MODE B — Document Browse
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div id="mode-b" style="display:none">
+
+  <!-- Mode B filter bar -->
+  <div class="card">
+    <form class="filter-form" id="doc-filter-form" onsubmit="return false">
+      <div class="form-group">
+        <label>Company</label>
+        <select id="db-ticker">
+          <option value="">All companies</option>
+          {% for c in companies %}
+          <option value="{{ c.ticker }}">{{ c.ticker }} — {{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Source type</label>
+        <select id="db-source-type">
+          <option value="">All types</option>
+          <option value="archive_html">archive_html</option>
+          <option value="archive_pdf">archive_pdf</option>
+          <option value="ir_press_release">ir_press_release</option>
+          <option value="edgar_8k">edgar_8k</option>
+          <option value="edgar_10q">edgar_10q</option>
+          <option value="edgar_10k">edgar_10k</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Extraction status</label>
+        <select id="db-extraction-status">
+          <option value="">All statuses</option>
+          <option value="pending">pending</option>
+          <option value="done">done</option>
+          <option value="failed">failed</option>
+          <option value="dead_letter">dead_letter</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>From (YYYY-MM)</label>
+        <input type="month" id="db-from" />
+      </div>
+      <div class="form-group">
+        <label>To (YYYY-MM)</label>
+        <input type="month" id="db-to" />
+      </div>
+      <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
+        <span id="doc-count-label" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+        <button class="btn btn-primary" onclick="fetchDocuments()">Search</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="doc-error-banner" class="error-banner" hidden></div>
+
+  <!-- Two-panel layout -->
+  <div class="doc-browse-layout">
+
+    <!-- Left: document list -->
+    <div class="doc-list-panel" data-spec-id="DE4.6">
+      <div class="doc-list-header">
+        <span><span class="spec-id" style="font-size:0.68rem">4.6</span>Documents <span class="source-badge source-badge-data">DATA</span></span>
+        <span id="doc-list-count" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div class="doc-list-items" id="doc-list-items">
+        <div class="doc-list-empty">Run a search to browse documents.</div>
+      </div>
+    </div>
+
+    <!-- Right: document viewer -->
+    <div class="doc-viewer-panel" data-spec-id="DE4.7">
+      <div class="doc-viewer-header">
+        <span><span class="spec-id" style="font-size:0.68rem">4.7</span>Document Viewer <span class="source-badge source-badge-data">DATA</span></span>
+        <span id="doc-viewer-title" style="font-size:0.8rem;color:var(--theme-text-primary);font-weight:normal;text-transform:none;letter-spacing:0"></span>
+      </div>
+      <div class="doc-viewer-meta" id="doc-viewer-meta" style="display:none"></div>
+      <div id="doc-viewer-body" class="doc-viewer-body">
+        <div class="doc-viewer-placeholder">Select a document from the list to view its content.</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /mode-b -->
+
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/doc_panel.js"></script>
 <script>
+// ── Shared state ────────────────────────────────────────────────────────────
+let _currentMode = 'datapoints';
+let _selectedDocId = null;
+let _metricColors = {};  // populated from /api/metric_schema
+
+// ── Mode switching ──────────────────────────────────────────────────────────
+function switchMode(mode) {
+  _currentMode = mode;
+  document.getElementById('mode-a').style.display = mode === 'datapoints' ? '' : 'none';
+  document.getElementById('mode-b').style.display = mode === 'documents'  ? '' : 'none';
+  document.getElementById('mode-btn-datapoints').classList.toggle('active', mode === 'datapoints');
+  document.getElementById('mode-btn-documents').classList.toggle('active', mode === 'documents');
+  const hintEl = document.getElementById('mode-hint');
+  if (hintEl) {
+    hintEl.textContent = mode === 'datapoints'
+      ? 'Search extracted values across all companies and periods.'
+      : 'Browse source documents and view highlighted extraction matches.';
+  }
+}
+
+// ── Mode A: Data point search ───────────────────────────────────────────────
+
 function currentParams() {
-  const tickers = Array.from(document.getElementById('f-ticker').selectedOptions).map(o=>o.value);
+  const tickers = Array.from(document.getElementById('f-ticker').selectedOptions).map(o => o.value);
   const params = new URLSearchParams();
   tickers.forEach(t => params.append('ticker', t));
   const metric = document.getElementById('f-metric').value;
@@ -127,12 +417,17 @@ function renderTable(rows) {
   const tbody = document.getElementById('results-body');
   const countEl = document.getElementById('results-count');
   if (!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No data found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--theme-text-muted)">No data found.</td></tr>';
     if (countEl) countEl.textContent = '';
     return;
   }
   if (countEl) countEl.textContent = rows.length + ' row' + (rows.length === 1 ? '' : 's') + (rows.length === 1000 ? ' (limit)' : '');
-  tbody.innerHTML = rows.map(r => `<tr data-ticker="${escapeAttr(r.ticker)}" data-metric="${escapeAttr(r.metric)}" data-period="${escapeAttr((r.period || '').slice(0, 7))}">
+  tbody.innerHTML = rows.map(r => `<tr
+    data-ticker="${escapeAttr(r.ticker)}"
+    data-metric="${escapeAttr(r.metric)}"
+    data-period="${escapeAttr((r.period || '').slice(0, 7))}"
+    data-report-id="${escapeAttr(String(r.report_id || ''))}"
+  >
     <td>${escapeHtml(r.ticker)}</td>
     <td>${escapeHtml(r.period ? r.period.slice(0,7) : '')}</td>
     <td>${escapeHtml(r.metric)}</td>
@@ -140,7 +435,8 @@ function renderTable(rows) {
     <td>${escapeHtml(r.unit)}</td>
     <td>${confidenceBadge(r.confidence || 0)}</td>
     <td>${escapeHtml(r.extraction_method)}</td>
-    <td title="${escapeHtml(r.source_snippet)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.source_snippet || '').slice(0, 80))}</td>
+    <td title="${escapeAttr(r.source_snippet)}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.source_snippet || '').slice(0, 80))}</td>
+    <td><button class="btn btn-secondary" style="padding:0.1rem 0.45rem;font-size:0.72rem" onclick="openDocForRow(this)" data-report-id="${escapeAttr(String(r.report_id || ''))}" data-snippet="${escapeAttr(r.source_snippet || '')}">Doc</button></td>
   </tr>`).join('');
 }
 
@@ -156,9 +452,7 @@ async function loadLineageForRow(ticker, metric, period) {
     const qs = new URLSearchParams({ticker, metric, period});
     const resp = await fetch('/api/data/lineage?' + qs.toString());
     const body = await resp.json().catch(() => ({}));
-    if (!resp.ok || !body.success) {
-      throw new Error(body?.error?.message || `HTTP ${resp.status}`);
-    }
+    if (!resp.ok || !body.success) throw new Error(body?.error?.message || `HTTP ${resp.status}`);
     const d = body.data || {};
     panel.innerHTML = `
       <div><strong>Ticker:</strong> ${escapeHtml(d.ticker || '')}</div>
@@ -176,32 +470,166 @@ async function loadLineageForRow(ticker, metric, period) {
   }
 }
 
+async function openDocForRow(btn) {
+  const reportId = btn.getAttribute('data-report-id');
+  if (!reportId) return;
+  const snippet = btn.getAttribute('data-snippet') || '';
+  await openDocumentViewer(parseInt(reportId, 10), snippet);
+}
+
 function exportCsv() {
   window.location = '/api/export.csv?' + currentParams().toString();
 }
 
-makeSortable('results-table');
+// ── Mode B: Document browse ─────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', function() {
-  fetchData();
-  loadPipelineStatus();
-  loadMetricOptions();
-  document.getElementById('results-body').addEventListener('click', function(e) {
-    const row = e.target.closest('tr[data-ticker][data-metric][data-period]');
-    if (!row) return;
-    loadLineageForRow(
-      row.getAttribute('data-ticker'),
-      row.getAttribute('data-metric'),
-      row.getAttribute('data-period'),
-    );
-  });
-});
+function docCurrentParams() {
+  const params = new URLSearchParams();
+  const ticker = document.getElementById('db-ticker').value;
+  if (ticker) params.set('ticker', ticker);
+  const sourceType = document.getElementById('db-source-type').value;
+  if (sourceType) params.set('source_type', sourceType);
+  const status = document.getElementById('db-extraction-status').value;
+  if (status) params.set('extraction_status', status);
+  const from = document.getElementById('db-from').value;
+  if (from) params.set('from_date', from);
+  const to = document.getElementById('db-to').value;
+  if (to) params.set('to_date', to);
+  return params;
+}
 
-// ── Pipeline status bar ────────────────────────────────────────────────────
+async function fetchDocuments() {
+  const banner = document.getElementById('doc-error-banner');
+  banner.hidden = true;
+  const listEl = document.getElementById('doc-list-items');
+  listEl.innerHTML = '<div class="doc-list-empty">Loading...</div>';
+  try {
+    const resp = await fetch('/api/data/documents?' + docCurrentParams().toString());
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    renderDocList(json.data);
+  } catch(e) {
+    listEl.innerHTML = '<div class="doc-list-empty">Error loading documents.</div>';
+    banner.textContent = 'Error: ' + e.message;
+    banner.hidden = false;
+  }
+}
+
+function _sourceTypeBadgeColor(st) {
+  const map = {
+    archive_html: '#3b82f6', archive_pdf: '#8b5cf6',
+    ir_press_release: '#10b981', edgar_8k: '#f97316',
+    edgar_10q: '#f59e0b', edgar_10k: '#ef4444',
+  };
+  return map[st] || '#6b7280';
+}
+
+function renderDocList(docs) {
+  const listEl = document.getElementById('doc-list-items');
+  const countEl = document.getElementById('doc-list-count');
+  if (countEl) countEl.textContent = docs.length + ' doc' + (docs.length === 1 ? '' : 's');
+  if (!docs || docs.length === 0) {
+    listEl.innerHTML = '<div class="doc-list-empty">No documents found.</div>';
+    return;
+  }
+  listEl.innerHTML = docs.map(d => {
+    const color = _sourceTypeBadgeColor(d.source_type);
+    const dpLabel = d.data_point_count === 1 ? '1 match' : `${d.data_point_count} matches`;
+    return `<div class="doc-list-item" data-doc-id="${escapeAttr(String(d.id))}" onclick="selectDocument(${d.id}, this)">
+      <div class="doc-list-item-ticker">
+        ${escapeHtml(d.ticker)}
+        <span style="font-size:0.7rem;font-weight:normal;color:${color};margin-left:0.35rem">${escapeHtml(d.source_type)}</span>
+      </div>
+      <div class="doc-list-item-meta">
+        ${escapeHtml(d.report_date ? d.report_date.slice(0, 10) : '')}
+        &nbsp;·&nbsp;<span style="text-transform:capitalize">${escapeHtml(d.extraction_status || '')}</span>
+      </div>
+      <div class="doc-list-item-count">${escapeHtml(dpLabel)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function selectDocument(reportId, itemEl) {
+  // Highlight selected item
+  document.querySelectorAll('.doc-list-item').forEach(el => el.classList.remove('selected'));
+  if (itemEl) itemEl.classList.add('selected');
+  _selectedDocId = reportId;
+  await openDocumentViewer(reportId, null);
+}
+
+// ── Shared document viewer (used by both modes) ───────────────────────────
+
+async function openDocumentViewer(reportId, focusSnippet) {
+  const viewerBodyEl = document.getElementById('doc-viewer-body');
+  const viewerMetaEl = document.getElementById('doc-viewer-meta');
+  const viewerTitleEl = document.getElementById('doc-viewer-title');
+
+  if (viewerBodyEl) {
+    viewerBodyEl.innerHTML = '<div class="doc-viewer-placeholder">Loading document...</div>';
+  }
+  if (viewerMetaEl) viewerMetaEl.style.display = 'none';
+
+  try {
+    const resp = await fetch(`/api/data/document/${reportId}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const doc = json.data;
+
+    // Update title + meta
+    if (viewerTitleEl) viewerTitleEl.textContent = `${doc.ticker} — ${doc.report_date ? doc.report_date.slice(0, 10) : ''}`;
+    if (viewerMetaEl) {
+      viewerMetaEl.style.display = '';
+      viewerMetaEl.innerHTML = `
+        <span><strong>Type:</strong> ${escapeHtml(doc.source_type || '—')}</span>
+        <span><strong>Status:</strong> ${escapeHtml(doc.extraction_status || '—')}</span>
+        <span><strong>Matches:</strong> ${doc.matches.length}</span>
+        ${doc.source_url ? `<a href="${escapeAttr(doc.source_url)}" target="_blank" rel="noopener">Source</a>` : ''}
+      `;
+    }
+
+    if (!viewerBodyEl) return;
+
+    if (!doc.raw_text) {
+      viewerBodyEl.innerHTML = '<div class="doc-viewer-placeholder">No document text stored for this report.</div>';
+      return;
+    }
+
+    // Build matches — add focusSnippet as synthetic match if supplied (Mode A)
+    const matches = doc.matches.slice();
+    if (focusSnippet && matches.every(m => m.source_snippet !== focusSnippet)) {
+      matches.unshift({ metric: '_focus', source_snippet: focusSnippet });
+    }
+
+    // Set highlight colors for known metrics
+    DocPanel.setColors(_metricColors);
+
+    // Render highlighted document text inline
+    const html = DocPanel.buildHighlightedSource(doc.raw_text, matches);
+    viewerBodyEl.innerHTML = html;
+
+    // Scroll to first highlight
+    const firstHl = viewerBodyEl.querySelector('.doc-hl');
+    if (firstHl) firstHl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  } catch(e) {
+    if (viewerBodyEl) {
+      viewerBodyEl.innerHTML = `<div class="doc-viewer-placeholder">Error loading document: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+}
+
+// ── Shared utilities ────────────────────────────────────────────────────────
+
 function loadPipelineStatus() {
   fetch('/api/coverage/summary')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
       if (!data || !data.success) return;
       const d = data.data;
       const el = document.getElementById('pipeline-status');
@@ -211,26 +639,62 @@ function loadPipelineStatus() {
         : ` · ${d.pending_review} pending review`;
       el.innerHTML = `${d.total_reports} reports · ${d.pending_extraction} pending extraction${reviewLink}`;
     })
-    .catch(function() {});
+    .catch(() => {});
 }
 
-// ── Dynamic metric dropdown ────────────────────────────────────────────────
 function loadMetricOptions() {
   fetch('/api/metrics')
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
       if (!data || !data.success) return;
       const sel = document.getElementById('f-metric');
-      if (!sel) return;
-      sel.innerHTML = '<option value="">All metrics</option>';
-      data.data.metrics.forEach(function(m) {
-        const opt = document.createElement('option');
-        opt.value = m.key;
-        opt.textContent = m.label + (m.unit ? ' (' + m.unit + ')' : '');
-        sel.appendChild(opt);
-      });
+      if (sel) {
+        sel.innerHTML = '<option value="">All metrics</option>';
+        data.data.metrics.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.key;
+          opt.textContent = m.label + (m.unit ? ' (' + m.unit + ')' : '');
+          sel.appendChild(opt);
+        });
+      }
+      // Build color map from schema for DocPanel
+      if (data.data.metrics) {
+        const palette = [
+          '#3b82f6','#8b5cf6','#f59e0b','#10b981',
+          '#f97316','#ef4444','#06b6d4','#84cc16',
+          '#ec4899','#a78bfa','#34d399','#fb923c',
+        ];
+        data.data.metrics.forEach((m, i) => {
+          _metricColors[m.key] = palette[i % palette.length];
+        });
+        // Focus highlight color
+        _metricColors['_focus'] = '#fbbf24';
+        DocPanel.setColors(_metricColors);
+      }
     })
-    .catch(function() {});
+    .catch(() => {});
 }
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
+makeSortable('results-table');
+DocPanel.init('de-doc-panel');
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadPipelineStatus();
+  loadMetricOptions();
+
+  // Mode A: row click loads lineage + enables Doc button
+  document.getElementById('results-body').addEventListener('click', function(e) {
+    if (e.target.closest('button')) return;  // handled by openDocForRow
+    const row = e.target.closest('tr[data-ticker][data-metric][data-period]');
+    if (!row) return;
+    loadLineageForRow(
+      row.getAttribute('data-ticker'),
+      row.getAttribute('data-metric'),
+      row.getAttribute('data-period'),
+    );
+  });
+});
 </script>
 {% endblock %}

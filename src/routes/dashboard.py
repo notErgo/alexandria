@@ -32,6 +32,7 @@ log = logging.getLogger('miners.routes.dashboard')
 
 bp = Blueprint('dashboard', __name__)
 
+# SYNC: keep identical to sibling _VALID_METRICS_FALLBACK in interpret.py / data_points.py / llm_prompts.py
 _VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
@@ -110,7 +111,16 @@ def stacked_bar():
                 'message': "'months' must be an integer between 1 and 120"
             }}), 400
 
-        label, unit = _METRIC_META.get(metric, (metric, ''))
+        # Read label/unit from metric_schema SSOT; fall back to hardcoded map.
+        try:
+            _schema = {r['key']: r for r in db.get_metric_schema(sector='BTC-miners', active_only=False)}
+            if metric in _schema:
+                label = _schema[metric].get('label') or metric
+                unit = _schema[metric].get('unit') or ''
+            else:
+                label, unit = _METRIC_META.get(metric, (metric, ''))
+        except Exception:
+            label, unit = _METRIC_META.get(metric, (metric, ''))
 
         # Only show analyst-accepted values from final_data_points.
         # Raw data_points (unreviewed pipeline output) are never shown on the dashboard.

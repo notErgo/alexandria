@@ -21,13 +21,23 @@ bp = Blueprint('patterns', __name__)
 _METRIC_ORDER = [
     'production_btc', 'holdings_btc', 'sales_btc', 'hashrate_eh', 'realization_rate'
 ]
-_METRIC_LABELS = {
-    'production_btc':  'Production BTC',
-    'holdings_btc':    'Holdings BTC',
-    'sales_btc':       'Sold BTC',
-    'hashrate_eh':     'Hashrate EH/s',
-    'realization_rate':'Realization Rate',
-}
+
+
+def _is_valid_metric(metric: str) -> bool:
+    """Check if a metric key is valid via DB SSOT, fallback to pattern file existence."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+        rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
+        if rows:
+            return metric in {r['key'] for r in rows}
+    except Exception:
+        pass
+    try:
+        _load_metric_file(metric)
+        return True
+    except FileNotFoundError:
+        return False
 
 # Words that are high-frequency noise in snippets but not extraction signals
 _GAP_NOISE = {
@@ -129,7 +139,7 @@ def get_patterns():
                 })
             metrics_out.append({
                 'metric':  metric,
-                'label':   _METRIC_LABELS.get(metric, metric),
+                'label':   metric,
                 'unit':    data.get('unit', ''),
                 'patterns': patterns_out,
             })
@@ -149,7 +159,7 @@ def get_patterns():
 
 @bp.route('/api/patterns/<metric>/<pattern_id>', methods=['PUT'])
 def update_pattern(metric, pattern_id):
-    if metric not in _METRIC_ORDER:
+    if not _is_valid_metric(metric):
         return jsonify({'success': False, 'error': {'message': 'Unknown metric'}}), 400
     body = request.get_json(silent=True) or {}
     new_regex  = body.get('regex', '').strip()
@@ -210,7 +220,7 @@ def apply_pattern():
     except re.error as exc:
         return jsonify({'success': False, 'error': {'message': f'Invalid regex: {exc}'}}), 400
 
-    if metric not in _METRIC_ORDER:
+    if not _is_valid_metric(metric):
         return jsonify({'success': False, 'error': {'message': 'Unknown metric'}}), 400
 
     try:
@@ -296,7 +306,7 @@ def apply_pattern():
 
 @bp.route('/api/patterns/<metric>', methods=['POST'])
 def add_pattern(metric):
-    if metric not in _METRIC_ORDER:
+    if not _is_valid_metric(metric):
         return jsonify({'success': False, 'error': {'message': 'Unknown metric'}}), 400
     body = request.get_json(silent=True) or {}
     new_regex  = body.get('regex', '').strip()
@@ -318,7 +328,7 @@ def add_pattern(metric):
         existing_ids = {p['id'] for p in data['patterns']}
         # Auto-generate id: metric_prefix + next integer
         prefix = metric.replace('_btc', '').replace('_eh', '').replace('_rate', '')
-        prefix = {'production': 'prod_btc', 'hodl': 'hodl_btc', 'liquidation': 'liq_btc',
+        prefix = {'production': 'prod_btc', 'hodl': 'holdings_btc', 'liquidation': 'liq_btc',
                   'hashrate': 'hash_eh', 'realization': 'real_rate'}.get(prefix, metric[:8])
         n = len(data['patterns'])
         new_id = f"{prefix}_{n}"
@@ -344,7 +354,7 @@ def add_pattern(metric):
 
 @bp.route('/api/patterns/<metric>/<pattern_id>', methods=['DELETE'])
 def delete_pattern(metric, pattern_id):
-    if metric not in _METRIC_ORDER:
+    if not _is_valid_metric(metric):
         return jsonify({'success': False, 'error': {'message': 'Unknown metric'}}), 400
     try:
         data = _load_metric_file(metric)
@@ -409,7 +419,7 @@ def generate_pattern():
     capture = r'([\d,]+(?:\.\d+)?)'
 
     # For BTC metrics: ensure suffix contains bitcoin|btc pattern
-    _BTC_METRICS = {'production_btc', 'hodl_btc', 'sold_btc'}
+    _BTC_METRICS = {'production_btc', 'holdings_btc', 'sales_btc'}
     btc_suffix_re = re.compile(r'(?:bitcoin|btc)', re.IGNORECASE)
 
     if metric in _BTC_METRICS and not btc_suffix_re.search(raw_suffix):

@@ -197,9 +197,16 @@ def get_miner_timeline(ticker: str):
         import re as _re
         _QUARTERLY_PERIOD_RE = _re.compile(r'^\d{4}-(Q\d|FY)$')
 
-        # Build a set of finalized (period, metric) keys for is_finalized flag
+        # Build finalized lookup with period normalization matching the source mode.
+        # Keyed by (normalized_period, metric) so is_finalized matches the pivot keys.
         finals = db.get_final_data_points(ticker_upper)
-        finalized_keys = {(f['period'], f['metric']) for f in finals}
+        finals_by_pm: dict = {}
+        for f in finals:
+            fp = f['period']
+            if source == 'monthly' and len(fp) >= 10:
+                fp = fp[:7] + '-01'
+            finals_by_pm[(fp, f['metric'])] = f
+        finalized_keys = set(finals_by_pm.keys())
 
         # Build a set of reviewed periods for is_reviewed flag
         reviewed_set = db.get_reviewed_periods(ticker_upper)
@@ -260,6 +267,25 @@ def get_miner_timeline(ticker: str):
                     'extraction_method': 'review_pending',
                     'is_finalized':      False,
                     'is_pending':        True,
+                }
+
+        # Merge finalized-only values: cells in final_data_points that have no
+        # corresponding raw data_points or review_queue entry.  These are analyst-
+        # entered or analyst-promoted values that must appear in the timeline even
+        # when the pipeline never extracted anything for that (period, metric).
+        for (fp, fmetric), f in finals_by_pm.items():
+            if fp not in pivot:
+                pivot[fp] = {}
+            if fmetric not in pivot[fp]:
+                pivot[fp][fmetric] = {
+                    'value':             f['value'],
+                    'unit':              f.get('unit', ''),
+                    'confidence':        f.get('confidence', 1.0),
+                    'extraction_method': 'analyst',
+                    'source_snippet':    f.get('analyst_note'),
+                    'inference_notes':   None,
+                    'is_finalized':      True,
+                    'is_pending':        False,
                 }
 
         empty_keys = CORE_METRICS[:]
@@ -348,8 +374,17 @@ def get_miner_timeline(ticker: str):
         for period_data in pivot.values():
             metrics_with_data.update(period_data.keys())
         core_set = set(CORE_METRICS)
-        metric_keys = [m for m in ALL_METRICS_ORDER
-                       if m in core_set or m in metrics_with_data]
+        # Use schema display_order when available; fall back to hardcoded ALL_METRICS_ORDER.
+        if schema_rows:
+            _ordered = [r['key'] for r in sorted(schema_rows, key=lambda r: (r.get('display_order') or 999, r['key']))]
+        else:
+            _ordered = ALL_METRICS_ORDER
+        metric_keys = [m for m in _ordered if m in core_set or m in metrics_with_data]
+        # Append any metric with data that isn't in the schema order (e.g. inactive
+        # schema metrics that have historical or finalized values).
+        for m in metrics_with_data:
+            if m not in metric_keys:
+                metric_keys.append(m)
         if not metric_keys:
             metric_keys = CORE_METRICS[:]
 

@@ -602,3 +602,83 @@ class TestMetricSchemaRoutes:
         assert resp.status_code == 200
         remaining = db.get_metric_schema('BTC-miners', active_only=False)
         assert not any(r['key'] == 'gpu_count' for r in remaining)
+
+
+# ── TestFinalDataPointsMerge ───────────────────────────────────────────────────
+
+class TestFinalDataPointsMerge:
+    """Tests that final_data_points values appear in the timeline even when
+    no corresponding raw data_points or review_queue entry exists."""
+
+    def test_finalized_only_value_appears_in_timeline(self, app):
+        """A value stored only in final_data_points must appear in the timeline."""
+        import app_globals
+        db = app_globals._db
+        db.insert_company(MARA_COMPANY)
+
+        # No raw data_points inserted — only a finalized analyst value.
+        db.upsert_final_data_point(
+            ticker='MARA',
+            period='2024-06-01',
+            metric='production_btc',
+            value=1234.0,
+            unit='BTC',
+            confidence=1.0,
+            analyst_note='Analyst entered',
+        )
+
+        resp = app.get('/api/miner/MARA/timeline')
+        assert resp.status_code == 200
+        data = json.loads(resp.data)['data']
+        rows = data['rows']
+        jun_row = next((r for r in rows if r['period_label'] == '2024-06'), None)
+        assert jun_row is not None, '2024-06 row missing from timeline'
+        cell = jun_row['metrics'].get('production_btc')
+        assert cell is not None, 'production_btc cell is null — finalized-only value not merged'
+        assert cell['value'] == 1234.0
+        assert cell['is_finalized'] is True
+        assert cell['extraction_method'] == 'analyst'
+
+    def test_finalized_value_marks_existing_cell_as_finalized(self, app):
+        """When both data_points and final_data_points exist for same period+metric,
+        the data_points value is shown and is_finalized=True."""
+        import app_globals
+        db = app_globals._db
+        db.insert_company(MARA_COMPANY)
+
+        db.insert_data_point({
+            'report_id': None, 'ticker': 'MARA', 'period': '2024-07-01',
+            'metric': 'production_btc', 'value': 900.0, 'unit': 'BTC',
+            'confidence': 0.9, 'extraction_method': 'prod_btc_0',
+        })
+        db.upsert_final_data_point(
+            ticker='MARA', period='2024-07-01', metric='production_btc',
+            value=900.0, unit='BTC', confidence=1.0,
+        )
+
+        resp = app.get('/api/miner/MARA/timeline')
+        data = json.loads(resp.data)['data']
+        jul_row = next((r for r in data['rows'] if r['period_label'] == '2024-07'), None)
+        assert jul_row is not None
+        cell = jul_row['metrics']['production_btc']
+        assert cell is not None
+        assert cell['is_finalized'] is True
+        # Raw data_points value is preserved (not overwritten by the final layer)
+        assert cell['value'] == 900.0
+
+    def test_finalized_metric_appears_in_metric_keys(self, app):
+        """metric_keys in the response must include a metric that exists only in finals."""
+        import app_globals
+        db = app_globals._db
+        db.insert_company(MARA_COMPANY)
+
+        db.upsert_final_data_point(
+            ticker='MARA', period='2024-08-01', metric='hashrate_eh',
+            value=35.5, unit='EH/s', confidence=1.0,
+        )
+
+        resp = app.get('/api/miner/MARA/timeline')
+        data = json.loads(resp.data)['data']
+        assert 'hashrate_eh' in data['metric_keys'], (
+            'hashrate_eh must appear in metric_keys when finalized-only data exists'
+        )

@@ -10,6 +10,7 @@ log = logging.getLogger('miners.routes.data_points')
 
 bp = Blueprint('data_points', __name__)
 
+# SYNC: keep identical to sibling _VALID_METRICS_FALLBACK in interpret.py / llm_prompts.py / dashboard.py
 _VALID_METRICS_FALLBACK = frozenset({
     'production_btc', 'holdings_btc', 'unrestricted_holdings', 'restricted_holdings_btc',
     'sales_btc', 'hashrate_eh', 'realization_rate',
@@ -180,6 +181,130 @@ def get_data_lineage():
     }})
 
 
+_VALID_SOURCE_TYPES = frozenset({
+    'archive_html', 'archive_pdf', 'ir_press_release',
+    'edgar_8k', 'edgar_10q', 'edgar_10k',
+})
+_VALID_EXTRACTION_STATUSES = frozenset({
+    'pending', 'running', 'done', 'failed', 'dead_letter',
+})
+
+
+@bp.route('/api/data/documents')
+def get_documents():
+    """Search reports (documents) for the Mode B document browser.
+
+    Query params:
+        ticker           (str, optional)  — filter by company ticker
+        from_date        (YYYY-MM, opt)   — report_date lower bound
+        to_date          (YYYY-MM, opt)   — report_date upper bound
+        source_type      (str, optional)  — e.g. archive_html, edgar_8k
+        extraction_status (str, optional) — pending|running|done|failed|dead_letter
+        limit            (int, optional)  — max results, default 500
+
+    Returns:
+        list of {id, ticker, report_date, source_type, extraction_status,
+                 source_url, data_point_count}
+        raw_text is never included; use GET /api/data/document/<id> for that.
+    """
+    from app_globals import get_db
+
+    ticker_raw = request.args.get('ticker', '').strip().upper() or None
+    from_date_raw = request.args.get('from_date', '').strip() or None
+    to_date_raw = request.args.get('to_date', '').strip() or None
+    source_type = request.args.get('source_type', '').strip() or None
+    extraction_status = request.args.get('extraction_status', '').strip() or None
+
+    # Validate ticker
+    if ticker_raw:
+        db = get_db()
+        if not db.get_company(ticker_raw):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_TICKER',
+                'message': f'Ticker {ticker_raw!r} not recognized',
+            }}), 400
+    else:
+        db = get_db()
+
+    # Validate date format (YYYY-MM)
+    for label, val in (('from_date', from_date_raw), ('to_date', to_date_raw)):
+        if val and not _PERIOD_RE.match(val):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_DATE',
+                'message': f'{label} must be YYYY-MM',
+            }}), 400
+
+    # Convert YYYY-MM to YYYY-MM-01 for DB report_date comparison
+    from_full = (from_date_raw + '-01') if from_date_raw else None
+    to_full = (to_date_raw + '-01') if to_date_raw else None
+
+    if source_type and source_type not in _VALID_SOURCE_TYPES:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_SOURCE_TYPE',
+            'message': f'source_type must be one of {sorted(_VALID_SOURCE_TYPES)}',
+        }}), 400
+
+    if extraction_status and extraction_status not in _VALID_EXTRACTION_STATUSES:
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_EXTRACTION_STATUS',
+            'message': f'extraction_status must be one of {sorted(_VALID_EXTRACTION_STATUSES)}',
+        }}), 400
+
+    try:
+        limit = min(int(request.args.get('limit', 500)), 500)
+    except (TypeError, ValueError):
+        limit = 500
+
+    docs = db.search_reports(
+        ticker=ticker_raw,
+        from_date=from_full,
+        to_date=to_full,
+        source_type=source_type,
+        extraction_status=extraction_status,
+        limit=limit,
+    )
+    return jsonify({'success': True, 'data': docs})
+
+
+@bp.route('/api/data/document/<int:report_id>')
+def get_document(report_id: int):
+    """Return full document payload for the Mode B document viewer.
+
+    Returns raw_text (required by viewer), report metadata, and all
+    extracted data_point matches for snippet highlighting.
+
+    Response shape:
+        data: {
+            id, ticker, report_date, source_type, source_url,
+            extraction_status, raw_text,
+            matches: [{metric, period, value, unit, confidence,
+                       extraction_method, source_snippet}]
+        }
+    """
+    from app_globals import get_db
+    db = get_db()
+    report = db.get_report(report_id)
+    if not report:
+        return jsonify({'success': False, 'error': {
+            'code': 'NOT_FOUND',
+            'message': f'Report {report_id} not found',
+        }}), 404
+
+    raw_text = db.get_report_raw_text(report_id) or ''
+    matches = db.get_data_points_by_report(report_id)
+
+    return jsonify({'success': True, 'data': {
+        'id':               report['id'],
+        'ticker':           report['ticker'],
+        'report_date':      report['report_date'],
+        'source_type':      report['source_type'],
+        'source_url':       report.get('source_url'),
+        'extraction_status': report.get('extraction_status'),
+        'raw_text':         raw_text,
+        'matches':          matches,
+    }})
+
+
 @bp.route('/api/export.csv')
 def export_csv():
     from app_globals import get_db
@@ -309,6 +434,211 @@ def scorecard():
         }
 
     return jsonify({'success': True, 'data': {'companies': result, 'metrics': SCORECARD_METRICS}})
+
+
+@bp.route('/api/export_llm_csv')
+def export_llm_csv():
+    """LLM-direct CSV export — bypasses the agreement engine.
+
+    Calls Ollama once per stored report for the ticker, parses the JSON
+    extraction response, then aggregates to monthly + quarterly rows.
+
+    Query params:
+        ticker (required)
+        from_period (YYYY-MM, optional)
+        to_period   (YYYY-MM, optional)
+
+    Response headers:
+        X-LLM-Direct: true  (marks output as unreviewed, not agreement-validated)
+    """
+    import json as _json
+    import requests as _requests
+    from app_globals import get_db
+    from config import LLM_BASE_URL, LLM_TIMEOUT_SECONDS, FLOW_METRICS
+
+    ticker = request.args.get('ticker', '').strip().upper()
+    from_period_raw = request.args.get('from_period', '').strip()
+    to_period_raw = request.args.get('to_period', '').strip()
+
+    if not ticker:
+        return jsonify({'success': False, 'error': {
+            'code': 'MISSING_TICKER', 'message': 'ticker is required',
+        }}), 400
+
+    db = get_db()
+    if not db.get_company(ticker):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_TICKER', 'message': f'Unknown ticker: {ticker!r}',
+        }}), 404
+
+    from_full = (from_period_raw + '-01') if from_period_raw and _PERIOD_RE.match(from_period_raw) else None
+    to_full = (to_period_raw + '-01') if to_period_raw and _PERIOD_RE.match(to_period_raw) else None
+
+    reports = db.get_reports_with_text(ticker=ticker, from_period=from_full, to_period=to_full)
+
+    try:
+        schema_rows = db.get_metric_schema('BTC-miners', active_only=True)
+        metrics = [r['key'] for r in schema_rows] if schema_rows else list(_VALID_METRICS_FALLBACK)
+    except Exception:
+        metrics = list(_VALID_METRICS_FALLBACK)
+
+    try:
+        model_val = db.get_config('ollama_model')
+        from config import LLM_MODEL_ID
+        model = model_val or LLM_MODEL_ID
+    except Exception:
+        from config import LLM_MODEL_ID
+        model = LLM_MODEL_ID
+
+    # monthly_data: (period_month, metric) -> {values, unit, confidence_sum, count}
+    monthly_data: dict = {}
+
+    for report in reports:
+        raw_text = db.get_report_raw_text(report['id'])
+        if not raw_text or not raw_text.strip():
+            continue
+
+        prompt = (
+            f"Extract Bitcoin mining operational data for {ticker} from this document.\n"
+            f"Metrics to extract: {', '.join(metrics)}\n"
+            "Return JSON array only — no prose:\n"
+            '[{"metric":"<key>","period":"<YYYY-MM-01 or YYYY-Qn or YYYY-FY>",'
+            '"value":<number>,"unit":"<str>","confidence":<0-1>}]\n'
+            "Omit metrics not found. Use period format YYYY-MM-01 for monthly.\n\n"
+            f"DOCUMENT:\n{raw_text[:8000]}"
+        )
+
+        try:
+            resp = _requests.post(
+                f"{LLM_BASE_URL}/api/generate",
+                json={'model': model, 'prompt': prompt, 'stream': False},
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
+            resp.raise_for_status()
+            raw_response = resp.json().get('response', '')
+        except Exception:
+            log.warning(
+                "export_llm_csv LLM call failed report_id=%s ticker=%s",
+                report['id'], ticker, exc_info=True,
+            )
+            continue
+
+        try:
+            text = raw_response.strip()
+            if '```' in text:
+                text = re.sub(r'```[a-z]*\n?', '', text).strip()
+            start = text.find('[')
+            end = text.rfind(']')
+            if start == -1 or end == -1:
+                continue
+            items = _json.loads(text[start:end + 1])
+            if not isinstance(items, list):
+                continue
+        except Exception:
+            log.warning("export_llm_csv JSON parse failed report_id=%s", report['id'])
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            metric_key = item.get('metric', '')
+            period = str(item.get('period', ''))
+            raw_val = item.get('value')
+            unit = str(item.get('unit') or '')
+            try:
+                confidence = float(item.get('confidence') or 0.5)
+            except (TypeError, ValueError):
+                confidence = 0.5
+
+            if metric_key not in metrics:
+                continue
+            try:
+                val = float(raw_val)
+            except (TypeError, ValueError):
+                continue
+
+            # Normalize period to YYYY-MM
+            m_monthly = re.match(r'^(\d{4}-\d{2})', period)
+            if m_monthly:
+                period_month = m_monthly.group(1)
+            else:
+                m_q = re.match(r'^(\d{4})-Q(\d)$', period)
+                if m_q:
+                    qnum = int(m_q.group(2))
+                    period_month = f"{m_q.group(1)}-{qnum * 3:02d}"
+                else:
+                    continue
+
+            key = (period_month, metric_key)
+            if key not in monthly_data:
+                monthly_data[key] = {'values': [], 'unit': unit, 'confidence_sum': 0.0, 'count': 0}
+            monthly_data[key]['values'].append(val)
+            monthly_data[key]['confidence_sum'] += confidence
+            monthly_data[key]['count'] += 1
+
+    def _quarter_from_month(period_month: str) -> str:
+        month = int(period_month[5:7])
+        qnum = (month - 1) // 3 + 1
+        return f"{period_month[:4]}-Q{qnum}"
+
+    # Aggregate monthly → per-cell average
+    monthly_agg = {}
+    for (period_month, metric_key), data in monthly_data.items():
+        avg_val = sum(data['values']) / len(data['values'])
+        avg_conf = data['confidence_sum'] / data['count']
+        monthly_agg[(period_month, metric_key)] = {
+            'value': avg_val, 'unit': data['unit'],
+            'confidence': avg_conf, 'doc_count': data['count'],
+        }
+
+    # Aggregate to quarterly
+    quarterly_build: dict = {}
+    for (period_month, metric_key), agg in monthly_agg.items():
+        qkey = (_quarter_from_month(period_month), metric_key)
+        if qkey not in quarterly_build:
+            quarterly_build[qkey] = {
+                'values': [], 'unit': agg['unit'], 'doc_count': 0,
+                'is_flow': metric_key in FLOW_METRICS,
+            }
+        quarterly_build[qkey]['values'].append(agg['value'])
+        quarterly_build[qkey]['doc_count'] += agg['doc_count']
+
+    quarterly_final = {}
+    for (quarter, metric_key), data in quarterly_build.items():
+        q_val = sum(data['values']) if data['is_flow'] else data['values'][-1]
+        quarterly_final[(quarter, metric_key)] = {'value': q_val, 'unit': data['unit']}
+
+    # Build CSV rows
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        'ticker', 'period_month', 'period_quarter', 'metric',
+        'monthly_value', 'quarterly_value', 'unit', 'llm_confidence', 'source_doc_count',
+    ])
+    writer.writeheader()
+    for (period_month, metric_key), agg in sorted(monthly_agg.items()):
+        quarter = _quarter_from_month(period_month)
+        q_data = quarterly_final.get((quarter, metric_key))
+        writer.writerow({
+            'ticker': ticker,
+            'period_month': period_month,
+            'period_quarter': quarter,
+            'metric': metric_key,
+            'monthly_value': round(agg['value'], 6),
+            'quarterly_value': round(q_data['value'], 6) if q_data else '',
+            'unit': agg['unit'],
+            'llm_confidence': round(agg['confidence'], 3),
+            'source_doc_count': agg['doc_count'],
+        })
+
+    log.info(
+        "event=export_llm_csv_complete ticker=%s reports=%d rows=%d",
+        ticker, len(reports), len(monthly_agg),
+    )
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={ticker}_llm_export.csv'
+    response.headers['X-LLM-Direct'] = 'true'
+    return response
 
 
 @bp.route('/api/data/purge', methods=['POST'])

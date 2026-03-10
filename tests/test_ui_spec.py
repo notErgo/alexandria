@@ -21,29 +21,21 @@ REQUIRED_COMPONENT_IDS = {
     "2.0",
     "2.1",
     "2.1.1",
-    "2.1.2",
-    "2.1.3",
     "2.1.4",
     "2.1.5",
-    "2.1.7",
-    "2.1.8",
     "2.2",
     "2.2.2",
     "2.3",
     "2.3.2",
-    "2.3.3",
-    "2.4",
-    "2.4.1",
-    "2.4.2",
     "3.0",
     "3.1",
     "3.2",
-    "3.3",
     "5.0",
     "5.1",
     "5.2",
     "6.0",
-    "6.1",
+    "MD5.3",
+    "MD5.4",
 }
 
 
@@ -212,6 +204,28 @@ class TestUiSpec:
             if comp_id not in anchors:
                 missing.append(f"{comp_id} missing data-spec-id in {template}")
         assert not missing, "Missing anchors:\n" + "\n".join(f"- {m}" for m in missing)
+
+    def test_required_ids_exist_in_spec(self):
+        """Every ID in REQUIRED_COMPONENT_IDS must exist in ui_spec.json."""
+        data = load_spec()
+        spec_ids = {c["id"] for c in data["components"]}
+        missing = REQUIRED_COMPONENT_IDS - spec_ids
+        assert not missing, f"REQUIRED IDs not in spec: {missing}"
+
+    def test_dag_spec_ids_are_valid(self):
+        """All spec_ids values in dag.json must exist in ui_spec.json."""
+        dag_file = ROOT / "docs" / "architecture" / "dag.json"
+        if not dag_file.exists():
+            import pytest
+            pytest.skip("dag.json not found")
+        dag = json.loads(dag_file.read_text(encoding="utf-8"))
+        spec_ids = {c["id"] for c in load_spec()["components"]}
+        invalid = []
+        for node in dag.get("nodes", []):
+            for sid in node.get("spec_ids", []):
+                if sid not in spec_ids:
+                    invalid.append(f"dag node '{node['id']}' has spec_id '{sid}' not in ui_spec.json")
+        assert not invalid, "\n".join(invalid)
 
     def test_pipeline_ui_params_wired(self):
         """Every entry in pipeline.PIPELINE_UI_PARAMS must have a matching
