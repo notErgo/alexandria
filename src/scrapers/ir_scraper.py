@@ -506,13 +506,40 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 pass
             pw_page.wait_for_timeout(1500)
 
+            prev_article_urls: set[str] = set()
+
             for page_num in range(1, max_pages + 1):
+                # Wait for article content to differ from the previous page.
+                # Equisolve updates articles via AJAX; the DOM reflects stale content
+                # for a moment after the page button activates.
+                if prev_article_urls:
+                    try:
+                        pw_page.wait_for_function(
+                            """(prevUrls) => {
+                                const links = Array.from(document.querySelectorAll('a[href]'));
+                                return links.some(a => a.href && !prevUrls.includes(a.href));
+                            }""",
+                            arg=list(prev_article_urls),
+                            timeout=5000,
+                        )
+                    except Exception:
+                        pass
+
                 html = pw_page.content()
                 if is_bot_challenge_page(html):
                     log.warning("Playwright got bot challenge on page %d of %s", page_num, url)
                     break
                 log.debug("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
                 pages_html.append(html)
+                # Record article hrefs so next iteration can detect content change
+                try:
+                    prev_article_urls = set(
+                        pw_page.locator("a[href*='/news-details/'], a[href*='/press-release']").evaluate_all(
+                            "els => els.map(e => e.href)"
+                        )
+                    )
+                except Exception:
+                    prev_article_urls = set()
 
                 next_clicked = False
 
@@ -569,12 +596,17 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                         if btn.is_visible(timeout=1000):
                             btn.click()
                             try:
+                                # Wait for the button to become active (widget acknowledges
+                                # page change), then add a fixed settle for the article
+                                # list AJAX to complete — the button DOM updates fractionally
+                                # before the article list response arrives.
                                 pw_page.wait_for_selector(
                                     f"button.pager_button[aria-current='true']:text-is('{next_num}')",
                                     timeout=10000,
                                 )
                             except Exception:
-                                pw_page.wait_for_timeout(3000)
+                                pass
+                            pw_page.wait_for_timeout(2000)
                             next_clicked = True
                     except Exception:
                         pass
