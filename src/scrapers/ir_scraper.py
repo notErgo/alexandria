@@ -491,10 +491,20 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 extra_http_headers={"Accept-Language": _HEADERS["Accept-Language"]},
             )
             pw_page = context.new_page()
-            # Use "load" not "networkidle" — Equisolve/Q4 listing pages make
-            # continuous background AJAX calls that prevent networkidle from firing.
-            pw_page.goto(url, wait_until="load", timeout=60000)
-            pw_page.wait_for_timeout(3000)
+            # "domcontentloaded" fires as soon as the HTML is parsed — before scripts
+            # run and before any AJAX.  We then wait explicitly for the JS widget to
+            # render (signalled by a pager_button or news article appearing).  This
+            # avoids the networkidle / load timeouts caused by Equisolve's continuous
+            # background AJAX calls.
+            pw_page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            try:
+                pw_page.wait_for_selector(
+                    "button.pager_button, article, .press-release-item, .news-item",
+                    timeout=15000,
+                )
+            except Exception:
+                pass
+            pw_page.wait_for_timeout(1500)
 
             for page_num in range(1, max_pages + 1):
                 html = pw_page.content()
@@ -548,7 +558,8 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 # Strategy 4: numbered pager buttons (Equisolve pager_button pattern).
                 # The widget renders <button class="pager_button pager_page"> elements
                 # with aria-current="true" on the active page.  Click the button whose
-                # text is page_num + 1 to advance.
+                # text is page_num + 1; then wait for that button to gain aria-current
+                # (the widget's own signal that the page swap completed).
                 if not next_clicked:
                     try:
                         next_num = str(page_num + 1)
@@ -557,7 +568,13 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                         ).first
                         if btn.is_visible(timeout=1000):
                             btn.click()
-                            pw_page.wait_for_timeout(3000)
+                            try:
+                                pw_page.wait_for_selector(
+                                    f"button.pager_button[aria-current='true']:text-is('{next_num}')",
+                                    timeout=10000,
+                                )
+                            except Exception:
+                                pw_page.wait_for_timeout(3000)
                             next_clicked = True
                     except Exception:
                         pass
