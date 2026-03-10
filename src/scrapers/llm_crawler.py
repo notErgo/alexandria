@@ -20,6 +20,7 @@ import threading
 import urllib.parse as _urllib_parse
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -627,6 +628,87 @@ class LLMCrawler:
             return f'ERROR: {exc}'
 
     # ------------------------------------------------------------------
+    # Parallel tool dispatch
+    # ------------------------------------------------------------------
+    def _dispatch_tool(self, name: str, inp: dict, ticker: str) -> tuple:
+        """Execute a single tool call and return (name, primary_arg, content, is_fetch, fetch_url).
+
+        Designed to be called from a thread pool so multiple tool calls within
+        one model response execute concurrently (network I/O bound).
+        """
+        primary_arg = inp.get('url') or inp.get('query') or inp.get('key') or ''
+        is_fetch = False
+        fetch_url_val = ''
+
+        if name == 'fetch_url':
+            url = inp.get('url', '')
+            result_content = self._tool_fetch_url(url)
+            is_fetch = True
+            fetch_url_val = url
+        elif name == 'store_document':
+            result = self._tool_store_document(
+                inp.get('ticker', ticker),
+                inp.get('url', ''),
+                inp.get('text', ''),
+                inp.get('source_type', 'ir_press_release'),
+            )
+            result_content = json.dumps(result)
+        elif name == 'web_search':
+            result_content = self._tool_web_search(inp.get('query', ''))
+        elif name == 'get_indexed_docs':
+            result_content = self._tool_get_indexed_docs(
+                inp.get('ticker', ticker), inp.get('domain')
+            )
+        elif name == 'store_observation':
+            result_content = self._tool_store_observation(
+                inp.get('ticker', ticker), inp.get('key', ''), inp.get('value', '')
+            )
+        elif name == 'get_observations':
+            result_content = self._tool_get_observations(inp.get('ticker', ticker))
+        else:
+            result_content = f'Unknown tool: {name}'
+
+        return (name, primary_arg, result_content, is_fetch, fetch_url_val)
+
+    def _run_tools_parallel(
+        self,
+        tool_calls_parsed: list,
+        ticker: str,
+    ) -> tuple:
+        """Execute a list of parsed tool calls in parallel.
+
+        tool_calls_parsed: list of (name, inp) tuples in call order.
+        Returns (ordered_results, cur_tool_sigs, fetch_info) where:
+          ordered_results: list of result strings in original call order
+          cur_tool_sigs:   set of (name, primary_arg) for repeat detection
+          fetch_info:      list of (original_index, url) for fetch_url calls
+        """
+        n = len(tool_calls_parsed)
+        if n == 0:
+            return [], set(), []
+
+        # Use a thread per tool call; cap at 8 to avoid overwhelming the server
+        workers = min(n, 8)
+        ordered_results = [None] * n
+        cur_tool_sigs: set = set()
+        fetch_info = []  # (original_index, url)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_idx = {
+                pool.submit(self._dispatch_tool, name, inp, ticker): i
+                for i, (name, inp) in enumerate(tool_calls_parsed)
+            }
+            for future in as_completed(future_to_idx):
+                i = future_to_idx[future]
+                name, primary_arg, result_content, is_fetch, fetch_url_val = future.result()
+                ordered_results[i] = result_content
+                cur_tool_sigs.add((name, primary_arg))
+                if is_fetch:
+                    fetch_info.append((i, fetch_url_val))
+
+        return ordered_results, cur_tool_sigs, fetch_info
+
+    # ------------------------------------------------------------------
     # Context management
     # ------------------------------------------------------------------
     def _prune_old_fetches(
@@ -830,45 +912,32 @@ class LLMCrawler:
                     self._progress.add_log('Model signaled end_turn — crawl complete')
                     break
 
-                tool_results = []
-                cur_tool_sigs: set = set()
-                for block in response.content:
-                    if block.type != 'tool_use':
-                        continue
-                    name = block.name
-                    inp = block.input
-                    primary_arg = inp.get('url') or inp.get('query') or inp.get('key') or ''
-                    cur_tool_sigs.add((name, primary_arg))
-                    if name == 'fetch_url':
-                        result_content = self._tool_fetch_url(inp.get('url', ''))
-                        fetch_tool_ids[block.id] = iteration
-                    elif name == 'store_document':
-                        result = self._tool_store_document(
-                            inp.get('ticker', ticker),
-                            inp.get('url', ''),
-                            inp.get('text', ''),
-                            inp.get('source_type', 'ir_press_release'),
-                        )
-                        result_content = json.dumps(result)
-                    elif name == 'web_search':
-                        result_content = self._tool_web_search(inp.get('query', ''))
-                    elif name == 'get_indexed_docs':
-                        result_content = self._tool_get_indexed_docs(
-                            inp.get('ticker', ticker), inp.get('domain')
-                        )
-                    elif name == 'store_observation':
-                        result_content = self._tool_store_observation(
-                            inp.get('ticker', ticker), inp.get('key', ''), inp.get('value', '')
-                        )
-                    elif name == 'get_observations':
-                        result_content = self._tool_get_observations(inp.get('ticker', ticker))
-                    else:
-                        result_content = f'Unknown tool: {name}'
-                    tool_results.append({
+                # Collect tool_use blocks preserving id and order
+                tool_use_blocks = [b for b in response.content if b.type == 'tool_use']
+                parsed_calls = [(b.name, b.input) for b in tool_use_blocks]
+                block_ids = [b.id for b in tool_use_blocks]
+
+                if len(parsed_calls) > 1:
+                    self._progress.add_log(
+                        f'Running {len(parsed_calls)} tool calls in parallel'
+                    )
+
+                ordered_results, cur_tool_sigs, fetch_info = self._run_tools_parallel(
+                    parsed_calls, ticker
+                )
+
+                # Record fetch tool ids for context pruning
+                for local_idx, _ in fetch_info:
+                    fetch_tool_ids[block_ids[local_idx]] = iteration
+
+                tool_results = [
+                    {
                         'type': 'tool_result',
-                        'tool_use_id': block.id,
-                        'content': result_content,
-                    })
+                        'tool_use_id': block_ids[i],
+                        'content': ordered_results[i],
+                    }
+                    for i in range(len(ordered_results))
+                ]
 
                 if not tool_results:
                     self._progress.add_log('No tool calls in response — stopping')
@@ -1015,8 +1084,9 @@ class LLMCrawler:
                 no_tool_streak = 0
 
                 base_msg_idx = len(messages)
-                tool_results = []
-                cur_tool_sigs: set = set()
+
+                # Parse tool call arguments upfront before dispatching in parallel
+                parsed_calls = []
                 for tc in tool_calls:
                     fn = tc.get('function', {})
                     name = fn.get('name', '')
@@ -1026,37 +1096,24 @@ class LLMCrawler:
                             inp = json.loads(inp)
                         except Exception:
                             inp = {}
-                    primary_arg = inp.get('url') or inp.get('query') or inp.get('key') or ''
-                    cur_tool_sigs.add((name, primary_arg))
-                    if name == 'fetch_url':
-                        result_content = self._tool_fetch_url(inp.get('url', ''))
-                        # Record future index: after extend, this result lands at
-                        # base_msg_idx + current position in tool_results list.
-                        fetch_indices[base_msg_idx + len(tool_results)] = inp.get('url', '')
-                    elif name == 'store_document':
-                        result = self._tool_store_document(
-                            inp.get('ticker', ticker),
-                            inp.get('url', ''),
-                            inp.get('text', ''),
-                            inp.get('source_type', 'ir_press_release'),
-                        )
-                        result_content = json.dumps(result)
-                    elif name == 'web_search':
-                        result_content = self._tool_web_search(inp.get('query', ''))
-                    elif name == 'get_indexed_docs':
-                        result_content = self._tool_get_indexed_docs(
-                            inp.get('ticker', ticker), inp.get('domain')
-                        )
-                    elif name == 'store_observation':
-                        result_content = self._tool_store_observation(
-                            inp.get('ticker', ticker), inp.get('key', ''), inp.get('value', '')
-                        )
-                    elif name == 'get_observations':
-                        result_content = self._tool_get_observations(inp.get('ticker', ticker))
-                    else:
-                        result_content = f'Unknown tool: {name}'
-                    tool_results.append({'role': 'tool', 'content': result_content})
+                    parsed_calls.append((name, inp))
 
+                if len(parsed_calls) > 1:
+                    self._progress.add_log(
+                        f'Running {len(parsed_calls)} tool calls in parallel'
+                    )
+
+                ordered_results, cur_tool_sigs, fetch_info = self._run_tools_parallel(
+                    parsed_calls, ticker
+                )
+
+                # Record fetch_url positions for context pruning
+                for local_idx, url in fetch_info:
+                    fetch_indices[base_msg_idx + local_idx] = url
+
+                tool_results = [
+                    {'role': 'tool', 'content': r} for r in ordered_results
+                ]
                 messages.extend(tool_results)
 
                 if cur_tool_sigs & self._prev_tool_sigs:
