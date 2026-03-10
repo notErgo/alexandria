@@ -491,8 +491,10 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 extra_http_headers={"Accept-Language": _HEADERS["Accept-Language"]},
             )
             pw_page = context.new_page()
-            pw_page.goto(url, wait_until="networkidle", timeout=30000)
-            pw_page.wait_for_timeout(2000)
+            # Use "load" not "networkidle" — Equisolve/Q4 listing pages make
+            # continuous background AJAX calls that prevent networkidle from firing.
+            pw_page.goto(url, wait_until="load", timeout=60000)
+            pw_page.wait_for_timeout(3000)
 
             for page_num in range(1, max_pages + 1):
                 html = pw_page.content()
@@ -510,8 +512,7 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                     btn = pw_page.get_by_role("link", name=_re.compile(r"^next", _re.IGNORECASE)).first
                     if btn.is_visible(timeout=2000):
                         btn.click()
-                        pw_page.wait_for_load_state("networkidle", timeout=15000)
-                        pw_page.wait_for_timeout(1500)
+                        pw_page.wait_for_timeout(3000)
                         next_clicked = True
                 except Exception:
                     pass
@@ -523,8 +524,7 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                             btn = pw_page.locator(selector).first
                             if btn.is_visible(timeout=500):
                                 btn.click()
-                                pw_page.wait_for_load_state("networkidle", timeout=15000)
-                                pw_page.wait_for_timeout(1500)
+                                pw_page.wait_for_timeout(3000)
                                 next_clicked = True
                                 break
                         except Exception:
@@ -539,8 +539,7 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                             ).first
                             if btn.is_visible(timeout=500):
                                 btn.click()
-                                pw_page.wait_for_load_state("networkidle", timeout=15000)
-                                pw_page.wait_for_timeout(1500)
+                                pw_page.wait_for_timeout(3000)
                                 next_clicked = True
                                 break
                         except Exception:
@@ -558,8 +557,7 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                         ).first
                         if btn.is_visible(timeout=1000):
                             btn.click()
-                            pw_page.wait_for_load_state("networkidle", timeout=15000)
-                            pw_page.wait_for_timeout(1500)
+                            pw_page.wait_for_timeout(3000)
                             next_clicked = True
                     except Exception:
                         pass
