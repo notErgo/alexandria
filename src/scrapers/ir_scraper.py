@@ -546,16 +546,16 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                             continue
 
                 if not next_clicked:
-                    # Log all link texts at DEBUG to help diagnose missing selectors
+                    # Log all link texts at INFO to diagnose pagination selector
                     try:
                         all_texts = [
                             t.strip()
                             for t in pw_page.locator("a").all_text_contents()
                             if t.strip()
                         ]
-                        log.debug(
-                            "Playwright: no next button on page %d of %s — visible link texts: %s",
-                            page_num, url, all_texts[:40],
+                        log.info(
+                            "Playwright: no next button on page %d of %s — all link texts: %s",
+                            page_num, url, all_texts,
                         )
                     except Exception:
                         pass
