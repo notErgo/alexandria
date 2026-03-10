@@ -532,7 +532,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 except Exception:
                     pass
         total_reports = len(reports)
-        processed = data_points = errors = keyword_gated = 0
+        processed = data_points = errors = keyword_gated = regex_gated = 0
         extracted_tickers = set()
         _event(db, run_id, 'extract', 'stage_start', total_reports=total_reports)
         for i, report in enumerate(reports):
@@ -549,6 +549,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 data_points += dp_delta
                 errors += summary.errors
                 keyword_gated += summary.keyword_gated
+                regex_gated += summary.regex_gated
                 extracted_tickers.add(ticker)
                 _event(
                     db, run_id, 'extract', 'report_done',
@@ -572,7 +573,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             db.upsert_pipeline_run_ticker(run_id, t, extracted=1)
         _event(db, run_id, 'extract', 'stage_end',
                reports_processed=processed, data_points=data_points,
-               errors=errors, keyword_gated=keyword_gated)
+               errors=errors, keyword_gated=keyword_gated, regex_gated=regex_gated)
 
         # Stage: auto-gap-fill for quarterly/annual reporters.
         # Expands quarterly data_points into monthly inferred rows so all companies

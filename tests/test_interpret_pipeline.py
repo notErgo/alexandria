@@ -931,3 +931,84 @@ class TestKeywordGate:
 
         assert summary.keyword_gated == 0, "gate must not fire when no keywords configured"
         mock_llm.extract_quarterly_batch.assert_called_once()
+
+
+class TestBoilerplateStrippingBySourceType:
+    """Verify extract_report strips IR/archive boilerplate and EDGAR footers before LLM."""
+
+    def _make_llm_mock(self, monkeypatch, captured: dict):
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+
+        def _capture_batch(text, *args, **kwargs):
+            captured['llm_text'] = text
+            return {'production_btc': ExtractionResult(
+                metric='production_btc', value=700.0, unit='BTC', confidence=0.9,
+                extraction_method='llm_test', source_snippet='700 BTC', pattern_id='llm_test',
+            )}
+
+        mock_llm.extract_batch.side_effect = _capture_batch
+        mock_llm.extract_quarterly_batch.side_effect = _capture_batch
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        return mock_llm
+
+    def test_archive_html_boilerplate_stripped_before_llm(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """archive_html source type must have PR boilerplate stripped before LLM sees text."""
+        captured = {}
+        self._make_llm_mock(monkeypatch, captured)
+
+        content = "Bitcoin Produced: 700 BTC\nAvg Hash Rate: 20.0 EH/s\n" * 5
+        boilerplate = (
+            "About MARA Holdings\n"
+            "MARA is a leading digital asset technology company.\n"
+            "Forward-Looking Statements\n"
+            "This press release contains forward-looking statements.\n"
+        )
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=content + boilerplate,
+            report_date='2024-09-01',
+            source_type='archive_html',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        assert 'llm_text' in captured, "LLM must have been called"
+        assert "About MARA Holdings" not in captured['llm_text']
+        assert "Forward-Looking Statements" not in captured['llm_text']
+        assert "700 BTC" in captured['llm_text']
+
+    def test_edgar_8k_signatures_stripped_before_llm(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """edgar_8k source type must have SIGNATURES block stripped before LLM sees text."""
+        captured = {}
+        self._make_llm_mock(monkeypatch, captured)
+
+        content = "Bitcoin Produced: 700 BTC\nHashrate: 20 EH/s\n" * 5
+        signatures = (
+            "SIGNATURES\n"
+            "Pursuant to the requirements of the Securities Exchange Act of 1934, "
+            "the registrant has duly caused this report to be signed.\n"
+            "By: /s/ Fred Thiel\n"
+        )
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=content + signatures,
+            report_date='2024-09-01',
+            source_type='edgar_8k',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        assert 'llm_text' in captured, "LLM must have been called"
+        assert "hereunto duly caused" not in captured['llm_text']
+        assert "700 BTC" in captured['llm_text']

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated": "2026-03-09",
+    "generated": "2026-03-10",
     "source": "src/ — OffChain/miners",
     "description": "Module dependency DAG. Edge A -> B means module A imports module B. Only internal project imports are recorded; stdlib and third-party are excluded. Nodes are identified by Python module path relative to src/. Layer numbers reflect proximity to IO: 0 = pure domain (no IO), 5 = user-facing IO (routes).",
     "layer_legend": {
@@ -61,7 +61,8 @@
     { "id": "scrapers.primitive_feedback",    "layer": 3, "path": "src/scrapers/primitive_feedback.py" },
     { "id": "scrapers.observer_swarm",        "layer": 3, "path": "src/scrapers/observer_swarm.py",
       "notes": "5+ internal deps — monitor for further growth" },
-    { "id": "scrapers.scrape_worker",         "layer": 3, "path": "src/scrapers/scrape_worker.py" },
+    { "id": "scrapers.scrape_worker",         "layer": 3, "path": "src/scrapers/scrape_worker.py",
+      "notes": "Full ingest worker: Stage 1 IR (IRScraper.scrape_company, skipped if mode=skip), Stage 2 EDGAR (EdgarConnector.fetch_all_filings, skipped if no CIK). Uses btc_first_filing_date as EDGAR since_date. Triggered by scrape_queue; polled every 5s. Not used by routes.pipeline (pipeline calls IR/EDGAR directly)." },
     { "id": "orchestration",                  "layer": 3, "path": "src/orchestration.py" },
     { "id": "coverage_bridge",                "layer": 3, "path": "src/coverage_bridge.py" },
 

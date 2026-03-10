@@ -3727,6 +3727,37 @@ function renderCompanies() {
     // Expandable detail row (hidden by default)
     if (hasDetail) {
       const detailParts = [];
+
+      // Scrape plan — explains what the scraper will do for this company
+      {
+        const plansByMode = {
+          index: 'Paginates the IR press releases listing page (?page=1, 2, …) in order. '
+            + 'On each page, identifies production announcements by title keyword match. '
+            + 'Fetches and stores each matching press release as raw text. '
+            + 'Stops automatically when a full page of production PRs is already ingested — '
+            + 'so incremental runs only fetch what is new. '
+            + (c.pr_start_year ? 'Covers releases from ' + escapeHtml(String(c.pr_start_year)) + ' onward.' : ''),
+          rss: 'Fetches the RSS feed URL, which provides a rolling window of the most recent '
+            + '~10 press releases. Suitable for staying current but does not backfill history. '
+            + 'For full historical coverage, switch to index mode.',
+          template: 'Generates one URL per month from the configured URL template and pr_start_year. '
+            + 'Fetches each month\'s press release in sequence until the current month. '
+            + 'Suitable for IR sites with predictable URL patterns.',
+          playwright: 'Uses a headless browser to render JavaScript-heavy IR pages before extracting links. '
+            + 'Falls back to index-style pagination once the page is rendered.',
+          skip: 'Scraping is disabled for this company. '
+            + (c.skip_reason ? 'Reason: ' + escapeHtml(c.skip_reason) : 'No reason recorded.'),
+        };
+        const planText = plansByMode[mode] || ('No scrape plan defined for mode: ' + escapeHtml(mode));
+        const planColor = mode === 'skip' ? 'var(--theme-text-muted)' : 'var(--theme-text)';
+        detailParts.push(
+          '<div style="margin-bottom:8px;padding:6px 8px;background:var(--theme-bg-secondary);border-radius:4px;border-left:3px solid var(--theme-accent)">'
+          + '<div style="font-size:0.7rem;font-weight:600;color:var(--theme-accent);margin-bottom:3px;text-transform:uppercase;letter-spacing:0.04em">Scrape plan — ' + escapeHtml(mode) + ' mode</div>'
+          + '<div style="font-size:0.75rem;color:' + planColor + ';line-height:1.5">' + planText + '</div>'
+          + '</div>'
+        );
+      }
+
       if (c.url_template) {
         detailParts.push('<div><span style="color:var(--theme-text-muted);font-size:0.72rem">Template: </span><code style="font-size:0.72rem">' + escapeHtml(c.url_template) + '</code></div>');
       }

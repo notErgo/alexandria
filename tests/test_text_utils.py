@@ -388,6 +388,102 @@ class TestStripPressReleaseBoilerplate:
         from infra.text_utils import strip_press_release_boilerplate
         assert strip_press_release_boilerplate(None) == ""  # type: ignore[arg-type]
 
+    def test_strips_wire_attribution_footer(self):
+        """'Distributed by GlobeNewswire' at footer should be stripped."""
+        from infra.text_utils import strip_press_release_boilerplate
+        text = "Bitcoin Produced: 850 BTC\nHodl BTC: 17,631\nDistributed by GlobeNewswire\nNewswire ID: 12345\n"
+        result = strip_press_release_boilerplate(text)
+        assert "Distributed by GlobeNewswire" not in result
+        assert "850 BTC" in result
+
+    def test_strips_ir_contact_block(self):
+        """'Investor Relations Contact' section at end should be stripped."""
+        from infra.text_utils import strip_press_release_boilerplate
+        content = "Bitcoin Produced: 850 BTC\n" * 10
+        footer = "Investor Relations Contact\nJohn Smith\njohn@company.com\n+1-555-1234\n"
+        result = strip_press_release_boilerplate(content + footer)
+        assert "Investor Relations Contact" not in result
+        assert "850 BTC" in result
+
+    def test_strips_media_contact_block(self):
+        """'Media Contact' section at end should be stripped."""
+        from infra.text_utils import strip_press_release_boilerplate
+        content = "Bitcoin Produced: 850 BTC\n" * 10
+        footer = "Media Contact\nJane Doe\njane@agency.com\n"
+        result = strip_press_release_boilerplate(content + footer)
+        assert "Media Contact" not in result
+        assert "850 BTC" in result
+
+
+class TestStripEdgarBoilerplate:
+    """Tests for strip_edgar_boilerplate() — SEC filing footer removal."""
+
+    _ITEM_CONTENT = (
+        "Item 7.01. Regulation FD Disclosure.\n"
+        "Attached hereto as Exhibit 99.1 is a press release dated May 3, 2024.\n"
+        "Bitcoin Produced: 850 BTC\n"
+        "Average Operational Hash Rate: 21.1 EH/s\n"
+        "Bitcoin Holdings: 17,631 BTC\n"
+    )
+    _SIGNATURES_BLOCK = (
+        "SIGNATURES\n"
+        "Pursuant to the requirements of the Securities Exchange Act of 1934, "
+        "the registrant has duly caused this report to be signed on its behalf "
+        "by the undersigned, hereunto duly authorized.\n"
+        "MARA Holdings, Inc.\n"
+        "By: /s/ Fred Thiel\n"
+        "Fred Thiel\n"
+        "Chief Executive Officer\n"
+        "Date: May 3, 2024\n"
+    )
+    _EXHIBIT_INDEX = (
+        "EXHIBIT INDEX\n"
+        "Exhibit No.    Description\n"
+        "99.1           Press Release dated May 3, 2024\n"
+        "104            Cover Page Interactive Data File\n"
+    )
+
+    def _full_8k(self):
+        return self._ITEM_CONTENT * 3 + self._EXHIBIT_INDEX + self._SIGNATURES_BLOCK
+
+    def test_strips_signatures_section(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        result = strip_edgar_boilerplate(self._full_8k())
+        assert "SIGNATURES" not in result
+        assert "hereunto duly authorized" not in result
+
+    def test_strips_pursuant_text(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        result = strip_edgar_boilerplate(self._full_8k())
+        assert "Pursuant to the requirements of the Securities Exchange Act" not in result
+
+    def test_strips_exhibit_index(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        result = strip_edgar_boilerplate(self._full_8k())
+        assert "EXHIBIT INDEX" not in result
+
+    def test_preserves_item_content(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        result = strip_edgar_boilerplate(self._full_8k())
+        assert "Bitcoin Produced: 850 BTC" in result
+        assert "21.1 EH/s" in result
+        assert "17,631 BTC" in result
+
+    def test_no_op_on_clean_content(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        clean = "Item 2. BTC mined: 700\nHashrate: 20 EH/s\n"
+        result = strip_edgar_boilerplate(clean)
+        assert "BTC mined: 700" in result
+        assert "20 EH/s" in result
+
+    def test_safe_on_empty(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        assert strip_edgar_boilerplate("") == ""
+
+    def test_safe_on_none(self):
+        from infra.text_utils import strip_edgar_boilerplate
+        assert strip_edgar_boilerplate(None) == ""  # type: ignore[arg-type]
+
 
 def _mock_resp(status_code, text):
     from unittest.mock import MagicMock

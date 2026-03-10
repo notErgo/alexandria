@@ -226,6 +226,28 @@ if __name__ == '__main__':
     reset_count = get_db().reset_interrupted_scrape_jobs()
     if reset_count:
         log.info("Reset %d interrupted scrape jobs on startup", reset_count)
+
+    # Auto-enqueue scrape jobs for companies that have never been scraped.
+    # Fires once per company lifetime (never_run status only). Subsequent
+    # restarts skip already-scraped companies so this is safe to run every boot.
+    _db = get_db()
+    try:
+        _never_run = [
+            c for c in _db.get_all_companies(active_only=True)
+            if c.get('scraper_mode', 'skip') != 'skip'
+            and c.get('scraper_status', 'never_run') == 'never_run'
+        ]
+        for _co in _never_run:
+            try:
+                _db.enqueue_scrape_job(_co['ticker'], 'historic')
+                log.info("Auto-enqueued first scrape for %s (mode=%s)", _co['ticker'], _co['scraper_mode'])
+            except ValueError:
+                pass  # job already pending — ignore
+        if _never_run:
+            log.info("Startup: auto-enqueued %d never-run scrape jobs", len(_never_run))
+    except Exception as _e:
+        log.warning("Startup auto-enqueue failed (non-fatal): %s", _e)
+
     worker = get_scrape_worker()
     worker.start()
     log.info("ScrapeWorker started")

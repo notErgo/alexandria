@@ -58,14 +58,27 @@ _PR_FOOTER_UNCONDITIONAL = [
     _re.compile(r'^Recent Announcements\s*$'),
     _re.compile(r'^Investor Notice\s*$'),
     _re.compile(r'^Source:\s+[A-Z]'),
-    _re.compile(r'^email\s*$', _re.IGNORECASE),   # Equisolve footer icon label
-    _re.compile(r'©\s*\d{4}'),                     # copyright line
+    _re.compile(r'^email\s*$', _re.IGNORECASE),         # Equisolve footer icon label
+    _re.compile(r'©\s*\d{4}'),                           # copyright line
+    _re.compile(r'^Distributed by\s+\w', _re.IGNORECASE),  # wire attribution (GlobeNewswire etc.)
 ]
 _PR_FOOTER_CONDITIONAL = [
     _re.compile(r'^Forward-Looking Statements?\s*$', _re.IGNORECASE),
     _re.compile(r'^Cautionary Statements?\s*$', _re.IGNORECASE),
     _re.compile(r'^About [A-Z][A-Za-z]'),
     _re.compile(r'^For more information,?\s+visit\s*$', _re.IGNORECASE),
+    _re.compile(r'^(?:Investor\s+Relations|Media)\s+Contact\b', _re.IGNORECASE),
+    _re.compile(r'^For\s+(?:investor|media)\s+(?:relations\s+)?(?:contact|inquiries|information)\b',
+                _re.IGNORECASE),
+]
+
+# EDGAR-specific footer sentinels matched at or after 30% of the document.
+# The SIGNATURES section and exhibit index are pure boilerplate that appear
+# after all substantive content in 8-K, 10-Q, and 10-K filings.
+_EDGAR_FOOTER_SENTINELS = [
+    _re.compile(r'^\s*SIGNATURES?\s*$', _re.MULTILINE),
+    _re.compile(r'Pursuant to the requirements of the Securities Exchange Act'),
+    _re.compile(r'^\s*EXHIBIT\s+INDEX\s*$', _re.MULTILINE),
 ]
 
 
@@ -116,6 +129,30 @@ def strip_press_release_boilerplate(text: str | None) -> str:
             break
 
     return '\n'.join(lines[start_idx:end_idx]).strip()
+
+
+def strip_edgar_boilerplate(text: str | None) -> str:
+    """Remove SEC filing boilerplate footer from plain-text EDGAR documents.
+
+    Truncates at the first of:
+    - A standalone ``SIGNATURES`` section header
+    - ``Pursuant to the requirements of the Securities Exchange Act...``
+    - A standalone ``EXHIBIT INDEX`` block
+
+    The match must fall at or after the 30% mark of the document to prevent
+    false positives in the main filing body.
+
+    Safe on ``None`` or empty input — returns ``""`` in both cases.
+    """
+    if not text:
+        return ""
+    threshold = int(len(text) * 0.30)
+    cutoff = len(text)
+    for pattern in _EDGAR_FOOTER_SENTINELS:
+        m = pattern.search(text)
+        if m and m.start() >= threshold:
+            cutoff = min(cutoff, m.start())
+    return text[:cutoff].rstrip()
 
 
 def edgar_to_plain(html: str | None) -> str:

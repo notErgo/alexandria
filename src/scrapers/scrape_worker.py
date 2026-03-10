@@ -73,12 +73,21 @@ class ScrapeWorker(threading.Thread):
         return True
 
     def _execute_scrape(self, job: dict) -> None:
-        """EDGAR-only fetch for one queued scrape job.
+        """Full ingest (IR + EDGAR) for one queued scrape job.
 
-        IR scraping is deprecated. This method fetches EDGAR filings only.
+        Stage 1: IR press releases via IRScraper.scrape_company() — skipped if
+                 scraper_mode is 'skip' or missing.
+        Stage 2: EDGAR filings via EdgarConnector.fetch_all_filings() — skipped
+                 if the company has no CIK.
+
         Updates company scraper_status to 'running' before scraping, then
         'ok' or 'error' on completion.
         """
+        import requests as _req
+        from scrapers.ir_scraper import IRScraper
+        from scrapers.edgar_connector import EdgarConnector
+        from datetime import date
+
         ticker = job['ticker']
         company = self._db.get_company(ticker)
         if company is None:
@@ -86,21 +95,41 @@ class ScrapeWorker(threading.Thread):
 
         self._db.update_company_scraper_fields(ticker, scraper_status='running')
         try:
+            session = _req.Session()
+
+            # Stage 1 — IR press releases
+            scraper_mode = company.get('scraper_mode') or company.get('scrape_mode', 'skip')
+            if scraper_mode and scraper_mode != 'skip':
+                log.info(
+                    "event=ir_scrape_start ticker=%s mode=%s",
+                    ticker, scraper_mode,
+                )
+                ir = IRScraper(db=self._db, session=session)
+                ir.scrape_company(company)
+                log.info("event=ir_scrape_end ticker=%s", ticker)
+            else:
+                log.info("event=ir_scrape_skip ticker=%s reason=mode=%s", ticker, scraper_mode)
+
+            # Stage 2 — EDGAR filings
             cik = company.get('cik')
             if cik:
-                import requests as _req
-                from scrapers.edgar_connector import EdgarConnector
-                from datetime import date
-                edgar = EdgarConnector(db=self._db, session=_req.Session())
+                log.info("event=edgar_fetch_start ticker=%s cik=%s", ticker, cik)
+                edgar = EdgarConnector(db=self._db, session=session)
+                since = company.get('btc_first_filing_date')
+                since_date = (
+                    date.fromisoformat(since) if since
+                    else date(2019, 1, 1)
+                )
                 edgar.fetch_all_filings(
                     cik=cik,
                     ticker=ticker,
-                    since_date=date(2019, 1, 1),
+                    since_date=since_date,
                     filing_regime=company.get('filing_regime', 'domestic'),
                 )
-                log.info("EDGAR fetch completed for %s", ticker)
+                log.info("event=edgar_fetch_end ticker=%s", ticker)
             else:
-                log.info("No CIK for %s, skipping EDGAR fetch", ticker)
+                log.info("event=edgar_fetch_skip ticker=%s reason=no_cik", ticker)
+
             self._db.update_company_scraper_fields(
                 ticker,
                 scraper_status='ok',

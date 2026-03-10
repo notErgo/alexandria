@@ -594,7 +594,7 @@ class EdgarConnector:
             'entity': cik_entity,
             'dateRange': 'custom',
             'startdt': '1993-01-01',
-            'forms': '8-K,8-K/A',
+            'forms': '8-K,8-K/A,10-K,10-K/A,10-Q,10-Q/A',
             'hits.hits._source': 'file_date',
             '_source': 'file_date',
             'sort': 'file-date',

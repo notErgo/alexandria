@@ -18,6 +18,31 @@ log = logging.getLogger('miners.infra.db')
 
 _SIMHASH_MASK = 0xFFFFFFFFFFFFFFFF
 
+# ── Source priority constants ──────────────────────────────────────────────────
+# Lower number = higher priority.  Used in data_points.source_priority.
+# Extraction writes only replace an existing row if the incoming priority
+# is <= the stored priority (equal or better wins; better = lower number).
+_SOURCE_PRIORITY: dict[str, int] = {
+    # EDGAR SEC filings — authoritative, audited
+    'edgar_8k': 1, 'edgar_8ka': 1,
+    'edgar_10q': 1, 'edgar_10k': 1,
+    'edgar_6k': 1, 'edgar_6ka': 1,
+    'edgar_20f': 1, 'edgar_20fa': 1,
+    'edgar_40f': 1, 'edgar_40fa': 1,
+    # IR press releases — company-published, not SEC-audited
+    'ir_press_release': 2,
+    # Offline archive files
+    'archive_pdf': 3, 'archive_html': 3,
+}
+_DEFAULT_SOURCE_PRIORITY = 3  # fallback for unknown source types
+
+# Extraction methods that represent analyst decisions — always priority 0
+# (never overwritten by automated extraction regardless of source type).
+_ANALYST_METHODS = frozenset({
+    'analyst', 'analyst_gap', 'analyst_approved',
+    'review_approved', 'review_edited', 'manual',
+})
+
 
 def _to_signed64(v: Optional[int]) -> Optional[int]:
     """Convert an unsigned 64-bit simhash to a signed int64 for SQLite storage."""
@@ -113,6 +138,7 @@ class MinerDB:
                             extraction_method TEXT,
                             source_snippet    TEXT,
                             created_at        TEXT DEFAULT (datetime('now')),
+                            source_priority   INTEGER NOT NULL DEFAULT 3,
                             UNIQUE(ticker, period, metric)
                         );
 
@@ -341,6 +367,11 @@ class MinerDB:
                     self._migrate_v39(conn)
                     conn.execute("PRAGMA user_version = 39")
                     version = 39
+
+                if version < 40:
+                    self._migrate_v40(conn)
+                    conn.execute("PRAGMA user_version = 40")
+                    version = 40
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -1525,6 +1556,52 @@ class MinerDB:
                 "reporting_cadence TEXT NOT NULL DEFAULT 'monthly'"
             )
 
+    def _migrate_v40(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v39 → v40: source_priority on data_points.
+
+        Adds data_points.source_priority INTEGER NOT NULL DEFAULT 3.
+        Lower value = higher authority:
+          0 = analyst / review decision (never overwritten by extraction)
+          1 = EDGAR SEC filing (8-K, 10-Q, 10-K, 6-K, 20-F, 40-F)
+          2 = IR press release
+          3 = offline archive (PDF / HTML)
+
+        Backfills existing rows from reports.source_type join, then applies
+        analyst-method override.
+        """
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(data_points)").fetchall()}
+        if 'source_priority' not in cols:
+            conn.execute(
+                "ALTER TABLE data_points ADD COLUMN "
+                "source_priority INTEGER NOT NULL DEFAULT 3"
+            )
+        # Backfill EDGAR rows (priority 1)
+        edgar_types = "','".join([
+            'edgar_8k', 'edgar_8ka', 'edgar_10q', 'edgar_10k',
+            'edgar_6k', 'edgar_6ka', 'edgar_20f', 'edgar_20fa',
+            'edgar_40f', 'edgar_40fa',
+        ])
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 1
+            WHERE report_id IN (
+                SELECT id FROM reports WHERE source_type IN ('{edgar_types}')
+            )
+        """)
+        # Backfill IR rows (priority 2, only if not already set to 1)
+        conn.execute("""
+            UPDATE data_points SET source_priority = 2
+            WHERE source_priority > 2
+              AND report_id IN (
+                SELECT id FROM reports WHERE source_type = 'ir_press_release'
+              )
+        """)
+        # Analyst methods always take priority 0 — applied last to override
+        analyst_methods = "','".join(_ANALYST_METHODS)
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 0
+            WHERE extraction_method IN ('{analyst_methods}')
+        """)
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -2325,16 +2402,33 @@ class MinerDB:
         time_grain = dp.get('time_grain') or self._derive_time_grain(period)
         expected_granularity = dp.get('expected_granularity') or 'monthly'
         with self._get_connection() as conn:
+            priority = dp.get('source_priority') if dp.get('source_priority') is not None \
+                else self._resolve_source_priority(conn, dp.get('report_id'), dp.get('extraction_method'))
             cursor = conn.execute(
-                """INSERT OR REPLACE INTO data_points
+                """INSERT INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
                     source_period_type, covering_report_id, covering_period,
-                    inference_notes, expected_granularity, time_grain)
+                    inference_notes, expected_granularity, time_grain, source_priority)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
                            :source_period_type, :covering_report_id, :covering_period,
-                           :inference_notes, :expected_granularity, :time_grain)""",
+                           :inference_notes, :expected_granularity, :time_grain, :source_priority)
+                   ON CONFLICT(ticker, period, metric) DO UPDATE SET
+                       report_id          = excluded.report_id,
+                       value              = excluded.value,
+                       unit               = excluded.unit,
+                       confidence         = excluded.confidence,
+                       extraction_method  = excluded.extraction_method,
+                       source_snippet     = excluded.source_snippet,
+                       source_period_type = excluded.source_period_type,
+                       covering_report_id = excluded.covering_report_id,
+                       covering_period    = excluded.covering_period,
+                       inference_notes    = excluded.inference_notes,
+                       expected_granularity = excluded.expected_granularity,
+                       time_grain         = excluded.time_grain,
+                       source_priority    = excluded.source_priority
+                   WHERE excluded.source_priority <= data_points.source_priority""",
                 {
                     'report_id':            dp.get('report_id'),
                     'ticker':               dp['ticker'],
@@ -2351,6 +2445,7 @@ class MinerDB:
                     'inference_notes':      dp.get('inference_notes'),
                     'expected_granularity': expected_granularity,
                     'time_grain':           time_grain,
+                    'source_priority':      priority,
                 },
             )
             return cursor.lastrowid
@@ -2689,21 +2784,59 @@ class MinerDB:
             return 'annual'
         return 'monthly'
 
+    def _resolve_source_priority(self, conn, report_id: Optional[int], extraction_method: Optional[str]) -> int:
+        """Return the source_priority for a data_point being written.
+
+        Analyst extraction methods are always priority 0 (protected from
+        re-extraction).  Otherwise priority is derived from the parent
+        report's source_type.  Falls back to _DEFAULT_SOURCE_PRIORITY if
+        report_id is None or source_type is unrecognised.
+        """
+        if extraction_method in _ANALYST_METHODS:
+            return 0
+        if report_id is None:
+            return _DEFAULT_SOURCE_PRIORITY
+        row = conn.execute(
+            "SELECT source_type FROM reports WHERE id = ?", (report_id,)
+        ).fetchone()
+        if row is None:
+            return _DEFAULT_SOURCE_PRIORITY
+        return _SOURCE_PRIORITY.get(row[0], _DEFAULT_SOURCE_PRIORITY)
+
     def insert_data_point(self, dp: dict) -> int:
         period = dp['period']
         time_grain = dp.get('time_grain') or self._derive_time_grain(period)
         expected_granularity = dp.get('expected_granularity') or 'monthly'
         with self._get_connection() as conn:
+            priority = dp.get('source_priority') if dp.get('source_priority') is not None \
+                else self._resolve_source_priority(conn, dp.get('report_id'), dp.get('extraction_method'))
             cursor = conn.execute(
-                """INSERT OR REPLACE INTO data_points
+                """INSERT INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
                     extraction_method, source_snippet,
                     run_id, model_name, extractor_version, prompt_version, chunk_id,
-                    inference_notes, expected_granularity, time_grain)
+                    inference_notes, expected_granularity, time_grain, source_priority)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
                            :run_id, :model_name, :extractor_version, :prompt_version, :chunk_id,
-                           :inference_notes, :expected_granularity, :time_grain)""",
+                           :inference_notes, :expected_granularity, :time_grain, :source_priority)
+                   ON CONFLICT(ticker, period, metric) DO UPDATE SET
+                       report_id          = excluded.report_id,
+                       value              = excluded.value,
+                       unit               = excluded.unit,
+                       confidence         = excluded.confidence,
+                       extraction_method  = excluded.extraction_method,
+                       source_snippet     = excluded.source_snippet,
+                       run_id             = excluded.run_id,
+                       model_name         = excluded.model_name,
+                       extractor_version  = excluded.extractor_version,
+                       prompt_version     = excluded.prompt_version,
+                       chunk_id           = excluded.chunk_id,
+                       inference_notes    = excluded.inference_notes,
+                       expected_granularity = excluded.expected_granularity,
+                       time_grain         = excluded.time_grain,
+                       source_priority    = excluded.source_priority
+                   WHERE excluded.source_priority <= data_points.source_priority""",
                 {
                     'report_id':            dp.get('report_id'),
                     'ticker':               dp['ticker'],
@@ -2722,6 +2855,7 @@ class MinerDB:
                     'inference_notes':      dp.get('inference_notes'),
                     'expected_granularity': expected_granularity,
                     'time_grain':           time_grain,
+                    'source_priority':      priority,
                 },
             )
             return cursor.lastrowid
@@ -2735,6 +2869,7 @@ class MinerDB:
         to_period: Optional[str] = None,
         min_confidence: Optional[float] = None,
         source_period_types: Optional[list] = None,
+        max_source_priority: Optional[int] = None,
         limit: int = 1000,
         offset: int = 0,
     ) -> list:
@@ -2766,6 +2901,9 @@ class MinerDB:
             placeholders = ','.join('?' * len(source_period_types))
             clauses.append(f"source_period_type IN ({placeholders})")
             params.extend(source_period_types)
+        if max_source_priority is not None:
+            clauses.append("source_priority <= ?")
+            params.append(max_source_priority)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.extend([limit, offset])
         with self._get_connection() as conn:
@@ -3256,6 +3394,7 @@ class MinerDB:
         from_period: Optional[str] = None,
         to_period: Optional[str] = None,
         min_confidence: Optional[float] = None,
+        max_source_priority: Optional[int] = None,
         limit: int = 10000,
         offset: int = 0,
     ) -> list:
@@ -3284,6 +3423,9 @@ class MinerDB:
         if min_confidence is not None:
             clauses.append("dp.confidence >= ?")
             params.append(min_confidence)
+        if max_source_priority is not None:
+            clauses.append("dp.source_priority <= ?")
+            params.append(max_source_priority)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.extend([limit, offset])
         sql = f"""
@@ -3468,12 +3610,23 @@ class MinerDB:
                 "expected_granularity": item.get("expected_granularity") or 'monthly',
             }
             cursor = conn.execute(
-                """INSERT OR REPLACE INTO data_points
+                """INSERT INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
-                    extraction_method, source_snippet, time_grain, expected_granularity)
+                    extraction_method, source_snippet, time_grain, expected_granularity,
+                    source_priority)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
-                           :time_grain, :expected_granularity)""",
+                           :time_grain, :expected_granularity, 0)
+                   ON CONFLICT(ticker, period, metric) DO UPDATE SET
+                       report_id         = excluded.report_id,
+                       value             = excluded.value,
+                       unit              = excluded.unit,
+                       confidence        = excluded.confidence,
+                       extraction_method = excluded.extraction_method,
+                       source_snippet    = excluded.source_snippet,
+                       time_grain        = excluded.time_grain,
+                       expected_granularity = excluded.expected_granularity,
+                       source_priority   = 0""",
                 dp,
             )
             dp_id = cursor.lastrowid
@@ -3528,12 +3681,23 @@ class MinerDB:
                 "expected_granularity": item.get("expected_granularity") or 'monthly',
             }
             cursor = conn.execute(
-                """INSERT OR REPLACE INTO data_points
+                """INSERT INTO data_points
                    (report_id, ticker, period, metric, value, unit, confidence,
-                    extraction_method, source_snippet, time_grain, expected_granularity)
+                    extraction_method, source_snippet, time_grain, expected_granularity,
+                    source_priority)
                    VALUES (:report_id, :ticker, :period, :metric, :value, :unit,
                            :confidence, :extraction_method, :source_snippet,
-                           :time_grain, :expected_granularity)""",
+                           :time_grain, :expected_granularity, 0)
+                   ON CONFLICT(ticker, period, metric) DO UPDATE SET
+                       report_id         = excluded.report_id,
+                       value             = excluded.value,
+                       unit              = excluded.unit,
+                       confidence        = excluded.confidence,
+                       extraction_method = excluded.extraction_method,
+                       source_snippet    = excluded.source_snippet,
+                       time_grain        = excluded.time_grain,
+                       expected_granularity = excluded.expected_granularity,
+                       source_priority   = 0""",
                 dp,
             )
             dp_id = cursor.lastrowid

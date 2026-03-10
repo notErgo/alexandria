@@ -155,6 +155,7 @@ class ExtractionSummary:
     prompt_tokens: int = 0
     response_tokens: int = 0
     keyword_gated: int = 0
+    regex_gated: int = 0
     temporal_rejects: int = 0
 
 

@@ -552,6 +552,13 @@ class TestParseEdgarHit:
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'companies.json')
         with open(config_path) as f:
             companies = json.load(f)
-        tickers_with_cik = [c for c in companies if c.get('cik')]
-        # All active companies must have CIK entries
-        assert len(tickers_with_cik) == len(companies), "Every company in companies.json must have a CIK"
+        # Companies with no CIK must have an explicit skip_reason documenting why
+        # (e.g., newly formed company with no SEC filing history yet).
+        missing_cik_no_reason = [
+            c['ticker'] for c in companies
+            if not c.get('cik') and not c.get('skip_reason')
+        ]
+        assert missing_cik_no_reason == [], (
+            f"Companies without a CIK must document the reason in skip_reason: "
+            f"{missing_cik_no_reason}"
+        )

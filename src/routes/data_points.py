@@ -86,12 +86,25 @@ def _validate_filters(args):
     from_full = (from_period + '-01') if from_period else None
     to_full = (to_period + '-01') if to_period else None
 
+    # Optional source filter: 'edgar' (priority 1), 'ir' (priority 2), 'archive' (priority 3)
+    source_filter = args.get('source', '').strip().lower()
+    _SOURCE_PRIORITY_MAP = {'edgar': 1, 'ir': 2, 'archive': 3}
+    max_source_priority = None
+    if source_filter:
+        if source_filter not in _SOURCE_PRIORITY_MAP:
+            return None, (jsonify({'success': False, 'error': {
+                'code': 'INVALID_SOURCE',
+                'message': f"source must be one of: {', '.join(_SOURCE_PRIORITY_MAP)}",
+            }}), 400)
+        max_source_priority = _SOURCE_PRIORITY_MAP[source_filter]
+
     return {
         'tickers': tickers or None,   # list or None
         'metric': metric or None,
         'from_period': from_full,
         'to_period': to_full,
         'min_confidence': min_confidence,
+        'max_source_priority': max_source_priority,
     }, None
 
 

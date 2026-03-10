@@ -434,6 +434,7 @@ class IRScraper:
         ir_url = company.get('ir_url', '')
         pr_base_url = company.get('pr_base_url', '')
         ticker = company['ticker']
+        start_year = company.get('pr_start_year')
 
         # Paginate through listing pages (?page=N) until we hit a page with no
         # new production PRs. All-already-ingested pages signal we've reached
@@ -462,6 +463,9 @@ class IRScraper:
                 period = infer_period_from_pr_title(title)
                 if period is None:
                     log.debug("Could not infer period from PR title: %s", title)
+                    continue
+                if start_year and period.year < start_year:
+                    log.debug("Skipping PR before pr_start_year=%d: %s %s", start_year, ticker, title)
                     continue
                 if not href.startswith("http"):
                     if not pr_base_url:

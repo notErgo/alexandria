@@ -99,7 +99,9 @@ _BOILERPLATE_SENTINELS = [
     re.compile(r'^Investor Notice\s*$', re.MULTILINE),
     re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list
         r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
-        r'BIT\s+DIGITAL|HIVE|HUT\s+8|ARGO|STRONGHOLD|TERAWULF|IRIS)\b',
+        r'BIT\s+DIGITAL|HIVE|HUT\s+8?|ARGO|STRONGHOLD|TERAWULF|IRIS(?:\s+ENERGY)?|IREN|'
+        r'BITFARMS|BITDEER|BIT\s*FUFU|CANGO|APPLIED\s+DIGITAL|AMERICAN\s+BITCOIN|'
+        r'STRONGHOLD\s+DIGITAL)\b',
         re.IGNORECASE,
     ),
 ]
@@ -749,12 +751,16 @@ def _interpret_quarterly_report(
     # (e.g. CLSK 2019-2020 before their Bitcoin pivot, RIOT pre-mining 10-Ks, etc.).
     # The gate is bypassed when no keywords are configured (fresh DB).
     try:
-        from infra.keyword_service import get_all_active_rows as _get_kw_rows_q
-        kw_rows = _get_kw_rows_q(db)
-        kw_phrases = [r['phrase'].lower() for r in kw_rows]
+        from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases_q
+        # Strip SQL LIKE delimiters (%..%) to get plain Python substrings.
+        kw_phrases = [
+            p.strip('%').lower()
+            for p in _get_det_phrases_q(db)
+            if p.strip('%')
+        ]
     except Exception as _kw_err:
-        log.warning("Could not load metric keywords for quarterly gate (non-fatal): %s", _kw_err)
-        kw_phrases = []
+        log.warning("Could not load mining detection phrases for quarterly gate (non-fatal): %s", _kw_err)
+        kw_phrases = ['bitcoin', 'btc', 'hash rate', 'hashrate', 'exahash', 'petahash', 'mining operations']
     if kw_phrases:
         text_lower = text.lower()
         log.debug(
@@ -912,13 +918,16 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     else:
         text = report.get('raw_text') or ''
 
-    # Strip IR website navigation headers and boilerplate footer sections
-    # (investor notices, forward-looking disclaimers, about/contact blocks)
-    # before regex and LLM extraction to reduce noise and token usage.
+    # Strip navigation headers and boilerplate footer sections
+    # (investor notices, forward-looking disclaimers, about/contact blocks,
+    # SEC signature blocks, exhibit indexes) before regex and LLM extraction.
     _src = report.get('source_type', '')
-    if _src in ('ir_press_release', 'wire_press_release'):
+    if _src in ('ir_press_release', 'wire_press_release', 'archive_html', 'archive_pdf'):
         from infra.text_utils import strip_press_release_boilerplate
         text = strip_press_release_boilerplate(text)
+    elif _src.startswith('edgar_'):
+        from infra.text_utils import strip_edgar_boilerplate
+        text = strip_edgar_boilerplate(text)
 
     if not text.strip():
         log.warning(

@@ -103,27 +103,51 @@ class TestPipelineDefaultExcludesIR:
         assert config['include_ir'] is True
 
 
-# ── TestScrapeWorkerEDGAROnly ──────────────────────────────────────────────────
+# ── TestScrapeWorker ──────────────────────────────────────────────────────────
 
 class TestScrapeWorkerEDGAROnly:
 
-    def test_execute_scrape_does_not_call_ir_scraper(self, db_with_active_company):
-        """_execute_scrape must not construct IRScraper."""
+    def test_execute_scrape_calls_ir_then_edgar(self, db_with_active_company):
+        """_execute_scrape calls IRScraper then EdgarConnector when scraper_mode is set."""
         from scrapers.scrape_worker import ScrapeWorker
 
+        # db_with_active_company fixture sets scraper_mode='rss'
         job = db_with_active_company.enqueue_scrape_job('MARA', 'historic')
         worker = ScrapeWorker(db_with_active_company)
 
-        def _ir_scraper_boom(*args, **kwargs):
-            raise AssertionError("IRScraper must not be constructed in EDGAR-only mode")
-
-        with patch('scrapers.ir_scraper.IRScraper', side_effect=_ir_scraper_boom):
-            with patch('scrapers.edgar_connector.EdgarConnector') as mock_cls:
+        mock_ir_inst = MagicMock()
+        with patch('scrapers.ir_scraper.IRScraper', return_value=mock_ir_inst) as mock_ir_cls:
+            with patch('scrapers.edgar_connector.EdgarConnector') as mock_edgar_cls:
                 mock_edgar = MagicMock()
-                mock_cls.return_value = mock_edgar
+                mock_edgar_cls.return_value = mock_edgar
                 mock_edgar.fetch_all_filings.return_value = None
                 worker._execute_scrape(job)
 
+        mock_ir_cls.assert_called_once()
+        mock_ir_inst.scrape_company.assert_called_once()
+        mock_edgar.fetch_all_filings.assert_called_once()
+
+    def test_execute_scrape_skip_mode_skips_ir(self, db_with_active_company):
+        """_execute_scrape skips IRScraper when scraper_mode='skip'."""
+        from scrapers.scrape_worker import ScrapeWorker
+
+        # Enqueue while mode is still 'rss', then override get_company to return skip
+        job = db_with_active_company.enqueue_scrape_job('MARA', 'historic')
+        worker = ScrapeWorker(db_with_active_company)
+
+        company_skip = {
+            'ticker': 'MARA', 'cik': '0001437491',
+            'scraper_mode': 'skip', 'filing_regime': 'domestic', 'active': 1,
+        }
+        with patch.object(worker._db, 'get_company', return_value=company_skip):
+            with patch('scrapers.ir_scraper.IRScraper') as mock_ir_cls:
+                with patch('scrapers.edgar_connector.EdgarConnector') as mock_edgar_cls:
+                    mock_edgar = MagicMock()
+                    mock_edgar_cls.return_value = mock_edgar
+                    mock_edgar.fetch_all_filings.return_value = None
+                    worker._execute_scrape(job)
+
+        mock_ir_cls.assert_not_called()
         mock_edgar.fetch_all_filings.assert_called_once()
 
     def test_execute_scrape_domestic_filing_regime(self, db_with_active_company):
