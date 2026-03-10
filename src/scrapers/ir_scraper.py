@@ -835,13 +835,16 @@ class IRScraper:
         if use_playwright_pagination:
             log.info("%s: JS-rendered listing — using Playwright pagination for %s", ticker, ir_url)
             page_htmls_js = _playwright_collect_all_pages(ir_url)
-            # Build a synthetic (html, source_url) list mirroring the URL-based loop
             page_sources: list[tuple[str, str]] = [
                 (html, ir_url) for html in page_htmls_js
             ]
-            # For CLSK the page_urls list also includes prnewswire fallback pages —
-            # keep those as a static fallback after the JS pages are exhausted.
-            static_fallback_urls = [u for u in page_urls if urlparse(u).netloc.lower() != ir_host]
+            # prnewswire (or other non-IR) fallback URLs are only used if Playwright
+            # returned nothing at all — i.e., the native IR site is completely unreachable.
+            if page_htmls_js:
+                static_fallback_urls: list[str] = []
+            else:
+                log.warning("%s: Playwright got 0 pages from %s — falling back to secondary URLs", ticker, ir_url)
+                static_fallback_urls = [u for u in page_urls if urlparse(u).netloc.lower() != ir_host]
         else:
             page_sources = []
             static_fallback_urls = page_urls
