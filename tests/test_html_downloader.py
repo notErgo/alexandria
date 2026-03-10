@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scrapers.html_downloader import (
+    HTMLDownloader,
     _is_production_pr,
     _infer_period_from_title,
     _build_output_path,
@@ -169,3 +170,21 @@ class TestBuildOutputPath:
         from scrapers.archive_ingestor import is_production_filename
         out = _build_output_path(str(tmp_path), "BITF", date(2024, 5, 1))
         assert is_production_filename(out.name)
+
+
+class TestDownloadAllModeSelection:
+    def test_uses_scraper_mode_key_for_discovery(self, tmp_path):
+        downloader = HTMLDownloader(str(tmp_path))
+        company = {
+            "ticker": "CLSK",
+            "active": True,
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.cleanspark.com/news",
+            "pr_start_year": 2020,
+        }
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(downloader, "_download_discovery", lambda *args, **kwargs: type("S", (), {
+                "downloaded": 0, "skipped_existing": 0, "skipped_not_found": 0, "errors": 0
+            })())
+            summary = downloader.download_all([company])
+        assert summary.companies_processed == ["CLSK"]

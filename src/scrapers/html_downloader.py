@@ -40,6 +40,11 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import ARCHIVE_DIR, HTML_DOWNLOAD_DELAY_SECONDS
+from scrapers.ir_scraper import (
+    candidate_urls_for_period,
+    discovery_links_from_html,
+    discovery_page_urls_for_company,
+)
 
 log = logging.getLogger('miners.scrapers.html_downloader')
 
@@ -246,7 +251,7 @@ class HTMLDownloader:
             if target_tickers and ticker not in target_tickers:
                 continue
 
-            mode = company.get('scrape_mode', 'skip')
+            mode = company.get('scraper_mode') or company.get('scrape_mode') or 'skip'
             if mode == 'skip' or not company.get('active', True):
                 log.info("Skipping %s (mode=%s, active=%s)", ticker, mode,
                          company.get('active'))
@@ -258,6 +263,10 @@ class HTMLDownloader:
 
             if mode == 'template':
                 sub = self._download_template(
+                    company, start_year, last_report_month
+                )
+            elif mode == 'discovery':
+                sub = self._download_discovery(
                     company, start_year, last_report_month
                 )
             elif mode == 'index':
@@ -273,6 +282,77 @@ class HTMLDownloader:
             summary.skipped_not_found += sub.skipped_not_found
             summary.errors += sub.errors
             summary.companies_processed.append(ticker)
+
+        return summary
+
+    def _download_discovery(
+        self,
+        company: dict,
+        start_year: int,
+        end_date: date,
+    ) -> DownloadSummary:
+        """Discover PR article URLs from archive pages, then download each article."""
+        summary = DownloadSummary()
+        ticker = company['ticker']
+        page_urls = discovery_page_urls_for_company(company)
+        seen_urls: set[str] = set()
+        consecutive_empty = 0
+        found_any = False
+
+        for page_url in page_urls:
+            log.info("  Fetching discovery page: %s", page_url)
+            resp = _fetch(page_url, self.session)
+            if resp is None:
+                consecutive_empty += 1
+                if found_any and consecutive_empty >= 3:
+                    break
+                continue
+
+            candidates = discovery_links_from_html(company, resp.text, page_url)
+            if not candidates:
+                consecutive_empty += 1
+                if found_any and consecutive_empty >= 3:
+                    break
+                continue
+
+            found_any = True
+            consecutive_empty = 0
+            page_has_in_range_candidate = False
+
+            for title, full_url, period_hint in candidates:
+                if full_url in seen_urls:
+                    continue
+                seen_urls.add(full_url)
+
+                period = period_hint or _infer_period_from_title(f"{title} {full_url}")
+                if period is None:
+                    continue
+                if period.year < start_year or period > end_date:
+                    continue
+
+                page_has_in_range_candidate = True
+                out_path = _build_output_path(self.archive_dir, ticker, period)
+                if out_path.exists():
+                    log.debug("Already exists: %s", out_path.name)
+                    summary.skipped_existing += 1
+                    continue
+
+                log.info("  GET %s  [%s]", full_url, period)
+                pr_resp = _fetch(full_url, self.session)
+                if pr_resp is None:
+                    summary.skipped_not_found += 1
+                    continue
+
+                try:
+                    out_path.write_bytes(pr_resp.content)
+                    log.info("  Saved %s (%d bytes)", out_path.name, len(pr_resp.content))
+                    summary.downloaded += 1
+                except OSError as e:
+                    log.error("Failed to write %s: %s", out_path, e)
+                    summary.errors += 1
+
+            if found_any and not page_has_in_range_candidate:
+                break
 
         return summary
 
@@ -302,9 +382,17 @@ class HTMLDownloader:
                 summary.skipped_existing += 1
                 continue
 
-            url = _build_template_url(template, period)
-            log.info("  GET %s", url)
-            resp = _fetch(url, self.session)
+            urls = candidate_urls_for_period(company, period)
+            if not urls:
+                url = _build_template_url(template, period)
+                urls = [url]
+
+            resp = None
+            for url in urls:
+                log.info("  GET %s", url)
+                resp = _fetch(url, self.session)
+                if resp is not None:
+                    break
 
             if resp is None:
                 summary.skipped_not_found += 1

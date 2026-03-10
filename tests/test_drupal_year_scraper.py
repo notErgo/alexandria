@@ -1,4 +1,5 @@
 """Tests for IRScraper._scrape_drupal_year (Drupal year-filter widget mode)."""
+from datetime import date as real_date
 import hashlib
 from unittest.mock import MagicMock, patch, call
 import pytest
@@ -36,6 +37,15 @@ YEAR_PAGE_HTML = f"""<html><body>
 <a href="/news/detail/123">Bitdeer Reports Bitcoin Production for January 2024</a>
 <a href="/news/detail/124">Bitdeer Reports Bitcoin Production for February 2024</a>
 <a href="/news/detail/about">About Us</a>
+</body></html>"""
+
+YEAR_PAGE_HTML_BROAD = f"""<html><body>
+<form>
+  <input type="hidden" name="form_build_id" value="form-TESTTOKEN2" />
+  <input type="hidden" name="{WIDGET_ID}_widget_id" value="{WIDGET_ID}" />
+  <input type="hidden" name="form_id" value="widget_form_base" />
+</form>
+<a href="/news/detail/555">Bitfarms Provides January 2024 Operations and Miner Energization Update</a>
 </body></html>"""
 
 PR_HTML = """<html><body>
@@ -84,6 +94,7 @@ class TestDrupalYearScraper:
         ]
         with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=responses), \
              patch('scrapers.ir_scraper.date') as mock_date:
+            mock_date.side_effect = lambda *args, **kwargs: real_date(*args, **kwargs)
             mock_date.today.return_value = MagicMock(year=2024)
             result = scraper._scrape_drupal_year(company)
 
@@ -143,6 +154,28 @@ class TestDrupalYearScraper:
         pr_fetches = [u for u in fetch_calls if 'about' in u or 'careers' in u or 'earnings' in u]
         assert pr_fetches == [], "Non-production links must not be fetched"
         assert result.reports_ingested == 0
+
+    def test_broad_mining_activity_title_is_ingested(self, tmp_path):
+        scraper, db = self._get_scraper(tmp_path)
+        company = _make_company(ticker='BITF', ir_url='https://investor.bitfarms.com/news-events/press-releases', pr_start_year=2026)
+
+        article = _make_response("""<html><head>
+        <meta property="article:published_time" content="2026-02-01T08:00:00Z" />
+        </head><body><p>Bitfarms energized miners and reported January 2026 operating update.</p></body></html>""")
+
+        responses = [
+            _make_response(BASE_PAGE_HTML),
+            _make_response(YEAR_PAGE_HTML_BROAD.replace("January 2024", "January 2026")),
+            article,
+        ]
+
+        with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=responses):
+            result = scraper._scrape_drupal_year(company)
+
+        assert result.reports_ingested == 1
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted['fetch_strategy'] == 'drupal_year'
+        assert inserted['report_date'] == '2026-01-01'
 
     def test_missing_ir_url_returns_error(self, tmp_path):
         """Missing ir_url increments errors and returns immediately."""

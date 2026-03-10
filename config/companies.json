@@ -8,14 +8,14 @@
     "rss_url": "https://ir.mara.com/news-events/press-releases/rss",
     "cik": "0001507605",
     "active": true,
-    "scraper_mode": "index",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_year": 2020,
+    "pr_start_year": 2018,
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "ir.mara.com must be added to settings.json networkAllowList"
+    "sandbox_note": "Discovery-first IR scraper walks ir.mara.com listing pagination to discover historical mining-related PR pages instead of relying on guessed monthly URLs. ir.mara.com must be added to settings.json networkAllowList."
   },
   {
     "ticker": "RIOT",
@@ -26,14 +26,14 @@
     "rss_url": "https://feed.businesswire.com/rss/home/?rss=G1&company=riot-platforms",
     "cik": "0001167419",
     "active": true,
-    "scraper_mode": "template",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
-    "pr_start_year": 2020,
+    "pr_start_year": 2018,
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Listing page is JS-rendered (Divi/WordPress); index mode cannot scrape it. Template mode works: individual PR slugs follow a predictable pattern. Backfill uses backfill_mode=True to bypass fast-forward. BusinessWire RSS returns 0 results as of 2026-03. Final monthly production update was December 2025 (switched to quarterly reporting)."
+    "sandbox_note": "Discovery-first IR scraper uses RIOT's historical WordPress archive pages rather than the shell IR landing page. Template URLs remain as fallback helpers for manual/archive workflows. BusinessWire RSS returns 0 results as of 2026-03. Final monthly production update was December 2025 (switched to quarterly reporting)."
   },
   {
     "ticker": "CLSK",
@@ -42,16 +42,17 @@
     "ir_url": "https://investors.cleanspark.com/news/",
     "pr_base_url": "https://investors.cleanspark.com",
     "rss_url": null,
+    "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
     "cik": "0000827876",
     "active": true,
-    "scraper_mode": "skip",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
-    "url_template": null,
-    "pr_start_year": null,
-    "skip_reason": "IR listing page returns 403 to automated requests. Site is ASP.NET (not Drupal); drupal_year mode does not apply. All production PRs distributed via PRNewswire (https://www.prnewswire.com/news/cleanspark,-inc./). EDGAR 8-K filings are primary source.",
+    "url_template": "https://investors.cleanspark.com/news/news-details/{year}/CleanSpark-Releases-{Month}-{year}-Bitcoin-Mining-Update/default.aspx",
+    "pr_start_year": 2023,
+    "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 9,
-    "sandbox_note": "investors.cleanspark.com returns 403 on listing page. Individual PR URL pattern: /news/news-details/YYYY/Title-slug/default.aspx. PRNewswire search URL for reference: https://www.prnewswire.com/news/cleanspark,-inc./ GlobeNewswire rss_url in config is incorrect (CLSK uses PRNewswire, not GlobeNewswire)."
+    "sandbox_note": "CleanSpark IR is currently protected by a Cloudflare challenge, so discovery uses the PR Newswire organization page instead of the IR listing. Direct IR templates remain reference-only for known historical URLs. PRNewswire org page: https://www.prnewswire.com/news/cleanspark%2C%20inc./"
   },
   {
     "ticker": "CORZ",
@@ -62,14 +63,14 @@
     "rss_url": null,
     "cik": "0001839341",
     "active": true,
-    "scraper_mode": "skip",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_year": null,
-    "skip_reason": "IR page returns 502; EDGAR 8-K filings are primary source. Filed for Chapter 11 bankruptcy December 2022, emerged January 2024 as same SEC entity.",
+    "pr_start_year": 2022,
+    "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "investors.corescientific.com returned 502 as of 2026-03. CIK 0001839341 verified against EDGAR (Core Scientific, Inc./tx). Old CIK 0001836012 was WDC Fund 1 LLC (wrong)."
+    "sandbox_note": "Discovery-first IR scraper now walks investors.corescientific.com press release pagination directly. Pre-bankruptcy coverage is irregular and should be boundary-checked from 2022 onward. CIK 0001839341 verified against EDGAR (Core Scientific, Inc./tx). Old CIK 0001836012 was WDC Fund 1 LLC (wrong)."
   },
   {
     "ticker": "CIFR",
@@ -105,7 +106,7 @@
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "investors.terawulf.com must be added to settings.json networkAllowList. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. Old CIK 0001839175 was M3-Brigade Acquisition II Corp (wrong). TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
+    "sandbox_note": "Discovery-first IR scraper walks investors.terawulf.com press release pagination directly; RSS remains secondary but is not treated as the full-history boundary. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. Old CIK 0001839175 was M3-Brigade Acquisition II Corp (wrong). TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
   },
   {
     "ticker": "HUT",

@@ -61,6 +61,12 @@ class TestValidateCompaniesConfig:
         ])
         assert any('url_template' in e for e in errors)
 
+    def test_discovery_mode_requires_ir_url(self):
+        errors = validate_companies_config([
+            _valid_entry(scraper_mode='discovery', rss_url=None, ir_url=None)
+        ])
+        assert any('ir_url' in e for e in errors)
+
     def test_skip_mode_requires_skip_reason(self):
         errors = validate_companies_config([
             _valid_entry(scraper_mode='skip', skip_reason=None, active=False)

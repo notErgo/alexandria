@@ -4492,6 +4492,11 @@ class MinerDB:
             if mode == 'rss':
                 if not (row.get('rss_url') or '').strip():
                     return 'rss mode missing rss_url'
+            elif mode == 'discovery':
+                if not (row.get('ir_url') or '').strip():
+                    return 'discovery mode missing ir_url'
+                if not row.get('pr_start_year'):
+                    return 'discovery mode missing pr_start_year'
             elif mode == 'index':
                 if not (row.get('ir_url') or '').strip():
                     return 'index mode missing ir_url'

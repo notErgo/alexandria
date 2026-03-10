@@ -64,6 +64,34 @@ def test_overnight_start_returns_202_and_run_id(client, monkeypatch):
     assert payload['status'] == 'queued'
 
 
+def test_overnight_start_stores_ticker_scope(client, monkeypatch):
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+
+    resp = client.post('/api/pipeline/overnight/start', json={
+        'tickers': ['mara', 'riot'],
+        'include_ir': True,
+    })
+    assert resp.status_code == 202
+    run_id = int(resp.get_json()['data']['run_id'])
+    run = app_globals.get_db().get_pipeline_run(run_id)
+    scope_raw = run.get('scope_json') or '{}'
+    scope = json.loads(scope_raw) if isinstance(scope_raw, str) else scope_raw
+    assert scope.get('tickers') == ['MARA', 'RIOT']
+
+
 def test_overnight_start_rejects_invalid_tickers_type(client):
     resp = client.post('/api/pipeline/overnight/start', json={'tickers': 'MARA'})
     assert resp.status_code == 400
@@ -285,3 +313,79 @@ def test_overnight_apply_modes_runs_for_run_tickers(client, monkeypatch):
     assert data['targeted'] == 1
     assert data['applied'] == 1
     assert data['failed'] == 0
+
+
+def test_execute_overnight_run_passes_scope_to_ingest(monkeypatch, tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    db = MinerDB(str(tmp_path / 'scope.db'))
+    for ticker, cik in [('MARA', '0001437491'), ('RIOT', '0001167419')]:
+        db.insert_company({
+            'ticker': ticker,
+            'name': ticker,
+            'tier': 1,
+            'ir_url': f'https://example.com/{ticker.lower()}',
+            'pr_base_url': 'https://example.com',
+            'cik': cik,
+            'active': 1,
+            'scraper_mode': 'rss',
+        })
+    app_globals._db = db
+
+    run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
+    run_id = int(run['id'])
+
+    ir_calls = []
+    edgar_calls = []
+
+    def _fake_ir(task_id, auto_extract=False, warm_model=True, tickers=None, pipeline_run_id=None):
+        ir_calls.append({
+            'auto_extract': auto_extract,
+            'warm_model': warm_model,
+            'tickers': tickers,
+            'pipeline_run_id': pipeline_run_id,
+        })
+
+    def _fake_edgar(task_id, auto_extract=False, warm_model=True, tickers=None, pipeline_run_id=None):
+        edgar_calls.append({
+            'auto_extract': auto_extract,
+            'warm_model': warm_model,
+            'tickers': tickers,
+            'pipeline_run_id': pipeline_run_id,
+        })
+
+    monkeypatch.setattr(pipeline_mod, '_count_reports_for_tickers', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(pipeline_mod, '_build_extraction_batch', lambda *args, **kwargs: [])
+
+    import routes.reports as reports_mod
+    monkeypatch.setattr(reports_mod, '_run_ir_ingest', _fake_ir)
+    monkeypatch.setattr(reports_mod, '_run_edgar_ingest', _fake_edgar)
+
+    pipeline_mod._execute_overnight_run(
+        run_id,
+        {
+            'skip_probe': True,
+            'include_ir': True,
+            'include_crawl': False,
+            'warm_model': False,
+            'probe_skip_companies': False,
+            'force_reextract': False,
+            'scout_mode': 'never',
+        },
+        ['MARA'],
+    )
+
+    assert ir_calls == [{
+        'auto_extract': False,
+        'warm_model': False,
+        'tickers': ['MARA'],
+        'pipeline_run_id': run_id,
+    }]
+    assert edgar_calls == [{
+        'auto_extract': False,
+        'warm_model': False,
+        'tickers': ['MARA'],
+        'pipeline_run_id': run_id,
+    }]

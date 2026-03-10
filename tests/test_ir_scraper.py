@@ -3,6 +3,13 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 from scrapers.ir_scraper import (
     IRScraper,
+    candidate_urls_for_period,
+    cleanspark_candidate_urls,
+    discovery_links_from_html,
+    discovery_page_urls_for_company,
+    is_bot_challenge_page,
+    riot_candidate_urls,
+    is_mining_activity_pr,
     is_production_pr,
     infer_period_from_pr_title,
     parse_rss_feed,
@@ -35,6 +42,28 @@ class TestIsProductionPR:
         assert is_production_pr(
             "CleanSpark Announces Monthly Bitcoin Mining Operations Update for August 2024"
         )
+
+
+class TestMiningActivityPR:
+    def test_accepts_broader_mining_activity(self):
+        assert is_mining_activity_pr(
+            "CleanSpark Expands Bitcoin Mining Fleet and Announces January 2024 Operational Update"
+        )
+
+    def test_rejects_financial_results(self):
+        assert not is_mining_activity_pr(
+            "Riot Platforms Reports Q1 2024 Financial Results"
+        )
+
+
+class TestBotChallengeDetection:
+    def test_detects_cloudflare_interstitial_text(self):
+        html = "<html><title>Just a moment...</title><body>Enable JavaScript and cookies to continue</body></html>"
+        assert is_bot_challenge_page(html, {"server": "cloudflare"}, 403)
+
+    def test_non_challenge_page_is_not_flagged(self):
+        html = "<html><body><a href='/news-events/press-releases/detail/1'>Press release</a></body></html>"
+        assert not is_bot_challenge_page(html, {"server": "Apache"}, 200)
 
 
 _RSS_FEED_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -158,6 +187,136 @@ class TestExpandUrlTemplate:
             assert url == f"/{name}/2024", f"month {i} titlecase failed: {url!r}"
 
 
+class TestRiotHistoricalTemplates:
+    def test_riot_candidates_for_2018_production_yield(self):
+        urls = riot_candidate_urls(date(2018, 4, 1))
+        assert urls == [
+            "https://www.riotplatforms.com/riot-blockchain-releases-april-2018-cryptocurrency-mining-production-yield/"
+        ]
+
+    def test_riot_candidates_for_2020_production_update(self):
+        urls = riot_candidate_urls(date(2020, 3, 1))
+        assert urls[0] == (
+            "https://www.riotplatforms.com/riot-blockchain-announces-march-2020-production-update/"
+        )
+
+    def test_riot_candidates_for_2021_operations_update(self):
+        urls = riot_candidate_urls(date(2021, 7, 1))
+        assert urls[0] == (
+            "https://www.riotplatforms.com/riot-blockchain-announces-july-production-and-operations-updates/"
+        )
+
+    def test_candidate_urls_for_non_riot_uses_configured_template(self):
+        urls = candidate_urls_for_period(
+            {"ticker": "MARA", "url_template": "https://example.com/{month}-{year}"},
+            date(2024, 9, 1),
+        )
+        assert urls == ["https://example.com/september-2024"]
+
+
+class TestDiscoveryHelpers:
+    def test_cleanspark_discovery_uses_prnewswire_pages(self):
+        urls = discovery_page_urls_for_company(
+            {
+                "ticker": "CLSK",
+                "ir_url": "https://investors.cleanspark.com/news/",
+                "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
+            }
+        )
+        assert urls[0] == "https://www.prnewswire.com/news/cleanspark%2C%20inc."
+        assert urls[1] == "https://www.prnewswire.com/news/cleanspark%2C%20inc.?page=2"
+
+    def test_riot_discovery_uses_archive_pages(self):
+        urls = discovery_page_urls_for_company(
+            {"ticker": "RIOT", "ir_url": "https://www.riotplatforms.com/overview/news-events/press-releases/"}
+        )
+        assert urls[0] == "https://www.riotplatforms.com/author/b2ieverest456dfghbs/page/1/"
+        assert urls[-1] == "https://www.riotplatforms.com/author/b2ieverest456dfghbs/page/60/"
+
+    def test_mara_discovery_uses_query_pagination(self):
+        urls = discovery_page_urls_for_company(
+            {"ticker": "MARA", "ir_url": "https://ir.mara.com/news-events/press-releases"}
+        )
+        assert urls[0] == "https://ir.mara.com/news-events/press-releases"
+        assert urls[1] == "https://ir.mara.com/news-events/press-releases?page=2"
+
+    def test_discovery_link_extraction_filters_to_mining_activity(self):
+        company = {"ticker": "CLSK", "pr_base_url": "https://investors.cleanspark.com"}
+        html = """
+        <html><body>
+          <a href="/news/news-details/2024/CleanSpark-Releases-January-2024-Bitcoin-Mining-Update/default.aspx">
+            CleanSpark Releases January 2024 Bitcoin Mining Update
+          </a>
+          <a href="/news/news-details/2024/CleanSpark-Reports-Q1-2024-Financial-Results/default.aspx">
+            CleanSpark Reports Q1 2024 Financial Results
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(company, html, "https://investors.cleanspark.com/news")
+        assert len(links) == 1
+        assert links[0][1].startswith("https://investors.cleanspark.com/news/news-details/2024/")
+        assert links[0][2] == date(2024, 1, 1)
+
+    def test_discovery_link_extraction_handles_prnewswire_articles(self):
+        company = {"ticker": "CLSK"}
+        html = """
+        <html><body>
+          <a href="/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html">
+            CleanSpark Releases January 2026 Operational Update
+          </a>
+          <a href="/news-releases/cleanspark-delivers-181-million-in-q1-revenue-302680687.html">
+            CleanSpark Delivers $181 Million in Q1 Revenue
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(company, html, "https://www.prnewswire.com/news/cleanspark%2C%20inc./")
+        assert len(links) == 1
+        assert links[0][1] == "https://www.prnewswire.com/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html"
+        assert links[0][2] == date(2026, 1, 1)
+
+
+class TestCleanSparkHistoricalTemplates:
+    def test_cleanspark_pre_april_2023_returns_no_candidates(self):
+        urls = cleanspark_candidate_urls(date(2023, 3, 1))
+        assert urls == []
+
+    def test_cleanspark_candidates_for_2024_bitcoin_update(self):
+        urls = cleanspark_candidate_urls(date(2024, 1, 1))
+        assert urls == [
+            "https://investors.cleanspark.com/news/news-details/2024/CleanSpark-Releases-January-2024-Bitcoin-Mining-Update/default.aspx"
+        ]
+
+    def test_cleanspark_candidates_for_2026_operational_update(self):
+        urls = cleanspark_candidate_urls(date(2026, 1, 1))
+        assert urls[0] == (
+            "https://investors.cleanspark.com/news/news-details/2026/CleanSpark-Releases-January-2026-Operational-Update/default.aspx"
+        )
+        assert urls[1] == (
+            "https://investors.cleanspark.com/news/news-details/2026/CleanSpark-Releases-January-2026-Bitcoin-Mining-Update/default.aspx"
+        )
+
+    def test_cleanspark_december_2024_candidates_try_publish_year_first(self):
+        urls = cleanspark_candidate_urls(date(2024, 12, 1))
+        assert urls[0] == (
+            "https://investors.cleanspark.com/news/news-details/2025/CleanSpark-Releases-December-2024-Bitcoin-Mining-Update/default.aspx"
+        )
+        assert urls[1] == (
+            "https://investors.cleanspark.com/news/news-details/2024/CleanSpark-Releases-December-2024-Bitcoin-Mining-Update/default.aspx"
+        )
+
+    def test_cleanspark_2023_october_uses_explicit_historical_override(self):
+        urls = cleanspark_candidate_urls(date(2023, 10, 1))
+        assert urls[0] == (
+            "https://investors.cleanspark.com/news/news-details/2023/CleanSpark-Releases-October-2023-Bitcoin-Mining-Update-2023-_50Bd5BLR9/default.aspx"
+        )
+
+    def test_cleanspark_2023_april_uses_publish_date_suffix_override(self):
+        urls = cleanspark_candidate_urls(date(2023, 4, 1))
+        assert urls[0] == (
+            "https://investors.cleanspark.com/news/news-details/2023/CleanSpark-Releases-April-2023-Bitcoin-Mining-Update-05-03-2023/default.aspx"
+        )
+
+
 class TestTemplateModeBackfill:
     """_scrape_template backfill_mode flag: skips fast-forward so all months from
     pr_start_year are attempted regardless of what is already in the DB."""
@@ -222,6 +381,57 @@ class TestTemplateModeBackfill:
         assert result.reports_ingested == 1
         inserted = scraper.db.insert_report.call_args[0][0]
         assert inserted["report_date"] == "2020-01-01"
+
+    def test_riot_historical_slug_fallback_uses_working_candidate(self):
+        scraper = self._make_scraper(latest_ir=None)
+        company = {**self._COMPANY_BASE, "pr_start_year": 2020, "backfill_mode": True}
+
+        pr_resp = MagicMock()
+        pr_resp.text = self._PR_HTML
+        call_urls = []
+
+        def _fetch_side_effect(url, session):
+            call_urls.append(url)
+            if "riot-blockchain-announces-january-2020-production-update" in url:
+                return pr_resp
+            return None
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit", side_effect=_fetch_side_effect):
+            result = scraper._scrape_template(company)
+
+        assert result.reports_ingested == 1
+        assert any("riot-blockchain-announces-january-2020-production-update" in u for u in call_urls)
+        inserted = scraper.db.insert_report.call_args[0][0]
+        assert inserted["source_url"].endswith("/riot-blockchain-announces-january-2020-production-update")
+
+    def test_cleanspark_operational_update_fallback_uses_working_candidate(self):
+        scraper = self._make_scraper(latest_ir="2025-12-01")
+        company = {
+            "ticker": "CLSK",
+            "scraper_mode": "template",
+            "url_template": "https://investors.cleanspark.com/news/news-details/{year}/CleanSpark-Releases-{Month}-{year}-Bitcoin-Mining-Update/default.aspx",
+            "pr_start_year": 2024,
+            "pr_base_url": "https://investors.cleanspark.com",
+        }
+
+        pr_resp = MagicMock()
+        pr_resp.text = "<html><body><p>January 2026 operations update: 626 BTC mined.</p></body></html>"
+        call_urls = []
+
+        def _fetch_side_effect(url, session):
+            call_urls.append(url)
+            if "CleanSpark-Releases-January-2026-Operational-Update" in url:
+                return pr_resp
+            return None
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit", side_effect=_fetch_side_effect):
+            result = scraper._scrape_template(company)
+
+        assert result.reports_ingested == 1
+        assert any("CleanSpark-Releases-January-2026-Operational-Update" in u for u in call_urls)
+        inserted = scraper.db.insert_report.call_args[0][0]
+        assert inserted["ticker"] == "CLSK"
+        assert inserted["source_url"].endswith("/CleanSpark-Releases-January-2026-Operational-Update/default.aspx")
 
 
 class TestIndexModeStopOnAllSeen:
@@ -298,6 +508,85 @@ class TestIndexModeStopOnAllSeen:
         assert inserted["ticker"] == "RIOT"
 
 
+class TestDiscoveryMode:
+    def test_scrape_discovery_ingests_discovered_article(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "CLSK",
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.cleanspark.com/news",
+            "pr_base_url": "https://investors.cleanspark.com",
+            "pr_start_year": 2020,
+        }
+
+        listing_resp = MagicMock()
+        listing_resp.text = """
+        <html><body>
+          <a href="/news/news-details/2024/CleanSpark-Releases-January-2024-Bitcoin-Mining-Update/default.aspx">
+            CleanSpark Releases January 2024 Bitcoin Mining Update
+          </a>
+        </body></html>
+        """
+        article_resp = MagicMock()
+        article_resp.text = """
+        <html><head><meta property="article:published_time" content="2024-02-05T08:00:00Z" /></head>
+        <body><h1>CleanSpark Releases January 2024 Bitcoin Mining Update</h1><p>Mined 626 BTC.</p></body></html>
+        """
+
+        with patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=[listing_resp, article_resp, None, None, None],
+        ):
+            result = scraper._scrape_discovery(company)
+
+        assert result.reports_ingested == 1
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted["fetch_strategy"] == "discovery"
+        assert inserted["report_date"] == "2024-01-01"
+        assert inserted["published_date"] == "2024-02-05"
+
+    def test_scrape_discovery_stores_prnewswire_source_type(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "CLSK",
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.cleanspark.com/news/",
+            "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
+            "pr_start_year": 2023,
+        }
+
+        listing_resp = MagicMock()
+        listing_resp.text = """
+        <html><body>
+          <a href="/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html">
+            CleanSpark Releases January 2026 Operational Update
+          </a>
+        </body></html>
+        """
+        article_resp = MagicMock()
+        article_resp.text = """
+        <html><head><meta property="article:published_time" content="2026-02-05T08:00:00Z" /></head>
+        <body><h1>CleanSpark Releases January 2026 Operational Update</h1><p>Mined BTC in January 2026.</p></body></html>
+        """
+
+        with patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=[listing_resp, article_resp, None, None, None],
+        ):
+            result = scraper._scrape_discovery(company)
+
+        assert result.reports_ingested == 1
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted["source_type"] == "prnewswire_press_release"
+        assert inserted["report_date"] == "2026-01-01"
+
+
 class TestScrapeModeDispatch:
     def test_dispatch_uses_scraper_mode_key(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())
@@ -312,6 +601,13 @@ class TestScrapeModeDispatch:
         with patch.object(scraper, "_scrape_index", return_value="ok") as idx:
             assert scraper.scrape_company(company) == "ok"
             idx.assert_called_once_with(company)
+
+    def test_dispatch_discovery_mode(self):
+        scraper = IRScraper(db=MagicMock(), session=MagicMock())
+        company = {"ticker": "MARA", "scraper_mode": "discovery", "ir_url": "https://ir.mara.com", "pr_start_year": 2020}
+        with patch.object(scraper, "_scrape_discovery", return_value="ok") as discovery:
+            assert scraper.scrape_company(company) == "ok"
+            discovery.assert_called_once_with(company)
 
     def test_dispatch_playwright_mode(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())

@@ -202,6 +202,21 @@ def parse_8k_exhibit_url(
     return best
 
 
+def parse_current_report_exhibit_url(
+    index_html: str, cik_numeric: str, acc_no_clean: str, form_type: str
+) -> Optional[str]:
+    """Return the preferred press-release exhibit URL for current reports.
+
+    8-K and 6-K filings often attach the business update as EX-99.1 / EX-99.
+    When present, that exhibit is usually the document containing production
+    metrics; the main filing document is often only a wrapper cover page.
+    """
+    normalized = (form_type or '').upper()
+    if normalized in ('8-K', '8-K/A', '6-K', '6-K/A'):
+        return parse_8k_exhibit_url(index_html, cik_numeric, acc_no_clean)
+    return None
+
+
 def _parse_exhibit_url_from_stale_source_url(source_url: str) -> Optional[str]:
     """Reconstruct the actual exhibit URL from a malformed 8-K source_url.
 
@@ -460,7 +475,8 @@ class EdgarConnector:
             log.warning("Empty index page for %s %s %s", ticker, form_type, acc_no)
             return False
 
-        primary_url = parse_filing_index_for_primary_doc(index_html)
+        exhibit_url = parse_current_report_exhibit_url(index_html, cik_numeric, acc_no_clean, form_type)
+        primary_url = exhibit_url or parse_filing_index_for_primary_doc(index_html)
         if not primary_url:
             # Fall back to the primary document listed in submissions JSON
             primary_doc = filing.get('primary_doc', '')
@@ -476,7 +492,10 @@ class EdgarConnector:
         # Strip any EDGAR iXBRL viewer wrapper so we fetch the actual document
         primary_url = _unwrap_ixbrl_url(primary_url)
 
-        # Fetch and parse the primary document
+        # Fetch and parse the selected document.
+        # For 6-K we prefer EX-99.1/EX-99 exhibits because the primary filing
+        # document is commonly just the SEC wrapper while the exhibit carries
+        # the actual operational update.
         doc_html = self._edgar_get_text(primary_url)
         if not doc_html:
             log.warning("Empty primary document for %s %s %s", ticker, form_type, acc_no)

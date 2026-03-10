@@ -526,10 +526,22 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         # The scrape_queue / ScrapeWorker is for manual per-company triggers only.
         before_reports = _count_reports_for_tickers(db, scrape_targets)
         if include_ir:
-            _run_ir_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)), pipeline_run_id=run_id)
+            _run_ir_ingest(
+                str(uuid.uuid4()),
+                auto_extract=False,
+                warm_model=bool(config.get('warm_model', True)),
+                tickers=scrape_targets,
+                pipeline_run_id=run_id,
+            )
         else:
             _event(db, run_id, 'ingest', 'ir_skipped', reason='include_ir=false')
-        _run_edgar_ingest(str(uuid.uuid4()), auto_extract=False, warm_model=bool(config.get('warm_model', True)), pipeline_run_id=run_id)
+        _run_edgar_ingest(
+            str(uuid.uuid4()),
+            auto_extract=False,
+            warm_model=bool(config.get('warm_model', True)),
+            tickers=scrape_targets,
+            pipeline_run_id=run_id,
+        )
         after_reports = _count_reports_for_tickers(db, scrape_targets)
         ingested_delta = max(0, after_reports - before_reports)
         _event(db, run_id, 'ingest', 'stage_end', before_reports=before_reports, after_reports=after_reports, ingested_delta=ingested_delta)

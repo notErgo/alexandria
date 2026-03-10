@@ -51,7 +51,7 @@ ALL_ARCHIVE_TICKERS: List[str] = sorted([
 
 
 _VALID_SCRAPER_MODES: frozenset = frozenset({
-    'rss', 'template', 'index', 'skip', 'playwright', 'drupal_year',
+    'rss', 'template', 'index', 'discovery', 'skip', 'playwright', 'drupal_year',
 })
 
 _VALID_FILING_REGIMES: frozenset = frozenset({
@@ -105,6 +105,8 @@ def validate_companies_config(companies: List[dict] = None) -> List[str]:
             errors.append(f'{label}: scraper_mode="rss" requires rss_url')
         elif mode == 'template' and not c.get('url_template'):
             errors.append(f'{label}: scraper_mode="template" requires url_template')
+        elif mode == 'discovery' and not c.get('ir_url'):
+            errors.append(f'{label}: scraper_mode="discovery" requires ir_url')
         elif mode == 'skip' and not c.get('skip_reason'):
             errors.append(f'{label}: scraper_mode="skip" requires skip_reason')
 

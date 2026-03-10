@@ -75,7 +75,13 @@ def _run_archive_ingest(task_id: str) -> None:
             _running_tasks.discard('archive')
 
 
-def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = True, pipeline_run_id: int = None) -> None:
+def _run_ir_ingest(
+    task_id: str,
+    auto_extract: bool = False,
+    warm_model: bool = True,
+    tickers: Optional[list] = None,
+    pipeline_run_id: int = None,
+) -> None:
     log.warning("event=ir_ingest_deprecated EDGAR is the canonical ingest source")
     import requests as req_lib
     from app_globals import get_db
@@ -87,6 +93,7 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
         'source': 'ir',
         'auto_extract': auto_extract,
         'warm_model': warm_model,
+        'tickers': tickers or [],
     })
 
     # EDGAR-first guardrail: warn if EDGAR has not been fetched yet
@@ -106,7 +113,9 @@ def _run_ir_ingest(task_id: str, auto_extract: bool = False, warm_model: bool = 
         session = req_lib.Session()
         scraper = IRScraper(db=db, session=session)
         scraper._pipeline_run_id = pipeline_run_id
-        companies = db.get_companies(active_only=True)
+        all_companies = db.get_companies(active_only=True)
+        ticker_filter = {t.upper() for t in tickers} if tickers else None
+        companies = [c for c in all_companies if ticker_filter is None or c['ticker'].upper() in ticker_filter]
         totals = {'reports_ingested': 0, 'data_points_extracted': 0,
                   'review_flagged': 0, 'errors': 0}
         for company in companies:
@@ -383,6 +392,12 @@ def ingest_ir():
     body = request.get_json(silent=True) or {}
     auto_extract = bool(body.get('auto_extract', False))
     warm_model = bool(body.get('warm_model', True))
+    tickers = body.get('tickers') or []
+    if not isinstance(tickers, list):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT', 'message': "'tickers' must be a list of ticker strings"
+        }}), 400
+    tickers = [str(t).strip().upper() for t in tickers if t]
     with _tasks_lock:
         if 'ir' in _running_tasks:
             return jsonify({'success': False, 'error': {
@@ -396,8 +411,13 @@ def ingest_ir():
         'source': 'ir',
         'auto_extract': auto_extract,
         'warm_model': warm_model,
+        'tickers': tickers,
     })
-    t = threading.Thread(target=_run_ir_ingest, args=(task_id, auto_extract, warm_model), daemon=True)
+    t = threading.Thread(
+        target=_run_ir_ingest,
+        args=(task_id, auto_extract, warm_model, tickers or None),
+        daemon=True,
+    )
     t.start()
     return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 

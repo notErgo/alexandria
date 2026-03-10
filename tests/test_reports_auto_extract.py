@@ -67,6 +67,25 @@ def test_ingest_ir_passes_auto_extract_flag(tmp_path, monkeypatch):
     assert thread.started is True
 
 
+def test_ingest_ir_passes_ticker_scope(tmp_path, monkeypatch):
+    app = _build_app(tmp_path)
+    client = app.test_client()
+
+    import routes.reports as reports
+    _FakeThread.created.clear()
+    monkeypatch.setattr(reports.threading, 'Thread', _FakeThread)
+    reports._running_tasks.clear()
+
+    resp = client.post('/api/ingest/ir', json={'tickers': ['mara']})
+
+    assert resp.status_code == 202
+    assert _FakeThread.created, 'ingest_ir should create a background thread'
+    thread = _FakeThread.created[-1]
+    assert thread.target is reports._run_ir_ingest
+    assert thread.args[3] == ['MARA']
+    assert thread.started is True
+
+
 def test_ingest_edgar_passes_auto_extract_flag(tmp_path, monkeypatch):
     app = _build_app(tmp_path)
     client = app.test_client()

@@ -72,6 +72,11 @@ def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
             return "template mode requires non-empty url_template"
         if not fields.get('pr_start_year'):
             return "template mode requires pr_start_year"
+    if mode == 'discovery':
+        if not fields.get('ir_url'):
+            return "discovery mode requires non-empty ir_url"
+        if not fields.get('pr_start_year'):
+            return "discovery mode requires pr_start_year"
     if mode == 'index' and not fields.get('ir_url'):
         return "index mode requires non-empty ir_url"
     if mode == 'playwright' and not fields.get('ir_url'):
