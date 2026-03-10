@@ -99,7 +99,7 @@
     "rss_url": "https://investors.terawulf.com/news-events/press-releases/rss",
     "cik": "0001083301",
     "active": true,
-    "scraper_mode": "rss",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_year": 2022,

@@ -400,6 +400,7 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
 _JS_RENDERED_DOMAINS: frozenset = frozenset({
     "investors.cleanspark.com",
     "investors.corescientific.com",  # Core Scientific — Equisolve widget
+    "investors.terawulf.com",        # TeraWulf — Equisolve widget
 })
 
 _HEADERS = {
