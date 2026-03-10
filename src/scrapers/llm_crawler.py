@@ -325,6 +325,7 @@ _GET_OBSERVATIONS_TOOL_OAI = {
 
 def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None:
     """Start Ollama if not running, then warm the target model into memory."""
+    import os
     import subprocess
     import time
 
@@ -337,12 +338,17 @@ def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None
             return False
 
     if not _is_up():
-        progress.add_log('Ollama not running — starting server...')
+        progress.add_log(
+            f'Ollama not running — starting server (OLLAMA_NUM_PARALLEL={_SEMAPHORE._value})...'
+        )
+        env = os.environ.copy()
+        env['OLLAMA_NUM_PARALLEL'] = str(_SEMAPHORE._value)
         try:
             subprocess.Popen(
                 ['ollama', 'serve'],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=env,
             )
         except FileNotFoundError:
             raise RuntimeError('ollama not found on PATH — install Ollama first')
