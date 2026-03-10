@@ -506,55 +506,60 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 pass
             pw_page.wait_for_timeout(1500)
 
-            prev_article_urls: set[str] = set()
-
             for page_num in range(1, max_pages + 1):
-                # Wait for article content to differ from the previous page.
-                # Equisolve updates articles via AJAX; the DOM reflects stale content
-                # for a moment after the page button activates.
-                if prev_article_urls:
-                    try:
-                        pw_page.wait_for_function(
-                            """(prevUrls) => {
-                                const links = Array.from(document.querySelectorAll('a[href]'));
-                                return links.some(a => a.href && !prevUrls.includes(a.href));
-                            }""",
-                            arg=list(prev_article_urls),
-                            timeout=5000,
-                        )
-                    except Exception:
-                        pass
-
                 html = pw_page.content()
                 if is_bot_challenge_page(html):
                     log.warning("Playwright got bot challenge on page %d of %s", page_num, url)
                     break
-                log.debug("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
+                log.info("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
                 pages_html.append(html)
-                # Record article hrefs so next iteration can detect content change
-                try:
-                    prev_article_urls = set(
-                        pw_page.locator("a[href*='/news-details/'], a[href*='/press-release']").evaluate_all(
-                            "els => els.map(e => e.href)"
-                        )
-                    )
-                except Exception:
-                    prev_article_urls = set()
 
                 next_clicked = False
 
-                # Strategy 1: ARIA role — most reliable across widget implementations
+                # Primary strategy: Equisolve pager_button pattern.
+                # Find all button.pager_button elements, locate the one with
+                # aria-current="true" (active page), click the next one in the list.
+                # This avoids text matching and handles "..." separators cleanly
+                # as long as separators are not <button> elements.
                 try:
-                    import re as _re
-                    btn = pw_page.get_by_role("link", name=_re.compile(r"^next", _re.IGNORECASE)).first
-                    if btn.is_visible(timeout=2000):
-                        btn.click()
-                        pw_page.wait_for_timeout(3000)
-                        next_clicked = True
+                    all_pager_btns = pw_page.locator("button.pager_button").all()
+                    active_idx = None
+                    for i, b in enumerate(all_pager_btns):
+                        try:
+                            if b.get_attribute("aria-current", timeout=300) == "true":
+                                active_idx = i
+                                break
+                        except Exception:
+                            continue
+                    if active_idx is not None and active_idx + 1 < len(all_pager_btns):
+                        next_btn = all_pager_btns[active_idx + 1]
+                        if next_btn.is_visible(timeout=1000):
+                            next_btn_text = (next_btn.text_content() or "").strip()
+                            next_btn.click()
+                            # Wait for that button to gain aria-current (widget's own
+                            # completion signal), then settle for article AJAX.
+                            try:
+                                pw_page.wait_for_function(
+                                    """(txt) => {
+                                        const btns = document.querySelectorAll('button.pager_button');
+                                        for (const b of btns) {
+                                            if (b.getAttribute('aria-current') === 'true'
+                                                    && b.textContent.trim() === txt) return true;
+                                        }
+                                        return false;
+                                    }""",
+                                    arg=next_btn_text,
+                                    timeout=10000,
+                                )
+                            except Exception:
+                                pass
+                            pw_page.wait_for_timeout(2000)
+                            next_clicked = True
+                            log.debug("Playwright: advanced to page button '%s'", next_btn_text)
                 except Exception:
                     pass
 
-                # Strategy 2: known CSS selectors (Equisolve/Q4 variants)
+                # Fallback: generic "Next" link/button for non-Equisolve widgets
                 if not next_clicked:
                     for selector in _NEXT_PAGE_SELECTORS:
                         try:
@@ -567,7 +572,6 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                         except Exception:
                             continue
 
-                # Strategy 3: text-based — catches any widget using visible "Next" label
                 if not next_clicked:
                     for next_text in ("Next", ">", "›", "»"):
                         try:
@@ -582,49 +586,11 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                         except Exception:
                             continue
 
-                # Strategy 4: numbered pager buttons (Equisolve pager_button pattern).
-                # The widget renders <button class="pager_button pager_page"> elements
-                # with aria-current="true" on the active page.  Click the button whose
-                # text is page_num + 1; then wait for that button to gain aria-current
-                # (the widget's own signal that the page swap completed).
                 if not next_clicked:
-                    try:
-                        next_num = str(page_num + 1)
-                        btn = pw_page.locator(
-                            f"button.pager_button:text-is('{next_num}')"
-                        ).first
-                        if btn.is_visible(timeout=1000):
-                            btn.click()
-                            try:
-                                # Wait for the button to become active (widget acknowledges
-                                # page change), then add a fixed settle for the article
-                                # list AJAX to complete — the button DOM updates fractionally
-                                # before the article list response arrives.
-                                pw_page.wait_for_selector(
-                                    f"button.pager_button[aria-current='true']:text-is('{next_num}')",
-                                    timeout=10000,
-                                )
-                            except Exception:
-                                pass
-                            pw_page.wait_for_timeout(2000)
-                            next_clicked = True
-                    except Exception:
-                        pass
-
-                if not next_clicked:
-                    # Log all link texts at INFO to diagnose pagination selector
-                    try:
-                        all_texts = [
-                            t.strip()
-                            for t in pw_page.locator("a").all_text_contents()
-                            if t.strip()
-                        ]
-                        log.info(
-                            "Playwright: no next button on page %d of %s — all link texts: %s",
-                            page_num, url, all_texts,
-                        )
-                    except Exception:
-                        pass
+                    log.info(
+                        "Playwright: no next page control found after page %d of %s — stopping",
+                        page_num, url,
+                    )
                     break
 
             browser.close()
