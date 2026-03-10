@@ -501,22 +501,64 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 log.debug("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
                 pages_html.append(html)
 
-                # Try each known "Next" selector; stop paginating if none are visible
                 next_clicked = False
-                for selector in _NEXT_PAGE_SELECTORS:
-                    try:
-                        btn = pw_page.locator(selector).first
-                        if btn.is_visible(timeout=1000):
-                            btn.click()
-                            pw_page.wait_for_load_state("networkidle", timeout=15000)
-                            pw_page.wait_for_timeout(1500)
-                            next_clicked = True
-                            break
-                    except Exception:
-                        continue
+
+                # Strategy 1: ARIA role — most reliable across widget implementations
+                try:
+                    import re as _re
+                    btn = pw_page.get_by_role("link", name=_re.compile(r"^next", _re.IGNORECASE)).first
+                    if btn.is_visible(timeout=2000):
+                        btn.click()
+                        pw_page.wait_for_load_state("networkidle", timeout=15000)
+                        pw_page.wait_for_timeout(1500)
+                        next_clicked = True
+                except Exception:
+                    pass
+
+                # Strategy 2: known CSS selectors (Equisolve/Q4 variants)
+                if not next_clicked:
+                    for selector in _NEXT_PAGE_SELECTORS:
+                        try:
+                            btn = pw_page.locator(selector).first
+                            if btn.is_visible(timeout=500):
+                                btn.click()
+                                pw_page.wait_for_load_state("networkidle", timeout=15000)
+                                pw_page.wait_for_timeout(1500)
+                                next_clicked = True
+                                break
+                        except Exception:
+                            continue
+
+                # Strategy 3: text-based — catches any widget using visible "Next" label
+                if not next_clicked:
+                    for next_text in ("Next", ">", "›", "»"):
+                        try:
+                            btn = pw_page.locator(
+                                f"a:has-text('{next_text}'), button:has-text('{next_text}')"
+                            ).first
+                            if btn.is_visible(timeout=500):
+                                btn.click()
+                                pw_page.wait_for_load_state("networkidle", timeout=15000)
+                                pw_page.wait_for_timeout(1500)
+                                next_clicked = True
+                                break
+                        except Exception:
+                            continue
 
                 if not next_clicked:
-                    log.debug("Playwright pagination: no next button found after page %d", page_num)
+                    # Log all link texts at DEBUG to help diagnose missing selectors
+                    try:
+                        all_texts = [
+                            t.strip()
+                            for t in pw_page.locator("a").all_text_contents()
+                            if t.strip()
+                        ]
+                        log.debug(
+                            "Playwright: no next button on page %d of %s — visible link texts: %s",
+                            page_num, url, all_texts[:40],
+                        )
+                    except Exception:
+                        pass
                     break
 
             browser.close()
@@ -701,6 +743,13 @@ class IRScraper:
             )
             return True
         except Exception as e:
+            import sqlite3 as _sqlite3
+            if isinstance(e, _sqlite3.IntegrityError) and "UNIQUE constraint" in str(e):
+                # Race condition or hash mismatch between pre-insert check and insert.
+                # Treat as a duplicate — not an error.
+                log.warning("Skipping duplicate %s report (UNIQUE constraint): %s %s", fetch_strategy, ticker, source_url)
+                self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=source_url, period=period_str)
+                return False
             log.error("Failed to insert %s report %s %s: %s", fetch_strategy, ticker, period_str, e, exc_info=True)
             self._emit(
                 'url_error',
@@ -1383,10 +1432,24 @@ class IRScraper:
                         break
             return form_build_id, widget_id, soup
 
-        form_build_id, widget_id, _ = _extract_tokens(base_resp.text)
+        form_build_id, widget_id, base_soup = _extract_tokens(base_resp.text)
 
         if not widget_id:
-            log.error("%s: could not extract drupal widget_id from %s", ticker, ir_url)
+            # Dump form inputs and select elements to help diagnose widget format
+            try:
+                from bs4 import BeautifulSoup as _BS
+                _soup = _BS(base_resp.text, 'lxml')
+                _inputs = [
+                    f"{t.name}[name={t.get('name')!r} type={t.get('type')!r}]"
+                    for t in _soup.find_all(['input', 'select'])
+                    if t.get('name')
+                ]
+                log.error(
+                    "%s: could not extract drupal widget_id from %s — form elements found: %s",
+                    ticker, ir_url, _inputs[:30],
+                )
+            except Exception:
+                log.error("%s: could not extract drupal widget_id from %s", ticker, ir_url)
             summary.errors += 1
             return summary
 
