@@ -324,12 +324,13 @@ _GET_OBSERVATIONS_TOOL_OAI = {
 # ---------------------------------------------------------------------------
 
 def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None:
-    """Start Ollama if not running, then warm the target model into memory."""
+    """Restart Ollama with OLLAMA_NUM_PARALLEL set, then warm the target model."""
     import os
     import subprocess
     import time
 
     tags_url = f'{base_url}/api/tags'
+    num_parallel = _SEMAPHORE._value
 
     def _is_up() -> bool:
         try:
@@ -337,30 +338,38 @@ def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None
         except Exception:
             return False
 
-    if not _is_up():
-        progress.add_log(
-            f'Ollama not running — starting server (OLLAMA_NUM_PARALLEL={_SEMAPHORE._value})...'
+    # Always restart so OLLAMA_NUM_PARALLEL takes effect.
+    if _is_up():
+        progress.add_log('Stopping existing Ollama server...')
+        subprocess.call(
+            ['pkill', '-x', 'ollama'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        env = os.environ.copy()
-        env['OLLAMA_NUM_PARALLEL'] = str(_SEMAPHORE._value)
-        try:
-            subprocess.Popen(
-                ['ollama', 'serve'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env,
-            )
-        except FileNotFoundError:
-            raise RuntimeError('ollama not found on PATH — install Ollama first')
-        for _ in range(30):
+        for _ in range(10):
             time.sleep(1)
-            if _is_up():
-                progress.add_log('Ollama server ready')
+            if not _is_up():
                 break
-        else:
-            raise RuntimeError('Ollama did not start within 30 seconds')
+
+    progress.add_log(f'Starting Ollama server (OLLAMA_NUM_PARALLEL={num_parallel})...')
+    env = os.environ.copy()
+    env['OLLAMA_NUM_PARALLEL'] = str(num_parallel)
+    try:
+        subprocess.Popen(
+            ['ollama', 'serve'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+    except FileNotFoundError:
+        raise RuntimeError('ollama not found on PATH — install Ollama first')
+    for _ in range(30):
+        time.sleep(1)
+        if _is_up():
+            progress.add_log(f'Ollama server ready (OLLAMA_NUM_PARALLEL={num_parallel})')
+            break
     else:
-        progress.add_log('Ollama already running')
+        raise RuntimeError('Ollama did not start within 30 seconds')
 
     progress.add_log(f'Warming model {model}...')
     try:
