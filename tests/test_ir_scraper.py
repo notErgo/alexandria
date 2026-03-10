@@ -3,6 +3,7 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 from scrapers.ir_scraper import (
     IRScraper,
+    _playwright_collect_all_pages,
     candidate_urls_for_period,
     cleanspark_candidate_urls,
     discovery_links_from_html,
@@ -223,8 +224,10 @@ class TestDiscoveryHelpers:
                 "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
             }
         )
-        assert urls[0] == "https://www.prnewswire.com/news/cleanspark%2C%20inc."
-        assert urls[1] == "https://www.prnewswire.com/news/cleanspark%2C%20inc.?page=2"
+        assert urls[0] == "https://investors.cleanspark.com/news"
+        assert urls[1] == "https://investors.cleanspark.com/news?page=2"
+        assert "https://www.prnewswire.com/news/cleanspark%2C%20inc." in urls
+        assert "https://www.prnewswire.com/news/cleanspark%2C%20inc.?page=2" in urls
 
     def test_riot_discovery_uses_archive_pages(self):
         urls = discovery_page_urls_for_company(
@@ -536,9 +539,14 @@ class TestDiscoveryMode:
         <body><h1>CleanSpark Releases January 2024 Bitcoin Mining Update</h1><p>Mined 626 BTC.</p></body></html>
         """
 
-        with patch(
+        def _fake_fetch(url, session):
+            if "January-2024-Bitcoin-Mining-Update" in url:
+                return article_resp
+            return None
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
             "scrapers.ir_scraper._fetch_with_rate_limit",
-            side_effect=[listing_resp, article_resp, None, None, None],
+            side_effect=_fake_fetch,
         ):
             result = scraper._scrape_discovery(company)
 
@@ -575,9 +583,16 @@ class TestDiscoveryMode:
         <body><h1>CleanSpark Releases January 2026 Operational Update</h1><p>Mined BTC in January 2026.</p></body></html>
         """
 
-        with patch(
+        def _fake_fetch(url, session):
+            if "prnewswire.com/news/cleanspark%2C%20inc." in url:
+                return listing_resp
+            if "operational-update-302678881.html" in url:
+                return article_resp
+            return None
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]), patch(
             "scrapers.ir_scraper._fetch_with_rate_limit",
-            side_effect=[listing_resp, article_resp, None, None, None],
+            side_effect=_fake_fetch,
         ):
             result = scraper._scrape_discovery(company)
 
@@ -585,6 +600,41 @@ class TestDiscoveryMode:
         inserted = db.insert_report.call_args[0][0]
         assert inserted["source_type"] == "prnewswire_press_release"
         assert inserted["report_date"] == "2026-01-01"
+
+    def test_scrape_discovery_clsk_direct_candidates_cover_prior_years(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "CLSK",
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.cleanspark.com/news",
+            "pr_base_url": "https://investors.cleanspark.com",
+            "pr_start_year": 2025,
+        }
+
+        older_article_resp = MagicMock()
+        older_article_resp.text = """
+        <html><head><meta property="article:published_time" content="2025-02-05T08:00:00Z" /></head>
+        <body><h1>CleanSpark Releases January 2025 Bitcoin Mining Update</h1><p>Mined 626 BTC.</p></body></html>
+        """
+
+        def _fake_fetch(url, session):
+            if "January-2025-Bitcoin-Mining-Update" in url:
+                return older_article_resp
+            return None
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]), patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=_fake_fetch,
+        ):
+            result = scraper._scrape_discovery(company)
+
+        assert result.reports_ingested == 1
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted["report_date"] == "2025-01-01"
+        assert inserted["source_url"].endswith("CleanSpark-Releases-January-2025-Bitcoin-Mining-Update/default.aspx")
 
 
 class TestScrapeModeDispatch:
@@ -773,3 +823,101 @@ class TestPlaywrightScraper:
 
         assert result.reports_ingested == 0
         scraper.db.insert_report.assert_not_called()
+
+
+class TestPlaywrightPagination:
+    def test_collect_all_pages_skips_non_numeric_pager_controls(self):
+        class FakeButton:
+            def __init__(self, page, label):
+                self.page = page
+                self.label = label
+
+            def get_attribute(self, name, timeout=None):
+                if name != "aria-current":
+                    return None
+                return "true" if self.page.current_page == self.label else None
+
+            def text_content(self):
+                return self.label
+
+            def is_visible(self, timeout=None):
+                return self.label != "..."
+
+            def click(self):
+                if self.label.isdigit():
+                    self.page.current_page = self.label
+
+        class FakeLocatorList:
+            def __init__(self, page):
+                self.page = page
+
+            def all(self):
+                labels_by_page = {
+                    "1": ["1", "2", "3"],
+                    "2": ["1", "2", "...", "3"],
+                    "3": ["1", "2", "3"],
+                }
+                return [FakeButton(self.page, label) for label in labels_by_page[self.page.current_page]]
+
+        class FakeFallbackLocator:
+            @property
+            def first(self):
+                return self
+
+            def is_visible(self, timeout=None):
+                return False
+
+        class FakePage:
+            def __init__(self):
+                self.current_page = "1"
+
+            def goto(self, url, wait_until=None, timeout=None):
+                return None
+
+            def wait_for_selector(self, selector, timeout=None):
+                return None
+
+            def wait_for_timeout(self, timeout):
+                return None
+
+            def wait_for_function(self, script, arg=None, timeout=None):
+                return None
+
+            def content(self):
+                return f"<html><body>page-{self.current_page}</body></html>"
+
+            def locator(self, selector):
+                if selector == "button.pager_button":
+                    return FakeLocatorList(self)
+                return FakeFallbackLocator()
+
+        class FakeContext:
+            def new_page(self):
+                return FakePage()
+
+        class FakeBrowser:
+            def new_context(self, **kwargs):
+                return FakeContext()
+
+            def close(self):
+                return None
+
+        class FakePlaywright:
+            def __enter__(self):
+                self.chromium = MagicMock()
+                self.chromium.launch.return_value = FakeBrowser()
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        fake_sync_playwright = MagicMock(return_value=FakePlaywright())
+
+        with patch("playwright.sync_api.sync_playwright", fake_sync_playwright):
+            pages = _playwright_collect_all_pages("https://investors.cleanspark.com/news", max_pages=3)
+
+        assert pages == [
+            "<html><body>page-1</body></html>",
+            "<html><body>page-2</body></html>",
+            "<html><body>page-3</body></html>",
+        ]
