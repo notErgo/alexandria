@@ -26,32 +26,32 @@
     "rss_url": "https://feed.businesswire.com/rss/home/?rss=G1&company=riot-platforms",
     "cik": "0001167419",
     "active": true,
-    "scraper_mode": "rss",
+    "scraper_mode": "template",
     "reporting_cadence": "monthly",
-    "url_template": null,
-    "pr_start_year": null,
+    "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
+    "pr_start_year": 2020,
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "BusinessWire company RSS feed. Template mode retired — RSS is more robust and does not break when Riot changes URL slugs. Pre-2023 production data (2021 no-year slugs, 2022 riot-blockchain prefix) covered by EDGAR 8-K filings."
+    "sandbox_note": "Listing page is JS-rendered (Divi/WordPress); index mode cannot scrape it. Template mode works: individual PR slugs follow a predictable pattern. Backfill uses backfill_mode=True to bypass fast-forward. BusinessWire RSS returns 0 results as of 2026-03. Final monthly production update was December 2025 (switched to quarterly reporting)."
   },
   {
     "ticker": "CLSK",
     "name": "CleanSpark, Inc.",
     "tier": 1,
-    "ir_url": "https://investors.cleanspark.com/news",
+    "ir_url": "https://investors.cleanspark.com/news/",
     "pr_base_url": "https://investors.cleanspark.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/company/cleanspark-inc",
+    "rss_url": null,
     "cik": "0000827876",
     "active": true,
-    "scraper_mode": "rss",
+    "scraper_mode": "skip",
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_year": null,
-    "skip_reason": null,
+    "skip_reason": "IR listing page returns 403 to automated requests. Site is ASP.NET (not Drupal); drupal_year mode does not apply. All production PRs distributed via PRNewswire (https://www.prnewswire.com/news/cleanspark,-inc./). EDGAR 8-K filings are primary source.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 9,
-    "sandbox_note": "GlobeNewswire company RSS feed. Template mode retired — RSS is more robust and does not break when CleanSpark changes URL slugs. Pre-2023 data covered by EDGAR 8-K filings. Mining started December 2020 (ATL Data Centers acquisition)."
+    "sandbox_note": "investors.cleanspark.com returns 403 on listing page. Individual PR URL pattern: /news/news-details/YYYY/Title-slug/default.aspx. PRNewswire search URL for reference: https://www.prnewswire.com/news/cleanspark,-inc./ GlobeNewswire rss_url in config is incorrect (CLSK uses PRNewswire, not GlobeNewswire)."
   },
   {
     "ticker": "CORZ",
@@ -60,7 +60,7 @@
     "ir_url": "https://investors.corescientific.com/news-events/press-releases",
     "pr_base_url": "https://investors.corescientific.com",
     "rss_url": null,
-    "cik": "0001836012",
+    "cik": "0001839341",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -69,7 +69,7 @@
     "skip_reason": "IR page returns 502; EDGAR 8-K filings are primary source. Filed for Chapter 11 bankruptcy December 2022, emerged January 2024 as same SEC entity.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "investors.corescientific.com returned 502 as of 2026-03. Verify CIK 0001836012 against EDGAR (XPDI SPAC entity that merged with Core Scientific Holdings)."
+    "sandbox_note": "investors.corescientific.com returned 502 as of 2026-03. CIK 0001839341 verified against EDGAR (Core Scientific, Inc./tx). Old CIK 0001836012 was WDC Fund 1 LLC (wrong)."
   },
   {
     "ticker": "CIFR",
@@ -78,7 +78,7 @@
     "ir_url": "https://investors.ciphermining.com/news-events/press-releases",
     "pr_base_url": "https://investors.ciphermining.com",
     "rss_url": null,
-    "cik": "0001836028",
+    "cik": "0001819989",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -87,7 +87,7 @@
     "skip_reason": "EDGAR 8-K filings are primary source. Mining operations began mid-2021.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": null
+    "sandbox_note": "CIK 0001819989 verified against EDGAR (Cipher Digital Inc., ticker CIFR). Old CIK 0001836028 was Florida Oil & Gas Alternative Fund LLC (wrong)."
   },
   {
     "ticker": "WULF",
@@ -96,7 +96,7 @@
     "ir_url": "https://investors.terawulf.com/news-events/press-releases",
     "pr_base_url": "https://investors.terawulf.com",
     "rss_url": "https://investors.terawulf.com/news-events/press-releases/rss",
-    "cik": "0001839175",
+    "cik": "0001083301",
     "active": true,
     "scraper_mode": "rss",
     "reporting_cadence": "monthly",
@@ -105,7 +105,7 @@
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "investors.terawulf.com must be added to settings.json networkAllowList. TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022. GlobeNewswire also publishes their releases."
+    "sandbox_note": "investors.terawulf.com must be added to settings.json networkAllowList. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. Old CIK 0001839175 was M3-Brigade Acquisition II Corp (wrong). TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
   },
   {
     "ticker": "HUT",
@@ -114,7 +114,7 @@
     "ir_url": "https://investors.hut8.com/news-events/press-releases",
     "pr_base_url": "https://investors.hut8.com",
     "rss_url": null,
-    "cik": "0001900035",
+    "cik": "0001964789",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -123,7 +123,7 @@
     "skip_reason": "EDGAR 10-K/10-Q filings are primary source. Monthly production PRs available via PRNewswire (https://www.prnewswire.com/news/hut-8-corp./) but no RSS feed confirmed.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Hut 8 Corp is the US-incorporated entity formed from the November 2023 merger of Hut 8 Mining Corp (Canada) and US Bitcoin Corp (USBTC). Ticker changed from HUT8 to HUT at that time. CIK 0001900035 is the new domestic filer; verify against EDGAR. Old HUT8 Canadian entity had no US SEC filings."
+    "sandbox_note": "Hut 8 Corp is the US-incorporated entity formed from the November 2023 merger of Hut 8 Mining Corp (Canada) and US Bitcoin Corp (USBTC). Ticker changed from HUT8 to HUT at that time. CIK 0001964789 verified against EDGAR (Hut 8 Corp., ticker HUT, DE incorporated). Old entity Hut 8 Mining Corp is CIK 0001731805 (Canadian, deregistered Dec 2023, no ticker). Old config CIK 0001900035 was First Person Ltd (wrong)."
   },
   {
     "ticker": "SDIG",
@@ -132,7 +132,7 @@
     "ir_url": "https://investors.strongholddigitalmining.com/news-events/press-releases",
     "pr_base_url": "https://investors.strongholddigitalmining.com",
     "rss_url": null,
-    "cik": "0001845610",
+    "cik": "0001856028",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "quarterly",
@@ -141,7 +141,7 @@
     "skip_reason": "Quarterly reporter; EDGAR 8-K filings are primary source. Reports mining metrics in quarterly earnings rather than monthly production updates.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": null
+    "sandbox_note": "CIK 0001856028 verified against EDGAR (Stronghold Digital Mining, Inc.). Old CIK 0001845610 was Empire State Greenhouses LLC (wrong)."
   },
   {
     "ticker": "APLD",
@@ -150,7 +150,7 @@
     "ir_url": "https://ir.applieddigital.com/news-events/press-releases",
     "pr_base_url": "https://ir.applieddigital.com",
     "rss_url": null,
-    "cik": "0000879407",
+    "cik": "0001144879",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "quarterly",
@@ -168,16 +168,16 @@
     "ir_url": "https://americanbitcoin.com/investors",
     "pr_base_url": "https://americanbitcoin.com",
     "rss_url": null,
-    "cik": null,
+    "cik": "0001755953",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_year": null,
-    "skip_reason": "New company formed 2025; EDGAR filing history minimal. CIK unknown; set to null until first SEC filing confirmed.",
+    "skip_reason": "New company formed 2025; limited EDGAR filing history. CIK 0001755953 confirmed.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "American Bitcoin Corp was formed in early 2025 as a partnership between Hut 8 Corp and Eric/Donald Trump Jr. Mining operations based on Hut 8 US infrastructure. Verify SEC CIK once first 8-K or S-1 is filed. No production PR history pre-2025."
+    "sandbox_note": "CIK 0001755953 verified against EDGAR (American Bitcoin Corp., ticker ABTC, DE). SIC 6199. Formed early 2025 as partnership between Hut 8 Corp and Eric/Donald Trump Jr. Mining operations on Hut 8 US infrastructure."
   },
   {
     "ticker": "IREN",
@@ -186,7 +186,7 @@
     "ir_url": "https://ir.iren.com/news-events/press-releases",
     "pr_base_url": "https://ir.iren.com",
     "rss_url": null,
-    "cik": "0001871135",
+    "cik": "0001878848",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -195,7 +195,7 @@
     "skip_reason": "IR page returns 502 as of 2026-03; EDGAR 6-K/20-F filings are primary source.",
     "filing_regime": "foreign",
     "fiscal_year_end_month": 6,
-    "sandbox_note": "Formerly Iris Energy Limited (rebranded to IREN in 2024). Australian company listed on Nasdaq as foreign private issuer. Fiscal year ends June 30. Files 20-F (annual) and 6-K (current reports) with SEC."
+    "sandbox_note": "CIK 0001878848 verified against EDGAR (IREN Ltd, ticker IREN). Formerly Iris Energy Limited (rebranded to IREN in 2024). Australian company listed on Nasdaq as foreign private issuer. Fiscal year ends June 30. Files 20-F (annual) and 6-K (current reports) with SEC. Old CIK 0001871135 was MOBILE PORTFOLIO H LLC (wrong)."
   },
   {
     "ticker": "BTBT",
@@ -204,7 +204,7 @@
     "ir_url": "https://ir.bit-digital.com/news-events/press-releases",
     "pr_base_url": "https://ir.bit-digital.com",
     "rss_url": null,
-    "cik": "0001717307",
+    "cik": "0001710350",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -213,25 +213,25 @@
     "skip_reason": "Foreign private issuer; EDGAR 6-K/20-F filings are primary source.",
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Cayman Islands holding company, operations primarily in North America and Iceland. Monthly BTC production updates filed as 6-K with SEC. Formerly ZW Data Action Technologies; pivoted to BTC mining 2020."
+    "sandbox_note": "CIK 0001710350 verified against EDGAR (Bit Digital, Inc, ticker BTBT). Cayman Islands holding company, operations primarily in North America and Iceland. Monthly BTC production updates filed as 6-K with SEC. Formerly ZW Data Action Technologies; pivoted to BTC mining 2020. Old CIK 0001717307 was Industrial Logistics Properties Trust (wrong)."
   },
   {
     "ticker": "BTDR",
     "name": "Bitdeer Technologies Group",
     "tier": 2,
-    "ir_url": "https://ir.bitdeer.com/news-events/press-releases",
+    "ir_url": "https://ir.bitdeer.com/news-events/news-releases",
     "pr_base_url": "https://ir.bitdeer.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/company/bitdeer-technologies-group",
-    "cik": "0001867297",
+    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitdeer%20Technologies%20Group",
+    "cik": "0001899123",
     "active": true,
-    "scraper_mode": "rss",
+    "scraper_mode": "drupal_year",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_year": null,
+    "pr_start_year": 2023,
     "skip_reason": null,
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Cayman Islands holding company; Singapore-headquartered Bitcoin mining and hosting company. Files 20-F (annual) and 6-K (current) with SEC. GlobeNewswire RSS slug may need verification."
+    "sandbox_note": "Drupal year-filter widget. Widget ID and form_build_id extracted dynamically from base page. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
   },
   {
     "ticker": "ARBK",
@@ -240,7 +240,7 @@
     "ir_url": "https://www.argoblockchain.com/news-events/press-releases",
     "pr_base_url": "https://www.argoblockchain.com",
     "rss_url": null,
-    "cik": "0001779063",
+    "cik": "0001841675",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -249,7 +249,7 @@
     "skip_reason": "IR page returns 502 as of 2026-03; EDGAR 6-K/20-F filings are primary source.",
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "UK-incorporated company listed on Nasdaq and London Stock Exchange. Files 20-F (annual) and 6-K (monthly production reports) with SEC. Sold Helios Texas facility to Galaxy Digital in 2023; now operates primarily in Quebec."
+    "sandbox_note": "CIK 0001841675 verified against EDGAR (Argo Blockchain Plc, tickers ARBK/ARBKF). UK-incorporated company listed on Nasdaq and London Stock Exchange. Files 20-F (annual) and 6-K (monthly production reports) with SEC. Sold Helios Texas facility to Galaxy Digital in 2023; now operates primarily in Quebec. Old CIK 0001779063 was Guggenheim Defined Portfolios Series 1944 (wrong)."
   },
   {
     "ticker": "FUFU",
@@ -258,7 +258,7 @@
     "ir_url": "https://ir.bitfufu.com/news-events/press-releases",
     "pr_base_url": "https://ir.bitfufu.com",
     "rss_url": "https://www.globenewswire.com/en/search/keyword/BitFuFu+Inc",
-    "cik": "0001850838",
+    "cik": "0001921158",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -267,7 +267,7 @@
     "skip_reason": "Foreign private issuer; EDGAR 6-K/20-F filings are primary source. GlobeNewswire search URL stored for reference.",
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Cayman Islands holding company; Singapore-based BTC mining and cloud mining services company. Listed on Nasdaq via SPAC (Arisz Acquisition Corp) in 2024. Bitmain affiliate. rss_url is a GlobeNewswire keyword search URL (not a company RSS feed)."
+    "sandbox_note": "CIK 0001921158 verified against EDGAR (Bitfufu Inc., tickers FUFU/FUFUW). Cayman Islands holding company; Singapore-based BTC mining and cloud mining services company. Listed on Nasdaq via SPAC (Arisz Acquisition Corp) in 2024. Bitmain affiliate. rss_url is a GlobeNewswire keyword search URL (not a company RSS feed). Old CIK 0001850838 was Omega Therapeutics Inc (wrong)."
   },
   {
     "ticker": "CANG",
@@ -276,7 +276,7 @@
     "ir_url": "https://ir.cangoonline.com/news-events/press-releases",
     "pr_base_url": "https://ir.cangoonline.com",
     "rss_url": null,
-    "cik": "0001726445",
+    "cik": "0001725123",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -285,25 +285,25 @@
     "skip_reason": "Foreign private issuer; EDGAR 6-K/20-F filings are primary source. Pivoted to BTC mining in late 2024.",
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Cayman Islands holding company; formerly a Chinese auto financing platform. Sold auto financing business and pivoted to BTC self-mining in late 2024. Limited mining history; BTC production data begins approximately Q4 2024."
+    "sandbox_note": "CIK 0001725123 verified against EDGAR (Cango Inc., ticker CANG). Cayman Islands holding company; formerly a Chinese auto financing platform. Sold auto financing business and pivoted to BTC self-mining in late 2024. Limited mining history; BTC production data begins approximately Q4 2024. Old CIK 0001726445 was Seer Inc (wrong)."
   },
   {
     "ticker": "BITF",
     "name": "Bitfarms Ltd.",
     "tier": 1,
-    "ir_url": "https://bitfarms.com/investors/press-releases/",
-    "pr_base_url": "https://bitfarms.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/company/bitfarms-ltd",
-    "cik": "0001783398",
+    "ir_url": "https://investor.bitfarms.com/news-events/press-releases",
+    "pr_base_url": "https://investor.bitfarms.com",
+    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitfarms%20Ltd%C2%A7",
+    "cik": "0001812477",
     "active": true,
-    "scraper_mode": "rss",
+    "scraper_mode": "drupal_year",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_year": null,
+    "pr_start_year": 2018,
     "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Files 40-F (annual) and 6-K (current reports) with SEC. Operates farms in Canada, USA, Paraguay, and Argentina. Monthly production updates published via GlobeNewswire. GlobeNewswire RSS slug may need verification."
+    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available. Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) — IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd\u00a7"
   },
   {
     "ticker": "HIVE",
@@ -312,7 +312,7 @@
     "ir_url": "https://www.hivedigitaltechnologies.com/investors/",
     "pr_base_url": "https://www.hivedigitaltechnologies.com",
     "rss_url": null,
-    "cik": "0001558730",
+    "cik": "0001720424",
     "active": true,
     "scraper_mode": "skip",
     "reporting_cadence": "monthly",
@@ -321,6 +321,6 @@
     "skip_reason": "Canadian company filing 40-F/6-K via EDGAR; monthly GPU and BTC production updates in 6-K filings.",
     "filing_regime": "canadian",
     "fiscal_year_end_month": 3,
-    "sandbox_note": "Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Fiscal year ends March 31. Files 40-F (annual) and 6-K (current reports) with SEC. Mines both BTC and ETH (GPU farms in Iceland, Sweden, Canada). Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023."
+    "sandbox_note": "CIK 0001720424 verified against EDGAR (HIVE Digital Technologies Ltd., ticker HIVE). Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Fiscal year ends March 31. Files 40-F (annual) and 6-K (current reports) with SEC. Mines both BTC and ETH (GPU farms in Iceland, Sweden, Canada). Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023. Old CIK 0001558730 was Destrier Capital Partners Ltd (wrong)."
   }
 ]

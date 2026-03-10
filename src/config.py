@@ -51,7 +51,7 @@ ALL_ARCHIVE_TICKERS: List[str] = sorted([
 
 
 _VALID_SCRAPER_MODES: frozenset = frozenset({
-    'rss', 'template', 'index', 'skip', 'playwright',
+    'rss', 'template', 'index', 'skip', 'playwright', 'drupal_year',
 })
 
 _VALID_FILING_REGIMES: frozenset = frozenset({
@@ -140,8 +140,13 @@ EDGAR_BASE_URL: str = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_COMPANY_URL: str = "https://www.sec.gov/cgi-bin/browse-edgar"
 # Submissions API — returns all filings for a CIK in one JSON blob
 EDGAR_SUBMISSIONS_URL: str = "https://data.sec.gov/submissions/CIK{cik}.json"
-# Probed 2026-03-01: 0.1s between requests works without 429; conservative floor
-EDGAR_REQUEST_DELAY_SECONDS: float = 0.1
+# SEC limit is 10 req/s per IP total across all connections.
+# With N parallel workers each sleeping D seconds: total rate = N/D req/s.
+# Default 2 workers × (1/0.5s) = 4 req/s — safely within the 10 req/s limit.
+# Do NOT lower below 0.5 without also reducing MINERS_INGEST_WORKERS.
+EDGAR_REQUEST_DELAY_SECONDS: float = float(
+    __import__('os').environ.get('EDGAR_REQUEST_DELAY', '0.5')
+)
 # Base backoff sleep (seconds) when EDGAR returns 429 Too Many Requests
 EDGAR_RETRY_BACKOFF_BASE: float = 60.0
 

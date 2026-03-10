@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch, call
 
 
 def _make_report(report_id=1, ticker='MARA', source_type='ir_press_release',
-                 raw_text='MARA produced 500 BTC in January 2024.'):
+                 raw_text='MARA bitcoin mined 500 BTC in January 2024.'):
     return {
         'id': report_id,
         'ticker': ticker,

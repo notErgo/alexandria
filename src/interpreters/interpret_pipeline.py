@@ -378,6 +378,7 @@ def _run_llm_batch(
     ticker: str = None,
     expected_granularity: str = 'monthly',
     config=None,
+    regex_hits: dict = None,
 ) -> tuple:
     """
     Try batch extraction first (1 Ollama call for all metrics).
@@ -390,6 +391,10 @@ def _run_llm_batch(
         over expected_granularity and is forwarded to extract_batch so the
         temporal anchor is included in the prompt.
     expected_granularity: legacy param used when config is None.
+    regex_hits: dict of regex results keyed by metric (from _build_regex_by_metric).
+        When supplied and empty, the per-metric fallback loop is skipped — if both
+        the batch call and regex found nothing, individual per-metric calls will
+        almost certainly also find nothing and would only waste LLM cycles.
     """
     # Resolve config — create one if not supplied so callers get consistent behaviour
     if config is None:
@@ -404,6 +409,14 @@ def _run_llm_batch(
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
         return result, meta
     log.warning("  LLM batch empty — falling back to per-metric (%d calls)", len(metrics))
+    # Skip per-metric fallback when regex also found nothing. Both LLM and regex
+    # failing means the document almost certainly has no extractable values —
+    # individual metric calls will match this outcome and only waste LLM cycles.
+    if regex_hits is not None and not regex_hits:
+        log.info(
+            "  Skipping per-metric fallback: regex also found 0 hits — document likely non-extractable"
+        )
+        return {}, meta
     fallback = {}
     for metric in metrics:
         single = llm_interpreter.extract_batch(text, [metric], ticker=ticker, config=config)
@@ -752,15 +765,11 @@ def _interpret_quarterly_report(
     # The gate is bypassed when no keywords are configured (fresh DB).
     try:
         from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases_q
-        # Strip SQL LIKE delimiters (%..%) to get plain Python substrings.
-        kw_phrases = [
-            p.strip('%').lower()
-            for p in _get_det_phrases_q(db)
-            if p.strip('%')
-        ]
+        kw_phrases = [p.lower() for p in _get_det_phrases_q(db) if p.strip()]
     except Exception as _kw_err:
         log.warning("Could not load mining detection phrases for quarterly gate (non-fatal): %s", _kw_err)
-        kw_phrases = ['bitcoin', 'btc', 'hash rate', 'hashrate', 'exahash', 'petahash', 'mining operations']
+        from infra.keyword_service import _PRODUCTION_GATE_PHRASES
+        kw_phrases = [p.lower() for p in _PRODUCTION_GATE_PHRASES]
     if kw_phrases:
         text_lower = text.lower()
         log.debug(
@@ -978,18 +987,13 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # rather than the narrower anchor phrases — archive/IR text says "produced
         # 742 BTC" not "bitcoin production", so exact anchor matching is too strict.
         # Hardcoded fallback so the gate ALWAYS fires even when DB/keyword service fails.
-        _KW_GATE_FALLBACK = ['bitcoin', 'btc', 'hash rate', 'hashrate', 'exahash', 'petahash', 'mining operations']
         try:
-            from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
-            # Strip SQL LIKE delimiters (%..%) to get plain Python substrings.
-            _det_phrases = [
-                p.strip('%').lower()
-                for p in _get_det_phrases(db)
-                if p.strip('%')
-            ] or _KW_GATE_FALLBACK
+            from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases, _PRODUCTION_GATE_PHRASES
+            _det_phrases = [p.lower() for p in _get_det_phrases(db)] or [p.lower() for p in _PRODUCTION_GATE_PHRASES]
         except Exception as _kw_err:
             log.warning("event=kw_gate_load_error error=%s — using hardcoded fallback", _kw_err)
-            _det_phrases = _KW_GATE_FALLBACK
+            from infra.keyword_service import _PRODUCTION_GATE_PHRASES
+            _det_phrases = [p.lower() for p in _PRODUCTION_GATE_PHRASES]
         if _det_phrases:
             _text_lower = text.lower()
             if not any(phrase in _text_lower for phrase in _det_phrases):
@@ -1039,12 +1043,13 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         ticker = report.get('ticker')
 
         # Primary batch LLM call — pays prefill once for all metrics on window 0.
-        # Falls back to per-metric extract_batch([metric]) if batch returns empty.
+        # Falls back to per-metric extract_batch([metric]) if batch returns empty,
+        # unless regex also found nothing (saves N wasted LLM calls on empty docs).
         llm_by_metric = {}
         if llm_available:
             llm_by_metric, _batch_meta = _run_llm_batch(
                 llm_interpreter, llm_text, all_metrics, ticker=ticker,
-                config=_run_config,
+                config=_run_config, regex_hits=regex_by_metric,
             )
             _batch_summary = getattr(llm_interpreter, '_last_batch_summary', '')
             if _batch_summary:
@@ -1125,8 +1130,11 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 run_config=_run_config,
             )
 
-        # Second-pass: try to fill prior-period gaps if LLM found figures for last month
-        if llm_available:
+        # Second-pass: try to fill prior-period gaps if LLM found figures for last month.
+        # Skip entirely when the main pass stored 0 data points — a document that
+        # yielded no current-period figures cannot contain historical figures for
+        # prior periods either (covers pre-pivot corporate 8-Ks and zero-yield docs).
+        if llm_available and summary.data_points_extracted > 0:
             _try_gap_fill(
                 report, db, llm_interpreter, llm_text, all_metrics,
                 CONFIDENCE_REVIEW_THRESHOLD, summary,

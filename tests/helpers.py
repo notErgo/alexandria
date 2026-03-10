@@ -8,7 +8,7 @@ def make_report(**overrides):
         'published_date': '2024-09-03',
         'source_type': 'archive_pdf',
         'source_url': None,
-        'raw_text': 'MARA mined 700 BTC in September 2024.',
+        'raw_text': 'MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
         'parsed_at': '2024-09-03T12:00:00',
     }
     defaults.update(overrides)

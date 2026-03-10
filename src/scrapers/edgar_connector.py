@@ -588,17 +588,18 @@ class EdgarConnector:
             log.warning("detect_btc_first_filing_date: no keywords available for %s", ticker)
             return None
 
-        cik_entity = str(cik).lstrip('0') or '0'
+        # EDGAR EFTS 'entity' parameter is a text search on company name, NOT a CIK
+        # filter.  Passing a numeric CIK as entity returns cross-company noise.
+        # Instead request ciks+adsh in _source so we can filter hits ourselves via
+        # _hit_matches_target_entity(), which checks _source.ciks and _source.adsh.
         params = {
             'q': query,
-            'entity': cik_entity,
             'dateRange': 'custom',
             'startdt': '1993-01-01',
             'forms': '8-K,8-K/A,10-K,10-K/A,10-Q,10-Q/A',
-            'hits.hits._source': 'file_date',
-            '_source': 'file_date',
             'sort': 'file-date',
             'order': 'asc',
+            'hits.hits.total.value': 1,
         }
         data = self._edgar_request(EDGAR_BASE_URL, params)
         if data is None:
@@ -610,12 +611,23 @@ class EdgarConnector:
             log.info("detect_btc_first_filing_date: no keyword hits found for %s", ticker)
             return None
 
-        filed_date = hits[0].get('_source', {}).get('file_date', '')
+        # Filter hits to only those filed by the target company.
+        filed_date = None
+        for hit in hits:
+            source = hit.get('_source', {})
+            if _hit_matches_target_entity(source, cik):
+                raw_date = source.get('file_date', '')
+                if raw_date:
+                    filed_date = raw_date[:10]
+                    break
+
         if not filed_date:
+            log.info(
+                "detect_btc_first_filing_date: no entity-matched hits for %s in first page",
+                ticker,
+            )
             return None
 
-        # Normalise to YYYY-MM-DD (drop time suffix if present)
-        filed_date = filed_date[:10]
         log.info(
             "detect_btc_first_filing_date: earliest BTC filing for %s is %s",
             ticker, filed_date,

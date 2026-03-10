@@ -49,7 +49,7 @@ class TestExtractReport:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
             source_type='archive_html',
         ))
@@ -199,7 +199,7 @@ class TestExtractReportBatchPath:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -234,7 +234,7 @@ class TestExtractReportBatchPath:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -325,7 +325,7 @@ class TestLLMOnlyRouting:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -353,7 +353,7 @@ class TestLLMOnlyRouting:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -459,6 +459,63 @@ class TestGapFill:
         from interpreters.interpret_pipeline import extract_report
         extract_report(report, db_with_company, registry)
         assert len(gap_fill_called) == 0
+
+    def test_gap_fill_skipped_when_main_pass_yields_zero_data_points(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """Gap fill must not fire when the main extraction pass found no data points.
+
+        A zero-yield report (pre-pivot corporate 8-K that slipped past the keyword
+        gate, etc.) cannot contain historical BTC figures for prior periods — skipping
+        the gap fill LLM call avoids burning cycles on known-empty documents.
+
+        The keyword gate (no BTC phrases) causes an early return before LLM runs, so
+        this test uses text that contains BTC keywords (passes the gate) but where
+        the LLM returns nothing — simulating a corporate announcement that mentions
+        bitcoin once in boilerplate but has no production figures.
+        """
+        import interpreters.interpret_pipeline as _ep
+
+        # Stub LLM as available but returning nothing for every call.
+        # Must implement the full interface used by _run_llm_batch/_apply_agreement
+        # so no AttributeError short-circuits the pipeline before the gap-fill guard.
+        class _EmptyLLM:
+            _last_call_meta = {}
+
+            def extract_batch(self, *a, **kw):
+                return {}
+
+            def extract(self, *a, **kw):
+                return None
+
+            def extract_historical_periods(self, *a, **kw):
+                return {}
+
+            def check_connectivity(self):
+                return True
+
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _EmptyLLM())
+        gap_fill_called = []
+        monkeypatch.setattr(_ep, '_try_gap_fill', lambda *a, **kw: gap_fill_called.append(1))
+
+        # Report that passes the keyword gate (contains "bitcoin") but has no
+        # extractable production figures — LLM will find nothing for current period.
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=(
+                'MARA Holdings announces board changes. Hash rate data was not disclosed. '
+                'Bitcoin production figures are unavailable for this filing period.'
+            ),
+            report_date='2018-06-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.data_points_extracted == 0
+        assert len(gap_fill_called) == 0, (
+            "Gap fill must not be called when main extraction yields 0 data points"
+        )
 
     def test_gap_fill_skips_when_prior_period_fully_populated(
         self, db_with_company, registry, monkeypatch
@@ -646,7 +703,7 @@ class TestActiveMetricFilter:
             'ticker': 'MARA', 'report_date': '2024-09-01',
             'published_date': '2024-09-01', 'source_type': 'archive_html',
             'source_url': 'https://example.com/mara-sep-2024.html',
-            'raw_text': 'MARA mined 700 BTC in September 2024.',
+            'raw_text': 'MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             'parsed_at': '2024-09-01T10:00:00',
         })
         report = db_with_company.get_report(report_id)
@@ -705,7 +762,7 @@ class TestActiveMetricFilter:
             'ticker': 'MARA', 'report_date': '2024-09-01',
             'published_date': '2024-09-01', 'source_type': 'archive_html',
             'source_url': 'https://example.com/mara-sep-2024.html',
-            'raw_text': 'MARA mined 700 BTC in September 2024.',
+            'raw_text': 'MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             'parsed_at': '2024-09-01T10:00:00',
         })
         report = db_with_company.get_report(report_id)
@@ -776,11 +833,15 @@ class TestKeywordGate:
         unextracted = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted)
 
-    def test_8k_keyword_gate_bypass_when_no_keywords(self, db_with_company, registry, monkeypatch):
-        """When no keywords are configured, 8-K gate is bypassed and extraction proceeds."""
+    def test_8k_keyword_gate_uses_hardcoded_fallback_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+        """Gate fires using hardcoded production phrases even when DB has no metric keywords.
+
+        The gate is never bypassed — it always uses at least _PRODUCTION_GATE_PHRASES.
+        A genuine production report must pass regardless of DB keyword state.
+        """
         import interpreters.interpret_pipeline as _ep
 
-        # No keywords configured — gate must not fire
+        # No metric keywords in DB — gate must still fire (and pass for production text)
         monkeypatch.setattr(
             db_with_company, 'get_all_metric_keywords',
             lambda active_only=True: [],
@@ -791,17 +852,16 @@ class TestKeywordGate:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024.',
+            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
             report_date='2024-09-01',
             source_type='edgar_8k',
         ))
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        from miner_types import ExtractionSummary
         summary = extract_report(report, db_with_company, registry)
 
-        assert summary.keyword_gated == 0, "keyword_gated must be 0 when gate is bypassed"
+        assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
         assert summary.reports_processed == 1
 
     def test_keyword_gated_field_exists_on_extraction_summary(self):
@@ -897,8 +957,11 @@ class TestKeywordGate:
         assert summary.keyword_gated == 0, "gate must not fire when keyword matches"
         mock_llm.extract_quarterly_batch.assert_called_once()
 
-    def test_quarterly_gate_bypassed_when_no_keywords_configured(self, db_with_company, registry, monkeypatch):
-        """When no keywords are configured, quarterly gate is bypassed and LLM is called."""
+    def test_quarterly_gate_uses_hardcoded_fallback_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+        """Quarterly gate uses hardcoded production phrases when DB has no metric keywords.
+
+        The gate is never bypassed — production reports with tight phrases must pass.
+        """
         import interpreters.interpret_pipeline as _ep
         from unittest.mock import MagicMock
         from miner_types import ExtractionResult
@@ -912,14 +975,14 @@ class TestKeywordGate:
         mock_llm.extract_quarterly_batch.return_value = {
             'production_btc': ExtractionResult(
                 metric='production_btc', value=900.0, unit='BTC', confidence=0.85,
-                extraction_method='llm_test', source_snippet='produced 900 BTC',
+                extraction_method='llm_test', source_snippet='bitcoin mined 900 BTC',
                 pattern_id='llm_test',
             ),
         }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA produced 900 BTC.',
+            raw_text='MARA bitcoin mined 900 BTC in Q3 2024. Hash rate 21 EH/s.',
             report_date='2024-09-30',
             source_type='edgar_10q',
             covering_period='2024-Q3',
@@ -929,7 +992,7 @@ class TestKeywordGate:
         from interpreters.interpret_pipeline import extract_report
         summary = extract_report(report, db_with_company, registry)
 
-        assert summary.keyword_gated == 0, "gate must not fire when no keywords configured"
+        assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
         mock_llm.extract_quarterly_batch.assert_called_once()
 
 
@@ -984,6 +1047,147 @@ class TestBoilerplateStrippingBySourceType:
         assert "About MARA Holdings" not in captured['llm_text']
         assert "Forward-Looking Statements" not in captured['llm_text']
         assert "700 BTC" in captured['llm_text']
+
+class TestPerMetricFallbackGate:
+    """Per-metric fallback loop is skipped when both LLM batch and regex find nothing."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def test_per_metric_fallback_skipped_when_regex_also_empty(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """When LLM batch returns empty AND regex found nothing, per-metric calls must not fire.
+
+        Both LLM and regex failing on the same document means there is nothing to
+        extract. Running N individual LLM calls after that is pure waste.
+        """
+        import interpreters.interpret_pipeline as _ep
+
+        call_log = []
+
+        class _BatchEmptyLLM:
+            _last_call_meta = {}
+            _last_batch_summary = ''
+
+            def extract_batch(self, text, metrics, **kw):
+                call_log.append(('batch', list(metrics)))
+                return {}
+
+            def extract(self, *a, **kw):
+                return None
+
+            def extract_historical_periods(self, *a, **kw):
+                return {}
+
+            def check_connectivity(self):
+                return True
+
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _BatchEmptyLLM())
+
+        # Text passes keyword gate (contains "bitcoin") but has no numeric production
+        # figures — regex will find zero matches.
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=(
+                'MARA Holdings announces board changes. Hash rate data was not disclosed. '
+                'Bitcoin production figures are unavailable for this filing period.'
+            ),
+            report_date='2018-06-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        # Only the single batch call should have been made; no per-metric calls.
+        batch_calls = [c for c in call_log if c[0] == 'batch']
+        assert len(batch_calls) == 1, (
+            f"Expected exactly 1 batch call (the primary attempt), got {len(batch_calls)}: {batch_calls}"
+        )
+
+    def test_per_metric_fallback_runs_when_regex_has_hits(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """When LLM batch returns empty but regex found something, per-metric fallback fires."""
+        import interpreters.interpret_pipeline as _ep
+
+        call_log = []
+
+        class _BatchEmptyLLM:
+            _last_call_meta = {}
+            _last_batch_summary = ''
+
+            def extract_batch(self, text, metrics, **kw):
+                call_log.append(('batch', list(metrics)))
+                return {}
+
+            def extract(self, *a, **kw):
+                return None
+
+            def extract_historical_periods(self, *a, **kw):
+                return {}
+
+            def check_connectivity(self):
+                return True
+
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _BatchEmptyLLM())
+
+        # Text with a real production figure — regex will match production_btc.
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 700 BTC in September 2024. Bitcoin production was strong.',
+            report_date='2024-09-01',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        extract_report(report, db_with_company, registry)
+
+        batch_calls = [c for c in call_log if c[0] == 'batch']
+        # Batch (1) + per-metric fallback (N metrics) must all have fired.
+        assert len(batch_calls) > 1, (
+            "Per-metric fallback must run when regex found hits but LLM batch was empty"
+        )
+
+
+class TestBoilerplateStrippingBySourceType2:
+    """edgar_8k boilerplate stripping (moved here to avoid class-level fixture conflict)."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def _make_llm_mock(self, monkeypatch, captured: dict):
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+
+        def _capture_batch(text, *args, **kwargs):
+            captured['llm_text'] = text
+            return {'production_btc': ExtractionResult(
+                metric='production_btc', value=700.0, unit='BTC', confidence=0.9,
+                extraction_method='llm_test', source_snippet='700 BTC', pattern_id='llm_test',
+            )}
+
+        mock_llm.extract_batch.side_effect = _capture_batch
+        mock_llm.extract_quarterly_batch.side_effect = _capture_batch
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        return mock_llm
 
     def test_edgar_8k_signatures_stripped_before_llm(
         self, db_with_company, registry, monkeypatch

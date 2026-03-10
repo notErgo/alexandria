@@ -221,6 +221,8 @@ class IRScraper:
             return self._scrape_index(company)
         elif mode == "playwright":
             return self._scrape_playwright(company)
+        elif mode == "drupal_year":
+            return self._scrape_drupal_year(company)
         elif mode == "skip":
             log.info("Skipping %s: %s", company["ticker"], company.get("skip_reason", "no reason given"))
             return IngestSummary()
@@ -328,6 +330,10 @@ class IRScraper:
         ticker = company["ticker"]
         url_template = company.get("url_template")
         start_year = company.get("pr_start_year")
+        # When True, bypass the fast-forward so all months from pr_start_year are
+        # attempted even when the DB already holds recent IR reports.  URL-hash
+        # dedup prevents re-inserting already-ingested months.
+        backfill_mode = company.get("backfill_mode", False)
 
         if not url_template:
             log.error("%s: url_template not set but scrape_mode is 'template'", ticker)
@@ -347,8 +353,9 @@ class IRScraper:
 
         # Fast-forward: if we already have IR reports, start from the month AFTER
         # the latest one already ingested (avoids N×HTTP for known-covered history).
+        # Skipped when backfill_mode=True so pre-existing coverage is traversed.
         latest = self.db.latest_ir_period(ticker)
-        if latest:
+        if not backfill_mode and latest:
             try:
                 ly, lm = int(latest[:4]), int(latest[5:7])
                 start_from = date(ly, lm + 1, 1) if lm < 12 else date(ly + 1, 1, 1)
@@ -363,6 +370,8 @@ class IRScraper:
                 current = date(start_year, 1, 1)
         else:
             current = date(start_year, 1, 1)
+            if backfill_mode:
+                log.info("%s: backfill_mode=True — starting from %s", ticker, current)
 
         def _next_month(d: date) -> date:
             return date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
@@ -435,6 +444,10 @@ class IRScraper:
         pr_base_url = company.get('pr_base_url', '')
         ticker = company['ticker']
         start_year = company.get('pr_start_year')
+        # When False, skip the "all already ingested" early-exit so a backfill
+        # run can traverse pages that are fully covered in the DB and reach
+        # older history beyond them.
+        stop_on_all_seen = company.get('stop_on_all_seen', True)
 
         # Paginate through listing pages (?page=N) until we hit a page with no
         # new production PRs. All-already-ingested pages signal we've reached
@@ -526,7 +539,7 @@ class IRScraper:
                                title=title, fetch_strategy='index', url=full_url, error=str(e))
                     summary.errors += 1
 
-            if new_count == 0 and production_links:
+            if stop_on_all_seen and new_count == 0 and production_links:
                 # Page had production PRs but all were already ingested — we've
                 # caught up to covered history. Stop paginating.
                 log.debug("%s page %d: all %d production PRs already ingested, stopping", ticker, page, len(production_links))
@@ -645,5 +658,166 @@ class IRScraper:
         except Exception as e:
             log.error("%s: playwright scrape failed: %s", ticker, e, exc_info=True)
             summary.errors += 1
+
+        return summary
+
+    def _scrape_drupal_year(self, company: dict):
+        """
+        Scrape IR listing pages powered by a Drupal year-filter widget.
+
+        Fetches the base IR page to extract a fresh form_build_id and
+        widget_id, then iterates each year from pr_start_year to the
+        current year, submitting the year-filter GET request for each.
+        Parses each filtered page for production press release links.
+
+        Required company fields:
+            ir_url        — base listing page URL
+            pr_base_url   — base for resolving relative hrefs
+            pr_start_year — first year to scrape
+        """
+        import re as _re
+        from miner_types import IngestSummary
+        from urllib.parse import urlencode
+
+        summary = IngestSummary()
+        ticker = company['ticker']
+        ir_url = company.get('ir_url', '')
+        pr_base_url = company.get('pr_base_url', '')
+        start_year = company.get('pr_start_year')
+
+        if not ir_url:
+            log.error("%s: ir_url not set for drupal_year mode", ticker)
+            summary.errors += 1
+            return summary
+        if not start_year:
+            log.error("%s: pr_start_year not set for drupal_year mode", ticker)
+            summary.errors += 1
+            return summary
+
+        # Fetch base page to extract Drupal form tokens
+        self._emit('page_fetch', ticker=ticker, url=ir_url, page=0)
+        base_resp = _fetch_with_rate_limit(ir_url, self.session)
+        if base_resp is None:
+            log.error("%s: could not fetch base IR page %s", ticker, ir_url)
+            summary.errors += 1
+            return summary
+
+        def _extract_tokens(html_text):
+            soup = BeautifulSoup(html_text, 'lxml')
+            token_input = soup.find('input', {'name': 'form_build_id'})
+            form_build_id = token_input['value'] if token_input else None
+            widget_id = None
+            for inp in soup.find_all('input', {'type': 'hidden'}):
+                if '_widget_id' in (inp.get('name') or ''):
+                    widget_id = inp.get('value')
+                    break
+            if not widget_id:
+                for tag in soup.find_all(['select', 'input']):
+                    m = _re.match(r'^([a-f0-9]{40,})_year', tag.get('name') or '')
+                    if m:
+                        widget_id = m.group(1)
+                        break
+            return form_build_id, widget_id, soup
+
+        form_build_id, widget_id, _ = _extract_tokens(base_resp.text)
+
+        if not widget_id:
+            log.error("%s: could not extract drupal widget_id from %s", ticker, ir_url)
+            summary.errors += 1
+            return summary
+
+        log.info("%s: drupal_year widget_id=%s...", ticker, widget_id[:16])
+
+        current_year = date.today().year
+
+        for year in range(start_year, current_year + 1):
+            params = {
+                f'{widget_id}_year[value]': str(year),
+                'op': 'Filter',
+                f'{widget_id}_widget_id': widget_id,
+                'form_id': 'widget_form_base',
+            }
+            if form_build_id:
+                params['form_build_id'] = form_build_id
+
+            year_url = f"{ir_url}?{urlencode(params)}"
+            self._emit('page_fetch', ticker=ticker, url=year_url, page=year)
+
+            resp = _fetch_with_rate_limit(year_url, self.session)
+            if resp is None:
+                log.warning("%s: no response for year %d filter", ticker, year)
+                continue
+
+            # Refresh token for subsequent year requests
+            fresh_build_id, _, year_soup = _extract_tokens(resp.text)
+            if fresh_build_id:
+                form_build_id = fresh_build_id
+
+            for link in year_soup.find_all('a', href=True):
+                title = link.get_text(separator=' ', strip=True)
+                href = link['href']
+
+                if not is_production_pr(title):
+                    continue
+                period = infer_period_from_pr_title(title)
+                if period is None:
+                    log.debug("Could not infer period from PR title: %s", title)
+                    continue
+
+                full_url = href if href.startswith('http') else pr_base_url + href
+                full_url = canonical_url(full_url)
+                period_str = period.strftime('%Y-%m-%d')
+
+                url_hash = hashlib.sha256(full_url.encode()).hexdigest()
+                if self.db.report_exists_by_url_hash(url_hash, ticker):
+                    log.debug("Already ingested drupal_year PR by URL: %s %s", ticker, full_url)
+                    self._emit('url_skipped', ticker=ticker, reason='duplicate_url',
+                               url=full_url, period=period_str)
+                    continue
+
+                pr_resp = _fetch_with_rate_limit(full_url, self.session)
+                if pr_resp is None:
+                    summary.errors += 1
+                    continue
+
+                html_fields = make_html_report_fields(pr_resp.text)
+                content_hash = simhash_text(html_fields['raw_text'][:5000])
+                dupes = self.db.find_near_duplicates(content_hash, ticker)
+                if dupes:
+                    log.warning(
+                        "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                        ticker, dupes[0]['id'],
+                    )
+                    self._emit('url_skipped', ticker=ticker, level='WARNING',
+                               reason='near_duplicate', url=full_url, period=period_str,
+                               matched_id=dupes[0]['id'])
+                    continue
+
+                report = {
+                    'ticker': ticker,
+                    'report_date': period_str,
+                    'published_date': None,
+                    'source_type': 'ir_press_release',
+                    'source_url': full_url,
+                    **html_fields,
+                    'parsed_at': datetime.now(timezone.utc).isoformat(),
+                    'content_simhash': content_hash,
+                    'fetch_strategy': 'drupal_year',
+                }
+                try:
+                    self.db.insert_report(report)
+                    summary.reports_ingested += 1
+                    log.info("Ingested drupal_year PR: %s %s from %s",
+                             ticker, period_str, full_url)
+                    self._emit('url_ingested', ticker=ticker, period=period_str,
+                               fetch_strategy='drupal_year',
+                               text_chars=len(html_fields['raw_text']), url=full_url)
+                except Exception as e:
+                    log.error("Failed to insert drupal_year report %s %s: %s",
+                              ticker, period_str, e, exc_info=True)
+                    self._emit('url_error', ticker=ticker, level='WARNING',
+                               period=period_str, fetch_strategy='drupal_year',
+                               url=full_url, error=str(e))
+                    summary.errors += 1
 
         return summary

@@ -480,7 +480,7 @@ class TestForceReingest:
             mara_dir.mkdir()
             html_file = mara_dir / "Riot Announces March 2024 Production and Operations Update.html"
             html_file.write_text(
-                "<html><body><p>The Company mined 806 BTC in March.</p></body></html>",
+                "<html><body><p>The Company bitcoin mined 806 BTC in March. Hash rate 20 EH/s.</p></body></html>",
                 encoding="utf-8",
             )
 

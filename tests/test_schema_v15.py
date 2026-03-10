@@ -247,7 +247,7 @@ class TestProvenance:
             'extraction_method': 'llm',
             'source_snippet': None,
             'run_id': 'run-xyz',
-            'model_name': 'qwen3.5:35b-a3b',
+            'model_name': 'qwen3.5:9b',
             'extractor_version': '1.0',
             'prompt_version': '1.0',
         })
@@ -255,7 +255,7 @@ class TestProvenance:
             row = conn.execute(
                 "SELECT model_name, extractor_version FROM data_points WHERE ticker='CLSK' AND metric='hodl_btc'"
             ).fetchone()
-        assert row['model_name'] == 'qwen3.5:35b-a3b'
+        assert row['model_name'] == 'qwen3.5:9b'
         assert row['extractor_version'] == '1.0'
 
     def test_data_points_extractor_version_stored(self, db):

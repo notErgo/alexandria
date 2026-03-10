@@ -13,7 +13,7 @@ def _make_report(**kwargs):
         'ticker': 'MARA',
         'report_date': '2024-01-31',
         'source_type': 'ir_press_release',
-        'raw_text': 'MARA produced 750 BTC in January 2024.',
+        'raw_text': 'MARA btc produced 750 BTC in January 2024. Hash rate 20 EH/s.',
     }
     base.update(kwargs)
     return base

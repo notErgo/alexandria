@@ -68,7 +68,7 @@ class TestExtractionPipelineQuarterlyPath:
             'ticker': 'WULF',
             'report_date': '2025-03-31',
             'source_type': 'edgar_10q',
-            'raw_text': 'WULF produced 800 bitcoin during Q1 2025.',
+            'raw_text': 'WULF bitcoin mined 800 BTC during Q1 2025. Hash rate 8 EH/s.',
             'covering_period': '2025-Q1',
         }
 
@@ -99,7 +99,7 @@ class TestExtractionPipelineQuarterlyPath:
             'ticker': 'WULF',
             'report_date': '2025-03-31',
             'source_type': 'edgar_10q',
-            'raw_text': 'WULF produced 800 bitcoin during Q1 2025.',
+            'raw_text': 'WULF bitcoin mined 800 BTC during Q1 2025. Hash rate 8 EH/s.',
             'covering_period': '2025-Q1',
         }
 

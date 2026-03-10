@@ -158,6 +158,146 @@ class TestExpandUrlTemplate:
             assert url == f"/{name}/2024", f"month {i} titlecase failed: {url!r}"
 
 
+class TestTemplateModeBackfill:
+    """_scrape_template backfill_mode flag: skips fast-forward so all months from
+    pr_start_year are attempted regardless of what is already in the DB."""
+
+    _COMPANY_BASE = {
+        "ticker": "RIOT",
+        "scraper_mode": "template",
+        "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
+        "pr_start_year": 2020,
+        "pr_base_url": "https://www.riotplatforms.com",
+    }
+    _PR_HTML = "<html><body><p>January 2020 production: 150 BTC mined.</p></body></html>"
+
+    def _make_scraper(self, latest_ir: str = "2025-12-01"):
+        db = MagicMock()
+        db.latest_ir_period.return_value = latest_ir
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        return IRScraper(db=db, session=MagicMock())
+
+    def test_default_fast_forwards_past_covered_history(self):
+        """Without backfill_mode, template scraper starts from latest+1 month
+        and never attempts months already covered in the DB."""
+        scraper = self._make_scraper(latest_ir="2025-12-01")
+        company = dict(self._COMPANY_BASE)  # no backfill_mode override
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit") as mock_fetch:
+            # All fetches return 404 (Jan 2026 doesn't exist)
+            mock_fetch.return_value = None
+            scraper._scrape_template(company)
+
+        # First attempted URL should be Jan 2026, not Jan 2020
+        if mock_fetch.called:
+            first_url = mock_fetch.call_args_list[0][0][0]
+            assert "january-2020" not in first_url
+            assert "january-2026" in first_url or mock_fetch.call_count == 0
+
+    def test_backfill_mode_starts_from_pr_start_year(self):
+        """With backfill_mode=True, template scraper ignores fast-forward and
+        starts from pr_start_year even when DB already has recent IR reports."""
+        scraper = self._make_scraper(latest_ir="2025-12-01")
+        company = {**self._COMPANY_BASE, "backfill_mode": True}
+
+        pr_resp = MagicMock()
+        pr_resp.text = self._PR_HTML
+
+        call_urls = []
+
+        def _fetch_side_effect(url, session):
+            call_urls.append(url)
+            # Only return content for Jan 2020; everything else 404
+            if "january-2020" in url:
+                return pr_resp
+            return None
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit", side_effect=_fetch_side_effect):
+            result = scraper._scrape_template(company)
+
+        # Jan 2020 URL must have been attempted
+        assert any("january-2020" in u for u in call_urls), \
+            f"Expected january-2020 in fetched URLs, got: {call_urls[:5]}"
+        assert result.reports_ingested == 1
+        inserted = scraper.db.insert_report.call_args[0][0]
+        assert inserted["report_date"] == "2020-01-01"
+
+
+class TestIndexModeStopOnAllSeen:
+    """_scrape_index early-exit behaviour: stop_on_all_seen flag."""
+
+    _COMPANY_BASE = {
+        "ticker": "RIOT",
+        "scraper_mode": "index",
+        "ir_url": "https://www.riotplatforms.com/press-releases/",
+        "pr_base_url": "https://www.riotplatforms.com",
+        "pr_start_year": 2020,
+    }
+
+    # Two-page listing: page 1 has a 2025 PR (already ingested),
+    # page 2 has a 2021 PR (new).
+    _PAGE1_HTML = """<html><body>
+        <a href="https://www.riotplatforms.com/riot-announces-november-2025-production-and-operations-updates/">
+            Riot Announces November 2025 Production Update
+        </a>
+        <a href="?page=2">2</a>
+    </body></html>"""
+    _PAGE2_HTML = """<html><body>
+        <a href="https://www.riotplatforms.com/riot-announces-january-2021-production-and-operations-updates/">
+            Riot Announces January 2021 Production Update
+        </a>
+    </body></html>"""
+    _PR_HTML = "<html><body><p>January 2021 production: 200 BTC mined.</p></body></html>"
+
+    def _make_scraper(self, page1_seen: bool = True):
+        db = MagicMock()
+        # page1 PR already ingested, page2 PR is new
+        db.report_exists_by_url_hash.side_effect = [page1_seen, False]
+        db.find_near_duplicates.return_value = []
+        return IRScraper(db=db, session=MagicMock())
+
+    def test_default_stops_after_all_seen_page(self):
+        """Without stop_on_all_seen=False, scraper halts on the first all-seen page."""
+        scraper = self._make_scraper(page1_seen=True)
+        company = dict(self._COMPANY_BASE)  # no stop_on_all_seen override
+
+        page1_resp = MagicMock()
+        page1_resp.text = self._PAGE1_HTML
+        page2_resp = MagicMock()
+        page2_resp.text = self._PAGE2_HTML
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit",
+                   side_effect=[page1_resp, page2_resp]) as mock_fetch:
+            result = scraper._scrape_index(company)
+
+        # Only page 1 fetched; early exit triggered before page 2
+        assert mock_fetch.call_count == 1
+        assert result.reports_ingested == 0
+
+    def test_stop_on_all_seen_false_continues_to_next_page(self):
+        """With stop_on_all_seen=False, scraper continues past all-seen pages."""
+        scraper = self._make_scraper(page1_seen=True)
+        company = {**self._COMPANY_BASE, "stop_on_all_seen": False}
+
+        page1_resp = MagicMock()
+        page1_resp.text = self._PAGE1_HTML
+        page2_resp = MagicMock()
+        page2_resp.text = self._PAGE2_HTML
+        pr_resp = MagicMock()
+        pr_resp.text = self._PR_HTML
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit",
+                   side_effect=[page1_resp, page2_resp, pr_resp]):
+            result = scraper._scrape_index(company)
+
+        assert result.reports_ingested == 1
+        scraper.db.insert_report.assert_called_once()
+        inserted = scraper.db.insert_report.call_args[0][0]
+        assert inserted["report_date"] == "2021-01-01"
+        assert inserted["ticker"] == "RIOT"
+
+
 class TestScrapeModeDispatch:
     def test_dispatch_uses_scraper_mode_key(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())

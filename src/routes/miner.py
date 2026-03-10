@@ -509,7 +509,7 @@ def get_miner_analysis(ticker: str, period: str):
             {
               "metric": "production_btc",
               "metric_label": "Production BTC",
-              "pattern_id": "llm_qwen3.5:35b",   // extraction_method
+              "pattern_id": "llm_qwen3.5:9b",   // extraction_method
               "regex": null,
               "value": 742.0,
               "unit": "BTC",

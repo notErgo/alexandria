@@ -312,7 +312,7 @@ class TestRateLimitBackoff:
 
 class TestBtcFirstFilingDate:
 
-    def _mock_edgar_efts_hit(self, filed_date='2017-09-15'):
+    def _mock_edgar_efts_hit(self, filed_date='2017-09-15', cik='1167419'):
         """Return a minimal EDGAR EFTS response with one hit."""
         return {
             'hits': {
@@ -320,7 +320,8 @@ class TestBtcFirstFilingDate:
                     '_source': {
                         'file_date': filed_date,
                         'entity_name': 'RIOT BLOCKCHAIN INC',
-                        'entity_id': '1167419',
+                        'entity_id': cik,
+                        'ciks': [cik],
                     }
                 }]
             }

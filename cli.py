@@ -15,8 +15,12 @@ Usage:
 import argparse
 import csv
 import json
+import logging
 import os
+import queue
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -69,30 +73,18 @@ def cmd_ingest(args):
             DeprecationWarning,
             stacklevel=2,
         )
-        import json
-        import requests as req_lib
-        from scrapers.ir_scraper import IRScraper
-        # Always load scraping config from companies.json — the DB companies table
-        # does not store scrape_mode, url_template, rss_url, pr_start_year, etc.
         with open(str(Path(CONFIG_DIR) / 'companies.json')) as f:
             companies = json.load(f)
         companies = [c for c in companies if c.get('active', True)]
         if args.ticker:
             companies = [c for c in companies if c['ticker'] == args.ticker.upper()]
-        session = req_lib.Session()
-        scraper = IRScraper(db=db, session=session)
-        for company in companies:
-            print(f"Scraping IR for {company['ticker']} (mode={company.get('scrape_mode','index')})...")
-            s = scraper.scrape_company(company)
-            print(f"  → {s.reports_ingested} reports, {s.data_points_extracted} data points, {s.errors} errors")
+        num_workers = getattr(args, 'workers', int(os.environ.get('MINERS_INGEST_WORKERS', '6')))
+        print(f"Scraping IR for {len(companies)} companies ({num_workers} workers)...")
+        db_path = str(Path(DATA_DIR) / 'minerdata.db')
+        s = _run_ir_ingest_pool(db_path, companies, num_workers=num_workers)
+        print(f"IR ingest complete: {s.reports_ingested} reports, {s.errors} errors")
 
     elif args.source == 'edgar':
-        import requests as req_lib
-        from scrapers.edgar_connector import EdgarConnector
-        session = req_lib.Session()
-        connector = EdgarConnector(db=db, session=session)
-        # When a specific ticker is requested, search ALL companies (including inactive)
-        # so that EDGAR can be fetched for companies that switched to quarterly-only.
         if args.ticker:
             companies = db.get_companies(active_only=False)
             companies = [c for c in companies if c['ticker'] == args.ticker.upper()]
@@ -102,15 +94,11 @@ def cmd_ingest(args):
         if args.since:
             parts = args.since.split('-')
             since = date(int(parts[0]), int(parts[1]), 1)
-        for company in companies:
-            if not company.get('cik'):
-                print(f"  Skipping {company['ticker']}: no CIK")
-                continue
-            print(f"Fetching EDGAR for {company['ticker']} since {since}...")
-            s = connector.fetch_production_filings(
-                cik=company['cik'], ticker=company['ticker'], since_date=since
-            )
-            print(f"  → {s.reports_ingested} reports, {s.data_points_extracted} data points")
+        num_workers = getattr(args, 'workers', int(os.environ.get('MINERS_INGEST_WORKERS', '2')))
+        print(f"Fetching EDGAR for {len(companies)} companies since {since} ({num_workers} workers)...")
+        db_path = str(Path(DATA_DIR) / 'minerdata.db')
+        s = _run_edgar_ingest_pool(db_path, companies, since, num_workers=num_workers)
+        print(f"EDGAR ingest complete: {s.reports_ingested} reports, {s.errors} errors")
 
 
 def cmd_query(args):
@@ -161,6 +149,156 @@ def cmd_export(args):
     print(f"Exported {len(rows)} rows to {args.out}")
 
 
+log = logging.getLogger('miners.cli')
+
+import requests  # noqa: E402 — used by ingest pool functions
+from scrapers.edgar_connector import EdgarConnector
+from scrapers.ir_scraper import IRScraper
+
+
+def _run_edgar_ingest_pool(
+    db_path: str,
+    companies: list,
+    since_date,
+    num_workers: int = 2,
+) -> 'IngestSummary':
+    """Fetch EDGAR filings for multiple companies in parallel.
+
+    Each worker owns its own MinerDB connection and EdgarConnector/Session so
+    there is no shared state between threads.  Companies with no CIK are
+    skipped.  Exceptions in one worker increment errors but do not abort others.
+    """
+    from miner_types import IngestSummary
+
+    total = IngestSummary()
+    total_lock = threading.Lock()
+
+    def worker(company):
+        ticker = company['ticker']
+        cik = company.get('cik')
+        if not cik:
+            log.info("EDGAR ingest: skipping %s — no CIK", ticker)
+            return IngestSummary()
+        local_db = MinerDB(db_path)
+        session = requests.Session()
+        connector = EdgarConnector(db=local_db, session=session)
+        regime = company.get('filing_regime', 'domestic')
+        log.info("event=edgar_ingest_start ticker=%s since=%s regime=%s", ticker, since_date, regime)
+        s = connector.fetch_all_filings(
+            cik=cik, ticker=ticker, since_date=since_date, filing_regime=regime,
+        )
+        log.info("event=edgar_ingest_complete ticker=%s ingested=%d errors=%d",
+                 ticker, s.reports_ingested, s.errors)
+        return s
+
+    with ThreadPoolExecutor(max_workers=num_workers) as pool:
+        futures = {pool.submit(worker, c): c['ticker'] for c in companies}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                s = future.result()
+                with total_lock:
+                    total.reports_ingested += s.reports_ingested
+                    total.errors += s.errors
+            except Exception as exc:
+                log.error("event=edgar_ingest_error ticker=%s error=%s", ticker, exc, exc_info=True)
+                with total_lock:
+                    total.errors += 1
+
+    return total
+
+
+def _run_ir_ingest_pool(
+    db_path: str,
+    companies: list,
+    num_workers: int = 6,
+) -> 'IngestSummary':
+    """Scrape IR press releases for multiple companies in parallel.
+
+    Each worker owns its own MinerDB connection and IRScraper/Session.
+    Exceptions in one worker increment errors but do not abort others.
+    """
+    from miner_types import IngestSummary
+
+    total = IngestSummary()
+    total_lock = threading.Lock()
+
+    def worker(company):
+        ticker = company['ticker']
+        local_db = MinerDB(db_path)
+        session = requests.Session()
+        scraper = IRScraper(db=local_db, session=session)
+        log.info("event=ir_ingest_start ticker=%s mode=%s", ticker, company.get('scraper_mode', 'skip'))
+        s = scraper.scrape_company(company)
+        log.info("event=ir_ingest_complete ticker=%s ingested=%d errors=%d",
+                 ticker, s.reports_ingested, s.errors)
+        return s
+
+    with ThreadPoolExecutor(max_workers=num_workers) as pool:
+        futures = {pool.submit(worker, c): c['ticker'] for c in companies}
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                s = future.result()
+                with total_lock:
+                    total.reports_ingested += s.reports_ingested
+                    total.errors += s.errors
+            except Exception as exc:
+                log.error("event=ir_ingest_error ticker=%s error=%s", ticker, exc, exc_info=True)
+                with total_lock:
+                    total.errors += 1
+
+    return total
+
+
+def _run_worker_pool(db_path: str, report_ids: list, registry, num_workers: int = 1, attribution: str = None) -> 'ExtractionSummary':
+    """Process report_ids with a pool of num_workers threads.
+
+    Each worker owns its own MinerDB connection. Reports are claimed atomically
+    via claim_report_for_extraction so no report is processed twice even if
+    multiple workers see the same ID from the shared queue.
+
+    Returns a merged ExtractionSummary across all workers.
+    """
+    from miner_types import ExtractionSummary
+    from interpreters.interpret_pipeline import extract_report
+    from infra.db import MinerDB
+
+    work_queue: queue.Queue = queue.Queue()
+    for rid in report_ids:
+        work_queue.put(rid)
+
+    total = ExtractionSummary()
+    total_lock = threading.Lock()
+
+    def worker(worker_id: int) -> None:
+        local_db = MinerDB(db_path)
+        while True:
+            try:
+                report_id = work_queue.get_nowait()
+            except queue.Empty:
+                break
+            if not local_db.claim_report_for_extraction(report_id):
+                log.debug("worker=%d skipping report %d (already claimed)", worker_id, report_id)
+                continue
+            report = local_db.get_report(report_id)
+            if not report:
+                continue
+            s = extract_report(report, local_db, registry, attribution=attribution)
+            with total_lock:
+                total.reports_processed += s.reports_processed
+                total.data_points_extracted += s.data_points_extracted
+                total.review_flagged += s.review_flagged
+                total.errors += s.errors
+
+    with ThreadPoolExecutor(max_workers=num_workers) as pool:
+        futures = [pool.submit(worker, i) for i in range(num_workers)]
+        for f in as_completed(futures):
+            f.result()  # re-raises any uncaught exception from worker
+
+    return total
+
+
 def cmd_extract(args):
     """Run the extraction pipeline on stored reports (no re-scraping)."""
     from miner_types import ExtractionSummary
@@ -170,6 +308,7 @@ def cmd_extract(args):
     registry = get_registry()
     ticker_filter = args.ticker.upper() if args.ticker else None
     attribution = getattr(args, 'attribution', None) or None
+    num_workers = getattr(args, 'workers', 1) or 1
 
     if args.force:
         reports = db.get_all_reports_for_extraction(ticker=ticker_filter)
@@ -183,15 +322,27 @@ def cmd_extract(args):
     if attribution:
         print(f"Attribution override: extraction_method will be stored as '{attribution}'")
 
-    total = ExtractionSummary()
-    for i, report in enumerate(reports, 1):
-        s = extract_report(report, db, registry, attribution=attribution)
-        total.reports_processed += s.reports_processed
-        total.data_points_extracted += s.data_points_extracted
-        total.review_flagged += s.review_flagged
-        total.errors += s.errors
-        if i % 10 == 0 or i == len(reports):
-            print(f"  [{i}/{len(reports)}] {total.data_points_extracted} data points so far")
+    report_ids = [r['id'] for r in reports]
+    print(f"Extracting {len(report_ids)} reports with {num_workers} worker(s)...")
+
+    if num_workers > 1:
+        total = _run_worker_pool(
+            db_path=db.db_path,
+            report_ids=report_ids,
+            registry=registry,
+            num_workers=num_workers,
+            attribution=attribution,
+        )
+    else:
+        total = ExtractionSummary()
+        for i, report in enumerate(reports, 1):
+            s = extract_report(report, db, registry, attribution=attribution)
+            total.reports_processed += s.reports_processed
+            total.data_points_extracted += s.data_points_extracted
+            total.review_flagged += s.review_flagged
+            total.errors += s.errors
+            if i % 10 == 0 or i == len(reports):
+                print(f"  [{i}/{len(reports)}] {total.data_points_extracted} data points so far")
 
     print(
         f"Extracted {total.reports_processed} reports: "
@@ -399,6 +550,14 @@ def main():
         '--force', action='store_true', default=False,
         help='Re-ingest already-processed files (use after logic/pattern changes)',
     )
+    p_ingest.add_argument(
+        '--workers',
+        type=int,
+        default=int(os.environ.get('MINERS_INGEST_WORKERS', '2')),
+        metavar='N',
+        help='Parallel company workers for IR/EDGAR ingest '
+             '(default: $MINERS_INGEST_WORKERS or 2; keep <=2 for EDGAR to stay under SEC rate limit)',
+    )
 
     # query
     p_query = sub.add_parser('query', help='Query extracted data points')
@@ -436,6 +595,15 @@ def main():
         '--attribution',
         metavar='METHOD',
         help='Override extraction_method stored in data_points (e.g. "codex")',
+    )
+    p_extract.add_argument(
+        '--workers',
+        type=int,
+        default=int(os.environ.get('MINERS_EXTRACT_WORKERS', '3')),
+        metavar='N',
+        help='Number of parallel extraction workers '
+             '(default: $MINERS_EXTRACT_WORKERS or 3). '
+             'Set OLLAMA_NUM_PARALLEL to match for best throughput.',
     )
 
     # diagnose

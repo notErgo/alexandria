@@ -167,7 +167,7 @@ class TestGetEarliestBitcoinReportPeriod:
     def test_returns_earliest_period_with_bitcoin(self, tmp_path):
         from infra.db import MinerDB
         db = MinerDB(str(tmp_path / 'test.db'))
-        db.insert_report({'ticker': 'MARA', 'source_url': 'http://x.com/2', 'raw_text': 'Company produced 100 bitcoin in March.', 'source_type': 'edgar_8k', 'covering_period': '2021-03-01', 'report_date': '2021-03-01', 'published_date': None, 'parsed_at': None})
+        db.insert_report({'ticker': 'MARA', 'source_url': 'http://x.com/2', 'raw_text': 'Bitcoin mined: 100 BTC in March.', 'source_type': 'edgar_8k', 'covering_period': '2021-03-01', 'report_date': '2021-03-01', 'published_date': None, 'parsed_at': None})
         db.insert_report({'ticker': 'MARA', 'source_url': 'http://x.com/3', 'raw_text': 'BTC mined this quarter: 250.', 'source_type': 'edgar_10q', 'covering_period': '2021-06-01', 'report_date': '2021-06-01', 'published_date': None, 'parsed_at': None})
         result = db.get_earliest_bitcoin_report_period('MARA')
         assert result == '2021-03-01'

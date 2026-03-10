@@ -28,6 +28,48 @@ PIPELINE_UI_PARAMS: dict[str, str] = {
 }
 
 
+# Source-type sets used by _build_extraction_batch.
+# EDGAR types are gated by btc_first_filing_date (pre-mining-pivot guard).
+# IR/archive types are fetched from mining-specific IR pages and are always
+# relevant regardless of the pivot date.
+_EDGAR_SOURCE_TYPES = (
+    'edgar_8k', 'edgar_10k', 'edgar_10q',
+    'edgar_6k', 'edgar_20f', 'edgar_40f',
+)
+_NON_EDGAR_SOURCE_TYPES = ('ir_press_release', 'archive_html', 'archive_pdf')
+
+
+def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool = False) -> list:
+    """Collect reports eligible for extraction for one ticker.
+
+    EDGAR source types are gated by btc_first_filing_date so pre-pivot filings
+    are never re-processed.  IR and archive types are NOT date-gated — they are
+    scraped from mining-specific IR pages and are always mining-relevant.
+    """
+    if force_reextract:
+        batch = db.get_all_reports_for_extraction(ticker=ticker)
+        for r in batch:
+            db.reset_report_extraction_status(r['id'])
+        if first_filing:
+            batch = [
+                r for r in batch
+                if not r.get('source_type', '').startswith('edgar')
+                or r.get('report_date', '') >= first_filing
+            ]
+        return batch
+    else:
+        edgar_batch = db.get_unextracted_reports(
+            ticker=ticker,
+            source_types=list(_EDGAR_SOURCE_TYPES),
+            from_period=first_filing,
+        )
+        non_edgar_batch = db.get_unextracted_reports(
+            ticker=ticker,
+            source_types=list(_NON_EDGAR_SOURCE_TYPES),
+        )
+        return edgar_batch + non_edgar_batch
+
+
 class _RunCancelled(Exception):
     """Internal signal for cooperative pipeline cancellation."""
 
@@ -500,18 +542,8 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         force_reextract = bool(config.get('force_reextract', False))
         reports = []
         for t in scrape_targets:
-            # Gate extraction by btc_first_filing_date so pre-pivot filings
-            # that were ingested before this guard existed are never re-processed.
             first_filing = db.get_btc_first_filing_date(t)
-            if force_reextract:
-                batch = db.get_all_reports_for_extraction(ticker=t)
-                for r in batch:
-                    db.reset_report_extraction_status(r['id'])
-                if first_filing:
-                    batch = [r for r in batch if r.get('report_date', '') >= first_filing]
-                reports.extend(batch)
-            else:
-                reports.extend(db.get_unextracted_reports(ticker=t, from_period=first_filing))
+            reports.extend(_build_extraction_batch(db, t, first_filing, force_reextract))
         _event(db, run_id, 'extract', 'stage_preflight',
                total_pending=len(reports), force_reextract=int(force_reextract))
         if reports and bool(config.get('warm_model', True)):

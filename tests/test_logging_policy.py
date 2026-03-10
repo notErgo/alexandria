@@ -34,7 +34,7 @@ def _make_mock_report(source_type='ir_press_release'):
         'ticker': 'MARA',
         'report_date': '2024-01-01',
         'source_type': source_type,
-        'raw_text': 'MARA produced 1234 BTC in January 2024.',
+        'raw_text': 'MARA bitcoin mined 1234 BTC in January 2024. Hash rate reached 20 EH/s.',
         'raw_html': None,
     }
 

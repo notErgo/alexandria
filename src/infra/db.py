@@ -446,7 +446,7 @@ class MinerDB:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 metric      TEXT NOT NULL UNIQUE,
                 prompt_text TEXT NOT NULL,
-                model       TEXT NOT NULL DEFAULT 'unsloth/Qwen3.5-35B-A3B-GGUF:Q4_K_M',
+                model       TEXT NOT NULL DEFAULT 'qwen3.5:9b',
                 active      INTEGER NOT NULL DEFAULT 1,
                 created_at  TEXT DEFAULT (datetime('now')),
                 updated_at  TEXT DEFAULT (datetime('now'))
@@ -1919,7 +1919,7 @@ class MinerDB:
                 if not ticker:
                     continue
                 existing = conn.execute(
-                    "SELECT ticker, scraper_mode FROM companies WHERE ticker = ?",
+                    "SELECT ticker, scraper_mode, cik FROM companies WHERE ticker = ?",
                     (ticker,),
                 ).fetchone()
 
@@ -2006,6 +2006,51 @@ class MinerDB:
                             'reporting_cadence':    c.get('reporting_cadence', 'monthly'),
                         },
                     )
+
+                    # CIK change: purge stale EDGAR reports so wrong-entity filings
+                    # do not persist after a CIK correction.  Only fires when both
+                    # old and new CIK are non-null and differ.
+                    old_cik = existing['cik']
+                    new_cik = c.get('cik')
+                    if old_cik and new_cik and old_cik != new_cik:
+                        log.warning(
+                            "CIK changed for %s (%s → %s): purging stale EDGAR reports",
+                            ticker, old_cik, new_cik,
+                        )
+                        edgar_ids = [
+                            r[0] for r in conn.execute(
+                                "SELECT id FROM reports WHERE ticker=? AND source_type LIKE 'edgar_%'",
+                                (ticker,),
+                            ).fetchall()
+                        ]
+                        if edgar_ids:
+                            placeholders = ','.join('?' * len(edgar_ids))
+                            conn.execute(
+                                f"DELETE FROM review_queue WHERE data_point_id IN "
+                                f"(SELECT id FROM data_points WHERE report_id IN ({placeholders}))",
+                                edgar_ids,
+                            )
+                            conn.execute(
+                                f"DELETE FROM data_points WHERE report_id IN ({placeholders})",
+                                edgar_ids,
+                            )
+                            conn.execute(
+                                f"DELETE FROM document_chunks WHERE report_id IN ({placeholders})",
+                                edgar_ids,
+                            )
+                            conn.execute(
+                                f"DELETE FROM reports WHERE id IN ({placeholders})",
+                                edgar_ids,
+                            )
+                            log.info(
+                                "Purged %d stale EDGAR reports for %s after CIK change",
+                                len(edgar_ids), ticker,
+                            )
+                        conn.execute(
+                            "UPDATE companies SET btc_first_filing_date=NULL WHERE ticker=?",
+                            (ticker,),
+                        )
+
                     updated += 1
 
         log.info("sync_companies_from_config: %d added, %d updated from %s", added, updated, config_path)
@@ -2244,6 +2289,24 @@ class MinerDB:
                 "SELECT * FROM reports WHERE id = ?", (report_id,)
             ).fetchone()
             return dict(row) if row else None
+
+    def claim_report_for_extraction(self, report_id: int) -> bool:
+        """Atomically claim a pending report for extraction.
+
+        Sets extraction_status='running' only if it is currently 'pending'.
+        Returns True if this call claimed the report, False if it was already
+        claimed by another worker (status was not 'pending').
+
+        Safe for concurrent callers — the WHERE extraction_status='pending'
+        guard ensures exactly one winner under SQLite WAL serialisation.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET extraction_status = 'running'"
+                " WHERE id = ? AND extraction_status = 'pending'",
+                (report_id,),
+            )
+            return conn.execute("SELECT changes()").fetchone()[0] == 1
 
     def mark_report_extraction_running(self, report_id: int) -> None:
         """Set extraction_status='running'. Called at pipeline entry to prevent double-processing."""
@@ -3853,7 +3916,7 @@ class MinerDB:
         from infra.keyword_service import get_mining_detection_phrases
         keywords = get_mining_detection_phrases(self)
         clauses = ' OR '.join('LOWER(raw_text) LIKE ?' for _ in keywords)
-        params = [ticker] + [k.lower() for k in keywords]
+        params = [ticker] + ['%' + k.lower() + '%' for k in keywords]
         with self._get_connection() as conn:
             row = conn.execute(
                 f"SELECT MIN(covering_period) FROM reports WHERE ticker=? AND ({clauses})",
