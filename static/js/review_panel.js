@@ -226,25 +226,19 @@ const ReviewPanel = (function () {
 
   // ── Value cards ─────────────────────────────────────────────────────────────
 
-  function _renderValueCards(llmValue, regexValue, agreementStatus) {
+  function _renderValueCards(candidateValue, reviewReason) {
     const agreementMap = {
-      'REVIEW_QUEUE': ['badge-disagree', 'Disagree'],
+      'OUTLIER_FLAGGED': ['badge-disagree', 'Outlier'],
       'LLM_ONLY':     ['badge-llm-only', 'LLM only'],
-      'REGEX_ONLY':   ['badge-regex-only', 'Regex only'],
-      'AUTO_ACCEPT':  ['badge-agree', 'Agree'],
     };
-    const [cls, label] = agreementMap[agreementStatus] || ['badge-pending', agreementStatus || '—'];
+    const [cls, label] = agreementMap[reviewReason] || ['badge-pending', reviewReason || '—'];
     return `
-      <div class="rp-vc regex-card">
-        <div class="rp-vc-label">Regex Value</div>
-        <div class="rp-vc-value">${_fmtNum(regexValue)}</div>
-      </div>
       <div class="rp-vc llm-card">
-        <div class="rp-vc-label">LLM Value</div>
-        <div class="rp-vc-value">${_fmtNum(llmValue)}</div>
+        <div class="rp-vc-label">Candidate Value</div>
+        <div class="rp-vc-value">${_fmtNum(candidateValue)}</div>
       </div>
       <div class="rp-vc">
-        <div class="rp-vc-label">Agreement</div>
+        <div class="rp-vc-label">Reason</div>
         <div class="rp-vc-value" style="font-size:0.82rem"><span class="${_esc(cls)}">${_esc(label)}</span></div>
       </div>`;
   }
@@ -769,13 +763,13 @@ const ReviewPanel = (function () {
 
       // Value cards
       if (cardsEl) {
-        cardsEl.innerHTML = _renderValueCards(doc.llm_value, doc.regex_value, doc.agreement_status);
+        cardsEl.innerHTML = _renderValueCards(doc.candidate_value, doc.review_reason);
         cardsEl.style.display = 'flex';
       }
 
       // Pre-fill corrected value
       if (correctedEl) {
-        if (doc.regex_value != null) correctedEl.value = doc.regex_value;
+        if (doc.candidate_value != null) correctedEl.value = doc.candidate_value;
       }
 
       // Pre-select metric in reprompt dropdown

@@ -5,8 +5,8 @@ Provides endpoints for the analyst review UI:
   GET  /api/review                    — list review items (paginated, filterable by status)
   GET  /api/review/<id>/document      — full document text + snippet positions
   POST /api/delete/review             — purge review artifacts without touching scraped reports
-  POST /api/review/<id>/reextract     — re-run extraction on analyst-selected text (requires item)
-  POST /api/review/reextract_selection — re-run extraction by metric + selection (no item needed)
+  POST /api/review/<id>/reextract     — re-run LLM extraction on analyst-selected text (requires item)
+  POST /api/review/reextract_selection — re-run LLM extraction by metric + selection (no item needed)
   POST /api/review/<id>/approve       — approve and store the value
   POST /api/review/<id>/reject        — reject with required note
   POST /api/review/<id>/edit          — correct value and approve
@@ -100,7 +100,7 @@ def purge_review_artifacts():
 
 @bp.route('/api/review')
 def list_review_items():
-    """Return paginated review queue items with LLM/regex comparison fields."""
+    """Return paginated review queue items."""
     try:
         from app_globals import get_db
         db = get_db()
@@ -174,9 +174,8 @@ def get_review_document(item_id):
             'ticker': item.get('ticker'),
             'period': item.get('period'),
             'metric': item.get('metric'),
-            'llm_value': item.get('llm_value'),
-            'regex_value': item.get('regex_value'),
-            'agreement_status': item.get('agreement_status'),
+            'candidate_value': item.get('llm_value') if item.get('llm_value') is not None else item.get('raw_value'),
+            'review_reason': item.get('agreement_status'),
             'source_snippet': item.get('source_snippet'),
         }})
     except Exception:
@@ -194,10 +193,9 @@ def reextract_from_selection(item_id):
     Does NOT write to DB — result is shown in UI for analyst to review.
     """
     try:
-        from app_globals import get_db, get_registry
+        from app_globals import get_db
         import requests as req_lib
         from interpreters.llm_interpreter import LLMInterpreter
-        from interpreters.regex_interpreter import extract_all
 
         db = get_db()
         item = db.get_review_item(item_id)
@@ -219,38 +217,20 @@ def reextract_from_selection(item_id):
 
         metric = item['metric']
         ticker = item.get('ticker')
-        registry = get_registry()
-        patterns = registry.metrics.get(metric, [])
-
-        # Run regex on selection
-        regex_results = extract_all(selection, patterns, metric)
-        regex_best = regex_results[0] if regex_results else None
-
-        # Run LLM on selection — use extract_batch to inject company context + keywords
         session = req_lib.Session()
         llm = LLMInterpreter(session=session, db=db)
-        llm_result = None
+        candidates = []
         if llm.check_connectivity():
             batch = llm.extract_batch(selection, [metric], ticker=ticker)
             llm_result = batch.get(metric)
-
-        candidates = []
-        if regex_best:
-            candidates.append({
-                'source': 'regex',
-                'value': regex_best.value,
-                'unit': regex_best.unit,
-                'confidence': regex_best.confidence,
-                'pattern_id': regex_best.pattern_id,
-            })
-        if llm_result:
-            candidates.append({
-                'source': 'llm',
-                'value': llm_result.value,
-                'unit': llm_result.unit,
-                'confidence': llm_result.confidence,
-                'pattern_id': llm_result.pattern_id,
-            })
+            if llm_result:
+                candidates.append({
+                    'source': 'llm',
+                    'value': llm_result.value,
+                    'unit': llm_result.unit,
+                    'confidence': llm_result.confidence,
+                    'pattern_id': llm_result.pattern_id,
+                })
 
         return jsonify({'success': True, 'data': {
             'metric': metric,
@@ -273,10 +253,9 @@ def reextract_selection():
     Does NOT write to DB.
     """
     try:
-        from app_globals import get_db, get_registry
+        from app_globals import get_db
         import requests as req_lib
         from interpreters.llm_interpreter import LLMInterpreter
-        from interpreters.regex_interpreter import extract_all
 
         body = request.get_json(silent=True) or {}
         metric = (body.get('metric') or '').strip()
@@ -297,36 +276,20 @@ def reextract_selection():
             }}), 400
 
         db = get_db()
-        registry = get_registry()
-        patterns = registry.metrics.get(metric, [])
-
-        regex_results = extract_all(selection, patterns, metric)
-        regex_best = regex_results[0] if regex_results else None
-
         session = req_lib.Session()
         llm = LLMInterpreter(session=session, db=db)
-        llm_result = None
+        candidates = []
         if llm.check_connectivity():
             batch = llm.extract_batch(selection, [metric], ticker=ticker)
             llm_result = batch.get(metric)
-
-        candidates = []
-        if regex_best:
-            candidates.append({
-                'source': 'regex',
-                'value': regex_best.value,
-                'unit': regex_best.unit,
-                'confidence': regex_best.confidence,
-                'pattern_id': regex_best.pattern_id,
-            })
-        if llm_result:
-            candidates.append({
-                'source': 'llm',
-                'value': llm_result.value,
-                'unit': llm_result.unit,
-                'confidence': llm_result.confidence,
-                'pattern_id': llm_result.pattern_id,
-            })
+            if llm_result:
+                candidates.append({
+                    'source': 'llm',
+                    'value': llm_result.value,
+                    'unit': llm_result.unit,
+                    'confidence': llm_result.confidence,
+                    'pattern_id': llm_result.pattern_id,
+                })
 
         return jsonify({'success': True, 'data': {'metric': metric, 'candidates': candidates}})
     except Exception:

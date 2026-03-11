@@ -56,7 +56,6 @@
     {"id": "4.0", "name": "Review pane (embedded)", "source": "n/a", "path": "n/a", "template": "ops.html"},
     {"id": "4.1", "name": "Review > Queue sub-tab", "source": "n/a", "path": "critical", "template": "ops.html", "api_endpoints": ["/api/review", "/api/delete/review"]},
     {"id": "4.1.2", "name": "Review table", "source": "DATA", "path": "critical", "template": "ops.html", "api_endpoints": ["/api/review"]},
-    {"id": "4.2", "name": "Review > Patterns sub-tab", "source": "n/a", "path": "later", "template": "ops.html"},
     {"id": "4.3", "name": "Review > Highlight Dictionary sub-tab", "source": "n/a", "path": "later", "template": "ops.html"},
 
     {"id": "5.0", "name": "Data pane", "source": "n/a", "path": "n/a", "template": "ops.html"},
@@ -100,7 +99,6 @@
     {"id": "DB6.0", "name": "Dashboard Page", "source": "n/a", "path": "n/a", "route": "/dashboard", "template": "dashboard.html"},
     {"id": "DB6.1", "name": "Metric panels", "source": "DATA", "path": "critical", "template": "dashboard.html"},
 
-    {"id": "7.0", "name": "Patterns Page", "source": "n/a", "path": "n/a", "route": "/patterns", "template": "patterns.html"},
     {"id": "7.1", "name": "Patterns table", "source": "CONFIG", "path": "later", "template": "patterns.html"},
 
     {"id": "8.0", "name": "Diagnostics Page", "source": "n/a", "path": "n/a", "route": "/diagnostics", "template": "diagnostics.html"},

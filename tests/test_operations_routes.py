@@ -142,6 +142,24 @@ def test_extract_returns_task_id(client, monkeypatch):
         assert 'task_id' in data['data']
 
 
+def test_extract_accepts_ticker_scope_and_worker_count(client, monkeypatch):
+    """POST /api/operations/interpret accepts tickers[] and extract_workers."""
+    import routes.operations as ops_mod
+    monkeypatch.setattr(ops_mod, '_active_tickers', set())
+
+    resp = client.post('/api/operations/interpret', json={
+        'tickers': ['MARA'],
+        'extract_workers': 4,
+    })
+    assert resp.status_code in (200, 409)
+    if resp.status_code == 200:
+        data = resp.get_json()
+        assert data['success'] is True
+        assert data['data']['tickers'] == ['MARA']
+        assert data['data']['scope_label'] == 'MARA'
+        assert data['data']['extract_workers'] == 4
+
+
 # ── Operations assign_period ──────────────────────────────────────────────────
 
 def test_assign_period_invalid_format_returns_400(client):

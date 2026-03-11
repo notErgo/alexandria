@@ -33,7 +33,6 @@
 .badge-rejected  { background: rgba(239,68,68,0.15);  color: #ef4444; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
 .badge-agree     { background: rgba(59,130,246,0.15); color: #3b82f6; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
 .badge-disagree  { background: rgba(249,115,22,0.15); color: #f97316; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
-.badge-regex-only { background: rgba(168,85,247,0.15); color: #a855f7; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
 .badge-llm-only   { background: rgba(59,130,246,0.15); color: #60a5fa; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
 
 .review-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
@@ -147,7 +146,7 @@
     <!-- Bulk actions (shown when ≥1 checkbox checked) -->
     <div class="bulk-actions-row" id="bulk-actions-row">
       <span id="selected-count" style="font-weight:600"></span>
-      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="R3.7">Approve Selected (regex value)</button>
+      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="R3.7">Approve Selected</button>
       <button class="btn btn-secondary btn-sm" id="btn-deselect-all">Deselect All</button>
       <span id="bulk-progress" style="color:var(--theme-text-muted)"></span>
     </div>
@@ -159,14 +158,13 @@
           <th>Ticker</th>
           <th>Period</th>
           <th>Metric</th>
-          <th>Regex Val</th>
-          <th>LLM Val</th>
-          <th>Agreement</th>
+          <th>Candidate</th>
+          <th>Reason</th>
           <th>Status</th>
         </tr>
       </thead>
       <tbody id="review-tbody">
-        <tr><td colspan="8" class="empty-state">Loading…</td></tr>
+        <tr><td colspan="7" class="empty-state">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -251,10 +249,8 @@
 
   function agreementBadge(s) {
     const map = {
-      'REVIEW_QUEUE': ['badge-disagree', 'Disagree'],
+      'OUTLIER_FLAGGED': ['badge-disagree', 'Outlier'],
       'LLM_ONLY':     ['badge-llm-only', 'LLM only'],
-      'REGEX_ONLY':   ['badge-regex-only', 'Regex only'],
-      'AUTO_ACCEPT':  ['badge-agree', 'Agree'],
     };
     const [cls, label] = map[s] || ['badge-pending', s || '—'];
     return `<span class="${cls}">${label}</span>`;
@@ -343,7 +339,7 @@
       updateBulkActions();
     } catch (e) {
       document.getElementById('review-tbody').innerHTML =
-        `<tr><td colspan="8" class="empty-state" style="color:var(--theme-danger)">Error: ${escapeHtml(e.message)}</td></tr>`;
+        `<tr><td colspan="7" class="empty-state" style="color:var(--theme-danger)">Error: ${escapeHtml(e.message)}</td></tr>`;
     }
   }
 
@@ -354,7 +350,7 @@
     if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
 
     if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No items match the current filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No items match the current filter.</td></tr>';
       return;
     }
     tbody.innerHTML = items.map(item => `
@@ -363,8 +359,7 @@
         <td>${escapeHtml(item.ticker)}</td>
         <td>${escapeHtml(item.period ? item.period.slice(0,7) : '')}</td>
         <td>${escapeHtml(item.metric)}</td>
-        <td>${fmtNum(item.regex_value)}</td>
-        <td>${fmtNum(item.llm_value)}</td>
+        <td>${fmtNum(item.llm_value != null ? item.llm_value : item.raw_value)}</td>
         <td>${agreementBadge(item.agreement_status)}</td>
         <td>${statusBadge(item.status)}</td>
       </tr>
@@ -452,7 +447,8 @@
     for (const item of items) {
       progress.textContent = `Approving ${done + failed + 1} / ${items.length}…`;
       try {
-        const body = item.regex_value != null ? {value: item.regex_value} : {};
+        const preferredValue = item.llm_value != null ? item.llm_value : item.raw_value;
+        const body = preferredValue != null && preferredValue !== '' ? {value: preferredValue} : {};
         const resp = await fetch(`/api/review/${item.id}/approve`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},

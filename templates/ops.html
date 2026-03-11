@@ -1179,7 +1179,7 @@ tr.is-reviewed td { opacity: 0.65; }
     <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.3</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h2>
   </div>
   <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
-    Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt, all UI dropdowns, and the pattern editor.
+    Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt and all UI dropdowns.
     Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it and deactivates its LLM prompt override.
   </p>
   <div class="card" data-spec-id="1.3.1" style="margin-bottom:0.7rem">
@@ -1727,9 +1727,12 @@ tr.is-reviewed td { opacity: 0.65; }
 
     <div class="acq-section-label">LLM Extraction</div>
     <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
-      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.75rem"></div>
+      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.3rem"></div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.75rem">
+        Leave empty to run all active companies. Multi-select runs only the selected tickers.
+      </div>
 
-      <!-- Source docs + date range -->
+      <!-- Source docs + interpretation date window -->
       <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
         <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Source docs</label>
         <select id="extract-cadence" style="font-size:0.82rem;padding:0.2rem 0.4rem" onchange="onSourceDocsChange()" title="Which document types to process">
@@ -1738,13 +1741,19 @@ tr.is-reviewed td { opacity: 0.65; }
           <option value="quarterly">10-Q filings only  (quarterly → needs gap-fill for monthly)</option>
           <option value="annual">10-K filings only  (annual → needs gap-fill for monthly)</option>
         </select>
-        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap;margin-left:0.5rem">From</label>
-        <input id="extract-from" type="text" placeholder="YYYY-MM" maxlength="7"
-          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:90px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <span style="font-size:0.78rem;font-weight:600;white-space:nowrap;margin-left:0.5rem">Interpret Date Window</span>
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">From</label>
+        <input id="extract-from" type="date"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:145px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
         <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">To</label>
-        <input id="extract-to" type="text" placeholder="YYYY-MM" maxlength="7"
-          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:90px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
-        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Leave blank = all periods</span>
+        <input id="extract-to" type="date"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:145px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Blank = unbounded on that side</span>
+      </div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem;line-height:1.45">
+        Filters which stored documents are sent to the LLM for interpretation.
+        Scraped documents remain in the database.
+        Bounds are inclusive: <code>report_date &gt;= From</code> and <code>report_date &lt;= To</code>.
       </div>
 
       <!-- Expected granularity selector -->
@@ -1786,6 +1795,16 @@ tr.is-reviewed td { opacity: 0.65; }
         </span>
       </div>
 
+      <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+          <span>Extract workers</span>
+          <input id="interpret-extract-workers" type="number" min="1" max="12" step="1" value="3" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+        </label>
+        <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
+          Same LLM worker control as the full pipeline. Use <code>1</code> for stable prompt iteration, or raise it for faster multi-doc runs.
+        </div>
+      </div>
+
       <!-- Force re-extract explanation -->
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.4rem;line-height:1.5">
         <strong style="color:var(--theme-text-secondary)">Without force:</strong> processes only reports not yet extracted (new documents only).
@@ -1795,14 +1814,8 @@ tr.is-reviewed td { opacity: 0.65; }
         To start completely fresh, use the CLI <code>purge</code> command first.
       </div>
 
-      <!-- Purge ticker data -->
-      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem;padding:0.5rem 0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:6px">
-        <span style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary)">Purge ticker data</span>
-        <input id="purge-ticker-input" type="text" maxlength="10" placeholder="MARA"
-          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:80px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary);text-transform:uppercase">
-        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Cascades: data_points → review_queue → final_data_points. Resets reports to pending.</span>
-        <button class="btn btn-sm btn-danger" onclick="purgeTickerData()" id="purge-ticker-btn">Purge</button>
-        <span id="purge-ticker-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
+        Delete controls live in <strong>Track Config → Purge Stages</strong> so extraction scope and data deletion stay separate.
       </div>
 
       <!-- Force + model + run -->
@@ -2029,7 +2042,6 @@ tr.is-reviewed td { opacity: 0.65; }
   <div class="pipeline-sub-tabs">
     <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Review <span class="wf-path-badge wf-critical">Critical</span></button>
     <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="patterns" onclick="activatePipelineSubTab('review','patterns')" data-ui-id="4.2">Patterns <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
@@ -2428,15 +2440,14 @@ tr.is-reviewed td { opacity: 0.65; }
             <th>Period</th>
             <th>Metric</th>
             <th>Source</th>
-            <th style="text-align:right">Regex</th>
-            <th style="text-align:right">LLM</th>
-            <th>Agreement</th>
+            <th style="text-align:right">Candidate</th>
+            <th>Reason</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="review-tbody">
-          <tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
+          <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -2519,105 +2530,6 @@ tr.is-reviewed td { opacity: 0.65; }
     </details>
 
   </div><!-- /spane-review-queue -->
-
-  <!-- Sub-pane: Patterns (4.2) -->
-  <div class="pipeline-sub-pane" id="spane-review-patterns" data-ui-id="4.2" data-spec-id="4.2">
-    <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.2</span>Regex Patterns <span class="source-badge source-badge-config">CONFIG</span></h2>
-      <button class="btn btn-sm btn-secondary" onclick="loadPatterns()" style="margin-left:auto">Refresh</button>
-    </div>
-    <div class="card" style="margin-bottom:1rem;background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
-      <p style="margin:0;font-size:0.8rem;color:var(--theme-text-secondary);line-height:1.5">
-        The LLM runs on every document unconditionally. Regex patterns run in parallel and produce a second candidate.
-        When both agree, the result auto-accepts. When only LLM fires, the item routes here to Queue.
-        Build patterns from approved Queue items using the Gen button — each pattern you save reduces future review volume.
-      </p>
-    </div>
-
-    <div id="patterns-list">
-      <p style="color:var(--theme-text-muted);font-size:0.85rem">Loading...</p>
-    </div>
-    <div id="pattern-keyword-gaps" style="margin:0.75rem 0;font-size:0.8rem;color:var(--theme-text-muted)"></div>
-
-    <!-- Generate from snippet -->
-    <div class="card" style="margin-top:1rem">
-      <h3 style="margin:0 0 0.4rem;font-size:0.9rem">Generate Pattern from Snippet</h3>
-      <p style="font-size:0.75rem;color:var(--theme-text-muted);margin:0 0 0.6rem">
-        Paste a short excerpt containing the value, or use the Gen button on any Queue row to auto-fill.
-      </p>
-      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
-          <select id="gen-pattern-metric" style="font-size:0.85rem">
-            <option value="">Loading…</option>
-          </select>
-        </div>
-        <div style="flex:1;min-width:280px">
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Excerpt containing the value</label>
-          <input id="gen-pattern-text" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="Bitcoin Produced: 1,247">
-        </div>
-        <button class="btn btn-sm btn-secondary" onclick="patternTabGenerate()">Generate</button>
-      </div>
-      <div id="gen-pattern-result" style="display:none;margin-top:0.5rem">
-        <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.4rem">
-          <div style="flex:1;min-width:260px">
-            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.2rem">Generated regex (editable)</label>
-            <input id="gen-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem">
-          </div>
-          <div>
-            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.2rem">Weight</label>
-            <input id="gen-pattern-weight" type="number" min="0.01" max="1" step="0.01" style="width:65px">
-          </div>
-          <button class="btn btn-sm btn-primary" onclick="patternTabSave()">Save to Library</button>
-          <span id="gen-pattern-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-        </div>
-        <div id="gen-pattern-matches" style="font-size:0.78rem;color:var(--theme-text-muted)"></div>
-      </div>
-    </div>
-
-    <!-- Add manually -->
-    <div class="card" style="margin-top:1rem">
-      <h3 style="margin:0 0 0.6rem;font-size:0.9rem">Add Pattern Manually</h3>
-      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
-          <select id="add-pattern-metric" style="font-size:0.85rem">
-            <option value="">Loading…</option>
-          </select>
-        </div>
-        <div style="flex:1;min-width:260px">
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Regex (BTC patterns need a capturing group around the number)</label>
-          <input id="add-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="(?i)\bBTC\s+Produced\s*[|:]?\s*([\d,]+(?:\.\d+)?)">
-        </div>
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Weight</label>
-          <input id="add-pattern-weight" type="number" min="0.01" max="1" step="0.01" value="0.85" style="width:72px">
-        </div>
-        <button class="btn btn-sm btn-primary" onclick="addPatternFromForm()">Add Pattern</button>
-        <span id="add-pattern-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-    </div>
-
-    <!-- Test -->
-    <div class="card" style="margin-top:1rem">
-      <h3 style="margin:0 0 0.6rem;font-size:0.9rem">Test Regex Against Document Text</h3>
-      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.5rem">
-        <div style="flex:1;min-width:260px">
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Regex</label>
-          <input id="test-pattern-regex" type="text" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem" placeholder="Paste regex here">
-        </div>
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.2rem">Metric</label>
-          <select id="test-pattern-metric" style="font-size:0.85rem">
-            <option value="">Loading…</option>
-          </select>
-        </div>
-        <button class="btn btn-sm btn-secondary" onclick="runPatternTest()">Test</button>
-      </div>
-      <textarea id="test-pattern-text" rows="4" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="Paste document text to test against..."></textarea>
-      <div id="test-pattern-results" style="margin-top:0.5rem;font-size:0.8rem"></div>
-    </div>
-  </div><!-- /spane-review-patterns -->
 
   <!-- Sub-pane: Highlight Dictionary (4.3) -->
   <div class="pipeline-sub-pane" id="spane-review-highlight" data-ui-id="4.3" data-spec-id="4.3">
@@ -3159,7 +3071,6 @@ function activatePipelineSubTab(pane, name) {
   // Lazy-load on sub-tab activation
   if (pane === 'config' && name === 'companies') { loadMetricSchemaTable(); }
   if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
-  if (pane === 'review' && name === 'patterns') { loadPatterns(); loadPatternMetricSelects(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
   if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
   if (pane === 'interpret' && name === 'qc') _loadQCTable();
@@ -3560,20 +3471,28 @@ function onSourceDocsChange() {
 
 async function startExtractionRun() {
   if (_extractTaskId) return;
-  const _sel = Array.from(_selectedCrawlTickers);
-  const ticker = _sel.length === 1 ? _sel[0] : '';
+  const tickers = _getSharedSelectedTickers();
+  const ticker = tickers.length === 1 ? tickers[0] : '';
+  const scopeLabel = tickers.length ? tickers.join(',') : 'ALL';
   const force = !!document.getElementById('extract-force').checked;
   const cadence = document.getElementById('extract-cadence')?.value || 'all';
   const fromPeriod = (document.getElementById('extract-from')?.value || '').trim() || null;
   const toPeriod = (document.getElementById('extract-to')?.value || '').trim() || null;
   const sampleEnabled = !!document.getElementById('extract-sample-enabled')?.checked;
   const sampleN = sampleEnabled ? parseInt(document.getElementById('extract-sample-n')?.value || '5', 10) : 0;
+  const extractWorkers = Math.max(1, parseInt(document.getElementById('interpret-extract-workers')?.value || '3', 10) || 3);
   const autoGapFill = !!(document.getElementById('extract-auto-gapfill')?.checked) && cadence !== 'monthly';
+
+  if (fromPeriod && toPeriod && fromPeriod > toPeriod) {
+    _setExtractStatus('Interpret window invalid: From must be on or before To', true);
+    return;
+  }
 
   const filters = [];
   if (cadence !== 'all') filters.push(cadence);
-  if (fromPeriod) filters.push('from ' + fromPeriod);
-  if (toPeriod) filters.push('to ' + toPeriod);
+  if (fromPeriod) filters.push('date >= ' + fromPeriod);
+  if (toPeriod) filters.push('date <= ' + toPeriod);
+  if (extractWorkers > 1) filters.push('workers=' + extractWorkers);
   if (sampleN > 0) filters.push('sample=' + sampleN);
   if (autoGapFill) filters.push('gap-fill after');
   const filterLabel = filters.length ? ' [' + filters.join(', ') + ']' : '';
@@ -3583,8 +3502,8 @@ async function startExtractionRun() {
   // Store auto-gap-fill intent for the completion handler
   window._extractAutoGapFill = autoGapFill;
   window._extractTicker = ticker;
-  _setExtractStatus('Extraction ' + (ticker || 'ALL') + filterLabel + ': queued', false);
-  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + (ticker || 'ALL') + (force ? ' force' : '') + filterLabel);
+  _setExtractStatus('Extraction ' + scopeLabel + filterLabel + ': queued', false);
+  _appendExtractLog(new Date().toISOString().slice(11, 19) + ' queued ' + scopeLabel + (force ? ' force' : '') + filterLabel);
   try {
     const _granEl = document.querySelector('input[name="expected_granularity"]:checked');
     const expectedGranularity = _granEl ? _granEl.value : 'monthly';
@@ -3593,10 +3512,12 @@ async function startExtractionRun() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         ticker: ticker || null,
+        tickers: tickers,
         force,
         cadence,
         from_period: fromPeriod,
         to_period: toPeriod,
+        extract_workers: extractWorkers,
         sample: sampleN || null,
         expected_granularity: expectedGranularity,
       }),
@@ -3604,9 +3525,9 @@ async function startExtractionRun() {
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
     _extractTaskId = data.data.task_id;
-    _setExtractStatus('Extraction ' + (ticker || 'ALL') + filterLabel + ': running', false);
+    _setExtractStatus('Extraction ' + scopeLabel + filterLabel + ': running', false);
     _appendExtractLog(new Date().toISOString().slice(11, 19) + ' running task ' + _extractTaskId);
-    _pollExtractionRun(_extractTaskId, ticker || 'ALL');
+    _pollExtractionRun(_extractTaskId, scopeLabel);
   } catch (err) {
     _extractTaskId = null;
     _setExtractEnabled(true);
@@ -3639,50 +3560,6 @@ async function _runGapFillAfterExtraction(ticker) {
     }
   } catch (err) {
     _appendExtractLog(new Date().toISOString().slice(11, 19) + ' gap-fill failed: ' + String(err));
-  }
-}
-
-async function purgeTickerData() {
-  const inputEl = document.getElementById('purge-ticker-input');
-  const ticker = (inputEl ? inputEl.value : '').trim().toUpperCase();
-  if (!ticker) {
-    alert('Enter a ticker (e.g. MARA) in the Purge field first.');
-    return;
-  }
-  if (!confirm('Cascade purge for ' + ticker + '?\n\nDeletes: data_points, review_queue, final_data_points.\nResets reports to pending for re-extraction.\n\nThis cannot be undone.')) {
-    return;
-  }
-  const btn = document.getElementById('purge-ticker-btn');
-  const msgEl = document.getElementById('purge-ticker-msg');
-  btn.disabled = true;
-  msgEl.textContent = 'Purging ' + ticker + '...';
-  try {
-    const resp = await fetch('/api/delete/scrape/ticker', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ticker}),
-    });
-    const rawText = await resp.text();
-    let data;
-    try { data = JSON.parse(rawText); } catch(e) { data = {}; }
-    if (resp.ok) {
-      const dp = data.data_points_deleted || 0;
-      const rq = data.review_queue_deleted || 0;
-      const fp = data.final_data_points_deleted || 0;
-      const msg = 'Purged ' + ticker + ': ' + dp + ' data_points, ' + rq + ' review_queue, ' + fp + ' final. Reload Explorer to see empty grid.';
-      msgEl.textContent = msg;
-      alert(msg);
-    } else {
-      const msg = 'HTTP ' + resp.status + ': ' + rawText;
-      msgEl.textContent = 'Error: ' + msg;
-      alert('Purge failed — ' + msg);
-    }
-  } catch (err) {
-    const msg = 'Request failed: ' + String(err);
-    msgEl.textContent = msg;
-    alert(msg);
-  } finally {
-    btn.disabled = false;
   }
 }
 
@@ -5472,16 +5349,12 @@ function renderReview() {
       + '<td style="cursor:pointer">' + escapeHtml(item.period || '') + '</td>'
       + '<td style="font-size:0.75rem;cursor:pointer">' + escapeHtml(item.metric || '') + '</td>'
       + '<td style="cursor:pointer">' + _sourceTypeBadge(item.source_type) + '</td>'
-      + '<td style="text-align:right;cursor:pointer">' + escapeHtml(item.regex_value != null ? String(item.regex_value) : '—') + '</td>'
-      + '<td style="text-align:right;cursor:pointer">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : '—') + '</td>'
+      + '<td style="text-align:right;cursor:pointer">' + escapeHtml(item.llm_value != null ? String(item.llm_value) : String(item.raw_value || '—')) + '</td>'
       + '<td style="font-size:0.75rem;cursor:pointer">' + escapeHtml(item.agreement_status || '') + '</td>'
       + '<td style="cursor:pointer">' + _statusBadge(item.status) + '</td>'
       + '<td style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();acceptItem(this.getAttribute(\'data-id\'))">Accept</button>'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();rejectItem(this.getAttribute(\'data-id\'))">R</button>'
-        + (item.source_snippet ? '<button class="btn btn-sm btn-secondary rv-gen-btn" title="Generate regex pattern from this snippet"'
-            + ' data-metric="' + escapeAttr(item.metric || '') + '"'
-            + ' data-snippet="' + escapeAttr(item.source_snippet || '') + '" onclick="event.stopPropagation()">Gen</button>' : '')
       + '</td>'
       + '</tr>'
       + docsHtml;
@@ -5602,12 +5475,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!e.target.classList.contains('rv-cb')) return;
     const anyChecked = Array.from(document.querySelectorAll('.rv-cb')).some(function(cb) { return cb.checked; });
     document.getElementById('rv-bulk-finalize').disabled = !anyChecked;
-  });
-  reviewTbody.addEventListener('click', function(e) {
-    const btn = e.target.closest('.rv-gen-btn');
-    if (btn) {
-      prefillPatternGenerator(btn.dataset.metric, btn.dataset.snippet);
-    }
   });
 });
 

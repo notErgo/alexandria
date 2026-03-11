@@ -32,7 +32,6 @@ from routes.data_points import bp as data_points_bp
 from routes.companies import bp as companies_bp
 from routes.reports import bp as reports_bp
 from routes.diagnostics import bp as diagnostics_bp
-from routes.patterns import bp as patterns_bp
 from routes.timeseries import bp as timeseries_bp
 from routes.themes import bp as themes_bp
 from routes.miner import bp as miner_bp
@@ -92,7 +91,6 @@ def create_app() -> Flask:
     app.register_blueprint(companies_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(diagnostics_bp)
-    app.register_blueprint(patterns_bp)
     app.register_blueprint(timeseries_bp)
     app.register_blueprint(themes_bp)
     app.register_blueprint(miner_bp)
@@ -173,10 +171,6 @@ def create_app() -> Flask:
             all_sectors=['BTC-miners'],
             source_type_display=SOURCE_TYPE_DISPLAY,
         )
-
-    @app.route('/patterns')
-    def patterns_page():
-        return render_template('patterns.html')
 
     @app.route('/diagnostics')
     def diagnostics_page():

@@ -241,24 +241,28 @@ def explorer_reextract():
 
     candidates = []
     try:
-        registry = get_registry()
-        from interpreters.regex_interpreter import extract_all
+        import requests as req_lib
+        from interpreters.llm_interpreter import LLMInterpreter
         metrics = db.get_metric_schema('BTC-miners')
+        llm = LLMInterpreter(session=req_lib.Session(), db=db)
+        if not llm.check_connectivity():
+            return jsonify({'success': False, 'error': {'message': 'LLM unavailable'}}), 503
         for m in metrics:
             if not m.get('has_extraction_pattern'):
                 continue
-            results = extract_all(selection, registry.get_patterns(m['key']), m['key'])
-            for r in results:
+            results = llm.extract_batch(selection, [m['key']], ticker=ticker)
+            r = results.get(m['key'])
+            if r is not None:
                 candidates.append({
                     'metric': m['key'],
-                    'source': 'regex',
+                    'source': 'llm',
                     'value': r.value,
                     'unit': r.unit,
                     'confidence': r.confidence,
                     'snippet': r.source_snippet,
                 })
     except Exception:
-        log.error("Re-extract regex failed", exc_info=True)
+        log.error("Re-extract LLM failed", exc_info=True)
 
     # Sort by confidence descending
     candidates.sort(key=lambda c: c.get('confidence', 0), reverse=True)

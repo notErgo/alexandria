@@ -92,12 +92,14 @@ def test_diagnostics_all_metrics_no_retired_names():
     )
 
 
-def test_patterns_metric_order_no_retired_names():
-    """routes.patterns._METRIC_ORDER must not contain retired metric names."""
-    from routes.patterns import _METRIC_ORDER
-    retired_found = set(_METRIC_ORDER) & RETIRED_NAMES
+def test_pattern_registry_metrics_no_retired_names():
+    """Pattern registry must not load retired metric names."""
+    from interpreters.pattern_registry import PatternRegistry
+    from config import CONFIG_DIR
+    registry = PatternRegistry.load(CONFIG_DIR)
+    retired_found = set(registry.metrics.keys()) & RETIRED_NAMES
     assert not retired_found, (
-        f"routes.patterns._METRIC_ORDER contains retired names: {retired_found}"
+        f"PatternRegistry contains retired names: {retired_found}"
     )
 
 

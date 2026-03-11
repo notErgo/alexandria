@@ -17,6 +17,7 @@ import threading
 import uuid
 import re
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from textwrap import dedent
@@ -338,29 +339,54 @@ _CADENCE_SOURCE_TYPES = {
 }
 
 
+def _normalize_extract_tickers(body: dict) -> list[str]:
+    raw_tickers = body.get('tickers')
+    tickers: list[str] = []
+    if isinstance(raw_tickers, list):
+        for value in raw_tickers:
+            if value is None:
+                continue
+            ticker = str(value).strip().upper()
+            if ticker and ticker not in tickers:
+                tickers.append(ticker)
+    legacy_ticker = (body.get('ticker') or '').strip().upper()
+    if legacy_ticker and legacy_ticker not in tickers:
+        tickers.append(legacy_ticker)
+    return tickers
+
+
+def _extract_scope_label(tickers: list[str]) -> str:
+    return ','.join(tickers) if tickers else 'ALL'
+
+
 @bp.route('/api/operations/interpret', methods=['POST'])
 def operations_extract():
     """Trigger background extraction for a ticker (or all tickers). Returns task_id.
 
     Body parameters:
-        ticker (str, optional): Limit to one company.
+        ticker (str, optional): Legacy single-ticker scope.
+        tickers (list[str], optional): Explicit ticker scope. Empty = all tickers.
         force (bool): Re-extract already-extracted reports (default false).
         warm_model (bool): Warm Ollama before starting (default true).
         cadence (str): 'monthly' | 'quarterly' | 'annual' | 'all' (default 'all').
             Filters reports to the matching source_types.
-        from_period (str): Earliest report_date to include (YYYY-MM).
-        to_period (str): Latest report_date to include (YYYY-MM).
+        from_period (str): Inclusive earliest report_date to include (YYYY-MM or YYYY-MM-DD).
+        to_period (str): Inclusive latest report_date to include (YYYY-MM or YYYY-MM-DD).
+        extract_workers (int): Parallel LLM workers for one ticker scope (default 1, max 12).
         sample (int): If > 0, randomly pick at most this many reports (max 10).
             Use for prompt debugging — quick feedback without a full run.
     """
     try:
         body = request.get_json(silent=True) or {}
-        ticker = (body.get('ticker') or '').strip().upper() or None
+        tickers = _normalize_extract_tickers(body)
+        ticker = tickers[0] if len(tickers) == 1 else None
+        scope_label = _extract_scope_label(tickers)
         force = bool(body.get('force', False))
         warm_model = bool(body.get('warm_model', True))
         cadence = (body.get('cadence') or 'all').strip().lower()
         from_period = (body.get('from_period') or '').strip() or None
         to_period = (body.get('to_period') or '').strip() or None
+        extract_workers = max(1, min(int(body.get('extract_workers') or 1), 12))
         sample_n = int(body.get('sample') or 0)
         sample_n = max(0, min(sample_n, 10))  # clamp 0-10
         # expected_granularity: caller may supply explicitly; otherwise derive from cadence.
@@ -369,14 +395,14 @@ def operations_extract():
         expected_granularity = (body.get('expected_granularity') or '').strip().lower() or None
         if expected_granularity is None and cadence in _cadence_grain_map:
             expected_granularity = _cadence_grain_map[cadence]
-        run_key = ticker or '__ALL__'
+        run_key = scope_label or '__ALL__'
 
         # 409 guard — prevent duplicate extraction runs
         with _active_tickers_lock:
             if run_key in _active_tickers:
                 return jsonify({'success': False, 'error': {
                     'code': 'ALREADY_RUNNING',
-                    'message': f"Extraction already running for {ticker or 'ALL'}",
+                    'message': f"Extraction already running for {scope_label}",
                 }}), 409
             _active_tickers.add(run_key)
 
@@ -385,9 +411,12 @@ def operations_extract():
             _extraction_progress[task_id] = {
                 'status': 'running',
                 'ticker': ticker or 'ALL',
+                'tickers': tickers or None,
+                'scope_label': scope_label,
                 'cadence': cadence,
                 'from_period': from_period,
                 'to_period': to_period,
+                'extract_workers': extract_workers,
                 'sample': sample_n if sample_n > 0 else None,
                 'reports_processed': 0,
                 'reports_total': 0,
@@ -397,14 +426,17 @@ def operations_extract():
             }
 
         log.info(
-            "Starting extraction task %s for ticker %s (force=%s, warm_model=%s)",
-            task_id, ticker or 'ALL', force, warm_model
+            "Starting extraction task %s for scope %s (force=%s, warm_model=%s, extract_workers=%s)",
+            task_id, scope_label, force, warm_model, extract_workers
         )
 
         # Capture loop-local values for the thread closure.
+        _tickers = list(tickers)
+        _scope_label = scope_label
         _cadence = cadence
         _from_period = from_period
         _to_period = to_period
+        _extract_workers = extract_workers
         _sample_n = sample_n
         _expected_granularity = expected_granularity
 
@@ -413,32 +445,34 @@ def operations_extract():
                 import random as _random
                 from app_globals import get_db
                 from interpreters.interpret_pipeline import extract_report
-                from interpreters.pattern_registry import PatternRegistry
                 from app_globals import get_registry
                 from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
+                from infra.db import MinerDB
+                from routes.pipeline import _BufferedExtractionDB, _replay_staged_payload, _sort_reports_chronologically, _staged_status_for_payload
 
                 db = get_db()
                 registry = get_registry()
 
                 source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
-
-                # Auto-gate by btc_first_filing_date when no explicit from_period given.
-                _effective_from = _from_period
-                if _effective_from is None and ticker:
-                    _effective_from = db.get_btc_first_filing_date(ticker)
-
-                if force:
-                    reports = db.get_all_reports_for_extraction(
-                        ticker=ticker,
-                        source_types=source_types,
-                        from_period=_effective_from,
-                        to_period=_to_period,
-                    )
+                reports: list[dict] = []
+                if _tickers:
+                    for selected_ticker in _tickers:
+                        _effective_from = _from_period or db.get_btc_first_filing_date(selected_ticker)
+                        getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
+                        reports.extend(
+                            getter(
+                                ticker=selected_ticker,
+                                source_types=source_types,
+                                from_period=_effective_from,
+                                to_period=_to_period,
+                            )
+                        )
                 else:
-                    reports = db.get_unextracted_reports(
-                        ticker=ticker,
+                    getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
+                    reports = getter(
+                        ticker=None,
                         source_types=source_types,
-                        from_period=_effective_from,
+                        from_period=_from_period,
                         to_period=_to_period,
                     )
 
@@ -463,61 +497,148 @@ def operations_extract():
                     ensure_ollama_running(log_fn=_ops_log)
                     warm_ollama_for_extraction(db=db, reason='operations_extract')
 
-                from datetime import datetime, timezone
-                for i, report in enumerate(reports):
-                    r_ticker = report.get('ticker', '?')
-                    r_period = report.get('covering_period') or report.get('report_date') or '?'
-                    r_type = report.get('source_type', '?')
+                from collections import OrderedDict
+                grouped_reports: OrderedDict[str, list[dict]] = OrderedDict()
+                if _tickers:
+                    for selected_ticker in _tickers:
+                        grouped_reports[selected_ticker] = []
+                for report in reports:
+                    grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
+
+                processed_count = 0
+
+                def _append_progress_line(line: str, pts: int = 0, errors: int = 0) -> None:
+                    nonlocal processed_count
+                    processed_count += 1
+                    with _progress_lock:
+                        _extraction_progress[task_id]['reports_processed'] = processed_count
+                        _extraction_progress[task_id]['data_points'] += pts
+                        _extraction_progress[task_id]['errors'] += errors
+                        logs = _extraction_progress[task_id]['logs']
+                        logs.append(line)
+                        if len(logs) > 200:
+                            logs.pop(0)
+
+                def _build_run_config(report_ticker: str):
+                    if not _expected_granularity:
+                        return None
+                    from miner_types import ExtractionRunConfig
+                    return ExtractionRunConfig(
+                        expected_granularity=_expected_granularity,
+                        ticker=report_ticker,
+                    )
+
+                def _format_success_line(report_row: dict, summary) -> str:
+                    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                    r_ticker = report_row.get('ticker', '?')
+                    r_period = report_row.get('covering_period') or report_row.get('report_date') or '?'
+                    r_type = report_row.get('source_type', '?')
+                    line = f'[{ts}] {r_ticker} {r_period} ({r_type}) -> {summary.data_points_extracted} pts, {summary.review_flagged} review'
+                    if summary.errors:
+                        line += f', {summary.errors} err'
                     try:
-                        # Build per-report ExtractionRunConfig when expected_granularity
-                        # was supplied by the caller; otherwise extract_report() infers it.
-                        _run_config = None
-                        if _expected_granularity:
-                            from miner_types import ExtractionRunConfig
-                            _run_config = ExtractionRunConfig(
-                                expected_granularity=_expected_granularity,
-                                ticker=report.get('ticker', ''),
-                            )
-                        summary = extract_report(report, db, registry, config=_run_config)
-                        pts = summary.data_points_extracted
-                        rev = summary.review_flagged
-                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                        line = f'[{ts}] {r_ticker} {r_period} ({r_type}) -> {pts} pts, {rev} review'
-                        if summary.errors:
-                            line += f', {summary.errors} err'
-                        llm_summary = report.get('llm_summary') or ''
-                        if not llm_summary:
-                            # Freshly written — re-read from DB
+                        fresh = db.get_report(int(report_row['id']))
+                    except Exception:
+                        fresh = None
+                    llm_summary = (fresh or {}).get('llm_summary') or report_row.get('llm_summary') or ''
+                    if llm_summary:
+                        line += f' | {llm_summary[:120]}'
+                    return line
+
+                for group_ticker, ticker_reports in grouped_reports.items():
+                    ordered_reports = _sort_reports_chronologically(ticker_reports)
+                    if not ordered_reports:
+                        continue
+                    effective_workers = max(1, min(int(_extract_workers), len(ordered_reports)))
+                    log.info(
+                        "Task %s: processing %d report(s) for %s with %d worker(s)",
+                        task_id, len(ordered_reports), group_ticker, effective_workers
+                    )
+                    if effective_workers == 1:
+                        for report in ordered_reports:
                             try:
-                                fresh = db.get_report(report['id'])
-                                llm_summary = (fresh or {}).get('llm_summary') or ''
-                            except Exception:
-                                pass
-                        if llm_summary:
-                            line += f' | {llm_summary[:120]}'
-                        with _progress_lock:
-                            _extraction_progress[task_id]['reports_processed'] = i + 1
-                            _extraction_progress[task_id]['data_points'] += pts
-                            _extraction_progress[task_id]['errors'] += summary.errors
-                            logs = _extraction_progress[task_id]['logs']
-                            logs.append(line)
-                            if len(logs) > 200:
-                                logs.pop(0)
-                        log.info("Task %s: processed report %d/%d for %s", task_id, i + 1, len(reports), ticker or 'ALL')
-                    except Exception as e:
-                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                        line = f'[{ts}] {r_ticker} {r_period} ERROR: {type(e).__name__}'
-                        log.error("Task %s: error on report %d: %s", task_id, report.get('id'), e, exc_info=True)
-                        with _progress_lock:
-                            _extraction_progress[task_id]['errors'] += 1
-                            logs = _extraction_progress[task_id]['logs']
-                            logs.append(line)
-                            if len(logs) > 200:
-                                logs.pop(0)
+                                summary = extract_report(report, db, registry, config=_build_run_config(report.get('ticker', '')))
+                                _append_progress_line(
+                                    _format_success_line(report, summary),
+                                    pts=summary.data_points_extracted,
+                                    errors=summary.errors,
+                                )
+                            except Exception as e:
+                                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                                period_label = report.get('covering_period') or report.get('report_date') or '?'
+                                line = f'[{ts}] {group_ticker} {period_label} ERROR: {type(e).__name__}'
+                                log.error("Task %s: error on report %d: %s", task_id, report.get('id'), e, exc_info=True)
+                                _append_progress_line(line, errors=1)
+                        continue
+
+                    claim_db = MinerDB(db.db_path)
+                    staged_reports: list[tuple[dict, int]] = []
+                    for idx, report in enumerate(ordered_reports):
+                        report_id = report.get('id')
+                        if report_id is None:
+                            continue
+                        report_id = int(report_id)
+                        worker_id = idx % effective_workers
+                        if force:
+                            claim_db.mark_report_extraction_running(report_id)
+                            claimed = True
+                        else:
+                            claimed = claim_db.claim_report_for_extraction(report_id)
+                        if not claimed:
+                            continue
+                        claimed_report = claim_db.get_report(report_id)
+                        if claimed_report:
+                            staged_reports.append((claimed_report, worker_id))
+
+                    def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
+                        local_db = MinerDB(db.db_path)
+                        buffered_db = _BufferedExtractionDB(local_db)
+                        summary = extract_report(
+                            claimed_report,
+                            buffered_db,
+                            registry,
+                            config=_build_run_config(claimed_report.get('ticker', '')),
+                        )
+                        payload = buffered_db.staged_payload()
+                        return {
+                            'report': claimed_report,
+                            'worker_id': worker_id,
+                            'summary': summary,
+                            'payload': payload,
+                            'queue_status': _staged_status_for_payload(payload),
+                        }
+
+                    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+                        futures = [
+                            pool.submit(_run_buffered_extraction, claimed_report, worker_id)
+                            for claimed_report, worker_id in staged_reports
+                        ]
+                        for (claimed_report, _worker_id), future in zip(staged_reports, futures):
+                            try:
+                                result = future.result()
+                                payload = result['payload']
+                                queue_status = result['queue_status']
+                                if payload:
+                                    _replay_staged_payload(db, payload)
+                                if queue_status == 'failed':
+                                    db.mark_report_extraction_failed(int(claimed_report['id']), 'staged extraction failed')
+                                line = _format_success_line(claimed_report, result['summary'])
+                                _append_progress_line(
+                                    line,
+                                    pts=result['summary'].data_points_extracted,
+                                    errors=result['summary'].errors,
+                                )
+                            except Exception as e:
+                                db.mark_report_extraction_failed(int(claimed_report['id']), str(e)[:500])
+                                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+                                period_label = claimed_report.get('covering_period') or claimed_report.get('report_date') or '?'
+                                line = f'[{ts}] {group_ticker} {period_label} ERROR: {type(e).__name__}'
+                                log.error("Task %s: error on report %d: %s", task_id, claimed_report.get('id'), e, exc_info=True)
+                                _append_progress_line(line, errors=1)
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'
-                log.info("Task %s complete for %s", task_id, ticker or 'ALL')
+                log.info("Task %s complete for %s", task_id, _scope_label)
             except Exception as e:
                 log.error("Task %s failed: %s", task_id, e, exc_info=True)
                 with _progress_lock:
@@ -530,7 +651,13 @@ def operations_extract():
         t = threading.Thread(target=_run, daemon=True, name=f"extract-{run_key}")
         t.start()
 
-        return jsonify({'success': True, 'data': {'task_id': task_id, 'ticker': ticker or 'ALL'}})
+        return jsonify({'success': True, 'data': {
+            'task_id': task_id,
+            'ticker': ticker or 'ALL',
+            'tickers': tickers or None,
+            'scope_label': scope_label,
+            'extract_workers': extract_workers,
+        }})
     except Exception:
         log.error('Error in operations_extract', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

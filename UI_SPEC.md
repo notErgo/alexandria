@@ -19,7 +19,7 @@ Port: 5004
 **Critical path**: Each component has a `path` field in `ui_spec.json` (`critical` | `optional` | `later`). The ops.html template shows `wf-path-badge` labels on all sub-tab buttons and on individual cards in the Ingest pane. Off-critical-path cards within panes are wrapped in `<details class="offpath-details">` and collapsed by default.
 
 Data source key:
-- **CONFIG** — seeded from `companies.json`, pattern files, or `config.py` at server startup; survives purge + restart by design
+- **CONFIG** — seeded from `companies.json` or `config.py` at server startup; survives purge + restart by design
 - **DATA** — created by scraping/extraction pipeline; cleared by Purge All
 - **n/a** — stateless UI element (filter, button, form)
 
@@ -95,7 +95,7 @@ Template: `ops.html`
 
 | ID    | Component | Source | API endpoint(s) | Script(s) |
 |-------|-----------|--------|-----------------|-----------|
-| 1.3.1 | Metrics & Keywords table + add form | **CONFIG** | `GET /api/metric_schema` · `POST /api/metric_schema` · `PATCH /api/metric_schema/<key>` · `DELETE /api/metric_schema/<key>` · `GET /api/metric_schema/<key>/keywords` · `POST /api/metric_schema/<key>/keywords` | SSOT for all metrics. Active metrics feed LLM prompt, all UI dropdowns, and pattern editor. Keywords are per-metric anchor phrases used for EDGAR detection and LLM context. |
+| 1.3.1 | Metrics & Keywords table + add form | **CONFIG** | `GET /api/metric_schema` · `POST /api/metric_schema` · `PATCH /api/metric_schema/<key>` · `DELETE /api/metric_schema/<key>` · `GET /api/metric_schema/<key>/keywords` · `POST /api/metric_schema/<key>/keywords` | SSOT for all metrics. Active metrics feed LLM prompt and UI dropdowns. Keywords are per-metric anchor phrases used for EDGAR detection and LLM context. |
 
 #### 1.4  Settings sub-tab
 
@@ -187,7 +187,7 @@ Three sub-tabs: **Input** (configure) → **Crawl** (acquire) → **Interpret** 
 
 | ID      | Component                  | Source | API endpoint(s) | Script(s) |
 |---------|----------------------------|--------|-----------------|-----------|
-| 2.7.3.1 | LLM extraction run monitor | DATA   | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress; model selector calls `saveOllamaModel()` |
+| 2.7.3.1 | LLM extraction run monitor | DATA   | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress; includes interpretation-only date window on stored docs (`report_date >= from`, `report_date <= to`); model selector calls `saveOllamaModel()` |
 | 2.7.3.2 | Pipeline observability card | DATA  | `GET /api/operations/pipeline_observability` | Auto-loaded on Interpret sub-tab activate |
 | 2.7.3.3 | Pipeline table             | DATA   | `GET /api/operations/pipeline_observability` | Per-ticker discovered/ingested/parsed/extracted counts + scraper config health |
 
@@ -252,14 +252,6 @@ Template: `index.html`
 
 ---
 
-## 7.0  `/patterns`  — Patterns Page
-
-| ID    | Component      | Source | API endpoint(s) | Script(s) |
-|-------|----------------|--------|-----------------|-----------|
-| 7.1   | Patterns table | CONFIG | (internal)      | `PatternRegistry` (`extractors/pattern_registry.py`) loads from `config/patterns/*.json` |
-
----
-
 ## 8.0  `/diagnostics`  — Diagnostics Page
 
 | ID    | Component        | Source | API endpoint(s) | Script(s) |
@@ -287,7 +279,7 @@ Template: `index.html`
 | S.3  | `ArchiveIngestor` | `POST /api/ingest/archive`; `cli.py ingest --source archive` | Walks archive, stores reports, then runs extraction inline for monthly docs | `reports`, `asset_manifest`, `data_points`, `review_queue` |
 | S.4  | `EdgarConnector` | `POST /api/ingest/edgar`; S.1 EDGAR follow-up | Fetches EDGAR 8-K/10-Q/10-K filings, stores raw text only | `reports` |
 | S.5  | `ManifestScanner` | `POST /api/manifest/scan` | Walks archive directory, upserts manifest entries | `asset_manifest` |
-| S.6  | Extraction pipeline | `POST /api/operations/extract`; `cli.py extract` | Runs LLM+regex+agreement on stored reports | `data_points`, `review_queue` |
+| S.6  | Extraction pipeline | `POST /api/operations/extract`; `cli.py extract` | Runs LLM extraction on stored reports, with regex used only as a monthly gate | `data_points`, `review_queue` |
 | S.7  | Ingest auto-extract chain | `POST /api/ingest/ir` or `/api/ingest/edgar` with body `{ "auto_extract": true }` | Runs extraction stage over newly unextracted reports immediately after ingest | `data_points`, `review_queue`, `reports.extracted_at` |
 
 ---

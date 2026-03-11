@@ -127,11 +127,11 @@
         },
         {
           "spec_id": "4.3",
-          "label": "Build Patterns (feedback loop)",
+          "label": "Review Exceptions",
           "nav": {"tab": "review"},
           "path": "later",
-          "description": "After approving at least 10-20 items, use the Gen button on any approved row to auto-generate a regex from that snippet. Save it to the library. On the next extraction run, the pattern corroborates the LLM and the item auto-accepts without review.",
-          "note": "This step closes the feedback loop. Each pattern you save reduces future review volume for that phrase. Aim to cover the 5-10 most common document formats per company before the next extraction cycle."
+          "description": "Review low-confidence and outlier candidates, correct or reject them, and use the final analyst decisions to tune LLM prompts and metric rules.",
+          "note": "Regex patterns are now used only as a gate for monthly documents and are no longer part of analyst workflow."
         },
         {
           "spec_id": "1.2",

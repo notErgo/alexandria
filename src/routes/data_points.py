@@ -331,7 +331,6 @@ def export_csv():
     writer = csv.DictWriter(output, fieldnames=[
         'ticker', 'period', 'metric', 'value', 'unit',
         'confidence', 'extraction_method', 'source_url',
-        'llm_value', 'regex_value', 'agreement_status',
         'source_snippet', 'created_at',
     ], extrasaction='ignore')
     writer.writeheader()

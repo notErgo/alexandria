@@ -323,6 +323,7 @@ class TestLLMOnlyRouting:
 
         mock = self._make_llm_only_batch(value=700.0, confidence=CONFIDENCE_REVIEW_THRESHOLD)
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
             raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
@@ -351,6 +352,7 @@ class TestLLMOnlyRouting:
         low_conf = max(0.0, CONFIDENCE_REVIEW_THRESHOLD - 0.1)
         mock = self._make_llm_only_batch(value=700.0, confidence=low_conf)
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
             raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
@@ -451,7 +453,7 @@ class TestGapFill:
         monkeypatch.setattr(_ep, '_try_gap_fill', lambda *a, **kw: gap_fill_called.append(1))
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024. In August we mined 650 BTC.',
+            raw_text='MARA bitcoin produced 700 BTC in September 2024. In August we produced 650 BTC.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -556,18 +558,27 @@ class TestGapFill:
         from miner_types import ExtractionResult
 
         mock_llm = _make_mock_llm()
-        mock_llm.extract_batch.return_value = {}
+        mock_llm.extract_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=700.0, unit='BTC', confidence=0.95,
+                extraction_method='llm_test', source_snippet='September mined 700 BTC',
+                pattern_id='llm_test',
+            )
+        }
         mock_llm.extract.return_value = None  # prevent per-metric fallback side-effects
         prior_result = ExtractionResult(
             metric='production_btc', value=650.0, unit='BTC', confidence=0.90,
             extraction_method='llm_gap_fill', source_snippet='August mined 650 BTC',
             pattern_id='llm_gap_fill',
         )
-        mock_llm.extract_for_period.return_value = {'production_btc': prior_result}
+        mock_llm.extract_historical_periods.return_value = {
+            '2024-08-01': {'production_btc': prior_result}
+        }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024. In August we mined 650 BTC.',
+            raw_text='MARA bitcoin produced 700 BTC in September 2024. In August we produced 650 BTC.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -596,8 +607,11 @@ class TestGapFill:
             extraction_method='llm_gap_fill', source_snippet='August mined 650 BTC',
             pattern_id='llm_gap_fill',
         )
-        mock_llm.extract_for_period.return_value = {'production_btc': prior_result}
+        mock_llm.extract_historical_periods.return_value = {
+            '2024-08-01': {'production_btc': prior_result}
+        }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         # Pre-insert prior-period data at a different sentinel value
         db_with_company.insert_data_point({
@@ -608,7 +622,7 @@ class TestGapFill:
         })
 
         report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September. In August we mined 650 BTC.',
+            raw_text='MARA bitcoin produced 700 BTC in September. In August we produced 650 BTC.',
             report_date='2024-09-01',
         ))
         report = db_with_company.get_report(report_id)
@@ -698,6 +712,7 @@ class TestActiveMetricFilter:
 
         mock_llm = _MockLLM()
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report({
             'ticker': 'MARA', 'report_date': '2024-09-01',
@@ -757,6 +772,7 @@ class TestActiveMetricFilter:
 
         mock_llm = _MockLLM2()
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report({
             'ticker': 'MARA', 'report_date': '2024-09-01',
@@ -862,7 +878,8 @@ class TestKeywordGate:
         summary = extract_report(report, db_with_company, registry)
 
         assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
-        assert summary.reports_processed == 1
+        assert summary.reports_processed == 0
+        assert any(r['id'] == report_id for r in db_with_company.get_unextracted_reports())
 
     def test_keyword_gated_field_exists_on_extraction_summary(self):
         """ExtractionSummary must have a keyword_gated field defaulting to 0."""
@@ -1000,6 +1017,7 @@ class TestKeywordGate:
     ):
         """Low-confidence quarterly review stays out of the active queue until monthly docs catch up."""
         import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
         from miner_types import ExtractionResult
 
         for month in ('2025-01-01', '2025-02-01', '2025-03-01'):
@@ -1046,6 +1064,7 @@ class TestKeywordGate:
     ):
         """Quarter-style 8-K shareholder letters should not enter the monthly queue."""
         import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
         from miner_types import ExtractionResult
 
         for month in ('2025-07-01', '2025-08-01', '2025-09-01'):
@@ -1202,10 +1221,10 @@ class TestPerMetricFallbackGate:
         from interpreters.interpret_pipeline import extract_report
         extract_report(report, db_with_company, registry)
 
-        # Only the single batch call should have been made; no per-metric calls.
+        # Gating-only mode should skip the LLM entirely when regex also found nothing.
         batch_calls = [c for c in call_log if c[0] == 'batch']
-        assert len(batch_calls) == 1, (
-            f"Expected exactly 1 batch call (the primary attempt), got {len(batch_calls)}: {batch_calls}"
+        assert len(batch_calls) == 0, (
+            f"Expected no LLM calls when regex gate finds nothing, got {len(batch_calls)}: {batch_calls}"
         )
 
     def test_per_metric_fallback_runs_when_regex_has_hits(
