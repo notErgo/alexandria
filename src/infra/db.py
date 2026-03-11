@@ -181,6 +181,24 @@ class MinerDB:
 
                         CREATE INDEX IF NOT EXISTS idx_rq_status
                             ON review_queue(status);
+
+                        CREATE TABLE IF NOT EXISTS extraction_commit_queue (
+                            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id        INTEGER,
+                            ticker        TEXT NOT NULL,
+                            report_id     INTEGER NOT NULL UNIQUE REFERENCES reports(id),
+                            period        TEXT NOT NULL,
+                            sequence_key  TEXT NOT NULL,
+                            status        TEXT NOT NULL DEFAULT 'staged',
+                            payload_json  TEXT,
+                            summary_json  TEXT,
+                            error         TEXT,
+                            created_at    TEXT DEFAULT (datetime('now')),
+                            committed_at  TEXT
+                        );
+
+                        CREATE INDEX IF NOT EXISTS idx_ecq_run_ticker_status_seq
+                            ON extraction_commit_queue(run_id, ticker, status, sequence_key);
                     """)
                     conn.execute("PRAGMA user_version = 1")
                     version = 1
@@ -384,6 +402,11 @@ class MinerDB:
                     self._migrate_v41(conn)
                     conn.execute("PRAGMA user_version = 41")
                     version = 41
+
+                if version < 42:
+                    self._migrate_v42(conn)
+                    conn.execute("PRAGMA user_version = 42")
+                    version = 42
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -1641,6 +1664,29 @@ class MinerDB:
             "ON review_queue(status, precedence_state)"
         )
 
+    def _migrate_v42(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v41 → v42: staged extraction commit queue."""
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS extraction_commit_queue (
+                   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                   run_id        INTEGER,
+                   ticker        TEXT NOT NULL,
+                   report_id     INTEGER NOT NULL UNIQUE REFERENCES reports(id),
+                   period        TEXT NOT NULL,
+                   sequence_key  TEXT NOT NULL,
+                   status        TEXT NOT NULL DEFAULT 'staged',
+                   payload_json  TEXT,
+                   summary_json  TEXT,
+                   error         TEXT,
+                   created_at    TEXT DEFAULT (datetime('now')),
+                   committed_at  TEXT
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ecq_run_ticker_status_seq "
+            "ON extraction_commit_queue(run_id, ticker, status, sequence_key)"
+        )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -2381,6 +2427,73 @@ class MinerDB:
                        END
                    WHERE id = ?""",
                 (str(error)[:500], MAX_EXTRACTION_ATTEMPTS, report_id),
+            )
+
+    def enqueue_extraction_commit(
+        self,
+        *,
+        run_id: int,
+        ticker: str,
+        report_id: int,
+        period: str,
+        sequence_key: str,
+        payload: Optional[dict] = None,
+        summary: Optional[dict] = None,
+        status: str = 'staged',
+        error: Optional[str] = None,
+    ) -> int:
+        """Persist one staged extraction result before chronological commit."""
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                """INSERT INTO extraction_commit_queue
+                   (run_id, ticker, report_id, period, sequence_key, status,
+                    payload_json, summary_json, error)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(report_id) DO UPDATE SET
+                       run_id=excluded.run_id,
+                       ticker=excluded.ticker,
+                       period=excluded.period,
+                       sequence_key=excluded.sequence_key,
+                       status=excluded.status,
+                       payload_json=excluded.payload_json,
+                       summary_json=excluded.summary_json,
+                       error=excluded.error,
+                       committed_at=CASE
+                           WHEN excluded.status='committed' THEN extraction_commit_queue.committed_at
+                           ELSE NULL
+                       END""",
+                (
+                    run_id,
+                    ticker,
+                    report_id,
+                    period,
+                    sequence_key,
+                    status,
+                    json.dumps(payload) if payload is not None else None,
+                    json.dumps(summary) if summary is not None else None,
+                    str(error)[:500] if error else None,
+                ),
+            )
+            return cur.lastrowid
+
+    def get_extraction_commit_row(self, report_id: int) -> Optional[dict]:
+        """Return one staged extraction queue row by report_id."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM extraction_commit_queue WHERE report_id = ?",
+                (report_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def finalize_extraction_commit(self, report_id: int, status: str = 'committed') -> None:
+        """Mark a staged extraction queue row as committed or failed after replay."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """UPDATE extraction_commit_queue
+                      SET status=?,
+                          committed_at=?
+                    WHERE report_id = ?""",
+                (status, datetime.now(timezone.utc).isoformat(), report_id),
             )
 
     def reset_report_to_pending(self, report_id: int) -> None:

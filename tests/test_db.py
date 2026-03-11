@@ -12,7 +12,10 @@ class TestSchema:
             tables = {row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()}
-        assert {'companies', 'reports', 'data_points', 'patterns', 'review_queue'} <= tables
+        assert {
+            'companies', 'reports', 'data_points', 'patterns',
+            'review_queue', 'extraction_commit_queue',
+        } <= tables
 
     def test_wal_mode_enabled(self, db):
         with db._get_connection() as conn:

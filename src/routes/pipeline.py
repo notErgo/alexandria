@@ -62,6 +62,70 @@ def _sort_reports_chronologically(reports: list[dict]) -> list[dict]:
     return sorted(reports, key=_report_chronology_key)
 
 
+class _BufferedExtractionDB:
+    """Record extraction writes so they can be committed in chronological order."""
+
+    _BUFFERED_METHODS = {
+        'insert_data_point',
+        'insert_review_item',
+        'insert_benchmark_run',
+        'update_report_summary',
+        'refresh_review_precedence_for_month',
+        'mark_report_extracted',
+        'mark_report_extraction_failed',
+    }
+
+    def __init__(self, base_db):
+        self._base_db = base_db
+        self._actions: list[dict] = []
+
+    def __getattr__(self, name):
+        if name in self._BUFFERED_METHODS:
+            def _buffered(*args, **kwargs):
+                payload = kwargs if kwargs else list(args)
+                self._actions.append({'method': name, 'payload': payload})
+                return len(self._actions)
+            return _buffered
+        return getattr(self._base_db, name)
+
+    def staged_payload(self) -> dict:
+        return {'actions': list(self._actions)}
+
+
+def _replay_staged_payload(db, payload: dict) -> None:
+    for action in (payload or {}).get('actions', []):
+        method = action.get('method')
+        op_payload = action.get('payload')
+        fn = getattr(db, method)
+        if isinstance(op_payload, list):
+            fn(*op_payload)
+        elif isinstance(op_payload, dict):
+            fn(**op_payload)
+        else:
+            fn(op_payload)
+
+
+def _summary_to_dict(summary) -> dict:
+    return {
+        'reports_processed': int(summary.reports_processed or 0),
+        'data_points_extracted': int(summary.data_points_extracted or 0),
+        'review_flagged': int(summary.review_flagged or 0),
+        'errors': int(summary.errors or 0),
+        'keyword_gated': int(summary.keyword_gated or 0),
+        'regex_gated': int(summary.regex_gated or 0),
+        'prompt_tokens': int(summary.prompt_tokens or 0),
+        'response_tokens': int(summary.response_tokens or 0),
+        'temporal_rejects': int(getattr(summary, 'temporal_rejects', 0) or 0),
+    }
+
+
+def _staged_status_for_payload(payload: dict) -> str:
+    for action in (payload or {}).get('actions', []):
+        if action.get('method') == 'mark_report_extraction_failed':
+            return 'failed'
+    return 'staged'
+
+
 def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool = False) -> list:
     """Collect reports eligible for extraction for one ticker.
 
@@ -332,7 +396,7 @@ def _extract_reports_for_ticker(
         return
 
     ordered_reports = _sort_reports_chronologically(reports)
-    effective_workers = 1
+    effective_workers = max(1, min(int(num_workers), len(ordered_reports)))
     ticker_processed = ticker_data_points = ticker_errors = 0
     ticker_keyword_gated = ticker_regex_gated = 0
     counter_lock = threading.Lock()
@@ -366,7 +430,7 @@ def _extract_reports_for_ticker(
 
         _event(
             db, run_id, 'extract', 'report_done',
-            ticker=ticker, period=period, source_type=source_type,
+            ticker=ticker, report_id=report.get('id'), period=period, source_type=source_type,
             worker_id=worker_id,
             llm_used=int(llm_used),
             data_points=summary.data_points_extracted,
@@ -394,21 +458,23 @@ def _extract_reports_for_ticker(
             source_type=source_type, error=str(error),
         )
 
-    local_db = MinerDB(db.db_path)
-    worker_id = 0
-    for report in ordered_reports:
+    claim_db = MinerDB(db.db_path)
+    staged_reports: list[tuple[dict, int]] = []
+    for idx, report in enumerate(ordered_reports):
         if _is_cancelled(run_id):
             break
         report_id = report.get('id')
         if report_id is None:
             continue
         report_id = int(report_id)
-        if not local_db.claim_report_for_extraction(report_id):
+        worker_id = idx % effective_workers
+        if not claim_db.claim_report_for_extraction(report_id):
             log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
             continue
-        claimed_report = local_db.get_report(report_id)
+        claimed_report = claim_db.get_report(report_id)
         if not claimed_report:
             continue
+        staged_reports.append((claimed_report, worker_id))
         _event(
             db, run_id, 'extract', 'report_start',
             ticker=ticker,
@@ -417,11 +483,65 @@ def _extract_reports_for_ticker(
             period=claimed_report.get('report_date', ''),
             source_type=claimed_report.get('source_type', ''),
         )
-        try:
-            summary = extract_report(claimed_report, local_db, registry)
-            _record_report_success(claimed_report, summary, worker_id)
-        except Exception as e:
-            _record_report_failure(claimed_report, e, worker_id)
+
+    def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
+        local_db = MinerDB(db.db_path)
+        buffered_db = _BufferedExtractionDB(local_db)
+        summary = extract_report(claimed_report, buffered_db, registry)
+        payload = buffered_db.staged_payload()
+        return {
+            'report': claimed_report,
+            'worker_id': worker_id,
+            'summary': summary,
+            'payload': payload,
+            'queue_status': _staged_status_for_payload(payload),
+        }
+
+    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+        futures = [
+            pool.submit(_run_buffered_extraction, claimed_report, worker_id)
+            for claimed_report, worker_id in staged_reports
+        ]
+        for (claimed_report, worker_id), future in zip(staged_reports, futures):
+            if _is_cancelled(run_id):
+                break
+            try:
+                result = future.result()
+                summary = result['summary']
+                payload = result['payload']
+                queue_status = result['queue_status']
+                db.enqueue_extraction_commit(
+                    run_id=run_id,
+                    ticker=ticker,
+                    report_id=int(claimed_report['id']),
+                    period=claimed_report.get('report_date', ''),
+                    sequence_key="|".join(str(p) for p in _report_chronology_key(claimed_report)),
+                    payload=payload,
+                    summary=_summary_to_dict(summary),
+                    status=queue_status,
+                    error=None,
+                )
+                _replay_staged_payload(db, payload)
+                db.finalize_extraction_commit(
+                    int(claimed_report['id']),
+                    status='failed' if queue_status == 'failed' else 'committed',
+                )
+                _record_report_success(claimed_report, summary, worker_id)
+            except Exception as e:
+                db.enqueue_extraction_commit(
+                    run_id=run_id,
+                    ticker=ticker,
+                    report_id=int(claimed_report['id']),
+                    period=claimed_report.get('report_date', ''),
+                    sequence_key="|".join(str(p) for p in _report_chronology_key(claimed_report)),
+                    payload=None,
+                    summary=None,
+                    status='failed',
+                    error=str(e),
+                )
+                db.finalize_extraction_commit(int(claimed_report['id']), status='failed')
+                db.mark_report_extraction_failed(int(claimed_report['id']), str(e)[:500])
+                _record_report_failure(claimed_report, e, worker_id)
 
     db.upsert_pipeline_run_ticker(run_id, ticker, extracted=1)
     _event(

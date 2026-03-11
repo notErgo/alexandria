@@ -249,6 +249,35 @@ def test_overnight_start_accepts_force_reextract(client, monkeypatch):
     )
 
 
+def test_overnight_start_accepts_extract_workers(client, monkeypatch):
+    """extract_workers must be stored in the pipeline run config."""
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+
+    resp = client.post('/api/pipeline/overnight/start', json={
+        'tickers': ['MARA'],
+        'extract_workers': 5,
+    })
+    assert resp.status_code == 202
+    run_id = int(resp.get_json()['data']['run_id'])
+    run = app_globals.get_db().get_pipeline_run(run_id)
+    cfg_raw = run.get('config_json') or "{}"
+    cfg = json.loads(cfg_raw) if isinstance(cfg_raw, str) else cfg_raw
+    assert int(cfg.get('extract_workers')) == 5
+
+
 def test_pipeline_preflight_returns_json(client):
     """GET /api/pipeline/preflight must return 200 with expected fields."""
     resp = client.get('/api/pipeline/preflight')
@@ -490,8 +519,9 @@ def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path)
     ]
 
 
-def test_extract_reports_for_ticker_enforces_serial_chronology_and_claims_reports(monkeypatch, tmp_path):
+def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(monkeypatch, tmp_path):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import time
     import routes.pipeline as pipeline_mod
     import interpreters.interpret_pipeline as interpret_mod
     from miner_types import ExtractionSummary
@@ -520,7 +550,14 @@ def test_extract_reports_for_ticker_enforces_serial_chronology_and_claims_report
     run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
     run_id = int(run['id'])
     extracted = []
+
     def _fake_extract(report, local_db, registry, **kwargs):
+        delays = {
+            report_ids[0]: 0.05,
+            report_ids[1]: 0.01,
+            report_ids[2]: 0.0,
+        }
+        time.sleep(delays[report['id']])
         extracted.append(report['id'])
         local_db.mark_report_extracted(report['id'])
         summary = ExtractionSummary()
@@ -549,11 +586,34 @@ def test_extract_reports_for_ticker_enforces_serial_chronology_and_claims_report
         registry=object(),
         counters=counters,
         failures=failures,
-        num_workers=10,
+        num_workers=3,
     )
 
-    assert extracted == report_ids
+    assert sorted(extracted) == report_ids
     assert counters['processed'] == 3
     assert counters['data_points'] == 3
     assert counters['errors'] == 0
     assert failures == []
+    with db._get_connection() as conn:
+        queue_rows = conn.execute(
+            "SELECT report_id, status FROM extraction_commit_queue WHERE ticker='MARA' ORDER BY sequence_key"
+        ).fetchall()
+        done_events = conn.execute(
+            """SELECT json_extract(details_json, '$.report_id') AS report_id
+                 FROM pipeline_run_events
+                WHERE run_id=? AND stage='extract' AND event='report_done' AND ticker='MARA'
+                ORDER BY id""",
+            (run_id,),
+        ).fetchall()
+        ticker_start = conn.execute(
+            """SELECT details_json FROM pipeline_run_events
+                 WHERE run_id=? AND stage='extract' AND event='ticker_start' AND ticker='MARA'""",
+            (run_id,),
+        ).fetchone()
+    assert [(row['report_id'], row['status']) for row in queue_rows] == [
+        (report_ids[0], 'committed'),
+        (report_ids[1], 'committed'),
+        (report_ids[2], 'committed'),
+    ]
+    assert [int(row['report_id']) for row in done_events] == report_ids
+    assert '"workers": 3' in ticker_start['details_json']

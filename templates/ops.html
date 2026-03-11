@@ -1402,6 +1402,15 @@ tr.is-reviewed td { opacity: 0.65; }
         Force re-extract (re-run LLM on all ingested reports, including already extracted)
       </label>
     </div>
+    <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+        <span>Extract workers</span>
+        <input id="pipeline-extract-workers" type="number" min="1" max="12" step="1" value="3" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+      </label>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
+        Parallel LLM workers per ticker. Results still commit oldest-to-newest.
+      </div>
+    </div>
     <div id="pipeline-preflight-panel" style="display:none;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;line-height:1.7">
       <span id="pipeline-preflight-pending"></span>
       <span id="pipeline-preflight-extracted"></span>
@@ -7536,12 +7545,13 @@ async function runFullPipeline() {
   var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
   var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
   var forceReextract = document.getElementById('pipeline-force-reextract')?.checked === true;
+  var extractWorkers = Math.max(1, parseInt(document.getElementById('pipeline-extract-workers')?.value || '3', 10) || 3);
   var tickers = _getSharedSelectedTickers();
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract, tickers: tickers}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract, extract_workers: extractWorkers, tickers: tickers}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
