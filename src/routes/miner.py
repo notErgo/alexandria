@@ -534,12 +534,15 @@ def get_miner_analysis(ticker: str, period: str):
         else:
             period_normalized = period[:10]
 
+        report_id_filter = request.args.get('report_id', type=int)
         has_source = db.find_report_for_period(ticker_upper, period_normalized) is not None
 
         all_matches = []
 
         # Accepted data points
         accepted = db.query_data_points(ticker=ticker_upper, from_period=period_normalized, to_period=period_normalized)
+        if report_id_filter is not None:
+            accepted = [dp for dp in accepted if dp.get('report_id') == report_id_filter]
         for dp in accepted:
             all_matches.append({
                 'metric': dp['metric'],
@@ -556,11 +559,18 @@ def get_miner_analysis(ticker: str, period: str):
         # Pending review queue items (not yet accepted)
         accepted_metrics = {m['metric'] for m in all_matches}
         with db._get_connection() as conn:
-            rq_rows = conn.execute(
-                "SELECT metric, llm_value, regex_value, confidence, source_snippet, agreement_status "
-                "FROM review_queue WHERE ticker=? AND period=? AND status='PENDING'",
-                (ticker_upper, period_normalized),
-            ).fetchall()
+            if report_id_filter is not None:
+                rq_rows = conn.execute(
+                    "SELECT metric, llm_value, regex_value, confidence, source_snippet, agreement_status "
+                    "FROM review_queue WHERE ticker=? AND period=? AND status='PENDING' AND report_id=?",
+                    (ticker_upper, period_normalized, report_id_filter),
+                ).fetchall()
+            else:
+                rq_rows = conn.execute(
+                    "SELECT metric, llm_value, regex_value, confidence, source_snippet, agreement_status "
+                    "FROM review_queue WHERE ticker=? AND period=? AND status='PENDING'",
+                    (ticker_upper, period_normalized),
+                ).fetchall()
         for row in rq_rows:
             metric = row[0]
             if metric in accepted_metrics:
@@ -793,14 +803,15 @@ def get_miner_raw_text(ticker: str, period: str):
         if source_type in _EDGAR_SOURCE_TYPES and source_url.startswith('https://'):
             live_html = _try_fetch_edgar_html(source_url, ticker_upper, period)
             if live_html is not None:
-                from infra.text_utils import edgar_to_plain
-                return Response(edgar_to_plain(live_html), mimetype='text/plain; charset=utf-8')
+                from infra.text_utils import edgar_to_plain, strip_edgar_boilerplate
+                content = strip_edgar_boilerplate(edgar_to_plain(live_html))
+                return Response(content, mimetype='text/plain; charset=utf-8')
 
         raw_html = db.get_report_raw_html(report_info['id'])
         if raw_html:
             if source_type in _EDGAR_SOURCE_TYPES or source_type == 'edgar_8k':
-                from infra.text_utils import edgar_to_plain
-                content = edgar_to_plain(raw_html)
+                from infra.text_utils import edgar_to_plain, strip_edgar_boilerplate
+                content = strip_edgar_boilerplate(edgar_to_plain(raw_html))
             else:
                 from infra.text_utils import html_to_plain
                 content = html_to_plain(raw_html)
@@ -813,6 +824,9 @@ def get_miner_raw_text(ticker: str, period: str):
         if source_type in ('ir_press_release', 'wire_press_release'):
             from infra.text_utils import strip_press_release_boilerplate
             content = strip_press_release_boilerplate(content)
+        elif source_type.startswith('edgar_'):
+            from infra.text_utils import strip_edgar_boilerplate
+            content = strip_edgar_boilerplate(content)
 
         return Response(content, mimetype='text/plain; charset=utf-8')
 

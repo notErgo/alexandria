@@ -78,6 +78,15 @@ def get_review_document(item_id):
             }})
 
         raw_text = db.get_report_raw_text(report['id']) or ''
+        source_type = report.get('source_type') or ''
+        if source_type.startswith('edgar_'):
+            raw_html = db.get_report_raw_html(report['id'])
+            if raw_html:
+                from infra.text_utils import edgar_to_plain, strip_edgar_boilerplate
+                raw_text = strip_edgar_boilerplate(edgar_to_plain(raw_html))
+            else:
+                from infra.text_utils import strip_edgar_boilerplate
+                raw_text = strip_edgar_boilerplate(raw_text)
         return jsonify({'success': True, 'data': {
             'raw_text': raw_text,
             'source_url': report.get('source_url'),

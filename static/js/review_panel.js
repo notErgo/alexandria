@@ -292,9 +292,11 @@ const ReviewPanel = (function () {
     return body.success ? body.data : null;
   }
 
-  async function _fetchAnalysis(ticker, period) {
+  async function _fetchAnalysis(ticker, period, reportId) {
     const p = period.slice(0, 7);
-    const resp = await fetch('/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/analysis');
+    let url = '/api/miner/' + encodeURIComponent(ticker) + '/' + encodeURIComponent(p) + '/analysis';
+    if (reportId != null) url += '?report_id=' + encodeURIComponent(reportId);
+    const resp = await fetch(url);
     if (!resp.ok) {
       const err = await resp.json().catch(function () { return {}; });
       throw new Error(err.error?.message || 'HTTP ' + resp.status);
@@ -741,8 +743,11 @@ const ReviewPanel = (function () {
       // Pass doc.report_id as the current doc so the selector marks it correctly.
       if (selectionData) {
         _renderSourceHeader(selectionData, doc.report_id || null, function(reportId) {
-          _fetchRawSource(_currentTicker, _currentPeriod, reportId).then(function(altText) {
-            _renderDocText(altText, []);
+          Promise.all([
+            _fetchRawSource(_currentTicker, _currentPeriod, reportId),
+            _fetchAnalysis(_currentTicker, _currentPeriod, reportId).catch(function () { return []; }),
+          ]).then(function(results) {
+            _renderDocText(results[0], results[1]);
           });
         });
       } else {
@@ -854,7 +859,7 @@ const ReviewPanel = (function () {
       // No pending item — show analysis + raw source + fill form
       const [rawText, matches, selectionData] = await Promise.all([
         _fetchRawSource(ticker, period, requestedReportId),
-        _fetchAnalysis(ticker, period).catch(function () { return []; }),
+        _fetchAnalysis(ticker, period, requestedReportId).catch(function () { return []; }),
         _fetchPeriodReports(ticker, period).catch(function () { return null; }),
       ]);
 
@@ -863,8 +868,11 @@ const ReviewPanel = (function () {
 
       // Show selection rationale and alternative doc switcher in the header
       _renderSourceHeader(selectionData, requestedReportId, function(reportId) {
-        _fetchRawSource(ticker, period, reportId).then(function(altText) {
-          _renderDocText(altText, []);
+        Promise.all([
+          _fetchRawSource(ticker, period, reportId),
+          _fetchAnalysis(ticker, period, reportId).catch(function () { return []; }),
+        ]).then(function(results) {
+          _renderDocText(results[0], results[1]);
         });
       });
 

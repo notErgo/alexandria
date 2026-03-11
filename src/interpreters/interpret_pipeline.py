@@ -764,6 +764,8 @@ def _interpret_quarterly_report(
         full_text = edgar_to_plain(raw_html)
     else:
         full_text = report.get('raw_text') or ''
+    from infra.text_utils import strip_edgar_boilerplate
+    full_text = strip_edgar_boilerplate(full_text)
     text = full_text[:_q_selector.char_budget]
 
     # Keyword gate: skip LLM if no active BTC mining keywords appear in the text.
