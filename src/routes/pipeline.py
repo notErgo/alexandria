@@ -17,6 +17,7 @@ log = logging.getLogger('miners.routes.pipeline')
 bp = Blueprint('pipeline', __name__)
 
 _run_cancel_flags: dict[int, threading.Event] = {}
+_run_threads: dict[int, threading.Thread] = {}
 _run_lock = threading.Lock()
 
 # UI contract: maps each user-facing pipeline parameter to the HTML element id
@@ -174,6 +175,46 @@ def _is_cancelled(run_id: int) -> bool:
     with _run_lock:
         evt = _run_cancel_flags.get(run_id)
         return bool(evt and evt.is_set())
+
+
+def _is_run_thread_alive(run_id: int) -> bool:
+    with _run_lock:
+        thread = _run_threads.get(run_id)
+        return bool(thread and thread.is_alive())
+
+
+def _register_run_thread(run_id: int, thread: threading.Thread) -> None:
+    with _run_lock:
+        _run_threads[run_id] = thread
+
+
+def _clear_run_thread(run_id: int) -> None:
+    with _run_lock:
+        _run_threads.pop(run_id, None)
+
+
+def _cleanup_orphaned_process_runs(db) -> list[int]:
+    """Mark DB runs as stopped when this process has no live thread for them."""
+    orphaned = []
+    for run in db.list_pipeline_runs_by_status(['queued', 'running']):
+        if not _is_run_thread_alive(int(run['id'])):
+            orphaned.append(int(run['id']))
+    for run_id in orphaned:
+        db.update_pipeline_run(
+            run_id,
+            status='stopped',
+            ended_at=datetime.now(timezone.utc).isoformat(),
+            summary={'recovered': True, 'reason': 'thread_missing'},
+            error='thread_missing',
+        )
+        db.add_pipeline_run_event(
+            run_id,
+            stage='run',
+            event='pipeline_run_recovered',
+            level='WARNING',
+            details={'reason': 'thread_missing'},
+        )
+    return orphaned
 
 
 def _event(db, run_id: int, stage: str, event: str, *, ticker: str = None, level: str = 'INFO', **details) -> None:
@@ -1097,6 +1138,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         )
         _event(db, run_id, 'run', 'pipeline_run_failed', level='WARNING', error=str(e))
     finally:
+        _clear_run_thread(run_id)
         with _run_lock:
             _run_cancel_flags.pop(run_id, None)
 
@@ -1165,11 +1207,23 @@ def start_overnight_pipeline():
     """Start an overnight pipeline run in a background thread."""
     from app_globals import get_db
     db = get_db()
+    _cleanup_orphaned_process_runs(db)
     body = request.get_json(silent=True) or {}
     tickers = body.get('tickers') or []
     if not isinstance(tickers, list):
         return jsonify({'success': False, 'error': {'message': "'tickers' must be a list"}}), 400
     requested_tickers = [str(t).strip().upper() for t in tickers if str(t).strip()]
+
+    active_runs = [
+        run for run in db.list_pipeline_runs_by_status(['queued', 'running'])
+        if _is_run_thread_alive(int(run['id']))
+    ]
+    if active_runs:
+        active = active_runs[0]
+        return jsonify({'success': False, 'error': {
+            'code': 'ALREADY_RUNNING',
+            'message': f"Pipeline run {active['id']} is already active",
+        }, 'data': {'active_run_id': int(active['id'])}}), 409
 
     config = {
         'skip_probe': bool(body.get('skip_probe', False)),
@@ -1212,6 +1266,7 @@ def start_overnight_pipeline():
         daemon=True,
         name=f"overnight-run-{run_id}",
     )
+    _register_run_thread(run_id, t)
     t.start()
     return jsonify({'success': True, 'data': {'run_id': run_id, 'status': 'queued'}}), 202
 

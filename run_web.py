@@ -223,14 +223,18 @@ signal.signal(signal.SIGTERM, _shutdown)
 if __name__ == '__main__':
     from app_globals import get_db, get_scrape_worker
     # Reset any jobs orphaned by a previous crash before starting worker
-    reset_count = get_db().reset_interrupted_scrape_jobs()
+    db = get_db()
+    reset_count = db.reset_interrupted_scrape_jobs()
     if reset_count:
         log.info("Reset %d interrupted scrape jobs on startup", reset_count)
+    recovered_pipeline_runs = db.reset_interrupted_pipeline_runs()
+    if recovered_pipeline_runs:
+        log.info("Recovered %d interrupted pipeline runs on startup", recovered_pipeline_runs)
 
     # Auto-enqueue scrape jobs for companies that have never been scraped.
     # Fires once per company lifetime (never_run status only). Subsequent
     # restarts skip already-scraped companies so this is safe to run every boot.
-    _db = get_db()
+    _db = db
     try:
         _never_run = [
             c for c in _db.get_all_companies(active_only=True)

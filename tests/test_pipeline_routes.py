@@ -222,6 +222,60 @@ def test_overnight_cancel_sets_cancel_requested_flag(client):
     assert status.get_json()['data']['cancel_requested'] is True
 
 
+def test_reset_interrupted_pipeline_runs_marks_non_terminal_runs(tmp_path):
+    db = MinerDB(str(tmp_path / 'test.db'))
+    queued = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
+    running = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['RIOT']}, config={})
+    complete = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['CLSK']}, config={})
+    db.update_pipeline_run(running['id'], status='running')
+    db.update_pipeline_run(complete['id'], status='complete')
+
+    recovered = db.reset_interrupted_pipeline_runs()
+
+    assert recovered == 2
+    assert db.get_pipeline_run(queued['id'])['status'] == 'stopped'
+    assert db.get_pipeline_run(running['id'])['status'] == 'stopped'
+    assert db.get_pipeline_run(complete['id'])['status'] == 'complete'
+
+
+def test_overnight_start_rejects_when_live_run_thread_exists(client, monkeypatch):
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    db = app_globals.get_db()
+    active_run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
+    db.update_pipeline_run(active_run['id'], status='running')
+
+    class _AliveThread:
+        def is_alive(self):
+            return True
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            return None
+
+        def is_alive(self):
+            return False
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+    monkeypatch.setitem(pipeline_mod._run_threads, int(active_run['id']), _AliveThread())
+
+    resp = client.post('/api/pipeline/overnight/start', json={'tickers': ['MARA']})
+
+    assert resp.status_code == 409
+    body = resp.get_json()
+    assert body['success'] is False
+    assert body['error']['code'] == 'ALREADY_RUNNING'
+    assert body['data']['active_run_id'] == int(active_run['id'])
+    pipeline_mod._run_threads.pop(int(active_run['id']), None)
+
+
 def test_overnight_start_accepts_force_reextract(client, monkeypatch):
     """force_reextract flag must be stored in the pipeline run config."""
     import app_globals

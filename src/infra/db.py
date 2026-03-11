@@ -5412,6 +5412,57 @@ class MinerDB:
                 return None
             return self._deserialize_pipeline_run_row(dict(row))
 
+    def list_pipeline_runs_by_status(self, statuses: list[str]) -> list[dict]:
+        """Return pipeline runs matching one or more statuses, newest first."""
+        clean = [str(s).strip() for s in (statuses or []) if str(s).strip()]
+        if not clean:
+            return []
+        placeholders = ",".join("?" for _ in clean)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM pipeline_runs WHERE status IN ({placeholders}) ORDER BY id DESC",
+                clean,
+            ).fetchall()
+            return [self._deserialize_pipeline_run_row(dict(r)) for r in rows]
+
+    def reset_interrupted_pipeline_runs(
+        self,
+        *,
+        status: str = 'stopped',
+        error: str = 'process_interrupted',
+    ) -> int:
+        """Mark queued/running pipeline runs as terminal after a process restart.
+
+        This mirrors reset_interrupted_scrape_jobs(): any overnight pipeline row left
+        in a non-terminal state after a prior process exits is considered orphaned.
+        """
+        terminal_summary = json.dumps({
+            'recovered': True,
+            'reason': 'startup_recovery',
+        }, ensure_ascii=False)
+        ended_at = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT id FROM pipeline_runs
+                   WHERE status IN ('queued', 'running')"""
+            ).fetchall()
+            run_ids = [int(r['id']) for r in rows]
+            if not run_ids:
+                return 0
+            conn.execute(
+                """UPDATE pipeline_runs
+                   SET status = ?, ended_at = ?, summary_json = ?, error = ?
+                   WHERE status IN ('queued', 'running')""",
+                (status, ended_at, terminal_summary, error),
+            )
+            conn.executemany(
+                """INSERT INTO pipeline_run_events
+                   (run_id, stage, event, level, details_json)
+                   VALUES (?, 'run', 'pipeline_run_recovered', 'WARNING', ?)""",
+                [(run_id, terminal_summary) for run_id in run_ids],
+            )
+            return len(run_ids)
+
     def add_pipeline_run_event(
         self,
         run_id: int,
