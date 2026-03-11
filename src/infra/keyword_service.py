@@ -23,20 +23,6 @@ _8K_SEARCH_TERMS: list = [
     '"hash rate"',
 ]
 
-# Tight production-reporting phrases used as the gate before LLM extraction.
-# These only appear when a company is REPORTING operational mining figures —
-# not in generic corporate announcements, investor letters, or blockchain-era
-# filings that mention "bitcoin" in a non-production context (e.g. RIOT 2018).
-# Single words like 'bitcoin', 'btc', 'treasury' are deliberately excluded.
-_PRODUCTION_GATE_PHRASES: list = [
-    'bitcoin mined', 'btc mined', 'bitcoin produced', 'btc produced',
-    'self-mined', 'hash rate', 'hashrate', 'exahash', 'petahash',
-    'btc production', 'bitcoin production', 'digital asset production',
-    'mining operations update', 'production and operations',
-    'in the month of',  # common MARA/RIOT monthly PR opener
-]
-
-
 def get_all_active_rows(db) -> list:
     """Single read-point for metric keywords.
 
@@ -69,45 +55,26 @@ def build_edgar_search_query(db) -> str:
 def get_mining_detection_phrases(db) -> list:
     """Return phrases used to gate documents before LLM extraction.
 
-    Returns only production-specific phrases — NOT broad terms like 'bitcoin'
-    or 'btc' that appear in generic corporate announcements and would cause
-    every blockchain-era filing to pass the gate.
-
-    Sources (all additive, all production-specific):
-      1. _PRODUCTION_GATE_PHRASES — hardcoded tight fallback (always present).
-      2. metric_schema.keywords — only phrases with 2+ words (single-word phrases
-         like 'bitcoin', 'treasury', 'production' are too broad to gate on).
-      3. config_settings.bitcoin_mining_keywords — operator-supplied overrides.
-
-    Both the monthly (8-K/IR) and quarterly (10-Q/10-K) gate paths call this
-    function — there is no separate gate phrase set for each path.
+    Uses only active phrases from metric_schema.keywords (SSOT).
+    Callers should treat an empty result as a configuration error and block
+    extraction instead of silently falling back to hardcoded phrases.
     """
-    phrases = list(_PRODUCTION_GATE_PHRASES)
-    seen = {p.lower() for p in phrases}
-
-    # Add multi-word metric_schema keyword phrases (skip single-word entries).
-    if db is not None:
-        try:
-            rows = db.get_all_metric_keywords(active_only=True)
-            for r in rows:
-                p = r.get('phrase', '').strip()
-                if p and len(p.split()) >= 2 and p.lower() not in seen:
-                    phrases.append(p)
-                    seen.add(p.lower())
-        except Exception as exc:
-            log.warning("event=mining_phrase_read_error error=%s", exc)
-
-    # Operator-supplied overrides from config_settings.
-    if db is not None:
-        try:
-            raw = db.get_config('bitcoin_mining_keywords')
-            if raw:
-                for k in raw.split(','):
-                    k = k.strip()
-                    if k and k.lower() not in seen:
-                        phrases.append(k)
-                        seen.add(k.lower())
-        except Exception as exc:
-            log.warning("event=mining_phrase_config_error error=%s", exc)
-
+    if db is None:
+        return []
+    try:
+        rows = db.get_all_metric_keywords(active_only=True)
+    except Exception as exc:
+        log.warning("event=mining_phrase_read_error error=%s", exc)
+        return []
+    phrases: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        phrase = str(row.get('phrase') or '').strip()
+        if not phrase:
+            continue
+        lowered = phrase.lower()
+        if lowered in seen:
+            continue
+        phrases.append(phrase)
+        seen.add(lowered)
     return phrases

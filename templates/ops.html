@@ -1751,8 +1751,8 @@ tr.is-reviewed td { opacity: 0.65; }
         <span style="font-size:0.72rem;color:var(--theme-text-muted)">Blank = unbounded on that side</span>
       </div>
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem;line-height:1.45">
-        Filters which stored documents are sent to the LLM for interpretation.
-        Scraped documents remain in the database.
+        Filters which stored documents already present in <code>reports</code> are sent to the LLM for interpretation.
+        This control does not scrape or ingest missing source documents; run an ingest path first if the report is not yet stored.
         Bounds are inclusive: <code>report_date &gt;= From</code> and <code>report_date &lt;= To</code>.
       </div>
 
@@ -1818,14 +1818,18 @@ tr.is-reviewed td { opacity: 0.65; }
         Delete controls live in <strong>Track Config → Purge Stages</strong> so extraction scope and data deletion stay separate.
       </div>
 
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
+        LLM extraction requires active metric keywords. If <code>metric_schema.keywords</code> is empty or fully inactive, the run is blocked until keywords are added.
+      </div>
+
       <!-- Force + model + run -->
       <div class="acq-actions">
-        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No ticker selection = all tickers</span>
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No ticker selection = all tickers; extraction runs on stored reports only</span>
         <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
         <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
           <option value="">Loading models…</option>
         </select>
-        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction</button>
+        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction (Stored Reports)</button>
       </div>
       <div id="extract-status" class="acq-status">Idle</div>
       <div id="extract-log" class="acq-log" style="display:none"></div>
@@ -6765,8 +6769,8 @@ const _SETTINGS_GROUPS = [
        desc: 'Maximum characters of page content returned to the LLM per fetch call. Limits context growth; longer pages are truncated. Default is 12,000 chars.'},
       {key: 'crawl_num_ctx', label: 'Ollama context window (tokens)', type: 'number',
        desc: 'Context window size (num_ctx) passed to Ollama for crawl calls. Larger values allow longer multi-turn conversations but require more VRAM. Default is 32,768. Reduce if you see OOM crashes.'},
-      {key: 'bitcoin_mining_keywords', label: 'Bitcoin mining keywords', type: 'text',
-       desc: 'Comma-separated LIKE patterns used to identify the earliest bitcoin-related EDGAR filing. That filing date becomes the lower bound injected into Step 2 crawl prompts.'},
+      {key: 'bitcoin_mining_keywords', label: 'Bitcoin mining keywords (legacy)', type: 'text',
+       desc: 'Legacy crawl setting. LLM extraction gates now use only active metric keywords from metric_schema.keywords.'},
     ],
   },
   {

@@ -2,12 +2,11 @@
 Tests for the unified production keyword gate.
 
 The gate must:
-  1. Use only production-specific phrases (not broad %bitcoin%/%btc%).
+  1. Use only SSOT phrases from metric_schema.keywords.
   2. Apply identically to both monthly (8-K/IR) and quarterly (10-Q/10-K) paths.
   3. Block RIOT Blockchain 2018 corporate announcements that mention "bitcoin"
      in an investment/blockchain context but contain no production figures.
   4. Pass genuine monthly production press releases.
-  5. Fall back to _PRODUCTION_GATE_FALLBACK (tight phrases) when DB has no keywords.
 
 These tests FAIL before implementation and PASS after.
 """
@@ -18,40 +17,13 @@ from helpers import make_report
 # ── keyword_service unit tests ────────────────────────────────────────────────
 
 class TestGetProductionGatePhrases:
-    """get_mining_detection_phrases returns only production-specific phrases."""
+    """get_mining_detection_phrases returns only SSOT metric keywords."""
 
-    def test_does_not_include_bare_bitcoin(self):
-        """'bitcoin' alone must not be a gate phrase — too broad."""
+    def test_returns_empty_without_db(self):
+        """Without a DB-backed keyword source there are no gate phrases."""
         from infra.keyword_service import get_mining_detection_phrases
         phrases = get_mining_detection_phrases(db=None)
-        assert 'bitcoin' not in phrases, (
-            "'bitcoin' alone passes every RIOT Blockchain 2018 corporate 8-K"
-        )
-
-    def test_does_not_include_bare_btc(self):
-        """'btc' alone must not be a gate phrase."""
-        from infra.keyword_service import get_mining_detection_phrases
-        phrases = get_mining_detection_phrases(db=None)
-        assert 'btc' not in phrases
-
-    def test_includes_production_specific_phrases(self):
-        """Gate must include tight production phrases even with no DB."""
-        from infra.keyword_service import get_mining_detection_phrases
-        phrases = [p.lower() for p in get_mining_detection_phrases(db=None)]
-        # At least one of these production-specific phrases must be present
-        production_phrases = ['bitcoin mined', 'btc mined', 'bitcoin produced',
-                              'btc produced', 'hash rate', 'exahash', 'self-mined',
-                              'btc production', 'bitcoin production']
-        matches = [p for p in production_phrases if any(p in phrase for phrase in phrases)]
-        assert matches, (
-            f"Gate has no production-specific phrases. Got: {phrases}"
-        )
-
-    def test_returns_nonempty_list(self):
-        """Gate must always return at least the hardcoded fallback phrases."""
-        from infra.keyword_service import get_mining_detection_phrases
-        phrases = get_mining_detection_phrases(db=None)
-        assert len(phrases) > 0
+        assert phrases == []
 
 
 # ── pipeline gate integration tests ──────────────────────────────────────────
@@ -205,17 +177,15 @@ class TestUnifiedProductionGate:
     def test_gate_consistent_monthly_and_quarterly(self):
         """Monthly and quarterly gates must use the same phrase set."""
         from infra.keyword_service import get_mining_detection_phrases
-        # Both call the same function — verify it returns the same result
-        # regardless of which path calls it (no path-specific overrides).
-        result1 = get_mining_detection_phrases(db=None)
-        result2 = get_mining_detection_phrases(db=None)
+        class _Db:
+            def get_all_metric_keywords(self, active_only=True):
+                return [
+                    {'phrase': 'bitcoin production', 'metric_key': 'production_btc'},
+                    {'phrase': 'hash rate', 'metric_key': 'hashrate_eh'},
+                ]
+        result1 = get_mining_detection_phrases(_Db())
+        result2 = get_mining_detection_phrases(_Db())
         assert result1 == result2
-        # Verify neither contains bare 'bitcoin' or 'btc'
-        for p in result1:
-            bare = p.strip('%').lower()
-            assert bare not in ('bitcoin', 'btc'), (
-                f"Gate phrase '{p}' reduces to bare '{bare}' which is too broad"
-            )
 
     def test_monthly_ir_requires_regex_hit_before_llm(self, db_with_company, registry, monkeypatch):
         """Monthly miner docs with keyword hits but no regex candidates must not reach LLM."""

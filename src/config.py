@@ -230,6 +230,8 @@ OUTLIER_MIN_HISTORY: int = 3   # Minimum prior months needed to flag outliers
 
 # --- Source Types ---
 # Canonical source_type values used in reports and asset_manifest tables.
+# archive_* are legacy/local-only source types and are not part of the active
+# ingest or extraction workflow.
 SOURCE_TYPES: dict = {
     'archive_pdf':       'Archived PDF (OffChain/Miner/)',
     'archive_html':      'Archived HTML (OffChain/Miner/)',
@@ -244,8 +246,7 @@ SOURCE_TYPES: dict = {
 
 # --- Source Type Display Labels ---
 # Single source of truth for human-readable labels shown in the UI.
-# archive_html and archive_pdf both map to "IR Press Release" because they are
-# press release documents stored locally — same content, different storage format.
+# archive_html and archive_pdf remain for legacy row display only.
 SOURCE_TYPE_DISPLAY: dict = {
     'edgar_8k':                    'SEC 8-K',
     'edgar_10q':                   'SEC 10-Q',
@@ -267,8 +268,6 @@ SOURCE_TYPE_DISPLAY: dict = {
 # regardless of which route starts extraction.
 MONTHLY_EXTRACTION_SOURCE_TYPES: tuple[str, ...] = (
     'ir_press_release',
-    'archive_html',
-    'archive_pdf',
     'prnewswire_press_release',
     'globenewswire_press_release',
     'wire_press_release',

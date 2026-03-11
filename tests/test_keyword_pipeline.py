@@ -81,19 +81,18 @@ class TestKeywordServiceMiningDetectionPhrases:
         phrases = get_mining_detection_phrases(db)
         assert any('bitcoin' in p.lower() for p in phrases)
 
-    def test_includes_config_settings_additive(self):
-        """config_settings.bitcoin_mining_keywords are ADDED to, not replacing, metric phrases."""
+    def test_does_not_read_config_overrides(self):
+        """Gate phrases come only from metric_schema.keywords."""
         from infra.keyword_service import get_mining_detection_phrases
         db = _make_db_with_keywords(['bitcoin production'])
         db.get_config.return_value = '%custom_keyword%'
         phrases = get_mining_detection_phrases(db)
-        assert '%custom_keyword%' in phrases
-        # Metric schema phrases must still be present
+        assert '%custom_keyword%' not in phrases
         assert any('bitcoin' in p.lower() for p in phrases)
 
-    def test_falls_back_gracefully_when_empty(self):
-        """Returns non-empty list even when metric_schema.keywords is empty."""
+    def test_returns_empty_when_no_active_keywords(self):
+        """No active metric keywords means the gate has no phrases."""
         from infra.keyword_service import get_mining_detection_phrases
         db = _make_empty_db()
         phrases = get_mining_detection_phrases(db)
-        assert phrases, "Must return non-empty fallback phrase list"
+        assert phrases == []

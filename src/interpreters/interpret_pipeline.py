@@ -188,14 +188,34 @@ _QUARTERLY_8K_URL_RE = re.compile(r'/q([1-4])(\d{2})shareholderletter', re.IGNOR
 _QUARTERLY_8K_TEXT_RE = re.compile(
     r'\bshareholder\s+letter\s+q([1-4])\s+(20\d{2})\b', re.IGNORECASE
 )
+_QUARTERLY_RESULTS_8K_TEXT_RE = re.compile(
+    r'\b(?:(first|1st|second|2nd|third|3rd|fourth|4th)\s+quarter|q([1-4]))'
+    r'(?:\s+and\s+fiscal\s+year)?\s+(20\d{2})\s+results\b',
+    re.IGNORECASE,
+)
+
+
+def _quarter_token_to_int(token: str) -> Optional[int]:
+    normalized = (token or '').strip().lower()
+    if normalized in {'1', '1st', 'first'}:
+        return 1
+    if normalized in {'2', '2nd', 'second'}:
+        return 2
+    if normalized in {'3', '3rd', 'third'}:
+        return 3
+    if normalized in {'4', '4th', 'fourth'}:
+        return 4
+    return None
 
 
 def _infer_quarterly_covering_period(report: dict) -> Optional[str]:
-    """Infer covering_period for quarter-style 8-K shareholder letters.
+    """Infer covering_period for quarter-style 8-K exhibits.
 
     Some issuers publish quarterly shareholder letters as 8-K exhibits. Those
     documents should flow through the quarterly path even though their
-    ``source_type`` remains ``edgar_8k``.
+    ``source_type`` remains ``edgar_8k``. This also covers 8-K earnings
+    releases titled like "Third Quarter 2023 Results" or
+    "Fourth Quarter and Fiscal Year 2023 Results".
     """
     if report.get('source_type') not in {'edgar_8k', 'edgar_8ka'}:
         return report.get('covering_period')
@@ -217,6 +237,13 @@ def _infer_quarterly_covering_period(report: dict) -> Optional[str]:
         quarter = int(m.group(1))
         year = int(m.group(2))
         return f"{year:04d}-Q{quarter}"
+
+    m = _QUARTERLY_RESULTS_8K_TEXT_RE.search(raw_text)
+    if m:
+        quarter = _quarter_token_to_int(m.group(1) or m.group(2))
+        year = int(m.group(3))
+        if quarter is not None:
+            return f"{year:04d}-Q{quarter}"
 
     return None
 
@@ -633,33 +660,32 @@ def _interpret_quarterly_report(
     full_text = strip_edgar_boilerplate(full_text)
     text = full_text[:_q_selector.char_budget]
 
-    # Keyword gate: skip LLM if no active BTC mining keywords appear in the text.
-    # Prevents wasting LLM compute on pre-mining-era quarterly filings
-    # (e.g. CLSK 2019-2020 before their Bitcoin pivot, RIOT pre-mining 10-Ks, etc.).
-    # The gate is bypassed when no keywords are configured (fresh DB).
-    try:
-        from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases_q
-        kw_phrases = [p.lower() for p in _get_det_phrases_q(db) if p.strip()]
-    except Exception as _kw_err:
-        log.warning("Could not load mining detection phrases for quarterly gate (non-fatal): %s", _kw_err)
-        from infra.keyword_service import _PRODUCTION_GATE_PHRASES
-        kw_phrases = [p.lower() for p in _PRODUCTION_GATE_PHRASES]
-    if kw_phrases:
-        text_lower = text.lower()
-        log.debug(
-            "event=quarterly_keyword_gate_check ticker=%s period=%s phrases_checked=%d",
-            ticker, covering_period, len(kw_phrases),
+    from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases_q
+    kw_phrases = [p.lower() for p in _get_det_phrases_q(db) if p.strip()]
+    if not kw_phrases:
+        log.error(
+            "event=quarterly_keyword_gate_missing ticker=%s period=%s source=%s "
+            "— no active metric_schema keywords configured",
+            ticker, covering_period, source_type,
         )
-        if not any(phrase in text_lower for phrase in kw_phrases):
-            log.info(
-                "event=quarterly_keyword_gate_skip ticker=%s period=%s source=%s "
-                "— no BTC mining keywords found, skipping LLM",
-                ticker, covering_period, source_type,
-            )
-            db.mark_report_extracted(report_id)
-            summary.reports_processed += 1
-            summary.keyword_gated += 1
-            return summary
+        db.mark_report_extraction_failed(report_id, 'no_active_metric_keywords')
+        summary.errors += 1
+        return summary
+    text_lower = text.lower()
+    log.debug(
+        "event=quarterly_keyword_gate_check ticker=%s period=%s phrases_checked=%d",
+        ticker, covering_period, len(kw_phrases),
+    )
+    if not any(phrase in text_lower for phrase in kw_phrases):
+        log.info(
+            "event=quarterly_keyword_gate_skip ticker=%s period=%s source=%s "
+            "— no BTC mining keywords found, skipping LLM",
+            ticker, covering_period, source_type,
+        )
+        db.mark_report_extracted(report_id)
+        summary.reports_processed += 1
+        summary.keyword_gated += 1
+        return summary
 
     llm_interpreter = _get_llm_interpreter(db)
     llm_available = _check_llm_available(llm_interpreter)
@@ -861,35 +887,28 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES or treat_as_quarterly_8k:
             return _interpret_quarterly_report(effective_report, db, registry, summary, attribution)
 
-        # Keyword gate for ALL non-quarterly/annual sources: skip LLM if no BTC
-        # mining signals appear in the document.
-        # 8-K ingest is already gated by btc_first_filing_date upstream, but
-        # archived and IR docs from before a company's mining pivot (e.g. CLSK 2019)
-        # have no ingest-level date gate and must be screened here.
-        #
-        # Uses broad mining detection phrases (%btc%, %bitcoin%, %hash rate%, etc.)
-        # rather than the narrower anchor phrases — archive/IR text says "produced
-        # 742 BTC" not "bitcoin production", so exact anchor matching is too strict.
-        # Hardcoded fallback so the gate ALWAYS fires even when DB/keyword service fails.
-        try:
-            from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases, _PRODUCTION_GATE_PHRASES
-            _det_phrases = [p.lower() for p in _get_det_phrases(db)] or [p.lower() for p in _PRODUCTION_GATE_PHRASES]
-        except Exception as _kw_err:
-            log.warning("event=kw_gate_load_error error=%s — using hardcoded fallback", _kw_err)
-            from infra.keyword_service import _PRODUCTION_GATE_PHRASES
-            _det_phrases = [p.lower() for p in _PRODUCTION_GATE_PHRASES]
-        if _det_phrases:
-            _text_lower = text.lower()
-            if not any(phrase in _text_lower for phrase in _det_phrases):
-                log.info(
-                    "event=keyword_gate_skip ticker=%s period=%s source=%s "
-                    "— no BTC mining signals found, skipping",
-                    report.get('ticker'), report.get('report_date'), source_type,
-                )
-                db.mark_report_extracted(report['id'])
-                summary.reports_processed += 1
-                summary.keyword_gated += 1
-                return summary
+        from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
+        _det_phrases = [p.lower() for p in _get_det_phrases(db) if p.strip()]
+        if not _det_phrases:
+            log.error(
+                "event=keyword_gate_missing ticker=%s period=%s source=%s "
+                "— no active metric_schema keywords configured",
+                report.get('ticker'), report.get('report_date'), source_type,
+            )
+            db.mark_report_extraction_failed(report['id'], 'no_active_metric_keywords')
+            summary.errors += 1
+            return summary
+        _text_lower = text.lower()
+        if not any(phrase in _text_lower for phrase in _det_phrases):
+            log.info(
+                "event=keyword_gate_skip ticker=%s period=%s source=%s "
+                "— no BTC mining signals found, skipping",
+                report.get('ticker'), report.get('report_date'), source_type,
+            )
+            db.mark_report_extracted(report['id'])
+            summary.reports_processed += 1
+            summary.keyword_gated += 1
+            return summary
 
         report_date = report.get('report_date')
 

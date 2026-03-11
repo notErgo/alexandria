@@ -849,15 +849,10 @@ class TestKeywordGate:
         unextracted = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted)
 
-    def test_8k_keyword_gate_uses_hardcoded_fallback_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
-        """Gate fires using hardcoded production phrases even when DB has no metric keywords.
-
-        The gate is never bypassed — it always uses at least _PRODUCTION_GATE_PHRASES.
-        A genuine production report must pass regardless of DB keyword state.
-        """
+    def test_8k_keyword_gate_fails_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+        """Extraction fails when no active metric keywords are configured."""
         import interpreters.interpret_pipeline as _ep
 
-        # No metric keywords in DB — gate must still fire (and pass for production text)
         monkeypatch.setattr(
             db_with_company, 'get_all_metric_keywords',
             lambda active_only=True: [],
@@ -877,9 +872,10 @@ class TestKeywordGate:
         from interpreters.interpret_pipeline import extract_report
         summary = extract_report(report, db_with_company, registry)
 
-        assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
-        assert summary.reports_processed == 0
-        assert any(r['id'] == report_id for r in db_with_company.get_unextracted_reports())
+        assert summary.keyword_gated == 0
+        assert summary.errors == 1
+        refreshed = db_with_company.get_report(report_id)
+        assert refreshed['extraction_status'] == 'failed'
 
     def test_keyword_gated_field_exists_on_extraction_summary(self):
         """ExtractionSummary must have a keyword_gated field defaulting to 0."""
@@ -974,14 +970,10 @@ class TestKeywordGate:
         assert summary.keyword_gated == 0, "gate must not fire when keyword matches"
         mock_llm.extract_quarterly_batch.assert_called_once()
 
-    def test_quarterly_gate_uses_hardcoded_fallback_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
-        """Quarterly gate uses hardcoded production phrases when DB has no metric keywords.
-
-        The gate is never bypassed — production reports with tight phrases must pass.
-        """
+    def test_quarterly_gate_fails_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+        """Quarterly extraction fails when no active metric keywords are configured."""
         import interpreters.interpret_pipeline as _ep
         from unittest.mock import MagicMock
-        from miner_types import ExtractionResult
 
         monkeypatch.setattr(
             db_with_company, 'get_all_metric_keywords',
@@ -989,13 +981,6 @@ class TestKeywordGate:
         )
         mock_llm = MagicMock()
         mock_llm.check_connectivity.return_value = True
-        mock_llm.extract_quarterly_batch.return_value = {
-            'production_btc': ExtractionResult(
-                metric='production_btc', value=900.0, unit='BTC', confidence=0.85,
-                extraction_method='llm_test', source_snippet='bitcoin mined 900 BTC',
-                pattern_id='llm_test',
-            ),
-        }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         report_id = db_with_company.insert_report(make_report(
@@ -1009,8 +994,9 @@ class TestKeywordGate:
         from interpreters.interpret_pipeline import extract_report
         summary = extract_report(report, db_with_company, registry)
 
-        assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
-        mock_llm.extract_quarterly_batch.assert_called_once()
+        assert summary.keyword_gated == 0
+        assert summary.errors == 1
+        mock_llm.extract_quarterly_batch.assert_not_called()
 
     def test_quarterly_review_is_deferred_while_monthly_reports_are_pending(
         self, db_with_company, registry, monkeypatch
@@ -1109,6 +1095,49 @@ class TestKeywordGate:
         assert deferred[0]['period'] == '2025-Q3'
         assert deferred[0]['time_grain'] == 'quarterly'
         assert deferred[0]['precedence_state'] == 'deferred'
+
+    def test_quarterly_8k_results_press_release_uses_quarterly_path(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """8-K earnings releases with quarter results should bypass the monthly path."""
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=4242.0, unit='BTC', confidence=0.92,
+                extraction_method='llm_test', source_snippet='during which we produced 4,242 bitcoin',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=(
+                'Marathon Digital Holdings Reports Fourth Quarter and Fiscal Year 2023 Results. '
+                'During the fourth quarter of 2023, we produced 4,242 bitcoin.'
+            ),
+            report_date='2024-02-28',
+            source_type='edgar_8k',
+            source_url='https://www.sec.gov/Archives/edgar/data/1507605/000149315224008232/ex99-1.htm',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.errors == 0
+        mock_llm.extract_quarterly_batch.assert_called_once()
+        points = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert any(p['period'] == '2023-Q4' and abs(p['value'] - 4242.0) < 0.01 for p in points)
+        assert not any(p['period'] == '2023-12-01' for p in points)
 
 
 class TestBoilerplateStrippingBySourceType:

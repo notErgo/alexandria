@@ -52,33 +52,6 @@ def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
     return totals
 
 
-def _run_archive_ingest(task_id: str) -> None:
-    from app_globals import get_db, get_registry
-    from scrapers.archive_ingestor import ArchiveIngestor
-    from config import ARCHIVE_DIR
-
-    _update_progress(task_id, {'status': 'running', 'source': 'archive'})
-    try:
-        ingestor = ArchiveIngestor(
-            archive_dir=ARCHIVE_DIR, db=get_db(), registry=get_registry()
-        )
-        summary = ingestor.ingest_all()
-        _update_progress(task_id, {
-            'status': 'complete',
-            'source': 'archive',
-            'reports_ingested': summary.reports_ingested,
-            'data_points_extracted': summary.data_points_extracted,
-            'review_flagged': summary.review_flagged,
-            'errors': summary.errors,
-        })
-    except Exception as e:
-        log.error("Archive ingest failed: %s", e, exc_info=True)
-        _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
-    finally:
-        with _tasks_lock:
-            _running_tasks.discard('archive')
-
-
 def _run_ir_ingest(
     task_id: str,
     auto_extract: bool = False,
@@ -275,44 +248,25 @@ def _run_edgar_bridge(task_id: str, ticker: Optional[str]) -> None:
 
 
 def _run_all_ingest(task_id: str) -> None:
-    """Run archive → IR → EDGAR ingest in sequence under a single task ID.
+    """Run IR → EDGAR ingest in sequence under a single task ID.
 
-    Archive phase includes inline LLM extraction (press releases are extracted
-    as they are ingested). IR and EDGAR phases store raw text only; run the
-    Interpret step separately to extract those reports.
+    Both phases store source documents only; run the Interpret step separately
+    to extract those stored reports.
     """
     import requests as req_lib
     from datetime import date as _date
-    from app_globals import get_db, get_registry
-    from scrapers.archive_ingestor import ArchiveIngestor
+    from app_globals import get_db
     from scrapers.ir_scraper import IRScraper
     from scrapers.edgar_connector import EdgarConnector
-    from config import ARCHIVE_DIR
 
     totals: dict = {
-        'archive_reports': 0, 'archive_points': 0, 'archive_review': 0,
         'ir_reports': 0,
         'edgar_reports': 0,
         'errors': 0,
     }
 
-    # ── Phase 1: Archive ──────────────────────────────────────────────────────
-    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'archive (1/3)', **totals})
-    try:
-        db = get_db()
-        ingestor = ArchiveIngestor(archive_dir=ARCHIVE_DIR, db=db, registry=get_registry())
-        s = ingestor.ingest_all()
-        totals['archive_reports'] = s.reports_ingested
-        totals['archive_points'] = s.data_points_extracted
-        totals['archive_review'] = s.review_flagged
-        totals['errors'] += s.errors
-    except Exception as e:
-        log.error("All-ingest: archive phase failed: %s", e, exc_info=True)
-        totals['errors'] += 1
-
-    # ── Phase 2: IR (deprecated — EDGAR is canonical) ────────────────────────
-    log.warning("event=ir_ingest_deprecated EDGAR is the canonical ingest source")
-    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'ir (2/3)', **totals})
+    # ── Phase 1: IR ───────────────────────────────────────────────────────────
+    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'ir (1/2)', **totals})
     try:
         db = get_db()
         session = req_lib.Session()
@@ -325,8 +279,8 @@ def _run_all_ingest(task_id: str) -> None:
         log.error("All-ingest: IR phase failed: %s", e, exc_info=True)
         totals['errors'] += 1
 
-    # ── Phase 3: EDGAR ────────────────────────────────────────────────────────
-    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'edgar (3/3)', **totals})
+    # ── Phase 2: EDGAR ────────────────────────────────────────────────────────
+    _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'edgar (2/2)', **totals})
     try:
         db = get_db()
         session = req_lib.Session()
@@ -353,14 +307,14 @@ def _run_all_ingest(task_id: str) -> None:
 
 @bp.route('/api/ingest/all', methods=['POST'])
 def ingest_all_sources():
-    """Scrape all sources (archive + IR + EDGAR) in sequence under one task.
+    """Scrape the active web sources (IR + EDGAR) in sequence under one task.
 
     This is the primary entry point for the two-step pipeline:
       1. POST /api/ingest/all   — scrape everything
       2. POST /api/operations/extract — interpret (LLM+regex) all pending reports
     """
     with _tasks_lock:
-        conflicts = _running_tasks & {'all', 'archive', 'ir', 'edgar'}
+        conflicts = _running_tasks & {'all', 'ir', 'edgar'}
         if conflicts:
             return jsonify({'success': False, 'error': {
                 'code': 'ALREADY_RUNNING',
@@ -377,18 +331,10 @@ def ingest_all_sources():
 
 @bp.route('/api/ingest/archive', methods=['POST'])
 def ingest_archive():
-    with _tasks_lock:
-        if 'archive' in _running_tasks:
-            return jsonify({'success': False, 'error': {
-                'code': 'ALREADY_RUNNING', 'message': 'Archive ingest already in progress'
-            }}), 409
-        _running_tasks.add('archive')
-
-    task_id = str(uuid.uuid4())
-    _update_progress(task_id, {'status': 'queued', 'source': 'archive'})
-    t = threading.Thread(target=_run_archive_ingest, args=(task_id,), daemon=True)
-    t.start()
-    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
+    return jsonify({'success': False, 'error': {
+        'code': 'ARCHIVE_DISABLED',
+        'message': 'Archive ingest has been removed from the active workflow. Use scraped IR or EDGAR sources.',
+    }}), 410
 
 
 @bp.route('/api/ingest/ir', methods=['POST'])

@@ -497,7 +497,7 @@ class MinerDB:
         """Schema migration from version 2 to version 3.
 
         Adds extracted_at column to reports table to support the two-stage
-        pipeline (ingest = fetch+store; extract = LLM+regex+agreement on stored).
+        pipeline (ingest = fetch+store; extract = LLM on stored reports, with regex used only as a gate).
         """
         existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(reports)").fetchall()}
         if 'extracted_at' not in existing_cols:
@@ -2186,34 +2186,47 @@ class MinerDB:
         source_url = report.get('source_url')
         url_hash = hashlib.sha256(source_url.encode()).hexdigest() if source_url else None
         with self._get_connection() as conn:
-            cursor = conn.execute(
-                """INSERT INTO reports
-                   (ticker, report_date, published_date, source_type, source_url, raw_text,
-                    raw_html, parsed_at, covering_period,
-                    accession_number, source_url_hash, source_channel, form_type,
-                    amends_accession_number,
-                    fetch_strategy, render_mode, fetch_timing_ms, content_simhash)
-                   VALUES (:ticker, :report_date, :published_date, :source_type,
-                           :source_url, :raw_text, :raw_html, :parsed_at, :covering_period,
-                           :accession_number, :source_url_hash, :source_channel, :form_type,
-                           :amends_accession_number,
-                           :fetch_strategy, :render_mode, :fetch_timing_ms, :content_simhash)""",
-                {
-                    **report,
-                    'covering_period':         report.get('covering_period'),
-                    'accession_number':        report.get('accession_number'),
-                    'source_url_hash':         report.get('source_url_hash', url_hash),
-                    'source_channel':          report.get('source_channel'),
-                    'form_type':               report.get('form_type'),
-                    'amends_accession_number': report.get('amends_accession_number'),
-                    'raw_html':                report.get('raw_html'),
-                    'fetch_strategy':          report.get('fetch_strategy'),
-                    'render_mode':             report.get('render_mode'),
-                    'fetch_timing_ms':         report.get('fetch_timing_ms'),
-                    'content_simhash':         _to_signed64(report.get('content_simhash')),
-                },
-            )
-            return cursor.lastrowid
+            params = {
+                **report,
+                'covering_period':         report.get('covering_period'),
+                'accession_number':        report.get('accession_number'),
+                'source_url_hash':         report.get('source_url_hash', url_hash),
+                'source_channel':          report.get('source_channel'),
+                'form_type':               report.get('form_type'),
+                'amends_accession_number': report.get('amends_accession_number'),
+                'raw_html':                report.get('raw_html'),
+                'fetch_strategy':          report.get('fetch_strategy'),
+                'render_mode':             report.get('render_mode'),
+                'fetch_timing_ms':         report.get('fetch_timing_ms'),
+                'content_simhash':         _to_signed64(report.get('content_simhash')),
+            }
+            try:
+                cursor = conn.execute(
+                    """INSERT INTO reports
+                       (ticker, report_date, published_date, source_type, source_url, raw_text,
+                        raw_html, parsed_at, covering_period,
+                        accession_number, source_url_hash, source_channel, form_type,
+                        amends_accession_number,
+                        fetch_strategy, render_mode, fetch_timing_ms, content_simhash)
+                       VALUES (:ticker, :report_date, :published_date, :source_type,
+                               :source_url, :raw_text, :raw_html, :parsed_at, :covering_period,
+                               :accession_number, :source_url_hash, :source_channel, :form_type,
+                               :amends_accession_number,
+                               :fetch_strategy, :render_mode, :fetch_timing_ms, :content_simhash)""",
+                    params,
+                )
+                return cursor.lastrowid
+            except sqlite3.IntegrityError:
+                if not params.get('source_url_hash'):
+                    raise
+                row = conn.execute(
+                    """SELECT id FROM reports
+                         WHERE ticker = ? AND source_url_hash = ?""",
+                    (params['ticker'], params['source_url_hash']),
+                ).fetchone()
+                if row is None:
+                    raise
+                return int(row[0])
 
     def find_near_duplicates(self, simhash: int, ticker: str, threshold: int = 3) -> list:
         """Return reports for this ticker whose content_simhash is within hamming threshold.
@@ -3337,16 +3350,29 @@ class MinerDB:
         return count
 
     def purge_review_queue(self, ticker: Optional[str] = None) -> int:
-        """Delete all review_queue rows (or for one ticker). Returns row count deleted."""
+        """Delete review_queue rows and reset matching reports to pending.
+
+        Clearing the review layer implies the operator wants those stored source
+        reports to be eligible for extraction again. Reset extracted_at and
+        extraction_status so get_unextracted_reports() includes them.
+        """
         with self._get_connection() as conn:
             if ticker:
                 count = conn.execute(
                     "SELECT COUNT(*) FROM review_queue WHERE ticker = ?", (ticker,)
                 ).fetchone()[0]
                 conn.execute("DELETE FROM review_queue WHERE ticker = ?", (ticker,))
+                conn.execute(
+                    "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"
+                    " WHERE ticker = ?",
+                    (ticker,),
+                )
             else:
                 count = conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
                 conn.execute("DELETE FROM review_queue")
+                conn.execute(
+                    "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"
+                )
         log.info("purge_review_queue: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
         return count
 
@@ -3392,6 +3418,7 @@ class MinerDB:
         FK-safe deletion order (enforced because PRAGMA foreign_keys = ON):
           review_queue      — child of data_points (must precede data_points)
           raw_extractions   — child of reports
+          extraction_commit_queue — child of reports
           data_points       — child of reports AND document_chunks
                               (must precede document_chunks)
           document_chunks   — child of reports (must follow data_points)
@@ -3462,6 +3489,9 @@ class MinerDB:
                     # raw_extractions before reports
                     _archive('raw_extractions', 'ticker = ?', (t,))
                     counts['raw_extractions'] = _del('raw_extractions', 'ticker = ?', (t,))
+                    # extraction_commit_queue before reports
+                    _archive('extraction_commit_queue', 'ticker = ?', (t,))
+                    counts['extraction_commit_queue'] = _del('extraction_commit_queue', 'ticker = ?', (t,))
                     # data_points before document_chunks (FK: data_points.chunk_id → document_chunks)
                     _archive('data_points', 'ticker = ?', (t,))
                     counts['data_points'] = _del('data_points', 'ticker = ?', (t,))
@@ -3518,6 +3548,9 @@ class MinerDB:
                     # raw_extractions before reports
                     _archive('raw_extractions')
                     counts['raw_extractions'] = _del('raw_extractions')
+                    # extraction_commit_queue before reports
+                    _archive('extraction_commit_queue')
+                    counts['extraction_commit_queue'] = _del('extraction_commit_queue')
                     # data_points before document_chunks
                     _archive('data_points')
                     counts['data_points'] = _del('data_points')
@@ -4273,12 +4306,13 @@ class MinerDB:
 
         Scans raw_text for LIKE-pattern keywords indicating active mining operations.
         Keywords are provided by infra.keyword_service.get_mining_detection_phrases()
-        which reads from metric_schema.keywords (SSOT) with config_settings as an
-        additive supplement and hardcoded fallback.
+        which reads only from metric_schema.keywords (SSOT).
         Returns None if no such report exists for the ticker.
         """
         from infra.keyword_service import get_mining_detection_phrases
         keywords = get_mining_detection_phrases(self)
+        if not keywords:
+            return None
         clauses = ' OR '.join('LOWER(raw_text) LIKE ?' for _ in keywords)
         params = [ticker] + ['%' + k.lower() + '%' for k in keywords]
         with self._get_connection() as conn:

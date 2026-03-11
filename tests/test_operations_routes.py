@@ -160,6 +160,52 @@ def test_extract_accepts_ticker_scope_and_worker_count(client, monkeypatch):
         assert data['data']['extract_workers'] == 4
 
 
+def test_extract_progress_explains_when_no_stored_reports_match(client, monkeypatch):
+    """Empty extraction scope should tell the operator to ingest first."""
+    import routes.operations as ops_mod
+
+    class _ImmediateThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self._target = target
+            self._args = args
+
+        def start(self):
+            if self._target:
+                self._target(*self._args)
+
+    monkeypatch.setattr(ops_mod, '_active_tickers', set())
+    monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+    resp = client.post('/api/operations/interpret', json={
+        'ticker': 'MARA',
+        'warm_model': False,
+    })
+    assert resp.status_code == 200
+    task_id = resp.get_json()['data']['task_id']
+
+    progress = client.get(f'/api/operations/interpret/{task_id}/progress')
+    assert progress.status_code == 200
+    data = progress.get_json()['data']
+    assert data['reports_total'] == 0
+    assert any('Ingest first' in line for line in data['logs'])
+
+
+def test_extract_requires_active_metric_keywords(client, monkeypatch):
+    """LLM extraction should be blocked when metric_schema.keywords has no active rows."""
+    import app_globals
+    import routes.operations as ops_mod
+
+    db = app_globals.get_db()
+    monkeypatch.setattr(ops_mod, '_active_tickers', set())
+    monkeypatch.setattr(db, 'get_all_metric_keywords', lambda active_only=True: [])
+
+    resp = client.post('/api/operations/interpret', json={'ticker': 'MARA'})
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body['success'] is False
+    assert body['error']['code'] == 'MISSING_METRIC_KEYWORDS'
+
+
 # ── Operations assign_period ──────────────────────────────────────────────────
 
 def test_assign_period_invalid_format_returns_400(client):

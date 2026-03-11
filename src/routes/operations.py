@@ -378,6 +378,8 @@ def operations_extract():
     """
     try:
         body = request.get_json(silent=True) or {}
+        from app_globals import get_db
+        from infra.keyword_service import get_mining_detection_phrases
         tickers = _normalize_extract_tickers(body)
         ticker = tickers[0] if len(tickers) == 1 else None
         scope_label = _extract_scope_label(tickers)
@@ -396,6 +398,16 @@ def operations_extract():
         if expected_granularity is None and cadence in _cadence_grain_map:
             expected_granularity = _cadence_grain_map[cadence]
         run_key = scope_label or '__ALL__'
+        db = get_db()
+        keyword_phrases = get_mining_detection_phrases(db)
+        if not keyword_phrases:
+            return jsonify({'success': False, 'error': {
+                'code': 'MISSING_METRIC_KEYWORDS',
+                'message': (
+                    "Extraction requires at least one active metric keyword in metric_schema.keywords. "
+                    "Add keywords in the metric keyword UI before starting LLM extraction."
+                ),
+            }}), 400
 
         # 409 guard — prevent duplicate extraction runs
         with _active_tickers_lock:
@@ -450,7 +462,6 @@ def operations_extract():
                 from infra.db import MinerDB
                 from routes.pipeline import _BufferedExtractionDB, _replay_staged_payload, _sort_reports_chronologically, _staged_status_for_payload
 
-                db = get_db()
                 registry = get_registry()
 
                 source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
@@ -485,6 +496,14 @@ def operations_extract():
 
                 with _progress_lock:
                     _extraction_progress[task_id]['reports_total'] = len(reports)
+                    if not reports:
+                        logs = _extraction_progress[task_id]['logs']
+                        logs.append(
+                            "No stored reports matched the selected filters. "
+                            "Ingest first if the source documents have not been added to reports yet."
+                        )
+                        if len(logs) > 200:
+                            logs.pop(0)
 
                 if warm_model and reports:
                     def _ops_log(msg: str) -> None:

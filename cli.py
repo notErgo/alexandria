@@ -2,13 +2,13 @@
 Bitcoin Miner Data Platform — CLI entry point.
 
 Commands:
-  ingest --source [archive|ir|edgar] [--ticker TICKER] [--since YYYY-MM]
+  ingest --source [ir|edgar] [--ticker TICKER] [--since YYYY-MM]
   query  --ticker TICKER --metric METRIC [--from YYYY-MM] [--to YYYY-MM]
          [--min-confidence 0.0-1.0] [--format table|json|csv]
   export --out FILE.csv [same filters as query]
 
 Usage:
-  python3 cli.py ingest --source archive
+  python3 cli.py ingest --source ir --ticker MARA
   python3 cli.py query --ticker MARA --metric production_btc --from 2024-01
   python3 cli.py export --out results.csv --ticker MARA
 """
@@ -30,7 +30,7 @@ setup_logging()
 
 from infra.db import MinerDB
 from interpreters.pattern_registry import PatternRegistry
-from config import DATA_DIR, CONFIG_DIR, ARCHIVE_DIR
+from config import DATA_DIR, CONFIG_DIR
 from pathlib import Path
 
 
@@ -56,16 +56,7 @@ def cmd_ingest(args):
     db = get_db()
     registry = get_registry()
 
-    if args.source == 'archive':
-        from scrapers.archive_ingestor import ArchiveIngestor
-        ingestor = ArchiveIngestor(archive_dir=ARCHIVE_DIR, db=db, registry=registry)
-        summary = ingestor.ingest_all(force=getattr(args, 'force', False))
-        print(f"Archive ingest complete: {summary.reports_ingested} reports, "
-              f"{summary.data_points_extracted} data points, "
-              f"{summary.review_flagged} flagged for review, "
-              f"{summary.errors} errors")
-
-    elif args.source == 'ir':
+    if args.source == 'ir':
         import warnings
         warnings.warn(
             "cli --source ir is deprecated. EDGAR is the canonical ingest source. "
@@ -543,7 +534,7 @@ def main():
 
     # ingest
     p_ingest = sub.add_parser('ingest', help='Ingest data from a source')
-    p_ingest.add_argument('--source', choices=['archive', 'ir', 'edgar'], required=True)
+    p_ingest.add_argument('--source', choices=['ir', 'edgar'], required=True)
     p_ingest.add_argument('--ticker', help='Limit to one ticker (IR/EDGAR only)')
     p_ingest.add_argument('--since', metavar='YYYY-MM', help='Start date (EDGAR only)')
     p_ingest.add_argument(
