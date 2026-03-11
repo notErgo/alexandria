@@ -1,10 +1,9 @@
-"""Tests for extraction-batch assembly: EDGAR date gate vs IR/archive passthrough.
+"""Tests for extraction-batch assembly: EDGAR date gate vs monthly-source passthrough.
 
 Rules under test:
 - EDGAR source types (edgar_8k, edgar_10k, edgar_10q, edgar_6k, edgar_20f, edgar_40f)
   are gated by btc_first_filing_date.  Reports before that date are excluded.
-- IR / archive source types (ir_press_release, archive_html, archive_pdf) are NOT
-  date-gated.  They are fetched from mining-specific pages and are always relevant.
+- Monthly miner source types (IR / archive / wire) are NOT date-gated.
 - force_reextract=True path must apply the same per-source-type logic.
 """
 import os
@@ -108,6 +107,21 @@ class TestNormalPath:
         batch = build_batch('MARA', first_filing='2023-05-19')
         assert r_id in _ids(batch)
 
+    def test_prnewswire_before_gate_included(self, db, build_batch):
+        r_id = _insert_report(db, 'MARA', '2021-04-01', 'prnewswire_press_release')
+        batch = build_batch('MARA', first_filing='2023-05-19')
+        assert r_id in _ids(batch)
+
+    def test_globenewswire_before_gate_included(self, db, build_batch):
+        r_id = _insert_report(db, 'MARA', '2021-04-01', 'globenewswire_press_release')
+        batch = build_batch('MARA', first_filing='2023-05-19')
+        assert r_id in _ids(batch)
+
+    def test_wire_before_gate_included(self, db, build_batch):
+        r_id = _insert_report(db, 'MARA', '2021-04-01', 'wire_press_release')
+        batch = build_batch('MARA', first_filing='2023-05-19')
+        assert r_id in _ids(batch)
+
     def test_no_gate_date_all_edgar_included(self, db, build_batch):
         """When btc_first_filing_date is None, all EDGAR reports are included."""
         r_id = _insert_report(db, 'MARA', '2019-01-01', 'edgar_10k')
@@ -144,6 +158,11 @@ class TestNormalPath:
 class TestForceReextractPath:
     def test_ir_before_gate_included_on_force(self, db, build_batch):
         r_id = _insert_report(db, 'MARA', '2021-04-01', 'ir_press_release')
+        batch = build_batch('MARA', first_filing='2023-05-19', force=True)
+        assert r_id in _ids(batch)
+
+    def test_wire_before_gate_included_on_force(self, db, build_batch):
+        r_id = _insert_report(db, 'MARA', '2021-04-01', 'wire_press_release')
         batch = build_batch('MARA', first_filing='2023-05-19', force=True)
         assert r_id in _ids(batch)
 

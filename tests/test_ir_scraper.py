@@ -601,42 +601,6 @@ class TestDiscoveryMode:
         assert inserted["source_type"] == "prnewswire_press_release"
         assert inserted["report_date"] == "2026-01-01"
 
-    def test_scrape_discovery_clsk_direct_candidates_cover_prior_years(self):
-        db = MagicMock()
-        db.report_exists_by_url_hash.return_value = False
-        db.find_near_duplicates.return_value = []
-        scraper = IRScraper(db=db, session=MagicMock())
-        company = {
-            "ticker": "CLSK",
-            "scraper_mode": "discovery",
-            "ir_url": "https://investors.cleanspark.com/news",
-            "pr_base_url": "https://investors.cleanspark.com",
-            "pr_start_year": 2025,
-        }
-
-        older_article_resp = MagicMock()
-        older_article_resp.text = """
-        <html><head><meta property="article:published_time" content="2025-02-05T08:00:00Z" /></head>
-        <body><h1>CleanSpark Releases January 2025 Bitcoin Mining Update</h1><p>Mined 626 BTC.</p></body></html>
-        """
-
-        def _fake_fetch(url, session):
-            if "January-2025-Bitcoin-Mining-Update" in url:
-                return older_article_resp
-            return None
-
-        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]), patch(
-            "scrapers.ir_scraper._fetch_with_rate_limit",
-            side_effect=_fake_fetch,
-        ):
-            result = scraper._scrape_discovery(company)
-
-        assert result.reports_ingested == 1
-        inserted = db.insert_report.call_args[0][0]
-        assert inserted["report_date"] == "2025-01-01"
-        assert inserted["source_url"].endswith("CleanSpark-Releases-January-2025-Bitcoin-Mining-Update/default.aspx")
-
-
 class TestScrapeModeDispatch:
     def test_dispatch_uses_scraper_mode_key(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())
@@ -870,6 +834,7 @@ class TestPlaywrightPagination:
         class FakePage:
             def __init__(self):
                 self.current_page = "1"
+                self.current_year = "2026"
 
             def goto(self, url, wait_until=None, timeout=None):
                 return None
@@ -884,7 +849,12 @@ class TestPlaywrightPagination:
                 return None
 
             def content(self):
-                return f"<html><body>page-{self.current_page}</body></html>"
+                return f"<html><body>/news-details/{self.current_year}/ page-{self.current_page}</body></html>"
+
+            def evaluate(self, script, arg):
+                self.current_year = str(arg)
+                self.current_page = "1"
+                return True
 
             def locator(self, selector):
                 if selector == "button.pager_button":
@@ -917,7 +887,119 @@ class TestPlaywrightPagination:
             pages = _playwright_collect_all_pages("https://investors.cleanspark.com/news", max_pages=3)
 
         assert pages == [
-            "<html><body>page-1</body></html>",
-            "<html><body>page-2</body></html>",
-            "<html><body>page-3</body></html>",
+            "<html><body>/news-details/2026/ page-1</body></html>",
+            "<html><body>/news-details/2026/ page-2</body></html>",
+            "<html><body>/news-details/2026/ page-3</body></html>",
+        ]
+
+    def test_collect_all_pages_iterates_year_filters(self):
+        class FakeButton:
+            def __init__(self, page, label):
+                self.page = page
+                self.label = label
+
+            def get_attribute(self, name, timeout=None):
+                if name != "aria-current":
+                    return None
+                return "true" if self.page.current_page == self.label else None
+
+            def text_content(self):
+                return self.label
+
+            def is_visible(self, timeout=None):
+                return True
+
+            def click(self):
+                if self.label.isdigit():
+                    self.page.current_page = self.label
+
+        class FakeLocatorList:
+            def __init__(self, page):
+                self.page = page
+
+            def all(self):
+                labels_by_state = {
+                    ("2026", "1"): ["1", "2"],
+                    ("2026", "2"): ["1", "2"],
+                    ("2025", "1"): ["1"],
+                    ("2020", "1"): ["1"],
+                }
+                labels = labels_by_state.get((self.page.current_year, self.page.current_page), ["1"])
+                return [FakeButton(self.page, label) for label in labels]
+
+        class FakeFallbackLocator:
+            @property
+            def first(self):
+                return self
+
+            def is_visible(self, timeout=None):
+                return False
+
+        class FakePage:
+            def __init__(self):
+                self.current_page = "1"
+                self.current_year = "2026"
+
+            def goto(self, url, wait_until=None, timeout=None):
+                return None
+
+            def wait_for_selector(self, selector, timeout=None):
+                return None
+
+            def wait_for_timeout(self, timeout):
+                return None
+
+            def wait_for_function(self, script, arg=None, timeout=None):
+                return None
+
+            def content(self):
+                return (
+                    f"<html><body>/news-details/{self.current_year}/ "
+                    f"page-{self.current_page}</body></html>"
+                )
+
+            def evaluate(self, script, arg):
+                self.current_year = str(arg)
+                self.current_page = "1"
+                return self.current_year in {"2025", "2020"}
+
+            def locator(self, selector):
+                if selector == "button.pager_button":
+                    return FakeLocatorList(self)
+                return FakeFallbackLocator()
+
+        class FakeContext:
+            def new_page(self):
+                return FakePage()
+
+        class FakeBrowser:
+            def new_context(self, **kwargs):
+                return FakeContext()
+
+            def close(self):
+                return None
+
+        class FakePlaywright:
+            def __enter__(self):
+                self.chromium = MagicMock()
+                self.chromium.launch.return_value = FakeBrowser()
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        fake_sync_playwright = MagicMock(return_value=FakePlaywright())
+
+        with patch("playwright.sync_api.sync_playwright", fake_sync_playwright):
+            pages = _playwright_collect_all_pages(
+                "https://investors.cleanspark.com/news",
+                max_pages=3,
+                min_year=2020,
+            )
+
+        assert pages == [
+            "<html><body>/news-details/2026/ page-1</body></html>",
+            "<html><body>/news-details/2026/ page-2</body></html>",
+            "<html><body>/news-details/2025/ page-1</body></html>",
+            "<html><body>/news-details/2020/ page-1</body></html>",
         ]

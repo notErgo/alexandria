@@ -19,6 +19,7 @@ import threading
 from typing import Optional
 
 from interpreters.context_window import ContextWindowSelector
+from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
 log = logging.getLogger('miners.interpreters.interpret_pipeline')
 
@@ -52,6 +53,7 @@ _LLM_TEXT_MAX_CHARS = 8000
 # Source types that follow the quarterly/annual extraction path
 _QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
 _ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
+_MONTHLY_SOURCE_TYPES = frozenset(MONTHLY_EXTRACTION_SOURCE_TYPES)
 
 
 def validate_period_granularity(result_granularity: Optional[str], expected_granularity: str) -> bool:
@@ -192,6 +194,11 @@ def _is_quarterly_doc(report: dict) -> bool:
 def _is_annual_doc(report: dict) -> bool:
     """Return True if report.source_type is an annual filing (10-K)."""
     return report.get('source_type') in _ANNUAL_SOURCES
+
+
+def _is_monthly_source_type(source_type: str) -> bool:
+    """Return True for broad miner monthly document sources."""
+    return source_type in _MONTHLY_SOURCE_TYPES
 
 
 def _get_missing_metrics(db, ticker: str, period: str, all_metrics: list) -> list:
@@ -931,7 +938,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     # (investor notices, forward-looking disclaimers, about/contact blocks,
     # SEC signature blocks, exhibit indexes) before regex and LLM extraction.
     _src = report.get('source_type', '')
-    if _src in ('ir_press_release', 'wire_press_release', 'archive_html', 'archive_pdf'):
+    if _is_monthly_source_type(_src):
         from infra.text_utils import strip_press_release_boilerplate
         text = strip_press_release_boilerplate(text)
     elif _src.startswith('edgar_'):
@@ -1021,6 +1028,17 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             text, registry, report_date=report_date,
             metric_rules_by_name=metric_rules_by_name,
         )
+
+        if _is_monthly_source_type(source_type) and not regex_by_metric:
+            log.info(
+                "event=regex_gate_skip ticker=%s period=%s source=%s "
+                "— no regex metric candidates found, skipping LLM",
+                report.get('ticker'), report.get('report_date'), source_type,
+            )
+            db.mark_report_extracted(report['id'])
+            summary.reports_processed += 1
+            summary.regex_gated += 1
+            return summary
 
         llm_interpreter = _get_llm_interpreter(db)
         llm_available = _check_llm_available(llm_interpreter)

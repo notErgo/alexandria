@@ -117,7 +117,15 @@ def test_extract_pending_reports_aggregates_counts(monkeypatch):
         errors = 0
 
     class _FakeDB:
-        def get_unextracted_reports(self, ticker=None):
+        def get_unextracted_reports(self, ticker=None, source_types=None):
+            assert source_types == [
+                'ir_press_release',
+                'archive_html',
+                'archive_pdf',
+                'prnewswire_press_release',
+                'globenewswire_press_release',
+                'wire_press_release',
+            ]
             return [{'id': 1}, {'id': 2}]
 
     calls = []

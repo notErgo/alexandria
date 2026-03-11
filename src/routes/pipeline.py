@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+
 log = logging.getLogger('miners.routes.pipeline')
 bp = Blueprint('pipeline', __name__)
 
@@ -36,7 +38,7 @@ _EDGAR_SOURCE_TYPES = (
     'edgar_8k', 'edgar_10k', 'edgar_10q',
     'edgar_6k', 'edgar_20f', 'edgar_40f',
 )
-_NON_EDGAR_SOURCE_TYPES = ('ir_press_release', 'archive_html', 'archive_pdf')
+_NON_EDGAR_SOURCE_TYPES = MONTHLY_EXTRACTION_SOURCE_TYPES
 
 
 def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool = False) -> list:

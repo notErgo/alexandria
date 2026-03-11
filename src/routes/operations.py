@@ -22,6 +22,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from flask import Blueprint, jsonify, request, render_template, Response, redirect
+from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
 log = logging.getLogger('miners.routes.operations')
 
@@ -330,7 +331,7 @@ def operations_observer_swarm_status(task_id: str):
 
 # Cadence → source_type sets for report filtering.
 _CADENCE_SOURCE_TYPES = {
-    'monthly':   ['ir_press_release', 'archive_html', 'archive_pdf'],
+    'monthly':   list(MONTHLY_EXTRACTION_SOURCE_TYPES),
     'quarterly': ['edgar_10q'],
     'annual':    ['edgar_10k'],
     # 'all' / None: no filter (all source_types)

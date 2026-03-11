@@ -216,3 +216,38 @@ class TestUnifiedProductionGate:
             assert bare not in ('bitcoin', 'btc'), (
                 f"Gate phrase '{p}' reduces to bare '{bare}' which is too broad"
             )
+
+    def test_monthly_ir_requires_regex_hit_before_llm(self, db_with_company, registry, monkeypatch):
+        """Monthly miner docs with keyword hits but no regex candidates must not reach LLM."""
+        import interpreters.interpret_pipeline as _ep
+
+        llm_calls = []
+
+        class _TrackingLLM:
+            _last_call_meta = {}
+            _last_batch_summary = ''
+            def check_connectivity(self): return True
+            def extract_batch(self, *a, **kw):
+                llm_calls.append(1)
+                return {}
+            def extract(self, *a, **kw): return None
+            def extract_historical_periods(self, *a, **kw): return {}
+
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _TrackingLLM())
+
+        report_id = db_with_company.insert_report(make_report(
+            ticker='RIOT',
+            raw_text=(
+                'Riot Platforms issued a mining operations update regarding expansion plans, '
+                'fleet deployment timing, and infrastructure improvements.'
+            ),
+            report_date='2024-09-01',
+            source_type='ir_press_release',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert len(llm_calls) == 0
+        assert summary.regex_gated == 1

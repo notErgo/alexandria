@@ -480,20 +480,62 @@ def _parse_int_or_none(value: str | None) -> Optional[int]:
         return None
 
 
-def _month_starts_for_range(start_year: int, end_period: date) -> list[date]:
-    """Return month-start dates from January start_year through end_period inclusive."""
-    months: list[date] = []
-    current = date(start_year, 1, 1)
-    while current <= end_period:
-        months.append(current)
-        if current.month == 12:
-            current = date(current.year + 1, 1, 1)
-        else:
-            current = date(current.year, current.month + 1, 1)
-    return months
+def _infer_listing_year_from_html(html_text: str) -> Optional[int]:
+    """Infer the dominant listing year from HTML content."""
+    candidates = [int(year) for year in re.findall(r"/news-details/(\d{4})/", html_text or "")]
+    if not candidates:
+        candidates = [int(year) for year in re.findall(r"\b(20\d{2})\b", html_text or "")]
+    if not candidates:
+        return None
+    return max(candidates)
 
 
-def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
+def _playwright_select_year_filter(pw_page, year: int) -> bool:
+    """Best-effort switch of a JS-rendered year filter/select control."""
+    try:
+        result = pw_page.evaluate(
+            """(yearStr) => {
+                const normalized = String(yearStr).trim();
+
+                for (const select of Array.from(document.querySelectorAll('select'))) {
+                    const option = Array.from(select.options || []).find(
+                        (opt) => String(opt.textContent || '').trim() === normalized
+                              || String(opt.value || '').trim() === normalized
+                    );
+                    if (!option) continue;
+                    if (select.value !== option.value) {
+                        select.value = option.value;
+                        select.dispatchEvent(new Event('input', { bubbles: true }));
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    return true;
+                }
+
+                const clickableSelectors = [
+                    'button', 'a', '[role=\"button\"]', '[role=\"option\"]',
+                    'li', '.dropdown-item', '.filter-item'
+                ];
+                for (const selector of clickableSelectors) {
+                    for (const node of Array.from(document.querySelectorAll(selector))) {
+                        const text = String(node.textContent || '').trim();
+                        if (text !== normalized) continue;
+                        node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                        return true;
+                    }
+                }
+                return false;
+            }""",
+            str(year),
+        )
+        if not result:
+            return False
+        pw_page.wait_for_timeout(2500)
+        return True
+    except Exception:
+        return False
+
+
+def _playwright_collect_all_pages(url: str, max_pages: int = 30, min_year: Optional[int] = None) -> list[str]:
     """Use a single Playwright session to paginate through a JS-rendered listing.
 
     Loads the URL, captures the page HTML, then clicks the "Next page" control
@@ -509,6 +551,7 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
         log.warning("playwright not installed — cannot paginate JS-rendered listing %s", url)
         return []
     pages_html: list[str] = []
+    page_hashes: set[str] = set()
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
@@ -532,111 +575,126 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30) -> list[str]:
                 pass
             pw_page.wait_for_timeout(1500)
 
-            for page_num in range(1, max_pages + 1):
-                html = pw_page.content()
-                if is_bot_challenge_page(html):
-                    log.warning("Playwright got bot challenge on page %d of %s", page_num, url)
-                    break
-                log.info("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
-                pages_html.append(html)
+            def _collect_current_listing_pages(expected_year: Optional[int] = None) -> None:
+                for page_num in range(1, max_pages + 1):
+                    html = pw_page.content()
+                    if is_bot_challenge_page(html):
+                        log.warning("Playwright got bot challenge on page %d of %s", page_num, url)
+                        break
+                    page_digest = hashlib.sha256(html.encode("utf-8", errors="replace")).hexdigest()
+                    if page_digest in page_hashes:
+                        break
+                    page_hashes.add(page_digest)
+                    listing_year = _infer_listing_year_from_html(html)
+                    if expected_year and listing_year and listing_year != expected_year:
+                        log.debug(
+                            "Playwright year switch mismatch for %s: expected %s got %s",
+                            url, expected_year, listing_year,
+                        )
+                    log.info("Playwright paginated fetch: page %d of %s (%d chars)", page_num, url, len(html))
+                    pages_html.append(html)
 
-                next_clicked = False
+                    next_clicked = False
 
-                # Primary strategy: Equisolve pager_button pattern.
-                # Prefer the next numeric page button. Some Equisolve pagers inject
-                # non-numeric controls after page 2, so "active index + 1" can stall
-                # on an ellipsis instead of advancing to page 3.
-                try:
-                    all_pager_btns = pw_page.locator("button.pager_button").all()
-                    active_idx = None
-                    active_page_num = None
-                    for i, b in enumerate(all_pager_btns):
-                        try:
-                            if b.get_attribute("aria-current", timeout=300) == "true":
-                                active_idx = i
-                                active_page_num = _parse_int_or_none(b.text_content() or "")
-                                break
-                        except Exception:
-                            continue
-                    next_btn = None
-                    if active_page_num is not None:
-                        next_page_num = active_page_num + 1
-                        for b in all_pager_btns:
+                    # Primary strategy: Equisolve pager_button pattern.
+                    try:
+                        all_pager_btns = pw_page.locator("button.pager_button").all()
+                        active_idx = None
+                        active_page_num = None
+                        for i, b in enumerate(all_pager_btns):
                             try:
-                                if _parse_int_or_none(b.text_content() or "") != next_page_num:
-                                    continue
-                                next_btn = b
-                                break
+                                if b.get_attribute("aria-current", timeout=300) == "true":
+                                    active_idx = i
+                                    active_page_num = _parse_int_or_none(b.text_content() or "")
+                                    break
                             except Exception:
                                 continue
-                    if next_btn is None and active_idx is not None:
-                        for candidate in all_pager_btns[active_idx + 1:]:
-                            try:
-                                if _parse_int_or_none(candidate.text_content() or "") is None:
+                        next_btn = None
+                        if active_page_num is not None:
+                            next_page_num = active_page_num + 1
+                            for b in all_pager_btns:
+                                try:
+                                    if _parse_int_or_none(b.text_content() or "") != next_page_num:
+                                        continue
+                                    next_btn = b
+                                    break
+                                except Exception:
                                     continue
-                                next_btn = candidate
-                                break
+                        if next_btn is None and active_idx is not None:
+                            for candidate in all_pager_btns[active_idx + 1:]:
+                                try:
+                                    if _parse_int_or_none(candidate.text_content() or "") is None:
+                                        continue
+                                    next_btn = candidate
+                                    break
+                                except Exception:
+                                    continue
+                        if next_btn is not None and next_btn.is_visible(timeout=1000):
+                            next_btn_text = (next_btn.text_content() or "").strip()
+                            next_btn.click()
+                            try:
+                                pw_page.wait_for_function(
+                                    """(txt) => {
+                                        const btns = document.querySelectorAll('button.pager_button');
+                                        for (const b of btns) {
+                                            if (b.getAttribute('aria-current') === 'true'
+                                                    && b.textContent.trim() === txt) return true;
+                                        }
+                                        return false;
+                                    }""",
+                                    arg=next_btn_text,
+                                    timeout=10000,
+                                )
+                            except Exception:
+                                pass
+                            pw_page.wait_for_timeout(2000)
+                            next_clicked = True
+                            log.debug("Playwright: advanced to page button '%s'", next_btn_text)
+                    except Exception:
+                        pass
+
+                    if not next_clicked:
+                        for selector in _NEXT_PAGE_SELECTORS:
+                            try:
+                                btn = pw_page.locator(selector).first
+                                if btn.is_visible(timeout=500):
+                                    btn.click()
+                                    pw_page.wait_for_timeout(3000)
+                                    next_clicked = True
+                                    break
                             except Exception:
                                 continue
-                    if next_btn is not None and next_btn.is_visible(timeout=1000):
-                        next_btn_text = (next_btn.text_content() or "").strip()
-                        next_btn.click()
-                        # Wait for that button to gain aria-current (widget's own
-                        # completion signal), then settle for article AJAX.
-                        try:
-                            pw_page.wait_for_function(
-                                """(txt) => {
-                                    const btns = document.querySelectorAll('button.pager_button');
-                                    for (const b of btns) {
-                                        if (b.getAttribute('aria-current') === 'true'
-                                                && b.textContent.trim() === txt) return true;
-                                    }
-                                    return false;
-                                }""",
-                                arg=next_btn_text,
-                                timeout=10000,
-                            )
-                        except Exception:
-                            pass
-                        pw_page.wait_for_timeout(2000)
-                        next_clicked = True
-                        log.debug("Playwright: advanced to page button '%s'", next_btn_text)
-                except Exception:
-                    pass
 
-                # Fallback: generic "Next" link/button for non-Equisolve widgets
-                if not next_clicked:
-                    for selector in _NEXT_PAGE_SELECTORS:
-                        try:
-                            btn = pw_page.locator(selector).first
-                            if btn.is_visible(timeout=500):
-                                btn.click()
-                                pw_page.wait_for_timeout(3000)
-                                next_clicked = True
-                                break
-                        except Exception:
-                            continue
+                    if not next_clicked:
+                        for next_text in ("Next", ">", "›", "»"):
+                            try:
+                                btn = pw_page.locator(
+                                    f"a:has-text('{next_text}'), button:has-text('{next_text}')"
+                                ).first
+                                if btn.is_visible(timeout=500):
+                                    btn.click()
+                                    pw_page.wait_for_timeout(3000)
+                                    next_clicked = True
+                                    break
+                            except Exception:
+                                continue
 
-                if not next_clicked:
-                    for next_text in ("Next", ">", "›", "»"):
-                        try:
-                            btn = pw_page.locator(
-                                f"a:has-text('{next_text}'), button:has-text('{next_text}')"
-                            ).first
-                            if btn.is_visible(timeout=500):
-                                btn.click()
-                                pw_page.wait_for_timeout(3000)
-                                next_clicked = True
-                                break
-                        except Exception:
-                            continue
+                    if not next_clicked:
+                        log.info(
+                            "Playwright: no next page control found after page %d of %s — stopping",
+                            page_num, url,
+                        )
+                        break
 
-                if not next_clicked:
-                    log.info(
-                        "Playwright: no next page control found after page %d of %s — stopping",
-                        page_num, url,
-                    )
-                    break
+            current_year = _infer_listing_year_from_html(pw_page.content()) or date.today().year
+            _collect_current_listing_pages(expected_year=current_year)
+            if min_year is not None:
+                for year in range(current_year - 1, min_year - 1, -1):
+                    if not _playwright_select_year_filter(pw_page, year):
+                        log.debug("Playwright: no year filter control found for %s on %s", year, url)
+                        continue
+                    log.info("Playwright: switched listing filter to year %s for %s", year, url)
+                    _collect_current_listing_pages(expected_year=year)
 
             browser.close()
     except Exception as exc:
@@ -960,7 +1018,10 @@ class IRScraper:
         # that clicks through pagination instead.
         if use_playwright_pagination:
             log.info("%s: JS-rendered listing — using Playwright pagination for %s", ticker, ir_url)
-            page_htmls_js = _playwright_collect_all_pages(ir_url)
+            page_htmls_js = _playwright_collect_all_pages(
+                ir_url,
+                min_year=start_year if ticker.upper() == "CLSK" else None,
+            )
             page_sources: list[tuple[str, str]] = [
                 (html, ir_url) for html in page_htmls_js
             ]
@@ -1051,47 +1112,6 @@ class IRScraper:
 
             return page_has_recent
 
-        def _process_direct_candidate_url(page_period: date, full_url: str) -> bool:
-            """Fetch and insert a direct article candidate URL for a known month."""
-            canonical = canonical_url(full_url)
-            if canonical in seen_urls:
-                return False
-            seen_urls.add(canonical)
-
-            period_str = page_period.strftime("%Y-%m-%d")
-            url_hash = hashlib.sha256(canonical.encode()).hexdigest()
-            if self.db.report_exists_by_url_hash(url_hash, ticker):
-                self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=canonical, period=period_str)
-                return True
-
-            pr_resp = _fetch_with_rate_limit(canonical, self.session)
-            if pr_resp is None:
-                return False
-
-            published_date = infer_published_date_from_html(pr_resp.text)
-            inferred_period = infer_period_from_text(pr_resp.text[:5000]) or infer_period_from_text(canonical)
-            if inferred_period and inferred_period.year < start_year:
-                return False
-
-            inserted = self._insert_ir_report(
-                ticker=ticker,
-                period=inferred_period or page_period,
-                source_url=canonical,
-                html_text=pr_resp.text,
-                fetch_strategy="discovery",
-                summary=summary,
-                title=None,
-                published_date=published_date,
-                source_type=(
-                    "prnewswire_press_release"
-                    if "prnewswire.com" in urlparse(canonical).netloc.lower()
-                    else "ir_press_release"
-                ),
-            )
-            if inserted:
-                log.info("Ingested direct discovery PR: %s %s from %s", ticker, page_period, canonical)
-            return inserted
-
         # Process Playwright-paginated pages first (JS-rendered listing)
         for page_idx, (html_text, page_url) in enumerate(page_sources, start=1):
             self._emit('page_fetch', ticker=ticker, url=page_url, page=page_idx)
@@ -1111,15 +1131,6 @@ class IRScraper:
             has_recent = _process_page(resp.text, page_url, page_idx)
             if found_any and not has_recent:
                 break
-
-        if ticker.upper() == "CLSK":
-            today = date.today()
-            last_completed = date(today.year, today.month, 1) - timedelta(days=1)
-            last_completed = date(last_completed.year, last_completed.month, 1)
-            for page_period in _month_starts_for_range(start_year, last_completed):
-                for candidate_url in candidate_urls_for_period(company, page_period):
-                    if _process_direct_candidate_url(page_period, candidate_url):
-                        break
 
         return summary
 

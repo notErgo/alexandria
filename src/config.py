@@ -263,6 +263,17 @@ SOURCE_TYPE_DISPLAY: dict = {
     'manual':                      'Manual Entry',
 }
 
+# Monthly miner documents that should follow the same extraction gate policy
+# regardless of which route starts extraction.
+MONTHLY_EXTRACTION_SOURCE_TYPES: tuple[str, ...] = (
+    'ir_press_release',
+    'archive_html',
+    'archive_pdf',
+    'prnewswire_press_release',
+    'globenewswire_press_release',
+    'wire_press_release',
+)
+
 # --- Quarterly/Annual Metric Classification ---
 # Metrics where quarterly total = sum of monthly values (can infer missing month from remainder)
 FLOW_METRICS: frozenset = frozenset({

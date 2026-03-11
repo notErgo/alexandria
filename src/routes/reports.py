@@ -5,6 +5,7 @@ import uuid
 from typing import Optional
 
 from flask import Blueprint, jsonify, request
+from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
 log = logging.getLogger('miners.routes.reports')
 
@@ -28,7 +29,10 @@ def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
     from app_globals import get_registry
 
     registry = get_registry()
-    reports = db.get_unextracted_reports(ticker=ticker)
+    reports = db.get_unextracted_reports(
+        ticker=ticker,
+        source_types=list(MONTHLY_EXTRACTION_SOURCE_TYPES),
+    )
     totals = {
         'reports_processed': 0,
         'data_points_extracted': 0,
