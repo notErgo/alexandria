@@ -378,36 +378,55 @@ class TestFetch8kSubmissionsAPI:
 
         mock_db.insert_report.assert_not_called()
 
-    def test_fetch_8k_skips_filing_with_no_exhibit(self):
-        """8-K index page with no EX-99 exhibit is skipped without error."""
+    def test_fetch_8k_falls_back_to_primary_doc_when_no_exhibit(self):
+        """8-K with no EX-99 exhibit still stores the primary filing document."""
         from datetime import date as dt
         from scrapers.edgar_connector import EdgarConnector
 
         mock_db = MagicMock()
         mock_db.report_exists.return_value = False
         mock_db.report_exists_by_accession.return_value = False
+        mock_db.insert_report.return_value = 1
 
-        # Index page has no EX-99 row
-        index_html = "<html><body><table><tr><td>8-K</td><td><a href='8k.htm'>form</a></td></tr></table></body></html>"
+        index_html = (
+            "<html><body><table>"
+            "<tr><td>8-K</td><td><a href='8k.htm'>form</a></td><td>8-K</td></tr>"
+            "</table></body></html>"
+        )
 
         submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
         submissions_resp.json.return_value = _make_submissions_response(
             '1507605', '0001507605-24-000001', '2024-06-01'
         )
         index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
+        primary_resp = MagicMock(
+            status_code=200,
+            text="<html><body>MARA current report production update 725 BTC.</body></html>",
+            raise_for_status=lambda: None,
+        )
+
+        def _side_effect(url, **kw):
+            if 'data.sec.gov' in url:
+                return submissions_resp
+            if url.endswith('-index.htm'):
+                return index_resp
+            if url.endswith('/8k.htm'):
+                return primary_resp
+            raise AssertionError(f'unexpected URL {url}')
 
         session = MagicMock()
-        session.get.side_effect = lambda url, **kw: (
-            submissions_resp if 'data.sec.gov' in url else index_resp
-        )
+        session.get.side_effect = _side_effect
 
         connector = EdgarConnector(db=mock_db, session=session)
         result = connector.fetch_8k_filings(
             cik='0001507605', ticker='MARA', since_date=dt(2024, 1, 1)
         )
 
-        mock_db.insert_report.assert_not_called()
-        assert result.errors == 0  # no-exhibit is a skip, not an error
+        mock_db.insert_report.assert_called_once()
+        stored = mock_db.insert_report.call_args[0][0]
+        assert stored['source_url'].endswith('/8k.htm')
+        assert 'production update 725 BTC' in stored['raw_text']
+        assert result.errors == 0
 
     def test_fetch_8k_deduplicates_by_accession(self):
         """8-K already stored by accession number is not re-ingested."""

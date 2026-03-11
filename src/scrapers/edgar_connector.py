@@ -689,12 +689,12 @@ class EdgarConnector:
         return filed_date
 
     def fetch_8k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
-        """Fetch 8-K filings from the submissions API and store raw exhibit text.
+        """Fetch 8-K filings from the submissions API and store raw filing text.
 
         Uses the submissions API (same approach as fetch_10q_filings / fetch_10k_filings).
         For each 8-K, fetches the filing index page and resolves the EX-99.1 exhibit
-        (press release) URL.  Falls back to EX-99 if EX-99.1 is absent.  Filings with
-        no exhibit are skipped silently — they are 8-Ks about non-production events.
+        (press release) URL. Falls back to EX-99 if EX-99.1 is absent, then falls
+        back again to the primary filing document when no EX-99 exhibit is present.
 
         Keyword filtering is handled at extraction time by the keyword gate in
         interpret_pipeline — no content-based gating is applied at ingest.
@@ -740,14 +740,30 @@ class EdgarConnector:
                 summary.errors += 1
                 continue
 
-            exhibit_url = parse_8k_exhibit_url(index_html, cik_numeric, acc_no_clean)
-            if not exhibit_url:
-                log.debug("No EX-99 exhibit for %s 8-K %s; skipping (non-production filing)", ticker, acc_no)
-                continue
+            preferred_url = parse_current_report_exhibit_url(
+                index_html, cik_numeric, acc_no_clean, '8-K'
+            ) or parse_filing_index_for_primary_doc(index_html)
+            if not preferred_url:
+                primary_doc = filing.get('primary_doc', '')
+                if primary_doc:
+                    preferred_url = (
+                        f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/"
+                        f"{acc_no_clean}/{primary_doc}"
+                    )
+                else:
+                    log.warning("No usable document found for %s 8-K %s", ticker, acc_no)
+                    summary.errors += 1
+                    continue
 
-            doc_html = self._edgar_get_text(exhibit_url)
+            if not preferred_url.startswith('http'):
+                preferred_url = (
+                    f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/"
+                    f"{acc_no_clean}/{preferred_url.lstrip('/')}"
+                )
+            preferred_url = _unwrap_ixbrl_url(preferred_url)
+            doc_html = self._edgar_get_text(preferred_url)
             if not doc_html:
-                log.warning("Empty 8-K exhibit for %s %s", ticker, acc_no)
+                log.warning("Empty 8-K document for %s %s", ticker, acc_no)
                 summary.errors += 1
                 continue
 
@@ -755,7 +771,7 @@ class EdgarConnector:
             text = soup.get_text(separator=' ', strip=True)[:_MAX_FILING_TEXT_CHARS]
 
             if not text.strip():
-                log.warning("No text from 8-K exhibit for %s %s", ticker, acc_no)
+                log.warning("No text from 8-K document for %s %s", ticker, acc_no)
                 summary.errors += 1
                 continue
 
@@ -767,7 +783,7 @@ class EdgarConnector:
                 'report_date':      filing_date,
                 'published_date':   filing_date,
                 'source_type':      'edgar_8k',
-                'source_url':       exhibit_url,
+                'source_url':       preferred_url,
                 'raw_text':         text,
                 'raw_html':         doc_html[:_MAX_RAW_HTML_CHARS],
                 'parsed_at':        datetime.now(timezone.utc).isoformat(),
@@ -791,7 +807,7 @@ class EdgarConnector:
                     accession=acc_no,
                     quality=parse_quality,
                     text_chars=text_len,
-                    url=exhibit_url,
+                    url=preferred_url,
                 )
             except Exception as e:
                 log.error(
@@ -800,7 +816,7 @@ class EdgarConnector:
                 self._emit(
                     'url_error', ticker=ticker, level='WARNING',
                     form_type='8-K', period=filing_date,
-                    accession=acc_no, url=exhibit_url, error=str(e),
+                    accession=acc_no, url=preferred_url, error=str(e),
                 )
                 summary.errors += 1
 
