@@ -31,7 +31,7 @@
     {"id": "1.2", "name": "Track Config > Companies Table sub-tab", "source": "n/a", "path": "critical", "template": "ops.html"},
     {"id": "1.2.1", "name": "Companies table", "source": "CONFIG", "path": "critical", "template": "ops.html", "api_endpoints": ["/api/companies"]},
     {"id": "1.2.2", "name": "Scrape Queue table", "source": "DATA", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/scrape/queue"]},
-    {"id": "1.2.3", "name": "Danger Zone purge form", "source": "n/a", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/data/purge"]},
+    {"id": "1.2.3", "name": "SCRAPE stage delete form", "source": "n/a", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/delete/scrape"]},
 
     {"id": "1.3", "name": "Track Config > Metrics & Keywords sub-tab", "source": "n/a", "path": "optional", "template": "ops.html"},
     {"id": "1.3.1", "name": "Metrics & Keywords table + add form", "source": "CONFIG", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/metric_schema", "/api/metric_schema/<key>/keywords"]},
@@ -46,6 +46,7 @@
     {"id": "1.5.1", "name": "Crawl ticker bar", "source": "n/a", "path": "optional", "template": "ops.html"},
     {"id": "1.5.2", "name": "Crawl provider/model selector", "source": "n/a", "path": "optional", "template": "ops.html"},
     {"id": "1.5.3", "name": "Crawl prompt editor", "source": "CONFIG", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/crawl/prompt/<ticker>"]},
+    {"id": "1.6", "name": "Track Config > Purge Stages sub-tab", "source": "n/a", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/delete/all", "/api/delete/scrape", "/api/delete/review", "/api/delete/final"]},
 
     {"id": "3.0", "name": "Interpret pane", "source": "n/a", "path": "n/a", "template": "ops.html"},
     {"id": "3.1", "name": "Interpret > Extract section", "source": "n/a", "path": "critical", "template": "ops.html"},
@@ -53,7 +54,7 @@
     {"id": "3.2", "name": "Interpret > QC section", "source": "n/a", "path": "optional", "template": "ops.html", "api_endpoints": ["/api/qc/snapshot", "/api/qc/summary"]},
 
     {"id": "4.0", "name": "Review pane (embedded)", "source": "n/a", "path": "n/a", "template": "ops.html"},
-    {"id": "4.1", "name": "Review > Queue sub-tab", "source": "n/a", "path": "critical", "template": "ops.html"},
+    {"id": "4.1", "name": "Review > Queue sub-tab", "source": "n/a", "path": "critical", "template": "ops.html", "api_endpoints": ["/api/review", "/api/delete/review"]},
     {"id": "4.1.2", "name": "Review table", "source": "DATA", "path": "critical", "template": "ops.html", "api_endpoints": ["/api/review"]},
     {"id": "4.2", "name": "Review > Patterns sub-tab", "source": "n/a", "path": "later", "template": "ops.html"},
     {"id": "4.3", "name": "Review > Highlight Dictionary sub-tab", "source": "n/a", "path": "later", "template": "ops.html"},

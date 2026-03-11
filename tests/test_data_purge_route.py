@@ -1,4 +1,4 @@
-"""Route tests for /api/data/purge mode semantics."""
+"""Route tests for canonical delete-stage API mode semantics."""
 
 import importlib
 import os
@@ -30,7 +30,7 @@ def client(app):
 
 
 def test_purge_rejects_invalid_mode(client):
-    resp = client.post('/api/data/purge', json={'confirm': True, 'purge_mode': 'invalid'})
+    resp = client.post('/api/delete/scrape', json={'confirm': True, 'purge_mode': 'invalid'})
     assert resp.status_code == 400
     data = resp.get_json()
     assert data['success'] is False
@@ -38,7 +38,7 @@ def test_purge_rejects_invalid_mode(client):
 
 
 def test_purge_defaults_to_archive_mode(client):
-    resp = client.post('/api/data/purge', json={'confirm': True})
+    resp = client.post('/api/delete/scrape', json={'confirm': True})
     assert resp.status_code == 200
     data = resp.get_json()
     assert data['success'] is True
@@ -47,9 +47,8 @@ def test_purge_defaults_to_archive_mode(client):
 
 
 def test_hard_delete_full_can_disable_auto_sync(client):
-    resp = client.post('/api/data/purge', json={
+    resp = client.post('/api/delete/all', json={
         'confirm': True,
-        'purge_mode': 'hard_delete',
         'suppress_auto_sync': True,
     })
     assert resp.status_code == 200

@@ -5,7 +5,7 @@ Endpoints:
   POST /api/interpret/<ticker>/finalize   — write to final_data_points
   GET  /api/interpret/<ticker>/final      — read final_data_points for ticker
   DELETE /api/interpret/<ticker>/final    — clear final_data_points for ticker
-  POST /api/interpret/final/purge         — bulk purge (all tickers or scoped)
+  POST /api/delete/final                  — bulk purge (all tickers or scoped)
   POST /api/interpret/<ticker>/rerun-sec  — re-run interpret pipeline on stored EDGAR filings
 """
 import json
@@ -399,6 +399,7 @@ def delete_final(ticker: str):
     return jsonify({'success': True, 'data': result})
 
 
+@bp.route('/api/delete/final', methods=['POST'])
 @bp.route('/api/interpret/final/purge', methods=['POST'])
 def purge_final():
     """Bulk purge of final_data_points (all or ticker-scoped).

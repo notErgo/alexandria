@@ -4,6 +4,7 @@ Review queue API routes.
 Provides endpoints for the analyst review UI:
   GET  /api/review                    — list review items (paginated, filterable by status)
   GET  /api/review/<id>/document      — full document text + snippet positions
+  POST /api/delete/review             — purge review artifacts without touching scraped reports
   POST /api/review/<id>/reextract     — re-run extraction on analyst-selected text (requires item)
   POST /api/review/reextract_selection — re-run extraction by metric + selection (no item needed)
   POST /api/review/<id>/approve       — approve and store the value
@@ -17,6 +18,84 @@ from flask import Blueprint, jsonify, request
 log = logging.getLogger('miners.routes.review')
 
 bp = Blueprint('review', __name__)
+
+
+@bp.route('/api/delete/review', methods=['POST'])
+@bp.route('/api/review/purge', methods=['POST'])
+def purge_review_artifacts():
+    """Purge review-layer artifacts while preserving scraped source reports."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        body = request.get_json(silent=True) or {}
+        if not body.get('confirm'):
+            return jsonify({'success': False, 'error': {
+                'code': 'CONFIRM_REQUIRED',
+                'message': 'Request body must include {"confirm": true}',
+            }}), 400
+
+        ticker = body.get('ticker')
+        if ticker is not None:
+            ticker = str(ticker).strip().upper() or None
+            if ticker and not db.get_company(ticker):
+                return jsonify({'success': False, 'error': {
+                    'code': 'INVALID_TICKER',
+                    'message': f'Ticker {ticker!r} not recognized',
+                }}), 400
+
+        raw_targets = body.get('targets')
+        if raw_targets is None:
+            targets = {'queue', 'final'}
+        elif isinstance(raw_targets, list):
+            targets = {str(t).strip().lower() for t in raw_targets if str(t).strip()}
+        else:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'targets' must be a list containing 'queue' and/or 'final'",
+            }}), 400
+
+        valid_targets = {'queue', 'final'}
+        if not targets or not targets.issubset(valid_targets):
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'targets' must contain at least one of ['final', 'queue']",
+            }}), 400
+
+        final_mode = str(body.get('final_mode') or 'clear').strip().lower()
+        if final_mode not in {'clear', 'archive'}:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'final_mode' must be one of ['archive', 'clear']",
+            }}), 400
+
+        reason = str(body.get('reason') or '').strip() or None
+        counts = {
+            'review_queue_deleted': 0,
+            'final_data_points_deleted': 0,
+            'final_archive_batch_id': None,
+        }
+
+        if 'queue' in targets:
+            counts['review_queue_deleted'] = db.purge_review_queue(ticker=ticker)
+        if 'final' in targets:
+            result = db.purge_final_data_points(ticker=ticker, mode=final_mode, reason=reason)
+            counts['final_data_points_deleted'] = int(result.get('deleted', 0))
+            counts['final_archive_batch_id'] = result.get('archive_batch_id')
+
+        log.info(
+            "event=review_purge_complete ticker=%s targets=%s final_mode=%s counts=%s",
+            ticker or 'ALL', sorted(targets), final_mode, counts,
+        )
+        return jsonify({'success': True, 'data': {
+            'ticker': ticker or 'ALL',
+            'targets': sorted(targets),
+            'reports_preserved': True,
+            'counts': counts,
+        }})
+    except Exception:
+        log.error("Error purging review artifacts", exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
 @bp.route('/api/review')

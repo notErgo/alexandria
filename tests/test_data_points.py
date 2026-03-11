@@ -113,24 +113,24 @@ class TestLineageEndpoint:
 
 
 class TestPurgeEndpoint:
-    """Tests for POST /api/data/purge."""
+    """Tests for POST /api/delete/scrape."""
 
     def test_purge_requires_confirm_true(self, client, db_with_company, app):
         import app_globals
         app_globals._db = db_with_company
-        resp = client.post('/api/data/purge', json={'confirm': False})
+        resp = client.post('/api/delete/scrape', json={'confirm': False})
         assert resp.status_code == 400
 
     def test_purge_missing_confirm_rejected(self, client, db_with_company, app):
         import app_globals
         app_globals._db = db_with_company
-        resp = client.post('/api/data/purge', json={})
+        resp = client.post('/api/delete/scrape', json={})
         assert resp.status_code == 400
 
     def test_purge_invalid_mode_returns_400(self, client, db_with_company, app):
         import app_globals
         app_globals._db = db_with_company
-        resp = client.post('/api/data/purge', json={
+        resp = client.post('/api/delete/scrape', json={
             'confirm': True,
             'purge_mode': 'obliterate',
         })
@@ -141,7 +141,7 @@ class TestPurgeEndpoint:
     def test_purge_reset_mode_returns_success(self, client, db_with_datapoint, app):
         import app_globals
         app_globals._db = db_with_datapoint
-        resp = client.post('/api/data/purge', json={
+        resp = client.post('/api/delete/scrape', json={
             'confirm': True,
             'purge_mode': 'reset',
         })
@@ -154,7 +154,7 @@ class TestPurgeEndpoint:
     def test_purge_response_includes_auto_sync_status(self, client, db_with_company, app):
         import app_globals
         app_globals._db = db_with_company
-        resp = client.post('/api/data/purge', json={
+        resp = client.post('/api/delete/scrape', json={
             'confirm': True,
             'purge_mode': 'reset',
         })
@@ -176,7 +176,7 @@ class TestPurgeEndpoint:
             'cik': None,
             'active': 1,
         })
-        resp = client.post('/api/data/purge', json={
+        resp = client.post('/api/delete/scrape', json={
             'confirm': True,
             'purge_mode': 'reset',
             'ticker': 'RIOT',

@@ -752,9 +752,10 @@ def manifest_detect_period(manifest_id: int):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+@bp.route('/api/delete/scrape/ticker', methods=['POST'])
 @bp.route('/api/operations/purge_ticker', methods=['POST'])
 def purge_ticker():
-    """POST /api/operations/purge_ticker — delete all extracted data for one ticker.
+    """Canonical ticker-scoped SCRAPE-stage delete endpoint.
 
     Cascades through every downstream layer in FK-safe order:
       data_points → review_queue → final_data_points

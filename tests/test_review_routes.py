@@ -223,6 +223,60 @@ class TestApproveFinalDataPoints:
             assert len(finals) == 2
 
 
+class TestReviewPurgeRoute:
+    def test_purge_review_queue_preserves_reports(self, app_with_review, db_with_review):
+        with app_with_review.test_client() as c:
+            resp = c.post(
+                '/api/delete/review',
+                json={'confirm': True, 'ticker': 'MARA', 'targets': ['queue']},
+                content_type='application/json',
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data['success'] is True
+            assert data['data']['reports_preserved'] is True
+            assert data['data']['counts']['review_queue_deleted'] == 1
+            assert data['data']['counts']['final_data_points_deleted'] == 0
+            assert db_with_review.get_report(db_with_review._report_id) is not None
+            assert db_with_review.count_review_items(status='PENDING') == 0
+
+    def test_purge_final_preserves_reports_and_review_queue(self, app_with_review, db_with_review):
+        db_with_review.upsert_final_data_point(
+            'MARA',
+            '2024-01-01',
+            'production_btc',
+            700.0,
+            'BTC',
+            1.0,
+            analyst_note='seed',
+            source_ref='review_queue:1',
+        )
+
+        with app_with_review.test_client() as c:
+            resp = c.post(
+                '/api/delete/review',
+                json={'confirm': True, 'ticker': 'MARA', 'targets': ['final']},
+                content_type='application/json',
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data['success'] is True
+            assert data['data']['counts']['review_queue_deleted'] == 0
+            assert data['data']['counts']['final_data_points_deleted'] == 1
+            assert db_with_review.get_report(db_with_review._report_id) is not None
+            assert len(db_with_review.get_review_items(status='PENDING', limit=50, offset=0)) == 1
+            assert db_with_review.get_final_data_points('MARA') == []
+
+    def test_purge_requires_confirm(self, app_with_review):
+        with app_with_review.test_client() as c:
+            resp = c.post(
+                '/api/delete/review',
+                json={'ticker': 'MARA', 'targets': ['queue']},
+                content_type='application/json',
+            )
+            assert resp.status_code == 400
+
+
 class TestReextractTicker:
     """reextract routes pass ticker context to LLM via extract_batch."""
 

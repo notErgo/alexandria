@@ -642,7 +642,7 @@
     statusEl.textContent = 'Purging…';
     statusEl.style.color = '';
     try {
-      const resp = await fetch('/api/interpret/final/purge', {
+      const resp = await fetch('/api/delete/final', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({confirm: true, mode}),

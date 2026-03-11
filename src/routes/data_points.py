@@ -654,28 +654,10 @@ def export_llm_csv():
     return response
 
 
-@bp.route('/api/data/purge', methods=['POST'])
-def purge_data():
-    """Run explicit purge/reset modes for operational data.
-
-    purge_mode:
-      - reset: clear data tables; keep company/regime config.
-      - archive: same as reset, but copy deleted rows to purge_archive.db.
-      - hard_delete: full destructive delete. If full-scope and suppress_auto_sync
-        is true, startup company auto-sync is disabled until manually re-enabled.
-
-    Body (JSON):
-        confirm (bool, required): must be true to proceed
-        ticker (str, optional): limit purge to one ticker
-        purge_mode (str, optional): reset|archive|hard_delete (default archive)
-        reason (str, optional): operator reason for audit/archive metadata
-        suppress_auto_sync (bool, optional): full hard_delete only
-
-    Returns:
-        {"success": true, "data": {"counts": {...}, "ticker": "ALL", "purge_mode": "archive"}}
-    """
+def _run_purge_request(*, route_label: str, allowed_modes: set[str], default_mode: str, body: dict | None = None):
+    """Run explicit purge/reset modes for operational data."""
     from app_globals import get_db
-    body = request.get_json(silent=True) or {}
+    body = body if body is not None else (request.get_json(silent=True) or {})
 
     if not body.get('confirm'):
         return jsonify({'success': False, 'error': {
@@ -688,13 +670,13 @@ def purge_data():
         ticker = str(ticker).strip().upper()
         if not ticker:
             ticker = None
-    purge_mode = str(body.get('purge_mode') or 'archive').strip().lower()
+    purge_mode = str(body.get('purge_mode') or default_mode).strip().lower()
     reason = str(body.get('reason') or '').strip() or None
     suppress_auto_sync = bool(body.get('suppress_auto_sync', False))
-    if purge_mode not in {'reset', 'archive', 'hard_delete'}:
+    if purge_mode not in allowed_modes:
         return jsonify({'success': False, 'error': {
             'code': 'INVALID_PURGE_MODE',
-            'message': "purge_mode must be one of ['archive', 'hard_delete', 'reset']",
+            'message': f"purge_mode must be one of {sorted(allowed_modes)}",
         }}), 400
 
     db = get_db()
@@ -706,9 +688,8 @@ def purge_data():
         }}), 400
 
     log.info(
-        "event=purge_start route=/api/data/purge purge_mode=%s ticker=%s "
-        "suppress_auto_sync=%s reason=%r",
-        purge_mode, ticker or 'ALL', suppress_auto_sync, reason,
+        "event=purge_start route=%s purge_mode=%s ticker=%s suppress_auto_sync=%s reason=%r",
+        route_label, purge_mode, ticker or 'ALL', suppress_auto_sync, reason,
     )
     try:
         counts = db.purge_all(
@@ -719,16 +700,16 @@ def purge_data():
         )
     except Exception as e:
         log.error(
-            "event=purge_error route=/api/data/purge purge_mode=%s ticker=%s error=%r",
-            purge_mode, ticker or 'ALL', str(e), exc_info=True,
+            "event=purge_error route=%s purge_mode=%s ticker=%s error=%r",
+            route_label, purge_mode, ticker or 'ALL', str(e), exc_info=True,
         )
         return jsonify({'success': False, 'error': {
             'code': 'PURGE_ERROR', 'message': 'Internal error during purge',
         }}), 500
 
     log.info(
-        "event=purge_complete route=/api/data/purge purge_mode=%s ticker=%s counts=%s",
-        purge_mode, ticker or 'ALL', counts,
+        "event=purge_complete route=%s purge_mode=%s ticker=%s counts=%s",
+        route_label, purge_mode, ticker or 'ALL', counts,
     )
     return jsonify({'success': True, 'data': {
         'counts': counts,
@@ -736,3 +717,45 @@ def purge_data():
         'purge_mode': purge_mode,
         'auto_sync_companies_on_startup': db.get_config('auto_sync_companies_on_startup', default='1'),
     }})
+
+
+@bp.route('/api/delete/scrape', methods=['POST'])
+@bp.route('/api/data/purge', methods=['POST'])
+def purge_data():
+    """Canonical SCRAPE-stage delete endpoint.
+
+    purge_mode:
+      - reset: clear scraped sources and downstream layers; keep company config.
+      - archive: same as reset, but copy deleted rows to purge_archive.db.
+      - hard_delete: legacy alias support on /api/data/purge only.
+
+    Body (JSON):
+        confirm (bool, required): must be true to proceed
+        ticker (str, optional): limit purge to one ticker
+        purge_mode (str, optional): reset|archive (default archive)
+        reason (str, optional): operator reason for audit/archive metadata
+        suppress_auto_sync (bool, optional): legacy full hard_delete only
+
+    Returns:
+        {"success": true, "data": {"counts": {...}, "ticker": "ALL", "purge_mode": "archive"}}
+    """
+    route_label = request.path
+    return _run_purge_request(
+        route_label=route_label,
+        allowed_modes={'reset', 'archive', 'hard_delete'} if route_label == '/api/data/purge' else {'reset', 'archive'},
+        default_mode='archive',
+    )
+
+
+@bp.route('/api/delete/all', methods=['POST'])
+def delete_all():
+    """Canonical ALL-stage delete endpoint."""
+    body = dict(request.get_json(silent=True) or {})
+    body['purge_mode'] = 'hard_delete'
+    body['suppress_auto_sync'] = True
+    return _run_purge_request(
+        route_label='/api/delete/all',
+        allowed_modes={'hard_delete'},
+        default_mode='hard_delete',
+        body=body,
+    )

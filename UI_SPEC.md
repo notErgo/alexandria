@@ -82,7 +82,7 @@ Template: `ops.html`
 |-------|-----------|--------|-----------------|-----------|
 | 1.2.1 | Companies table | **CONFIG** | `GET /api/companies` · `PUT /api/companies/<ticker>` | `sync_companies_from_config()` in `db.py` auto-runs at boot. Expandable detail row: reporting_cadence dropdown, BTC anchor date with Detect/Save/Clear. Sync Config = update-only when cleared; Restore from Config = full re-insert. |
 | 1.2.2 | Scrape Queue table | DATA | `GET /api/scrape/queue` · `POST /api/scrape/trigger/<ticker>` | `ScrapeWorker` thread (`run_web.py`); `IRScraper` (`scrapers/ir_scraper.py`) |
-| 1.2.3 | Danger Zone purge form | n/a | `POST /api/data/purge` | Hidden by default. `hard_delete` (full scope) also clears companies table and sets `auto_sync_companies_on_startup='0'`; use Restore from Config to repopulate. |
+| 1.2.3 | SCRAPE stage delete form | n/a | `POST /api/delete/scrape` | Deletes scraped sources and downstream layers. Keeps companies. |
 
 **Companies table cleared-state contract:**
 - `hard_delete` (full scope): clears companies, sets `config_settings.auto_sync_companies_on_startup='0'`
@@ -115,6 +115,12 @@ Template: `ops.html`
 | 1.5.2 | Crawl provider/model selector | n/a | — | Sets provider used by `startCrawlAll()` |
 | 1.5.3 | Crawl prompt editor | CONFIG | `GET /api/crawl/prompt/<ticker>` | Per-ticker crawl prompt; falls back to master template |
 
+#### 1.6  Purge Stages sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.6   | Purge Stages sub-tab | n/a | `POST /api/delete/all` · `POST /api/delete/scrape` · `POST /api/delete/review` · `POST /api/delete/final` | Stage model: `ALL -> SCRAPE -> REVIEW -> FINAL`. Deleting a stage deletes that stage and all downstream layers. |
+
 **Note:** 2.1.7–2.1.9 (Data Acquisition, Extraction Monitor, Pipeline Observability) moved to Research tab (2.7) in v1.2.
 
 ### 2.2  Registry tab  (`/ops?tab=registry`)
@@ -145,6 +151,7 @@ Template: `ops.html`
 ### 2.5  Review Queue tab
 
 Redirects to 3.0.
+Queue operations may also purge review artifacts only via `POST /api/delete/review`; this preserves scraped `reports`.
 
 ### 2.6  Pipeline Guide tab  (`/ops?tab=guide`)
 

@@ -953,6 +953,7 @@ tr.is-reviewed td { opacity: 0.65; }
     <button class="pipeline-sub-tab" data-spane="metricskeywords" onclick="activatePipelineSubTab('config','metricskeywords')" data-ui-id="1.3">Metrics &amp; Keywords <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.4">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.5">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="dbpurge" onclick="activatePipelineSubTab('config','dbpurge')" data-ui-id="1.6">Purge Stages <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Companies (1.1) -->
@@ -1076,49 +1077,6 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
   </details><!-- /companies-governance-details -->
 
-  <!-- Danger Zone -->
-  <div style="margin-top:2rem;padding:1rem;border:1px solid var(--theme-danger);border-radius:8px" data-ui-id="1.1.6" data-spec-id="1.1.6">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem">
-      <h3 style="font-size:0.85rem;margin:0;color:var(--theme-danger)"><span class="spec-id">1.1.6</span>Danger Zone</h3>
-      <button id="toggle-danger-zone" class="btn btn-sm btn-secondary" onclick="toggleDangerZone()">Show Destructive Tools</button>
-    </div>
-    <div id="danger-zone-body" style="display:none;margin-top:0.75rem">
-      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
-        Purge modes:
-        <strong>Archive + Reset</strong> archives deleted rows then clears DATA,
-        <strong>Reset Only</strong> clears DATA only, and
-        <strong>Hard Delete</strong> performs a destructive wipe.
-      </p>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Mode:</label>
-        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
-          <option value="archive">archive + reset (recommended)</option>
-          <option value="reset">reset only</option>
-          <option value="hard_delete">hard delete</option>
-        </select>
-        <span id="purge-autosync-note" style="display:none;font-size:0.75rem;color:var(--theme-text-muted)">
-          Hard delete clears company table permanently. Use Restore from Config to repopulate.
-        </span>
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Reason:</label>
-        <input id="purge-reason" type="text" maxlength="240" placeholder="e.g. UI/UX baseline reset"
-               style="width:360px;font-size:0.82rem;padding:3px 7px">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
-        <label style="font-size:0.78rem">Ticker (blank&nbsp;=&nbsp;all):</label>
-        <input id="purge-ticker" type="text" maxlength="10" placeholder="e.g. MARA"
-               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">ARCHIVE_ALL</code>&nbsp;to confirm:</label>
-        <input id="purge-confirm-input" type="text" maxlength="20" placeholder="type PURGE"
-               style="width:110px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
-        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Purge All Data</button>
-        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
-      </div>
-    </div>
-  </div>
   </div><!-- /spane-config-companies -->
 
   <!-- Sub-pane: Companies Table (1.2) -->
@@ -1351,6 +1309,124 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
   </div><!-- /spane-config-crawlsetup -->
 
+  <!-- Sub-pane: Database Purge Controls (1.6) -->
+  <div class="pipeline-sub-pane" id="spane-config-dbpurge" data-ui-id="1.6" data-spec-id="1.6">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.6</span>Purge Stages</h2>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.9rem">
+      Global deletion schema: <strong>ALL → SCRAPE → REVIEW → FINAL</strong>. Deleting a stage deletes that stage and everything downstream.
+    </p>
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0 0 0.75rem">
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-danger);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-danger)">ALL</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">SCRAPE</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">REVIEW</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">FINAL</span>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div style="font-weight:700;margin-bottom:0.35rem">Stage ALL</div>
+      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+        Deletes companies, scraped sources, review queue, and finalized values. Use only for full resets.
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Reason:</label>
+        <input id="all-purge-reason" type="text" maxlength="240" placeholder="e.g. full baseline reset"
+               style="width:360px;font-size:0.82rem;padding:3px 7px">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code>DELETE_ALL_GLOBAL</code>&nbsp;to confirm:</label>
+        <input id="all-purge-confirm-input" type="text" maxlength="24" placeholder="DELETE_ALL_GLOBAL"
+               style="width:165px;font-size:0.82rem;padding:3px 7px" oninput="allPurgeOnInput()">
+        <button id="all-purge-btn" class="btn btn-sm btn-danger" onclick="executeAllPurge()" disabled>Delete ALL</button>
+        <span id="all-purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0 0 0.75rem">
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">ALL</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-danger);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-danger)">SCRAPE</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">REVIEW</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">FINAL</span>
+    </div>
+    <div class="card" style="margin-bottom:1rem" data-spec-id="1.2.3">
+      <div style="font-weight:700;margin-bottom:0.25rem">Stage SCRAPE</div>
+      <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+        Deletes scraped sources and everything downstream. Keeps company config.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.45rem">
+        <label style="font-size:0.78rem">Retention:</label>
+        <select id="purge-mode" style="font-size:0.82rem;padding:3px 7px" onchange="onPurgeInput()">
+          <option value="archive">archive then delete</option>
+          <option value="reset">delete only</option>
+        </select>
+        <label style="font-size:0.78rem">Ticker:</label>
+        <input id="purge-ticker" type="text" maxlength="10" placeholder="blank=all"
+               style="width:90px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="purge-confirm-hint">DELETE_SCRAPE_GLOBAL</code>&nbsp;to confirm:</label>
+        <input id="purge-confirm-input" type="text" maxlength="24" placeholder="DELETE_SCRAPE_GLOBAL"
+               style="width:175px;font-size:0.82rem;padding:3px 7px" oninput="onPurgeInput()">
+        <button id="purge-btn" class="btn btn-sm btn-danger" onclick="executePurge()" disabled>Delete SCRAPE</button>
+        <span id="purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0 0 0.75rem">
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">ALL</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">SCRAPE</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-danger);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-danger)">REVIEW</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">FINAL</span>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div style="font-weight:700;margin-bottom:0.25rem">Stage REVIEW</div>
+      <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+        Deletes review queue and finalized values while preserving scraped reports.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.45rem">
+        <input id="dz-rp-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)"
+               style="width:140px;font-size:0.82rem;padding:3px 7px" oninput="dzReviewPurgeOnInput()">
+        <select id="dz-rp-final-mode" style="font-size:0.82rem;padding:3px 7px" onchange="dzReviewPurgeOnInput()">
+          <option value="clear">final mode: clear</option>
+          <option value="archive">final mode: archive</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="dz-rp-confirm-word">DELETE_REVIEW_GLOBAL</code>&nbsp;to confirm:</label>
+        <input id="dz-rp-confirm" type="text" maxlength="24" placeholder="DELETE_REVIEW_GLOBAL"
+               style="width:175px;font-size:0.82rem;padding:3px 7px" oninput="dzReviewPurgeOnInput()">
+        <button id="dz-rp-btn" class="btn btn-sm btn-danger" onclick="dzPurgeReviewArtifacts()" disabled>Delete REVIEW</button>
+        <span id="dz-rp-status" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0 0 0.75rem">
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">ALL</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">SCRAPE</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-border);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-text-muted)">REVIEW</span>
+      <span style="padding:0.18rem 0.55rem;border:1px solid var(--theme-danger);border-radius:999px;font-size:0.72rem;font-weight:700;color:var(--theme-danger)">FINAL</span>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:0.25rem">Stage FINAL</div>
+      <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+        Deletes finalized values only. Review queue and scraped sources remain intact.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.45rem">
+        <input id="db-final-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)"
+               style="width:140px;font-size:0.82rem;padding:3px 7px" oninput="dbFinalOnInput()">
+        <select id="db-final-mode" style="font-size:0.82rem;padding:3px 7px">
+          <option value="clear">clear</option>
+          <option value="archive">archive</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code id="db-final-confirm-word">DELETE_FINAL_GLOBAL</code>&nbsp;to confirm:</label>
+        <input id="db-final-confirm" type="text" maxlength="24" placeholder="DELETE_FINAL_GLOBAL"
+               style="width:165px;font-size:0.82rem;padding:3px 7px" oninput="dbFinalOnInput()">
+        <button id="db-final-btn" class="btn btn-sm btn-danger" onclick="dbPurgeFinalStage()" disabled>Delete FINAL</button>
+        <span id="db-final-status" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+  </div><!-- /spane-config-dbpurge -->
+
 </div><!-- /pane-config -->
 
 <!-- ── Ingest pane ─────────────────────────────────────────────────────── -->
@@ -1404,11 +1480,15 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
     <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+        <span>IR workers</span>
+        <input id="pipeline-ir-workers" type="number" min="1" max="12" step="1" value="2" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
         <span>Extract workers</span>
         <input id="pipeline-extract-workers" type="number" min="1" max="12" step="1" value="3" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
       </label>
       <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
-        Parallel LLM workers per ticker. Results still commit oldest-to-newest.
+        Tune IR scrape concurrency and per-ticker LLM extraction. Results still commit oldest-to-newest.
       </div>
     </div>
     <div id="pipeline-preflight-panel" style="display:none;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;line-height:1.7">
@@ -2205,12 +2285,12 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
-    <!-- Danger zone -->
+    <!-- Stage FINAL -->
     <details class="danger-zone">
-      <summary>Danger Zone</summary>
+      <summary>Stage FINAL</summary>
       <div class="dz-body">
         <div>
-          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for <span id="dz-ticker-label">—</span></div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for <span id="dz-ticker-label">—</span></div>
           <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
             Removes all finalized values for this ticker. Raw pipeline data is untouched.
             Type <code id="dz-confirm-word">CLEAR_FINAL_TICKER</code> to confirm.
@@ -2218,12 +2298,12 @@ tr.is-reviewed td { opacity: 0.65; }
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <input type="text" class="dz-confirm-input" id="dz-ticker-confirm-input"
               placeholder="Type confirmation word">
-            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Clear Ticker Final</button>
+            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Delete FINAL</button>
             <span id="dz-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
           </div>
         </div>
         <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
-          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
           <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
             Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
           </div>
@@ -2234,7 +2314,7 @@ tr.is-reviewed td { opacity: 0.65; }
             </select>
             <input type="text" class="dz-confirm-input" id="dz-global-confirm-input"
               placeholder="CLEAR_FINAL_ALL">
-            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Purge All</button>
+            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Delete FINAL</button>
             <span id="dz-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
           </div>
         </div>
@@ -2246,16 +2326,16 @@ tr.is-reviewed td { opacity: 0.65; }
 
 </div><!-- /.md-page -->
 
-  <!-- Purge Final Data -->
+  <!-- Stage FINAL -->
   <details style="margin-top:1.25rem">
     <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
-      Purge Final Data
+      Stage FINAL
     </summary>
     <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
 
       <!-- Per-ticker clear -->
       <div style="margin-bottom:0.75rem">
-        <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for Ticker</div>
+        <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for Ticker</div>
         <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
           Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
         </div>
@@ -2267,14 +2347,14 @@ tr.is-reviewed td { opacity: 0.65; }
           <input id="mn-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
             style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
             oninput="mnPfOnTickerInput()">
-          <button class="btn btn-sm btn-danger" id="mn-pf-ticker-btn" onclick="mnPfClearTicker()" disabled>Clear Ticker Final</button>
+          <button class="btn btn-sm btn-danger" id="mn-pf-ticker-btn" onclick="mnPfClearTicker()" disabled>Delete FINAL</button>
           <span id="mn-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
         </div>
       </div>
 
       <!-- Global purge -->
       <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
-        <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+        <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
         <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
           Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
         </div>
@@ -2286,7 +2366,7 @@ tr.is-reviewed td { opacity: 0.65; }
           <input id="mn-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
             style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
             oninput="mnPfOnGlobalInput()">
-          <button class="btn btn-sm btn-danger" id="mn-pf-global-btn" onclick="mnPfPurgeAll()" disabled>Purge All</button>
+          <button class="btn btn-sm btn-danger" id="mn-pf-global-btn" onclick="mnPfPurgeAll()" disabled>Delete FINAL</button>
           <span id="mn-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
         </div>
       </div>
@@ -2361,16 +2441,16 @@ tr.is-reviewed td { opacity: 0.65; }
       </table>
     </div>
 
-    <!-- Purge Final Data -->
+    <!-- Stage FINAL -->
     <details style="margin-top:1.25rem">
       <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
-        Purge Final Data
+        Stage FINAL
       </summary>
       <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
 
         <!-- Per-ticker clear -->
         <div style="margin-bottom:0.75rem">
-          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for Ticker</div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for Ticker</div>
           <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
             Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
           </div>
@@ -2382,14 +2462,14 @@ tr.is-reviewed td { opacity: 0.65; }
             <input id="rv-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
               style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
               oninput="rvPfOnTickerInput()">
-            <button class="btn btn-sm btn-danger" id="rv-pf-ticker-btn" onclick="rvPfClearTicker()" disabled>Clear Ticker Final</button>
+            <button class="btn btn-sm btn-danger" id="rv-pf-ticker-btn" onclick="rvPfClearTicker()" disabled>Delete FINAL</button>
             <span id="rv-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
           </div>
         </div>
 
         <!-- Global purge -->
         <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
-          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
           <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
             Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
           </div>
@@ -2401,11 +2481,40 @@ tr.is-reviewed td { opacity: 0.65; }
             <input id="rv-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
               style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
               oninput="rvPfOnGlobalInput()">
-            <button class="btn btn-sm btn-danger" id="rv-pf-global-btn" onclick="rvPfPurgeAll()" disabled>Purge All</button>
+            <button class="btn btn-sm btn-danger" id="rv-pf-global-btn" onclick="rvPfPurgeAll()" disabled>Delete FINAL</button>
             <span id="rv-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
           </div>
         </div>
 
+      </div>
+    </details>
+
+    <details style="margin-top:1rem" data-spec-id="4.1">
+      <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+        Stage REVIEW
+      </summary>
+      <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+        <div style="color:var(--theme-text-muted);margin-bottom:0.6rem;font-size:0.78rem">
+          Deletes review queue and finalized values while preserving scraped reports and source documents.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
+          <input id="rv-rp-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)"
+            style="width:160px;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+            oninput="rvReviewPurgeOnInput()">
+          <select id="rv-rp-final-mode" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+            onchange="rvReviewPurgeOnInput()">
+            <option value="clear">final mode: clear</option>
+            <option value="archive">final mode: archive</option>
+          </select>
+          <input id="rv-rp-confirm" type="text" maxlength="24" placeholder="DELETE_REVIEW_GLOBAL"
+            style="width:180px;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+            oninput="rvReviewPurgeOnInput()">
+          <button class="btn btn-sm btn-danger" id="rv-rp-btn" onclick="rvPurgeReviewArtifacts()" disabled>Delete REVIEW</button>
+        </div>
+        <div style="font-size:0.76rem;color:var(--theme-text-muted);margin-bottom:0.4rem">
+          Confirmation word: <code id="rv-rp-confirm-word">DELETE_REVIEW_GLOBAL</code>
+        </div>
+        <span id="rv-rp-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
       </div>
     </details>
 
@@ -3548,7 +3657,7 @@ async function purgeTickerData() {
   btn.disabled = true;
   msgEl.textContent = 'Purging ' + ticker + '...';
   try {
-    const resp = await fetch('/api/operations/purge_ticker', {
+    const resp = await fetch('/api/delete/scrape/ticker', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ticker}),
@@ -3966,53 +4075,35 @@ function toggleCompanyDetail(ticker) {
   row.style.display = row.style.display === 'none' ? '' : 'none';
 }
 
-function toggleDangerZone() {
-  const body = document.getElementById('danger-zone-body');
-  const btn = document.getElementById('toggle-danger-zone');
-  if (!body || !btn) return;
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : '';
-  btn.textContent = open ? 'Show Destructive Tools' : 'Hide Destructive Tools';
-}
-
 function onPurgeInput() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
   const mode = (document.getElementById('purge-mode').value || 'archive').trim();
-  let base = 'ARCHIVE';
-  if (mode === 'reset') base = 'RESET';
-  if (mode === 'hard_delete') base = 'HARD_DELETE';
-  const confirmWord = ticker ? (base + '_' + ticker) : (base + '_ALL');
+  const confirmWord = ticker ? ('DELETE_SCRAPE_' + ticker) : 'DELETE_SCRAPE_GLOBAL';
   document.getElementById('purge-confirm-hint').textContent = confirmWord;
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
   const purgeBtn = document.getElementById('purge-btn');
   purgeBtn.disabled = (typed !== confirmWord);
-  const labelPrefix = mode === 'archive' ? 'Archive+Reset' : (mode === 'reset' ? 'Reset' : 'Hard Delete');
-  purgeBtn.textContent = ticker ? (labelPrefix + ' ' + ticker) : (labelPrefix + ' ALL');
+  purgeBtn.textContent = ticker ? ('Delete SCRAPE ' + ticker) : 'Delete SCRAPE';
   const noteEl = document.getElementById('purge-autosync-note');
-  if (noteEl) noteEl.style.display = (mode === 'hard_delete' && !ticker) ? '' : 'none';
+  if (noteEl) noteEl.style.display = 'none';
 }
 
 async function executePurge() {
   const ticker = (document.getElementById('purge-ticker').value || '').trim().toUpperCase();
   const mode = (document.getElementById('purge-mode').value || 'archive').trim();
-  const reason = (document.getElementById('purge-reason').value || '').trim();
   const typed = (document.getElementById('purge-confirm-input').value || '').trim().toUpperCase();
-  let base = 'ARCHIVE';
-  if (mode === 'reset') base = 'RESET';
-  if (mode === 'hard_delete') base = 'HARD_DELETE';
-  const confirmWord = ticker ? (base + '_' + ticker) : (base + '_ALL');
+  const confirmWord = ticker ? ('DELETE_SCRAPE_' + ticker) : 'DELETE_SCRAPE_GLOBAL';
   if (typed !== confirmWord) return;   // safety guard — button should already be disabled
   const msgEl = document.getElementById('purge-msg');
   msgEl.style.color = 'var(--theme-text-muted)';
-  msgEl.textContent = 'Running ' + mode + '…';
+  msgEl.textContent = 'Deleting SCRAPE stage…';
   document.getElementById('purge-btn').disabled = true;
   document.getElementById('purge-confirm-input').value = '';
   onPurgeInput();
   try {
     const body = { confirm: true, purge_mode: mode };
     if (ticker) body.ticker = ticker;
-    if (reason) body.reason = reason;
-    const resp = await fetch('/api/data/purge', {
+    const resp = await fetch('/api/delete/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -4026,13 +4117,10 @@ async function executePurge() {
     const archivedBatch = c.archive_batch_id || null;
     msgEl.style.color = 'var(--theme-success)';
     if (mode === 'archive') {
-      msgEl.textContent = 'Archived+reset ' + total + ' rows (' + purgedTicker + ')'
+      msgEl.textContent = 'Deleted SCRAPE stage for ' + purgedTicker + ' with archive (' + total + ' rows)'
         + (archivedBatch ? (' batch #' + archivedBatch) : '') + '.';
-    } else if (mode === 'reset') {
-      msgEl.textContent = 'Reset ' + total + ' DATA rows (' + purgedTicker + ').';
     } else {
-      msgEl.textContent = 'Hard-deleted ' + total + ' rows (' + purgedTicker + ').'
-        + (!ticker ? ' Use Restore from Config to repopulate companies.' : '');
+      msgEl.textContent = 'Deleted SCRAPE stage for ' + purgedTicker + ' (' + total + ' rows).';
     }
     _applyPurgeToCompanyState(purgedTicker, mode);
     _companiesLoaded = false;
@@ -7365,6 +7453,51 @@ async function _fetchPipelineEvents() {
           _appendPipelineLog(ts + ' [IR] ' + ticker + period + ' ERROR: ' + (d.error || '') + ' — ' + url, true);
         } else if (event === 'page_fetch') {
           _appendPipelineLog(ts + ' [IR] ' + ticker + ' page ' + (d.page || 1) + ' — ' + url, false);
+        } else if (event === 'page_fetch_done') {
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' page ' + (d.page || 1)
+            + ' done'
+            + ' candidates=' + String(d.candidate_count || 0)
+            + ' new=' + String(d.new_candidates || 0),
+            false
+          );
+        } else if (event === 'detail_fetch_stage_start') {
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' fetching ' + String(d.total || 0)
+            + ' article(s) with ' + String(d.workers || 0) + ' worker(s)',
+            false
+          );
+        } else if (event === 'detail_fetch_start') {
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' article ' + String(d.sequence || 0) + '/' + String(d.total || 0)
+            + ' — ' + url,
+            false
+          );
+        } else if (event === 'detail_fetch_done') {
+          const suffix = d.fetched ? 'fetched' : ('skip:' + (d.reason || 'no_response'));
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' article ' + String(d.sequence || 0) + '/' + String(d.total || 0)
+            + ' ' + suffix + ' — ' + url,
+            false
+          );
+        } else if (event === 'detail_fetch_progress') {
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' article progress ' + String(d.completed || 0) + '/' + String(d.total || 0)
+            + ' fetched=' + String(d.fetched || 0),
+            false
+          );
+        } else if (event === 'detail_fetch_stage_done') {
+          _appendPipelineLog(
+            ts + ' [IR] ' + ticker
+            + ' article fetch complete fetched=' + String(d.fetched || 0)
+            + '/' + String(d.total || 0),
+            false
+          );
         }
         return;
       }
@@ -7545,13 +7678,14 @@ async function runFullPipeline() {
   var includeCrawl = document.getElementById('pipeline-include-crawl')?.checked === true;
   var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
   var forceReextract = document.getElementById('pipeline-force-reextract')?.checked === true;
+  var irWorkers = Math.max(1, parseInt(document.getElementById('pipeline-ir-workers')?.value || '2', 10) || 2);
   var extractWorkers = Math.max(1, parseInt(document.getElementById('pipeline-extract-workers')?.value || '3', 10) || 3);
   var tickers = _getSharedSelectedTickers();
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract, extract_workers: extractWorkers, tickers: tickers}),
+      body: JSON.stringify({skip_probe: true, require_probe_success: false, require_non_skip_recommendation: false, include_ir: includeIr, include_crawl: includeCrawl, probe_skip_companies: probeSkip, force_reextract: forceReextract, ir_workers: irWorkers, extract_workers: extractWorkers, tickers: tickers}),
     });
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
@@ -7748,7 +7882,7 @@ async function mnPfPurgeAll() {
   statusEl.textContent = 'Purging…';
   statusEl.style.color = '';
   try {
-    const resp = await fetch('/api/interpret/final/purge', {
+    const resp = await fetch('/api/delete/final', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({confirm: true, mode: mode}),
@@ -7769,7 +7903,7 @@ async function mnPfPurgeAll() {
   }
 }
 
-// ── Review tab (queue sub-pane): Purge Final Data ─────────────────────────
+// ── Review tab (queue sub-pane): Stage FINAL ─────────────────────────
 function rvPfOnTickerInput() {
   const ticker = (document.getElementById('rv-pf-ticker').value || '').trim().toUpperCase();
   const expected = ticker ? 'CLEAR_FINAL_' + ticker : '';
@@ -7811,7 +7945,7 @@ async function rvPfPurgeAll() {
   statusEl.textContent = 'Purging…';
   statusEl.style.color = '';
   try {
-    const resp = await fetch('/api/interpret/final/purge', {
+    const resp = await fetch('/api/delete/final', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({confirm: true, mode: mode}),
@@ -7830,5 +7964,197 @@ async function rvPfPurgeAll() {
     statusEl.style.color = 'var(--theme-danger)';
   }
 }
+
+function rvReviewPurgeExpectedWord() {
+  const ticker = (document.getElementById('rv-rp-ticker').value || '').trim().toUpperCase();
+  return ticker ? ('DELETE_REVIEW_' + ticker) : 'DELETE_REVIEW_GLOBAL';
+}
+
+function rvReviewPurgeOnInput() {
+  const expected = rvReviewPurgeExpectedWord();
+  const typed = (document.getElementById('rv-rp-confirm').value || '').trim().toUpperCase();
+  const btn = document.getElementById('rv-rp-btn');
+  const confirmWordEl = document.getElementById('rv-rp-confirm-word');
+  const finalModeEl = document.getElementById('rv-rp-final-mode');
+  if (confirmWordEl) confirmWordEl.textContent = expected;
+  if (finalModeEl) finalModeEl.disabled = false;
+  if (btn) btn.disabled = typed !== expected;
+}
+
+async function rvPurgeReviewArtifacts() {
+  const ticker = (document.getElementById('rv-rp-ticker').value || '').trim().toUpperCase();
+  const finalMode = (document.getElementById('rv-rp-final-mode').value || 'clear').trim();
+  const statusEl = document.getElementById('rv-rp-status');
+  const btn = document.getElementById('rv-rp-btn');
+  statusEl.textContent = 'Purging review artifacts…';
+  statusEl.style.color = '';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/delete/review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        confirm: true,
+        ticker: ticker || null,
+        targets: ['queue', 'final'],
+        final_mode: finalMode,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    const counts = data.data && data.data.counts ? data.data.counts : {};
+    const queueDeleted = counts.review_queue_deleted || 0;
+    const finalDeleted = counts.final_data_points_deleted || 0;
+    const archived = counts.final_archive_batch_id;
+    statusEl.textContent = 'Deleted REVIEW stage for ' + (data.data.ticker || 'ALL')
+      + ': ' + queueDeleted + ' review_queue, ' + finalDeleted + ' final_data_points'
+      + (archived ? (' (archive batch #' + archived + ')') : '')
+      + '. Reports preserved.';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('rv-rp-confirm').value = '';
+    rvReviewPurgeOnInput();
+    await loadReview();
+    showToast('Review artifacts purged. Scraped reports preserved.', false);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+    rvReviewPurgeOnInput();
+  }
+}
+
+function dzReviewPurgeExpectedWord() {
+  const ticker = (document.getElementById('dz-rp-ticker').value || '').trim().toUpperCase();
+  return ticker ? ('DELETE_REVIEW_' + ticker) : 'DELETE_REVIEW_GLOBAL';
+}
+
+function dzReviewPurgeOnInput() {
+  const expected = dzReviewPurgeExpectedWord();
+  const typed = (document.getElementById('dz-rp-confirm').value || '').trim().toUpperCase();
+  const btn = document.getElementById('dz-rp-btn');
+  const confirmWordEl = document.getElementById('dz-rp-confirm-word');
+  const finalModeEl = document.getElementById('dz-rp-final-mode');
+  if (confirmWordEl) confirmWordEl.textContent = expected;
+  if (finalModeEl) finalModeEl.disabled = false;
+  if (btn) btn.disabled = typed !== expected;
+}
+
+async function dzPurgeReviewArtifacts() {
+  const ticker = (document.getElementById('dz-rp-ticker').value || '').trim().toUpperCase();
+  const finalMode = (document.getElementById('dz-rp-final-mode').value || 'clear').trim();
+  const statusEl = document.getElementById('dz-rp-status');
+  const btn = document.getElementById('dz-rp-btn');
+  statusEl.textContent = 'Purging review artifacts…';
+  statusEl.style.color = '';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/delete/review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        confirm: true,
+        ticker: ticker || null,
+        targets: ['queue', 'final'],
+        final_mode: finalMode,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    const counts = data.data && data.data.counts ? data.data.counts : {};
+    statusEl.textContent = 'Deleted REVIEW stage for ' + (data.data.ticker || 'ALL')
+      + ': ' + (counts.review_queue_deleted || 0) + ' review_queue, '
+      + (counts.final_data_points_deleted || 0) + ' final_data_points. Reports preserved.';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('dz-rp-confirm').value = '';
+    dzReviewPurgeOnInput();
+    if (_reviewLoaded) await loadReview();
+    showToast('Review artifacts purged. Scraped reports preserved.', false);
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+    dzReviewPurgeOnInput();
+  }
+}
+
+function dbFinalExpectedWord() {
+  const ticker = (document.getElementById('db-final-ticker').value || '').trim().toUpperCase();
+  return ticker ? ('DELETE_FINAL_' + ticker) : 'DELETE_FINAL_GLOBAL';
+}
+
+function dbFinalOnInput() {
+  const expected = dbFinalExpectedWord();
+  const typed = (document.getElementById('db-final-confirm').value || '').trim().toUpperCase();
+  const wordEl = document.getElementById('db-final-confirm-word');
+  const btn = document.getElementById('db-final-btn');
+  if (wordEl) wordEl.textContent = expected;
+  if (btn) btn.disabled = typed !== expected;
+}
+
+async function dbPurgeFinalStage() {
+  const ticker = (document.getElementById('db-final-ticker').value || '').trim().toUpperCase() || null;
+  const mode = (document.getElementById('db-final-mode').value || 'clear').trim();
+  const statusEl = document.getElementById('db-final-status');
+  const btn = document.getElementById('db-final-btn');
+  statusEl.textContent = 'Deleting FINAL stage…';
+  statusEl.style.color = '';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/delete/final', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: true, mode: mode, ticker: ticker}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
+    statusEl.textContent = 'Deleted FINAL stage for ' + (ticker || 'ALL') + ': ' + (data.data.deleted || 0) + ' rows';
+    statusEl.style.color = 'var(--theme-success)';
+    document.getElementById('db-final-confirm').value = '';
+    dbFinalOnInput();
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.style.color = 'var(--theme-danger)';
+    dbFinalOnInput();
+  }
+}
+
+function allPurgeOnInput() {
+  const typed = (document.getElementById('all-purge-confirm-input').value || '').trim().toUpperCase();
+  const btn = document.getElementById('all-purge-btn');
+  if (btn) btn.disabled = typed !== 'DELETE_ALL_GLOBAL';
+}
+
+async function executeAllPurge() {
+  const typed = (document.getElementById('all-purge-confirm-input').value || '').trim().toUpperCase();
+  if (typed !== 'DELETE_ALL_GLOBAL') return;
+  const reason = (document.getElementById('all-purge-reason').value || '').trim();
+  const msgEl = document.getElementById('all-purge-msg');
+  msgEl.style.color = 'var(--theme-text-muted)';
+  msgEl.textContent = 'Deleting ALL stage…';
+  document.getElementById('all-purge-btn').disabled = true;
+  document.getElementById('all-purge-confirm-input').value = '';
+  allPurgeOnInput();
+  try {
+    const body = { confirm: true, purge_mode: 'hard_delete', suppress_auto_sync: true };
+    if (reason) body.reason = reason;
+    const resp = await fetch('/api/delete/all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error((json.error && json.error.message) || 'Delete ALL failed');
+    const counts = (json.data && json.data.counts) || {};
+    const total = Object.values(counts).reduce(function(s, v) { return s + v; }, 0);
+    msgEl.style.color = 'var(--theme-success)';
+    msgEl.textContent = 'Deleted ALL stage: ' + total + ' rows.';
+  } catch (err) {
+    msgEl.style.color = 'var(--theme-danger)';
+    msgEl.textContent = 'Error: ' + String(err);
+  }
+}
+
+rvReviewPurgeOnInput();
+dzReviewPurgeOnInput();
+dbFinalOnInput();
+allPurgeOnInput();
 </script>
 {% endblock %}
