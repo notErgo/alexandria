@@ -240,6 +240,21 @@ class TestReviewPurgeRoute:
             assert db_with_review.get_report(db_with_review._report_id) is not None
             assert db_with_review.count_review_items(status='PENDING') == 0
 
+    def test_purge_review_queue_resets_report_to_pending(self, app_with_review, db_with_review):
+        db_with_review.mark_report_extracted(db_with_review._report_id)
+
+        with app_with_review.test_client() as c:
+            resp = c.post(
+                '/api/delete/review',
+                json={'confirm': True, 'ticker': 'MARA', 'targets': ['queue']},
+                content_type='application/json',
+            )
+            assert resp.status_code == 200
+
+        report = db_with_review.get_report(db_with_review._report_id)
+        assert report['extraction_status'] == 'pending'
+        assert report['extracted_at'] is None
+
     def test_purge_final_preserves_reports_and_review_queue(self, app_with_review, db_with_review):
         db_with_review.upsert_final_data_point(
             'MARA',

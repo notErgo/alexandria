@@ -22,7 +22,9 @@ import hashlib
 import re
 import time
 import logging
+import threading
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -119,6 +121,10 @@ _MONTH_NAMES = [
     "", "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
 ]
+
+_DISCOVERY_FETCH_WORKERS = 4
+_INFLIGHT_URL_LOCK = threading.Lock()
+_INFLIGHT_URLS: set[tuple[str, str]] = set()
 
 
 def expand_url_template(url_template: str, period: date) -> str:
@@ -832,6 +838,40 @@ class IRScraper:
             max_retries=self._max_retries,
         )
 
+    def _fetch_isolated(self, url: str) -> Optional[requests.Response]:
+        """Fetch using a fresh Session for thread-pooled discovery detail pages."""
+        with requests.Session() as session:
+            return _fetch_with_rate_limit(
+                url,
+                session,
+                throttle=self._request_throttle,
+                cooldown_seconds=self._host_backoff_seconds,
+                max_retries=self._max_retries,
+            )
+
+    def _claim_url(self, ticker: str, source_url: str) -> tuple[bool, str, str, str]:
+        """Claim a canonical URL for fetch/ingest within this Python process."""
+        canonical_source_url = canonical_url(source_url)
+        if not canonical_source_url:
+            return False, "", "", "empty_url"
+
+        url_hash = hashlib.sha256(canonical_source_url.encode()).hexdigest()
+        claim_key = (ticker.upper(), url_hash)
+        with _INFLIGHT_URL_LOCK:
+            if claim_key in _INFLIGHT_URLS:
+                return False, canonical_source_url, url_hash, "inflight_duplicate"
+            if self.db.report_exists_by_url_hash(url_hash, ticker):
+                return False, canonical_source_url, url_hash, "duplicate_url"
+            _INFLIGHT_URLS.add(claim_key)
+        return True, canonical_source_url, url_hash, "claimed"
+
+    def _release_url(self, ticker: str, url_hash: str) -> None:
+        """Release a previously claimed URL."""
+        if not url_hash:
+            return
+        with _INFLIGHT_URL_LOCK:
+            _INFLIGHT_URLS.discard((ticker.upper(), url_hash))
+
     def scrape_company(self, company: dict):
         """
         Dispatch to the appropriate scrape strategy based on scrape_mode.
@@ -875,47 +915,52 @@ class IRScraper:
         title: str | None = None,
         published_date: str | None = None,
         source_type: str = "ir_press_release",
+        url_claimed: bool = False,
+        url_hash: str | None = None,
     ) -> bool:
         """Insert one IR report with shared dedup/content handling."""
         period_str = period.strftime("%Y-%m-%d")
         source_url = canonical_url(source_url)
-        url_hash = hashlib.sha256(source_url.encode()).hexdigest()
-        if self.db.report_exists_by_url_hash(url_hash, ticker):
-            log.debug("Already ingested %s PR by URL: %s %s", fetch_strategy, ticker, source_url)
-            self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=source_url, period=period_str)
-            return False
+        if url_claimed:
+            url_hash = url_hash or hashlib.sha256(source_url.encode()).hexdigest()
+        else:
+            claimed, source_url, url_hash, reason = self._claim_url(ticker, source_url)
+            if not claimed:
+                log.debug("Skipping %s PR by URL (%s): %s %s", fetch_strategy, reason, ticker, source_url)
+                self._emit('url_skipped', ticker=ticker, reason=reason, url=source_url, period=period_str)
+                return False
 
-        html_fields = make_html_report_fields(html_text)
-        content_hash = simhash_text(html_fields["raw_text"][:5000])
-        dupes = self.db.find_near_duplicates(content_hash, ticker)
-        if dupes:
-            log.warning(
-                "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
-                ticker, dupes[0]["id"],
-            )
-            self._emit(
-                'url_skipped',
-                ticker=ticker,
-                level='WARNING',
-                reason='near_duplicate',
-                url=source_url,
-                period=period_str,
-                matched_id=dupes[0]['id'],
-            )
-            return False
-
-        report = {
-            "ticker": ticker,
-            "report_date": period_str,
-            "published_date": published_date,
-            "source_type": source_type,
-            "source_url": source_url,
-            **html_fields,
-            "parsed_at": datetime.now(timezone.utc).isoformat(),
-            "content_simhash": content_hash,
-            "fetch_strategy": fetch_strategy,
-        }
         try:
+            html_fields = make_html_report_fields(html_text)
+            content_hash = simhash_text(html_fields["raw_text"][:5000])
+            dupes = self.db.find_near_duplicates(content_hash, ticker)
+            if dupes:
+                log.warning(
+                    "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                    ticker, dupes[0]["id"],
+                )
+                self._emit(
+                    'url_skipped',
+                    ticker=ticker,
+                    level='WARNING',
+                    reason='near_duplicate',
+                    url=source_url,
+                    period=period_str,
+                    matched_id=dupes[0]['id'],
+                )
+                return False
+
+            report = {
+                "ticker": ticker,
+                "report_date": period_str,
+                "published_date": published_date,
+                "source_type": source_type,
+                "source_url": source_url,
+                **html_fields,
+                "parsed_at": datetime.now(timezone.utc).isoformat(),
+                "content_simhash": content_hash,
+                "fetch_strategy": fetch_strategy,
+            }
             self.db.insert_report(report)
             summary.reports_ingested += 1
             self._emit(
@@ -949,6 +994,8 @@ class IRScraper:
             )
             summary.errors += 1
             return False
+        finally:
+            self._release_url(ticker, url_hash)
 
     def _scrape_rss(self, company: dict):
         """
@@ -985,40 +1032,39 @@ class IRScraper:
                 continue
             period_str = period.strftime("%Y-%m-%d")
 
-            pr_url = canonical_url(item["link"])
-            url_hash = hashlib.sha256(pr_url.encode()).hexdigest()
-            if self.db.report_exists_by_url_hash(url_hash, ticker):
-                log.debug("Already ingested RSS PR by URL: %s %s", ticker, pr_url)
-                self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=pr_url, period=period_str)
+            claimed, pr_url, url_hash, reason = self._claim_url(ticker, item["link"])
+            if not claimed:
+                log.debug("Skipping RSS PR by URL (%s): %s %s", reason, ticker, pr_url)
+                self._emit('url_skipped', ticker=ticker, reason=reason, url=pr_url, period=period_str)
                 continue
 
-            page = self._fetch(pr_url)
-            if page is None:
-                summary.errors += 1
-                continue
-
-            html_fields = make_html_report_fields(page.text)
-            content_hash = simhash_text(html_fields["raw_text"][:5000])
-            dupes = self.db.find_near_duplicates(content_hash, ticker)
-            if dupes:
-                log.warning(
-                    "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
-                    ticker, dupes[0]["id"],
-                )
-                self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=pr_url, period=period_str, matched_id=dupes[0]['id'])
-                continue
-            report = {
-                "ticker": ticker,
-                "report_date": period_str,
-                "published_date": None,
-                "source_type": "ir_press_release",
-                "source_url": pr_url,
-                **html_fields,
-                "parsed_at": datetime.now(timezone.utc).isoformat(),
-                "content_simhash": content_hash,
-                "fetch_strategy": "rss",
-            }
             try:
+                page = self._fetch(pr_url)
+                if page is None:
+                    summary.errors += 1
+                    continue
+
+                html_fields = make_html_report_fields(page.text)
+                content_hash = simhash_text(html_fields["raw_text"][:5000])
+                dupes = self.db.find_near_duplicates(content_hash, ticker)
+                if dupes:
+                    log.warning(
+                        "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                        ticker, dupes[0]["id"],
+                    )
+                    self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=pr_url, period=period_str, matched_id=dupes[0]['id'])
+                    continue
+                report = {
+                    "ticker": ticker,
+                    "report_date": period_str,
+                    "published_date": None,
+                    "source_type": "ir_press_release",
+                    "source_url": pr_url,
+                    **html_fields,
+                    "parsed_at": datetime.now(timezone.utc).isoformat(),
+                    "content_simhash": content_hash,
+                    "fetch_strategy": "rss",
+                }
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
                 self._emit('url_ingested', ticker=ticker, period=period_str,
@@ -1029,6 +1075,8 @@ class IRScraper:
                 self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
                            fetch_strategy='rss', url=pr_url, error=str(e))
                 summary.errors += 1
+            finally:
+                self._release_url(ticker, url_hash)
 
         return summary
 
@@ -1090,6 +1138,7 @@ class IRScraper:
         seen_urls: set[str] = set()
         consecutive_empty = 0
         found_any = False
+        discovered_candidates: list[dict] = []
 
         def _process_page(html_text: str, page_url: str, page_idx: int) -> bool:
             """Process one listing page; returns True if at least one recent candidate found."""
@@ -1097,11 +1146,22 @@ class IRScraper:
             candidates = discovery_links_from_html(company, html_text, page_url)
             if not candidates:
                 consecutive_empty += 1
+                self._emit(
+                    'page_fetch_done',
+                    ticker=ticker,
+                    url=page_url,
+                    page=page_idx,
+                    candidate_count=0,
+                    new_candidates=0,
+                    has_recent=0,
+                    consecutive_empty=consecutive_empty,
+                )
                 return False
 
             consecutive_empty = 0
             found_any = True
             page_has_recent = False
+            new_candidates = 0
 
             for title, full_url, hinted_period in candidates:
                 if full_url in seen_urls:
@@ -1121,47 +1181,74 @@ class IRScraper:
                     self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period_str)
                     continue
 
-                pr_resp = self._fetch(full_url)
-                if pr_resp is None:
-                    summary.errors += 1
-                    continue
+                discovered_candidates.append({
+                    "title": title,
+                    "full_url": full_url,
+                    "period_hint": period_hint,
+                    "sequence": len(discovered_candidates),
+                })
+                new_candidates += 1
 
-                page_period = (
-                    period_hint
-                    or infer_period_from_text(title)
-                    or infer_period_from_text(full_url)
-                    or infer_period_from_text(pr_resp.text[:5000])
-                )
-                published_date = infer_published_date_from_html(pr_resp.text)
-                if page_period is None and published_date:
-                    pub = datetime.fromisoformat(published_date).date()
-                    page_period = date(pub.year, pub.month, 1)
-
-                if page_period is None:
-                    log.debug("%s: could not infer period for discovered PR %s", ticker, full_url)
-                    continue
-                if page_period.year < start_year:
-                    continue
-
-                inserted = self._insert_ir_report(
-                    ticker=ticker,
-                    period=page_period,
-                    source_url=full_url,
-                    html_text=pr_resp.text,
-                    fetch_strategy="discovery",
-                    summary=summary,
-                    title=title,
-                    published_date=published_date,
-                    source_type=(
-                        "prnewswire_press_release"
-                        if "prnewswire.com" in urlparse(full_url).netloc.lower()
-                        else "ir_press_release"
-                    ),
-                )
-                if inserted:
-                    log.info("Ingested discovery PR: %s %s from %s", ticker, page_period, full_url)
+            self._emit(
+                'page_fetch_done',
+                ticker=ticker,
+                url=page_url,
+                page=page_idx,
+                candidate_count=len(candidates),
+                new_candidates=new_candidates,
+                has_recent=int(page_has_recent),
+                consecutive_empty=consecutive_empty,
+            )
 
             return page_has_recent
+
+        def _fetch_candidate(candidate: dict) -> dict:
+            sequence = int(candidate["sequence"]) + 1
+            total = len(discovered_candidates)
+            self._emit(
+                'detail_fetch_start',
+                ticker=ticker,
+                url=candidate["full_url"],
+                sequence=sequence,
+                total=total,
+            )
+            claimed, full_url, url_hash, reason = self._claim_url(ticker, candidate["full_url"])
+            if not claimed:
+                period_hint = candidate.get("period_hint")
+                period_str = period_hint.strftime("%Y-%m-%d") if period_hint else ""
+                self._emit(
+                    'detail_fetch_done',
+                    ticker=ticker,
+                    url=full_url,
+                    sequence=sequence,
+                    total=total,
+                    fetched=0,
+                    reason=reason,
+                )
+                self._emit('url_skipped', ticker=ticker, reason=reason, url=full_url, period=period_str)
+                return {
+                    **candidate,
+                    "full_url": full_url,
+                    "claim_reason": reason,
+                    "url_hash": url_hash,
+                    "response_text": None,
+                }
+            pr_resp = self._fetch_isolated(full_url)
+            self._emit(
+                'detail_fetch_done',
+                ticker=ticker,
+                url=full_url,
+                sequence=sequence,
+                total=total,
+                fetched=int(pr_resp is not None),
+            )
+            return {
+                **candidate,
+                "full_url": full_url,
+                "claim_reason": "claimed",
+                "url_hash": url_hash,
+                "response_text": None if pr_resp is None else pr_resp.text,
+            }
 
         # Process Playwright-paginated pages first (JS-rendered listing)
         for page_idx, (html_text, page_url) in enumerate(page_sources, start=1):
@@ -1182,6 +1269,95 @@ class IRScraper:
             has_recent = _process_page(resp.text, page_url, page_idx)
             if found_any and not has_recent:
                 break
+
+        if not discovered_candidates:
+            self._emit('detail_fetch_stage_done', ticker=ticker, total=0, fetched=0)
+            return summary
+
+        fetch_workers = max(1, min(_DISCOVERY_FETCH_WORKERS, len(discovered_candidates)))
+        self._emit(
+            'detail_fetch_stage_start',
+            ticker=ticker,
+            total=len(discovered_candidates),
+            workers=fetch_workers,
+        )
+        with ThreadPoolExecutor(max_workers=fetch_workers) as pool:
+            futures = [pool.submit(_fetch_candidate, candidate) for candidate in discovered_candidates]
+            fetched_candidates = []
+            completed = 0
+            fetched_ok = 0
+            for fut in as_completed(futures):
+                candidate = fut.result()
+                fetched_candidates.append(candidate)
+                completed += 1
+                if candidate.get("response_text") is not None:
+                    fetched_ok += 1
+                self._emit(
+                    'detail_fetch_progress',
+                    ticker=ticker,
+                    completed=completed,
+                    total=len(discovered_candidates),
+                    fetched=fetched_ok,
+                )
+
+        self._emit(
+            'detail_fetch_stage_done',
+            ticker=ticker,
+            total=len(discovered_candidates),
+            fetched=sum(1 for c in fetched_candidates if c.get("response_text") is not None),
+        )
+
+        for candidate in sorted(fetched_candidates, key=lambda item: item["sequence"]):
+            pr_text = candidate.get("response_text")
+            url_hash = candidate.get("url_hash") or ""
+            claim_reason = candidate.get("claim_reason") or ""
+            if pr_text is None:
+                if claim_reason == "claimed" and url_hash:
+                    self._release_url(ticker, url_hash)
+                    summary.errors += 1
+                continue
+
+            title = candidate["title"]
+            full_url = candidate["full_url"]
+            period_hint = candidate["period_hint"]
+            page_period = (
+                period_hint
+                or infer_period_from_text(title)
+                or infer_period_from_text(full_url)
+                or infer_period_from_text(pr_text[:5000])
+            )
+            published_date = infer_published_date_from_html(pr_text)
+            if page_period is None and published_date:
+                pub = datetime.fromisoformat(published_date).date()
+                page_period = date(pub.year, pub.month, 1)
+
+            if page_period is None:
+                log.debug("%s: could not infer period for discovered PR %s", ticker, full_url)
+                self._release_url(ticker, url_hash)
+                continue
+            if page_period.year < start_year:
+                self._release_url(ticker, url_hash)
+                continue
+
+            inserted = self._insert_ir_report(
+                ticker=ticker,
+                period=page_period,
+                source_url=full_url,
+                html_text=pr_text,
+                fetch_strategy="discovery",
+                summary=summary,
+                title=title,
+                published_date=published_date,
+                source_type=(
+                    "prnewswire_press_release"
+                    if "prnewswire.com" in urlparse(full_url).netloc.lower()
+                    else "ir_press_release"
+                ),
+                url_claimed=True,
+                url_hash=url_hash,
+            )
+            if inserted:
+                log.info("Ingested discovery PR: %s %s from %s", ticker, page_period, full_url)
 
         return summary
 
@@ -1265,20 +1441,25 @@ class IRScraper:
             resolved_url = None
             duplicate_hit = False
             for url in candidates:
-                url_hash = hashlib.sha256(url.encode()).hexdigest()
-                if self.db.report_exists_by_url_hash(url_hash, ticker):
-                    log.debug("Already ingested template PR by URL: %s %s", ticker, url)
-                    self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=url, period=period_str)
+                claimed, url, url_hash, reason = self._claim_url(ticker, url)
+                if not claimed:
+                    log.debug("Skipping template PR by URL (%s): %s %s", reason, ticker, url)
+                    self._emit('url_skipped', ticker=ticker, reason=reason, url=url, period=period_str)
                     duplicate_hit = True
                     resolved_url = url
                     break
 
-                candidate_resp = self._fetch(url)
-                if candidate_resp is None:
-                    continue
-                resp = candidate_resp
-                resolved_url = url
-                break
+                candidate_resp = None
+                try:
+                    candidate_resp = self._fetch(url)
+                    if candidate_resp is None:
+                        continue
+                    resp = candidate_resp
+                    resolved_url = url
+                    break
+                finally:
+                    if candidate_resp is None:
+                        self._release_url(ticker, url_hash)
 
             if duplicate_hit:
                 current = _next_month(current)
@@ -1296,6 +1477,8 @@ class IRScraper:
                     "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
                     ticker, dupes[0]["id"],
                 )
+                if resolved_url:
+                    self._release_url(ticker, hashlib.sha256(resolved_url.encode()).hexdigest())
                 current = _next_month(current)
                 continue
             report = {
@@ -1309,6 +1492,7 @@ class IRScraper:
                 "content_simhash": content_hash,
                 "fetch_strategy": "template",
             }
+            resolved_url_hash = hashlib.sha256(resolved_url.encode()).hexdigest()
             try:
                 self.db.insert_report(report)
                 summary.reports_ingested += 1
@@ -1320,6 +1504,8 @@ class IRScraper:
                 self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
                            fetch_strategy='template', url=resolved_url, error=str(e))
                 summary.errors += 1
+            finally:
+                self._release_url(ticker, resolved_url_hash)
 
             current = _next_month(current)
 
@@ -1387,41 +1573,40 @@ class IRScraper:
             for title, full_url, period in production_links:
                 period_str = period.strftime("%Y-%m-%d")
 
-                full_url = canonical_url(full_url)
-                url_hash = hashlib.sha256(full_url.encode()).hexdigest()
-                if self.db.report_exists_by_url_hash(url_hash, ticker):
-                    log.debug("Already ingested IR PR by URL: %s %s", ticker, full_url)
-                    self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period_str)
+                claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
+                if not claimed:
+                    log.debug("Skipping index PR by URL (%s): %s %s", reason, ticker, full_url)
+                    self._emit('url_skipped', ticker=ticker, reason=reason, url=full_url, period=period_str)
                     continue
 
                 new_count += 1
-                pr_resp = self._fetch(full_url)
-                if pr_resp is None:
-                    summary.errors += 1
-                    continue
-
-                html_fields = make_html_report_fields(pr_resp.text)
-                content_hash = simhash_text(html_fields["raw_text"][:5000])
-                dupes = self.db.find_near_duplicates(content_hash, ticker)
-                if dupes:
-                    log.warning(
-                        "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
-                        ticker, dupes[0]["id"],
-                    )
-                    self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
-                    continue
-                report = {
-                    "ticker": ticker,
-                    "report_date": period_str,
-                    "published_date": None,
-                    "source_type": "ir_press_release",
-                    "source_url": full_url,
-                    **html_fields,
-                    "parsed_at": datetime.now(timezone.utc).isoformat(),
-                    "content_simhash": content_hash,
-                    "fetch_strategy": "index",
-                }
                 try:
+                    pr_resp = self._fetch(full_url)
+                    if pr_resp is None:
+                        summary.errors += 1
+                        continue
+
+                    html_fields = make_html_report_fields(pr_resp.text)
+                    content_hash = simhash_text(html_fields["raw_text"][:5000])
+                    dupes = self.db.find_near_duplicates(content_hash, ticker)
+                    if dupes:
+                        log.warning(
+                            "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
+                            ticker, dupes[0]["id"],
+                        )
+                        self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
+                        continue
+                    report = {
+                        "ticker": ticker,
+                        "report_date": period_str,
+                        "published_date": None,
+                        "source_type": "ir_press_release",
+                        "source_url": full_url,
+                        **html_fields,
+                        "parsed_at": datetime.now(timezone.utc).isoformat(),
+                        "content_simhash": content_hash,
+                        "fetch_strategy": "index",
+                    }
                     self.db.insert_report(report)
                     summary.reports_ingested += 1
                     log.info("Ingested index PR: %s %s from %s", ticker, period_str, full_url)
@@ -1432,6 +1617,8 @@ class IRScraper:
                     self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
                                title=title, fetch_strategy='index', url=full_url, error=str(e))
                     summary.errors += 1
+                finally:
+                    self._release_url(ticker, url_hash)
 
             if stop_on_all_seen and new_count == 0 and production_links:
                 # Page had production PRs but all were already ingested — we've
@@ -1507,42 +1694,42 @@ class IRScraper:
                     else:
                         full_url = canonical_url(href)
 
-                    url_hash = hashlib.sha256(full_url.encode()).hexdigest()
-                    if self.db.report_exists_by_url_hash(url_hash, ticker):
-                        log.debug("Already ingested playwright PR by URL: %s %s", ticker, full_url)
-                        self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period.strftime("%Y-%m-%d"))
+                    claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
+                    if not claimed:
+                        log.debug("Skipping playwright PR by URL (%s): %s %s", reason, ticker, full_url)
+                        self._emit('url_skipped', ticker=ticker, reason=reason, url=full_url, period=period.strftime("%Y-%m-%d"))
                         continue
 
-                    page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
-                    pr_html = page.content()
-                    if is_bot_challenge_page(pr_html):
-                        log.warning("%s: bot challenge detected on playwright article %s", ticker, full_url)
-                        summary.errors += 1
-                        continue
-                    html_fields = make_html_report_fields(pr_html)
-                    period_str = period.strftime("%Y-%m-%d")
-                    content_hash = simhash_text(html_fields["raw_text"][:5000])
-                    dupes = self.db.find_near_duplicates(content_hash, ticker)
-                    if dupes:
-                        log.debug(
-                            "Near-duplicate content detected for %s, skipping playwright insert "
-                            "(matched report id=%s)",
-                            ticker, dupes[0]["id"],
-                        )
-                        self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
-                        continue
-                    report = {
-                        "ticker": ticker,
-                        "report_date": period_str,
-                        "published_date": None,
-                        "source_type": "ir_press_release",
-                        "source_url": full_url,
-                        **html_fields,
-                        "parsed_at": datetime.now(timezone.utc).isoformat(),
-                        "content_simhash": content_hash,
-                        "fetch_strategy": "playwright",
-                    }
                     try:
+                        page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
+                        pr_html = page.content()
+                        if is_bot_challenge_page(pr_html):
+                            log.warning("%s: bot challenge detected on playwright article %s", ticker, full_url)
+                            summary.errors += 1
+                            continue
+                        html_fields = make_html_report_fields(pr_html)
+                        period_str = period.strftime("%Y-%m-%d")
+                        content_hash = simhash_text(html_fields["raw_text"][:5000])
+                        dupes = self.db.find_near_duplicates(content_hash, ticker)
+                        if dupes:
+                            log.debug(
+                                "Near-duplicate content detected for %s, skipping playwright insert "
+                                "(matched report id=%s)",
+                                ticker, dupes[0]["id"],
+                            )
+                            self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
+                            continue
+                        report = {
+                            "ticker": ticker,
+                            "report_date": period_str,
+                            "published_date": None,
+                            "source_type": "ir_press_release",
+                            "source_url": full_url,
+                            **html_fields,
+                            "parsed_at": datetime.now(timezone.utc).isoformat(),
+                            "content_simhash": content_hash,
+                            "fetch_strategy": "playwright",
+                        }
                         self.db.insert_report(report)
                         summary.reports_ingested += 1
                         log.info("Ingested playwright PR: %s %s from %s", ticker, period_str, full_url)
@@ -1556,6 +1743,8 @@ class IRScraper:
                         self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
                                    title=title, fetch_strategy='playwright', url=full_url, error=str(e))
                         summary.errors += 1
+                    finally:
+                        self._release_url(ticker, url_hash)
 
         except Exception as e:
             log.error("%s: playwright scrape failed: %s", ticker, e, exc_info=True)
@@ -1685,42 +1874,47 @@ class IRScraper:
                 full_url = canonical_url(full_url)
                 period_str = period.strftime('%Y-%m-%d')
 
-                url_hash = hashlib.sha256(full_url.encode()).hexdigest()
-                if self.db.report_exists_by_url_hash(url_hash, ticker):
-                    log.debug("Already ingested drupal_year PR by URL: %s %s", ticker, full_url)
-                    self._emit('url_skipped', ticker=ticker, reason='duplicate_url',
+                claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
+                if not claimed:
+                    log.debug("Skipping drupal_year PR by URL (%s): %s %s", reason, ticker, full_url)
+                    self._emit('url_skipped', ticker=ticker, reason=reason,
                                url=full_url, period=period_str)
                     continue
 
-                pr_resp = self._fetch(full_url)
-                if pr_resp is None:
-                    summary.errors += 1
-                    continue
+                try:
+                    pr_resp = self._fetch(full_url)
+                    if pr_resp is None:
+                        summary.errors += 1
+                        continue
 
-                published_date = infer_published_date_from_html(pr_resp.text)
-                page_period = period
-                if page_period is None:
-                    page_period = infer_period_from_text(pr_resp.text[:5000])
-                if page_period is None and published_date:
-                    pub = datetime.fromisoformat(published_date).date()
-                    page_period = date(pub.year, pub.month, 1)
-                if page_period is None:
-                    log.debug("%s: could not infer period for drupal_year PR %s", ticker, full_url)
-                    continue
-                period_str = page_period.strftime('%Y-%m-%d')
+                    published_date = infer_published_date_from_html(pr_resp.text)
+                    page_period = period
+                    if page_period is None:
+                        page_period = infer_period_from_text(pr_resp.text[:5000])
+                    if page_period is None and published_date:
+                        pub = datetime.fromisoformat(published_date).date()
+                        page_period = date(pub.year, pub.month, 1)
+                    if page_period is None:
+                        log.debug("%s: could not infer period for drupal_year PR %s", ticker, full_url)
+                        continue
+                    period_str = page_period.strftime('%Y-%m-%d')
 
-                inserted = self._insert_ir_report(
-                    ticker=ticker,
-                    period=page_period,
-                    source_url=full_url,
-                    html_text=pr_resp.text,
-                    fetch_strategy='drupal_year',
-                    summary=summary,
-                    title=title,
-                    published_date=published_date,
-                )
-                if inserted:
-                    log.info("Ingested drupal_year PR: %s %s from %s",
-                             ticker, period_str, full_url)
+                    inserted = self._insert_ir_report(
+                        ticker=ticker,
+                        period=page_period,
+                        source_url=full_url,
+                        html_text=pr_resp.text,
+                        fetch_strategy='drupal_year',
+                        summary=summary,
+                        title=title,
+                        published_date=published_date,
+                        url_claimed=True,
+                        url_hash=url_hash,
+                    )
+                    if inserted:
+                        log.info("Ingested drupal_year PR: %s %s from %s",
+                                 ticker, period_str, full_url)
+                finally:
+                    self._release_url(ticker, url_hash)
 
         return summary

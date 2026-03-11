@@ -122,6 +122,16 @@ class TestReportCRUD:
         assert isinstance(report_id, int)
         assert report_id > 0
 
+    def test_insert_report_returns_existing_id_for_duplicate_url_hash(self, db_with_company):
+        first_id = db_with_company.insert_report(make_report(
+            source_url='https://ir.mara.com/news/2024-09-update',
+        ))
+        second_id = db_with_company.insert_report(make_report(
+            report_date='2024-10-01',
+            source_url='https://ir.mara.com/news/2024-09-update',
+        ))
+        assert second_id == first_id
+
     def test_report_exists_true(self, db_with_company):
         db_with_company.insert_report(make_report())
         assert db_with_company.report_exists('MARA', '2024-09-01', 'archive_pdf')
@@ -501,6 +511,22 @@ class TestPurgeDataPoints:
         assert deleted == 2
         assert db_with_company.count_review_items(status=None) == 0
 
+    def test_purge_review_queue_resets_reports_to_pending(self, db_with_company):
+        report_id = db_with_company.insert_report(make_report(
+            report_date='2024-01-01',
+            source_type='archive_html',
+            raw_text='MARA mined 700 BTC in January 2024.',
+        ))
+        db_with_company.mark_report_extracted(report_id)
+        db_with_company.insert_review_item(make_review_item(period='2024-01-01'))
+
+        deleted = db_with_company.purge_review_queue(ticker='MARA')
+
+        assert deleted == 1
+        report = db_with_company.get_report(report_id)
+        assert report['extraction_status'] == 'pending'
+        assert report['extracted_at'] is None
+
     def test_purge_review_queue_by_ticker(self, db):
         """Purge review_queue rows for one ticker only."""
         db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -718,6 +744,29 @@ class TestPurgeAll:
         with db_with_company._get_connection() as conn:
             assert conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0] == 0
             assert conn.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 0
+
+    def test_purge_all_with_extraction_commit_queue_fk(self, db_with_company):
+        """purge_all succeeds when extraction_commit_queue rows reference reports.
+
+        Regression: purge_all deleted reports without first clearing the staged
+        extraction queue, causing FOREIGN KEY constraint failures on archive/reset.
+        """
+        report_id = db_with_company.insert_report(make_report(raw_text='MARA mined 750 BTC.'))
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO extraction_commit_queue
+                   (run_id, ticker, report_id, period, sequence_key, status)
+                   VALUES (1, 'MARA', ?, '2024-09-01', 'MARA:2024-09-01:1', 'staged')""",
+                (report_id,),
+            )
+
+        counts = db_with_company.purge_all(purge_mode='archive', reason='fk regression')
+
+        assert counts['extraction_commit_queue'] == 1
+        assert counts['reports'] == 1
+        with db_with_company._get_connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM extraction_commit_queue").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
 
 
 class TestGetTrailingDataPoints:

@@ -617,6 +617,117 @@ class TestDiscoveryMode:
         assert inserted["source_type"] == "prnewswire_press_release"
         assert inserted["report_date"] == "2026-01-01"
 
+    def test_scrape_discovery_keeps_insert_order_deterministic_with_parallel_fetch(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "MARA",
+            "scraper_mode": "discovery",
+            "ir_url": "https://ir.mara.com/news-events/press-releases",
+            "pr_base_url": "https://ir.mara.com",
+            "pr_start_year": 2024,
+        }
+
+        listing_resp = MagicMock()
+        listing_resp.text = """
+        <html><body>
+          <a href="/news-events/press-releases/detail/1/mara-announces-january-2024-update">
+            MARA Announces January 2024 Update
+          </a>
+          <a href="/news-events/press-releases/detail/2/mara-announces-february-2024-update">
+            MARA Announces February 2024 Update
+          </a>
+        </body></html>
+        """
+        jan_resp = MagicMock()
+        jan_resp.text = """
+        <html><head><meta property="article:published_time" content="2024-02-01T08:00:00Z" /></head>
+        <body><h1>MARA Announces January 2024 Update</h1><p>January 2024 update.</p></body></html>
+        """
+        feb_resp = MagicMock()
+        feb_resp.text = """
+        <html><head><meta property="article:published_time" content="2024-03-01T08:00:00Z" /></head>
+        <body><h1>MARA Announces February 2024 Update</h1><p>February 2024 update.</p></body></html>
+        """
+
+        def _fake_fetch(url, session):
+            if "detail/1/" in url:
+                return jan_resp
+            if "detail/2/" in url:
+                return feb_resp
+            return None
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=_fake_fetch,
+        ):
+            scraper._scrape_discovery(company)
+
+        inserted_rows = [call.args[0] for call in db.insert_report.call_args_list]
+        assert [row["report_date"] for row in inserted_rows] == ["2024-01-01", "2024-02-01"]
+
+    def test_scrape_discovery_uses_isolated_sessions_for_parallel_detail_fetches(self):
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "MARA",
+            "scraper_mode": "discovery",
+            "ir_url": "https://ir.mara.com/news-events/press-releases",
+            "pr_base_url": "https://ir.mara.com",
+            "pr_start_year": 2024,
+        }
+
+        listing_resp = MagicMock()
+        listing_resp.text = """
+        <html><body>
+          <a href="/news-events/press-releases/detail/1/mara-announces-january-2024-update">
+            MARA Announces January 2024 Update
+          </a>
+          <a href="/news-events/press-releases/detail/2/mara-announces-february-2024-update">
+            MARA Announces February 2024 Update
+          </a>
+        </body></html>
+        """
+        jan_resp = MagicMock()
+        jan_resp.text = """
+        <html><head><meta property="article:published_time" content="2024-02-01T08:00:00Z" /></head>
+        <body><h1>MARA Announces January 2024 Update</h1><p>January 2024 update.</p></body></html>
+        """
+        feb_resp = MagicMock()
+        feb_resp.text = """
+        <html><head><meta property="article:published_time" content="2024-03-01T08:00:00Z" /></head>
+        <body><h1>MARA Announces February 2024 Update</h1><p>February 2024 update.</p></body></html>
+        """
+
+        sessions_created = []
+
+        def _fake_fetch(url, session, **kwargs):
+            if "detail/1/" in url:
+                return jan_resp
+            if "detail/2/" in url:
+                return feb_resp
+            return None
+
+        class _FakeSession:
+            def __enter__(self):
+                sessions_created.append(self)
+                return self
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=_fake_fetch,
+        ), patch("scrapers.ir_scraper.requests.Session", side_effect=lambda: _FakeSession()):
+            scraper._scrape_discovery(company)
+
+        assert len(sessions_created) == 2
+        assert db.insert_report.call_count == 2
+
 class TestScrapeModeDispatch:
     def test_dispatch_uses_scraper_mode_key(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())

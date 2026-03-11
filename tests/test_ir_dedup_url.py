@@ -1,5 +1,6 @@
 """Tests for IR scraper URL-first deduplication (schema v16, issue #6)."""
 import unittest
+import threading
 from unittest.mock import MagicMock, patch
 from datetime import date
 
@@ -143,6 +144,73 @@ class TestRSSAllowsSamePeriodDifferentURL(unittest.TestCase):
 
         # Should have inserted because URL is new (even if period might overlap)
         db.insert_report.assert_called_once()
+
+
+class TestRSSInflightDedup(unittest.TestCase):
+    """Concurrent RSS workers should not fetch the same PR detail URL twice."""
+
+    def test_concurrent_rss_workers_fetch_detail_url_once(self):
+        from scrapers.ir_scraper import IRScraper, _INFLIGHT_URLS, _INFLIGHT_URL_LOCK
+
+        with _INFLIGHT_URL_LOCK:
+            _INFLIGHT_URLS.clear()
+
+        rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>MARA Holdings Announces January 2024 Production Update</title>
+              <link>https://ir.mara.com/news/jan-2024-production</link>
+              <pubDate>Mon, 05 Feb 2024 12:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>"""
+
+        mock_rss = MagicMock()
+        mock_rss.text = rss_xml
+        mock_rss.status_code = 200
+
+        mock_page = MagicMock()
+        mock_page.text = '<html><body>January 2024 production update text</body></html>'
+        mock_page.status_code = 200
+
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        db.insert_report.return_value = 1
+
+        barrier = threading.Barrier(2)
+        fetched_urls: list[str] = []
+        fetch_lock = threading.Lock()
+
+        def _fetch_side_effect(url, session, **kwargs):
+            if 'rss' in url:
+                barrier.wait(timeout=2)
+                return mock_rss
+            with fetch_lock:
+                fetched_urls.append(url)
+            return mock_page
+
+        company = {
+            'ticker': 'MARA',
+            'ir_url': 'https://ir.mara.com/news-events/press-releases',
+            'rss_url': 'https://ir.mara.com/rss',
+            'scraper_mode': 'rss',
+            'pr_start_year': 2020,
+        }
+
+        scraper_a = IRScraper(db=db, session=MagicMock())
+        scraper_b = IRScraper(db=db, session=MagicMock())
+
+        with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=_fetch_side_effect):
+            t1 = threading.Thread(target=scraper_a._scrape_rss, args=(company,))
+            t2 = threading.Thread(target=scraper_b._scrape_rss, args=(company,))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        assert fetched_urls == ['https://ir.mara.com/news/jan-2024-production']
 
 
 class TestTemplatePathURLDedup(unittest.TestCase):
