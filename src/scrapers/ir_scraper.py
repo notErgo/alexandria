@@ -36,6 +36,7 @@ from bs4 import BeautifulSoup
 from config import IR_REQUEST_DELAY_SECONDS
 from scrapers.dedup import canonical_url, simhash_text
 from scrapers.fetch_policy import DEFAULT_RETRY_POLICY, CircuitOpenError
+from scrapers.request_throttle import HostThrottle
 
 try:
     from playwright.sync_api import sync_playwright
@@ -704,7 +705,12 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30, min_year: Optio
 
 
 def _fetch_with_rate_limit(
-    url: str, session: requests.Session
+    url: str,
+    session: requests.Session,
+    *,
+    throttle: Optional[HostThrottle] = None,
+    cooldown_seconds: float = 0.0,
+    max_retries: int = 1,
 ) -> Optional[requests.Response]:
     """
     Fetch URL with rate limiting and a browser-like User-Agent.
@@ -715,7 +721,12 @@ def _fetch_with_rate_limit(
     For bot-protected domains (prnewswire), falls back to Playwright.
     """
     from urllib.parse import urlparse as _urlparse
-    if _urlparse(url).netloc.lower() in _JS_RENDERED_DOMAINS:
+    host = _urlparse(url).netloc.lower()
+    if host in _JS_RENDERED_DOMAINS:
+        if throttle is not None:
+            throttle.wait(host)
+        else:
+            time.sleep(IR_REQUEST_DELAY_SECONDS)
         log.debug("JS-rendered domain — using Playwright for %s", url)
         html = _fetch_with_playwright(url)
         if html is None:
@@ -727,35 +738,50 @@ def _fetch_with_rate_limit(
         mock.encoding = "utf-8"
         return mock
 
-    time.sleep(IR_REQUEST_DELAY_SECONDS)
-    try:
-        resp = DEFAULT_RETRY_POLICY.execute(session.get, url, timeout=15, headers=_HEADERS)
-        if is_bot_challenge_page(resp.text, resp.headers, resp.status_code):
-            log.warning("Bot challenge detected for %s (status=%s) — trying Playwright", url, resp.status_code)
-            html = _fetch_with_playwright(url)
-            if html is None:
+    attempts = max(1, int(max_retries))
+    for attempt in range(attempts):
+        if throttle is not None:
+            throttle.wait(host)
+        else:
+            time.sleep(IR_REQUEST_DELAY_SECONDS)
+        try:
+            resp = DEFAULT_RETRY_POLICY.execute(session.get, url, timeout=15, headers=_HEADERS)
+            if is_bot_challenge_page(resp.text, resp.headers, resp.status_code):
+                log.warning("Bot challenge detected for %s (status=%s) — trying Playwright", url, resp.status_code)
+                cooldown = throttle.penalize(host, cooldown_seconds) if throttle is not None else 0.0
+                if cooldown > 0:
+                    log.info("IR throttle cooldown host=%s seconds=%.2f", host, cooldown)
+                html = _fetch_with_playwright(url)
+                if html is None:
+                    return None
+                # Wrap in a mock response-like object so callers get .text
+                resp._content = html.encode("utf-8", errors="replace")
+                resp.status_code = 200
+                return resp
+            if resp.status_code in (400, 404):
+                log.debug("IR page returned %d for %s", resp.status_code, url)
                 return None
-            # Wrap in a mock response-like object so callers get .text
-            resp._content = html.encode("utf-8", errors="replace")
-            resp.status_code = 200
+            if resp.status_code in (403, 429):
+                cooldown = throttle.penalize(host, cooldown_seconds) if throttle is not None else 0.0
+                log.warning("IR rate-limited host=%s status=%s url=%s attempt=%d/%d cooldown=%.2f",
+                            host, resp.status_code, url, attempt + 1, attempts, cooldown)
+                if attempt + 1 < attempts:
+                    continue
+                return None
+            resp.raise_for_status()
             return resp
-        if resp.status_code in (400, 404):
-            # 400: bad request (template month not published in this form)
-            # 404: page not found (template month simply doesn't exist)
-            # Both are expected during template/index scanning — not errors.
-            log.debug("IR page returned %d for %s", resp.status_code, url)
+        except CircuitOpenError as e:
+            log.warning("Circuit open, skipping fetch for %s: %s", url, e)
             return None
-        resp.raise_for_status()
-        return resp
-    except CircuitOpenError as e:
-        log.warning("Circuit open, skipping fetch for %s: %s", url, e)
-        return None
-    except requests.Timeout:
-        log.warning("Timeout fetching %s", url)
-        return None
-    except requests.RequestException as e:
-        log.error("HTTP error fetching %s: %s", url, e)
-        return None
+        except requests.Timeout:
+            cooldown = throttle.penalize(host, cooldown_seconds) if throttle is not None else 0.0
+            log.warning("Timeout fetching %s (attempt %d/%d cooldown=%.2f)", url, attempt + 1, attempts, cooldown)
+            if attempt + 1 < attempts:
+                continue
+            return None
+        except requests.RequestException as e:
+            log.error("HTTP error fetching %s: %s", url, e)
+            return None
 
 
 @dataclass
@@ -764,6 +790,9 @@ class IRScraper:
     db: object          # MinerDB
     session: requests.Session
     _pipeline_run_id: Optional[int] = None
+    _request_throttle: Optional[HostThrottle] = None
+    _host_backoff_seconds: float = 0.0
+    _max_retries: int = 1
 
     def _emit(self, event: str, ticker: str = None, level: str = 'INFO', **details) -> None:
         """Write a pipeline event if this scraper is running inside a pipeline run."""
@@ -780,6 +809,15 @@ class IRScraper:
             )
         except Exception:
             pass  # never let event logging crash the scraper
+
+    def _fetch(self, url: str) -> Optional[requests.Response]:
+        return _fetch_with_rate_limit(
+            url,
+            self.session,
+            throttle=self._request_throttle,
+            cooldown_seconds=self._host_backoff_seconds,
+            max_retries=self._max_retries,
+        )
 
     def scrape_company(self, company: dict):
         """
@@ -919,7 +957,7 @@ class IRScraper:
             summary.errors += 1
             return summary
 
-        resp = _fetch_with_rate_limit(rss_url, self.session)
+        resp = self._fetch(rss_url)
         if resp is None:
             summary.errors += 1
             return summary
@@ -941,7 +979,7 @@ class IRScraper:
                 self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=pr_url, period=period_str)
                 continue
 
-            page = _fetch_with_rate_limit(pr_url, self.session)
+            page = self._fetch(pr_url)
             if page is None:
                 summary.errors += 1
                 continue
@@ -1070,7 +1108,7 @@ class IRScraper:
                     self._emit('url_skipped', ticker=ticker, reason='duplicate_url', url=full_url, period=period_str)
                     continue
 
-                pr_resp = _fetch_with_rate_limit(full_url, self.session)
+                pr_resp = self._fetch(full_url)
                 if pr_resp is None:
                     summary.errors += 1
                     continue
@@ -1121,7 +1159,7 @@ class IRScraper:
         page_offset = len(page_sources)
         for page_idx, page_url in enumerate(static_fallback_urls, start=page_offset + 1):
             self._emit('page_fetch', ticker=ticker, url=page_url, page=page_idx)
-            resp = _fetch_with_rate_limit(page_url, self.session)
+            resp = self._fetch(page_url)
             if resp is None:
                 consecutive_empty += 1
                 if found_any and consecutive_empty >= 3:
@@ -1222,7 +1260,7 @@ class IRScraper:
                     resolved_url = url
                     break
 
-                candidate_resp = _fetch_with_rate_limit(url, self.session)
+                candidate_resp = self._fetch(url)
                 if candidate_resp is None:
                     continue
                 resp = candidate_resp
@@ -1300,7 +1338,7 @@ class IRScraper:
         while True:
             page_url = ir_url if page == 1 else f"{ir_url}?page={page}"
             self._emit('page_fetch', ticker=ticker, url=page_url, page=page)
-            resp = _fetch_with_rate_limit(page_url, self.session)
+            resp = self._fetch(page_url)
             if resp is None:
                 if page == 1:
                     summary.errors += 1
@@ -1344,7 +1382,7 @@ class IRScraper:
                     continue
 
                 new_count += 1
-                pr_resp = _fetch_with_rate_limit(full_url, self.session)
+                pr_resp = self._fetch(full_url)
                 if pr_resp is None:
                     summary.errors += 1
                     continue
@@ -1547,7 +1585,7 @@ class IRScraper:
 
         # Fetch base page to extract Drupal form tokens
         self._emit('page_fetch', ticker=ticker, url=ir_url, page=0)
-        base_resp = _fetch_with_rate_limit(ir_url, self.session)
+        base_resp = self._fetch(ir_url)
         if base_resp is None:
             log.error("%s: could not fetch base IR page %s", ticker, ir_url)
             summary.errors += 1
@@ -1608,7 +1646,7 @@ class IRScraper:
             year_url = f"{ir_url}?{urlencode(params)}"
             self._emit('page_fetch', ticker=ticker, url=year_url, page=year)
 
-            resp = _fetch_with_rate_limit(year_url, self.session)
+            resp = self._fetch(year_url)
             if resp is None:
                 log.warning("%s: no response for year %d filter", ticker, year)
                 continue
@@ -1641,7 +1679,7 @@ class IRScraper:
                                url=full_url, period=period_str)
                     continue
 
-                pr_resp = _fetch_with_rate_limit(full_url, self.session)
+                pr_resp = self._fetch(full_url)
                 if pr_resp is None:
                     summary.errors += 1
                     continue

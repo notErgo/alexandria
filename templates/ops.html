@@ -1139,6 +1139,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <th data-sort="ticker">Ticker</th>
         <th data-sort="name">Name</th>
         <th>Mode</th>
+        <th>PR Start</th>
         <th>IR / Feed URLs</th>
         <th>Status</th>
         <th>Last Scrape</th>
@@ -1146,7 +1147,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </tr>
     </thead>
     <tbody id="companies-tbody">
-      <tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
     </tbody>
   </table>
 
@@ -3683,7 +3684,7 @@ async function loadCompanies() {
 function renderCompanies() {
   const tbody = document.getElementById('companies-tbody');
   if (!_companies.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--theme-text-muted)">No companies.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No companies.</td></tr>';
     return;
   }
   const rows = [];
@@ -3697,6 +3698,7 @@ function renderCompanies() {
       ? '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_status) + '">' + escapeHtml(c.scraper_status) + '</span>'
       : '<span style="color:var(--theme-text-muted);font-size:0.75rem">never run</span>';
     const lastScrape = c.last_scrape_at ? c.last_scrape_at.slice(0, 10) : '—';
+    const prStartValue = Number.isInteger(c.pr_start_year) ? String(c.pr_start_year) : '';
 
     // URL column: show ir_url link, rss_url link if present, url_template if present
     let urlParts = [];
@@ -3745,6 +3747,15 @@ function renderCompanies() {
         + '</td>'
       + '<td>' + escapeHtml(c.name) + nameExtra + '</td>'
       + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px">from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
+      + '<td style="white-space:nowrap">'
+          + '<input id="pr-start-year-input-' + escapeAttr(c.ticker) + '" type="number" min="2009" max="2100" step="1"'
+            + ' value="' + escapeAttr(prStartValue) + '" style="width:84px;font-size:0.78rem" placeholder="year">'
+          + '<button class="btn btn-sm btn-secondary" style="margin-left:4px" data-ticker="' + escapeAttr(c.ticker) + '"'
+            + ' onclick="savePrStartYear(this.getAttribute(\'data-ticker\'))">Save</button>'
+          + '<div id="pr-start-year-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:2px">'
+            + (prStartValue ? 'Current ' + escapeHtml(prStartValue) : 'Required for discovery/template')
+            + '</div>'
+        + '</td>'
       + '<td style="font-size:0.8rem">' + urlCell + '</td>'
       + '<td>' + statusBadge + governanceBadge + '</td>'
       + '<td style="font-size:0.78rem;color:var(--theme-text-muted)">' + escapeHtml(lastScrape) + '</td>'
@@ -4452,6 +4463,26 @@ async function saveCadence(ticker) {
     const data = await resp.json();
     if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }
     msgEl.textContent = 'Saved';
+    await loadCompanies();
+  } catch (e) {
+    msgEl.textContent = 'Request failed';
+  }
+}
+
+async function savePrStartYear(ticker) {
+  const input = document.getElementById('pr-start-year-input-' + ticker);
+  const msgEl = document.getElementById('pr-start-year-msg-' + ticker);
+  const raw = (input?.value || '').trim();
+  msgEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch('/api/companies/' + encodeURIComponent(ticker), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pr_start_year: raw ? Number(raw) : null }),
+    });
+    const data = await resp.json();
+    if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }
+    msgEl.textContent = raw ? 'Saved ' + raw : 'Cleared';
     await loadCompanies();
   } catch (e) {
     msgEl.textContent = 'Request failed';

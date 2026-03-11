@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from infra.db import MinerDB
+from helpers import make_report
 
 
 @pytest.fixture
@@ -337,31 +338,46 @@ def test_execute_overnight_run_passes_scope_to_ingest(monkeypatch, tmp_path):
     run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
     run_id = int(run['id'])
 
-    ir_calls = []
-    edgar_calls = []
+    scrape_calls = []
 
-    def _fake_ir(task_id, auto_extract=False, warm_model=True, tickers=None, pipeline_run_id=None):
-        ir_calls.append({
-            'auto_extract': auto_extract,
-            'warm_model': warm_model,
-            'tickers': tickers,
-            'pipeline_run_id': pipeline_run_id,
+    class _ImmediateFuture:
+        def __init__(self, fn, *args, **kwargs):
+            self._result = fn(*args, **kwargs)
+
+        def result(self):
+            return self._result
+
+    class _ImmediateExecutor:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            return _ImmediateFuture(fn, *args, **kwargs)
+
+    def _fake_scrape(**kwargs):
+        scrape_calls.append({
+            'ticker': kwargs['ticker'],
+            'include_ir': kwargs['include_ir'],
+            'run_id': kwargs['run_id'],
         })
+        return {
+            'ticker': kwargs['ticker'],
+            'before_reports': 0,
+            'after_reports': 0,
+            'ingested_delta': 0,
+            'failures': [],
+        }
 
-    def _fake_edgar(task_id, auto_extract=False, warm_model=True, tickers=None, pipeline_run_id=None):
-        edgar_calls.append({
-            'auto_extract': auto_extract,
-            'warm_model': warm_model,
-            'tickers': tickers,
-            'pipeline_run_id': pipeline_run_id,
-        })
-
-    monkeypatch.setattr(pipeline_mod, '_count_reports_for_tickers', lambda *args, **kwargs: 0)
+    monkeypatch.setattr(pipeline_mod, 'ThreadPoolExecutor', _ImmediateExecutor)
+    monkeypatch.setattr(pipeline_mod, 'as_completed', lambda futures: futures)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch', lambda *args, **kwargs: [])
-
-    import routes.reports as reports_mod
-    monkeypatch.setattr(reports_mod, '_run_ir_ingest', _fake_ir)
-    monkeypatch.setattr(reports_mod, '_run_edgar_ingest', _fake_edgar)
+    monkeypatch.setattr(pipeline_mod, '_scrape_ticker_for_pipeline', _fake_scrape)
 
     pipeline_mod._execute_overnight_run(
         run_id,
@@ -377,15 +393,192 @@ def test_execute_overnight_run_passes_scope_to_ingest(monkeypatch, tmp_path):
         ['MARA'],
     )
 
-    assert ir_calls == [{
-        'auto_extract': False,
-        'warm_model': False,
-        'tickers': ['MARA'],
-        'pipeline_run_id': run_id,
+    assert scrape_calls == [{
+        'ticker': 'MARA',
+        'include_ir': True,
+        'run_id': run_id,
     }]
-    assert edgar_calls == [{
-        'auto_extract': False,
-        'warm_model': False,
-        'tickers': ['MARA'],
-        'pipeline_run_id': run_id,
-    }]
+
+
+def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    db = MinerDB(str(tmp_path / 'streaming.db'))
+    for ticker, cik in [('MARA', '0001437491'), ('RIOT', '0001167419')]:
+        db.insert_company({
+            'ticker': ticker,
+            'name': ticker,
+            'tier': 1,
+            'ir_url': f'https://example.com/{ticker.lower()}',
+            'pr_base_url': 'https://example.com',
+            'cik': cik,
+            'active': 1,
+            'scraper_mode': 'rss',
+        })
+    app_globals._db = db
+
+    run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA', 'RIOT']}, config={})
+    run_id = int(run['id'])
+    call_order = []
+
+    class _ImmediateFuture:
+        def __init__(self, fn, *args, **kwargs):
+            self._result = fn(*args, **kwargs)
+
+        def result(self):
+            return self._result
+
+    class _ImmediateExecutor:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            return _ImmediateFuture(fn, *args, **kwargs)
+
+    def _fake_scrape(**kwargs):
+        ticker = kwargs['ticker']
+        call_order.append(('scrape', ticker, kwargs['include_ir']))
+        return {
+            'ticker': ticker,
+            'before_reports': 0,
+            'after_reports': 1,
+            'ingested_delta': 1,
+            'failures': [],
+        }
+
+    def _fake_extract_reports_for_ticker(db, run_id, ticker, reports, registry, counters, failures, num_workers):
+        call_order.append(('extract', ticker, num_workers, len(reports)))
+
+    monkeypatch.setattr(pipeline_mod, 'ThreadPoolExecutor', _ImmediateExecutor)
+    monkeypatch.setattr(pipeline_mod, 'as_completed', lambda futures: futures)
+    monkeypatch.setattr(pipeline_mod, '_scrape_ticker_for_pipeline', _fake_scrape)
+    monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_extract_reports_for_ticker)
+    monkeypatch.setattr(
+        pipeline_mod,
+        '_build_extraction_batch',
+        lambda db_obj, ticker, first_filing, force_reextract=False: [{'id': 1, 'ticker': ticker}],
+    )
+
+    pipeline_mod._execute_overnight_run(
+        run_id,
+        {
+            'skip_probe': True,
+            'include_ir': True,
+            'include_crawl': False,
+            'warm_model': False,
+            'probe_skip_companies': False,
+            'force_reextract': False,
+            'extract_workers': 4,
+            'scout_mode': 'never',
+        },
+        ['MARA', 'RIOT'],
+    )
+
+    assert call_order == [
+        ('scrape', 'MARA', True),
+        ('extract', 'MARA', 4, 1),
+        ('scrape', 'RIOT', True),
+        ('extract', 'RIOT', 4, 1),
+    ]
+
+
+def test_extract_reports_for_ticker_bounds_workers_and_claims_reports(monkeypatch, tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import routes.pipeline as pipeline_mod
+    import interpreters.interpret_pipeline as interpret_mod
+    from miner_types import ExtractionSummary
+
+    db = MinerDB(str(tmp_path / 'extract-workers.db'))
+    db.insert_company({
+        'ticker': 'MARA',
+        'name': 'MARA',
+        'tier': 1,
+        'ir_url': 'https://example.com/mara',
+        'pr_base_url': 'https://example.com',
+        'cik': '0001437491',
+        'active': 1,
+        'scraper_mode': 'rss',
+    })
+    report_ids = [
+        db.insert_report(make_report(
+            ticker='MARA',
+            raw_text=f'MARA mined {700 + i} BTC.',
+            report_date=f'2024-{i + 1:02d}-01',
+            source_url=f'https://example.com/report-{i}',
+        ))
+        for i in range(3)
+    ]
+    reports = [db.get_report(rid) for rid in report_ids]
+    run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
+    run_id = int(run['id'])
+    extracted = []
+    seen_workers = []
+
+    class _ImmediateFuture:
+        def __init__(self, fn, *args, **kwargs):
+            self._result = fn(*args, **kwargs)
+
+        def result(self):
+            return self._result
+
+    class _ImmediateExecutor:
+        def __init__(self, max_workers):
+            seen_workers.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            return _ImmediateFuture(fn, *args, **kwargs)
+
+    def _fake_extract(report, local_db, registry, **kwargs):
+        extracted.append(report['id'])
+        local_db.mark_report_extracted(report['id'])
+        summary = ExtractionSummary()
+        summary.reports_processed = 1
+        summary.data_points_extracted = 1
+        return summary
+
+    monkeypatch.setattr(interpret_mod, 'extract_report', _fake_extract)
+    monkeypatch.setattr(pipeline_mod, 'ThreadPoolExecutor', _ImmediateExecutor)
+    monkeypatch.setattr(pipeline_mod, 'as_completed', lambda futures: futures)
+
+    counters = {
+        'total_reports': len(reports),
+        'report_done_count': 0,
+        'processed': 0,
+        'data_points': 0,
+        'errors': 0,
+        'keyword_gated': 0,
+        'regex_gated': 0,
+    }
+    failures = []
+
+    pipeline_mod._extract_reports_for_ticker(
+        db=db,
+        run_id=run_id,
+        ticker='MARA',
+        reports=reports,
+        registry=object(),
+        counters=counters,
+        failures=failures,
+        num_workers=10,
+    )
+
+    assert seen_workers == [3]
+    assert sorted(extracted) == sorted(report_ids)
+    assert counters['processed'] == 3
+    assert counters['data_points'] == 3
+    assert counters['errors'] == 0
+    assert failures == []

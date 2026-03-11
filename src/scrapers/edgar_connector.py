@@ -28,6 +28,7 @@ from config import (
     EDGAR_RETRY_BACKOFF_BASE,
 )
 from scrapers.fetch_policy import DEFAULT_RETRY_POLICY, CircuitOpenError
+from scrapers.request_throttle import HostThrottle
 
 log = logging.getLogger('miners.scrapers.edgar_connector')
 
@@ -347,6 +348,9 @@ class EdgarConnector:
     db: object              # MinerDB
     session: requests.Session
     _pipeline_run_id: Optional[int] = None
+    _request_throttle: Optional[HostThrottle] = None
+    _host_backoff_seconds: float = 0.0
+    _max_retries: int = 3
 
     def _emit(self, event: str, ticker: str = None, level: str = 'INFO', **details) -> None:
         """Write a pipeline event if running inside a pipeline run."""
@@ -369,9 +373,15 @@ class EdgarConnector:
 
         Handles 429 with exponential backoff up to 2 retries.
         """
-        max_attempts = 3
+        host = requests.utils.urlparse(url).netloc.lower()
+        max_attempts = max(1, int(self._max_retries))
         for attempt in range(max_attempts):
-            time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
+            if self._request_throttle is not None:
+                waited = self._request_throttle.wait(host)
+                if waited > 0:
+                    self._emit('host_wait', host=host, waited_ms=int(waited * 1000))
+            else:
+                time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
             try:
                 resp = DEFAULT_RETRY_POLICY.execute(
                     self.session.get,
@@ -380,13 +390,14 @@ class EdgarConnector:
                     timeout=30,
                     headers={"User-Agent": _USER_AGENT},
                 )
-                if resp.status_code == 429:
+                if resp.status_code in (403, 429):
                     backoff = EDGAR_RETRY_BACKOFF_BASE * (2 ** attempt)
+                    cooldown = self._request_throttle.penalize(host, self._host_backoff_seconds + backoff) if self._request_throttle is not None else backoff
                     log.warning(
-                        "EDGAR 429 Too Many Requests for %s, backing off %.0fs (attempt %d/%d)",
-                        url, backoff, attempt + 1, max_attempts,
+                        "EDGAR rate limit host=%s status=%s url=%s cooldown=%.2fs attempt=%d/%d",
+                        host, resp.status_code, url, cooldown, attempt + 1, max_attempts,
                     )
-                    time.sleep(backoff)
+                    self._emit('host_cooldown', ticker=None, host=host, status=resp.status_code, cooldown_ms=int(cooldown * 1000))
                     continue
                 if resp.status_code == 400:
                     log.debug("EDGAR returned 400 for %s", url)
@@ -397,7 +408,10 @@ class EdgarConnector:
                 log.warning("Circuit open, skipping EDGAR request for %s: %s", url, e)
                 return None
             except requests.Timeout:
-                log.warning("Timeout fetching EDGAR %s", url)
+                cooldown = self._request_throttle.penalize(host, self._host_backoff_seconds) if self._request_throttle is not None else 0.0
+                log.warning("Timeout fetching EDGAR %s attempt=%d/%d cooldown=%.2f", url, attempt + 1, max_attempts, cooldown)
+                if attempt + 1 < max_attempts:
+                    continue
                 return None
             except requests.RequestException as e:
                 log.error("EDGAR request error %s: %s", url, e, exc_info=True)
@@ -410,28 +424,48 @@ class EdgarConnector:
 
     def _edgar_get_text(self, url: str) -> str:
         """Fetch an EDGAR document and return rate-limited HTML text, or empty string."""
-        time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
-        try:
-            resp = DEFAULT_RETRY_POLICY.execute(
-                self.session.get,
-                url,
-                timeout=30,
-                headers={"User-Agent": _USER_AGENT},
-            )
-            if resp.status_code == 404:
-                log.debug("EDGAR 404 for %s", url)
+        host = requests.utils.urlparse(url).netloc.lower()
+        max_attempts = max(1, int(self._max_retries))
+        for attempt in range(max_attempts):
+            if self._request_throttle is not None:
+                waited = self._request_throttle.wait(host)
+                if waited > 0:
+                    self._emit('host_wait', host=host, waited_ms=int(waited * 1000))
+            else:
+                time.sleep(EDGAR_REQUEST_DELAY_SECONDS)
+            try:
+                resp = DEFAULT_RETRY_POLICY.execute(
+                    self.session.get,
+                    url,
+                    timeout=30,
+                    headers={"User-Agent": _USER_AGENT},
+                )
+                if resp.status_code == 404:
+                    log.debug("EDGAR 404 for %s", url)
+                    return ''
+                if resp.status_code in (403, 429):
+                    cooldown = self._request_throttle.penalize(host, self._host_backoff_seconds) if self._request_throttle is not None else 0.0
+                    log.warning("EDGAR document rate limit host=%s status=%s url=%s cooldown=%.2f attempt=%d/%d",
+                                host, resp.status_code, url, cooldown, attempt + 1, max_attempts)
+                    if attempt + 1 < max_attempts:
+                        continue
+                    return ''
+                resp.raise_for_status()
+                return resp.text
+            except CircuitOpenError as e:
+                log.warning("Circuit open, skipping EDGAR document fetch for %s: %s", url, e)
                 return ''
-            resp.raise_for_status()
-            return resp.text
-        except CircuitOpenError as e:
-            log.warning("Circuit open, skipping EDGAR document fetch for %s: %s", url, e)
-            return ''
-        except requests.Timeout:
-            log.warning("Timeout fetching EDGAR document %s", url)
-            return ''
-        except requests.RequestException as e:
-            log.error("EDGAR document request error %s: %s", url, e, exc_info=True)
-            return ''
+            except requests.Timeout:
+                cooldown = self._request_throttle.penalize(host, self._host_backoff_seconds) if self._request_throttle is not None else 0.0
+                log.warning("Timeout fetching EDGAR document %s attempt=%d/%d cooldown=%.2f",
+                            url, attempt + 1, max_attempts, cooldown)
+                if attempt + 1 < max_attempts:
+                    continue
+                return ''
+            except requests.RequestException as e:
+                log.error("EDGAR document request error %s: %s", url, e, exc_info=True)
+                return ''
+        return ''
 
     def _get_submissions(self, cik: str) -> Optional[dict]:
         """Fetch the submissions JSON for a CIK from data.sec.gov."""

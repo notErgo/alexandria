@@ -48,7 +48,7 @@
     "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": "https://investors.cleanspark.com/news/news-details/{year}/CleanSpark-Releases-{Month}-{year}-Bitcoin-Mining-Update/default.aspx",
-    "pr_start_year": 2023,
+    "pr_start_year": 2020,
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 9,

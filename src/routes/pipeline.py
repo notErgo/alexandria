@@ -2,15 +2,17 @@
 import json
 import logging
 import os
+import queue
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
-from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+from config import MONTHLY_EXTRACTION_SOURCE_TYPES, IR_REQUEST_DELAY_SECONDS, EDGAR_REQUEST_DELAY_SECONDS
 
 log = logging.getLogger('miners.routes.pipeline')
 bp = Blueprint('pipeline', __name__)
@@ -265,12 +267,267 @@ def _run_coverage_scout_stage(
     }
 
 
+def _warm_pipeline_ollama_if_needed(db, run_id: int) -> None:
+    from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
+
+    def _pipeline_ollama_log(msg: str) -> None:
+        _event(db, run_id, 'extract', 'ollama_status', message=msg)
+
+    ensure_ollama_running(log_fn=_pipeline_ollama_log)
+    warmup_result = warm_ollama_for_extraction(
+        db=db,
+        reason='pipeline_overnight_extract',
+        force=True,
+    )
+    _event(
+        db, run_id, 'extract', 'ollama_warmup',
+        warmed=int(bool(warmup_result.get('warmed'))),
+        model=warmup_result.get('model', ''),
+        reason=warmup_result.get('reason', ''),
+    )
+    if warmup_result.get('warmed'):
+        # Invalidate the LLM availability cache so the first extract_report
+        # call gets a fresh check (not a stale False from a prior failed run).
+        try:
+            import interpreters.interpret_pipeline as _ipl
+            _ipl._llm_available_cache_time = 0.0
+        except Exception:
+            pass
+
+
+def _extract_reports_for_ticker(
+    db,
+    run_id: int,
+    ticker: str,
+    reports: list,
+    registry,
+    counters: dict,
+    failures: list,
+    num_workers: int,
+) -> None:
+    from interpreters.interpret_pipeline import extract_report
+    from infra.db import MinerDB
+
+    if not reports:
+        _event(db, run_id, 'extract', 'ticker_skipped', ticker=ticker, reason='no_pending_reports')
+        return
+
+    effective_workers = max(1, min(int(num_workers), len(reports)))
+    ticker_processed = ticker_data_points = ticker_errors = 0
+    ticker_keyword_gated = ticker_regex_gated = 0
+    report_ids = [int(r['id']) for r in reports if r.get('id') is not None]
+    work_queue: queue.Queue = queue.Queue()
+    for report_id in report_ids:
+        work_queue.put(report_id)
+
+    counter_lock = threading.Lock()
+    _event(
+        db, run_id, 'extract', 'ticker_start',
+        ticker=ticker, pending_reports=len(reports), workers=effective_workers,
+    )
+
+    def _record_report_success(report: dict, summary, worker_id: int) -> None:
+        nonlocal ticker_processed, ticker_data_points, ticker_errors
+        nonlocal ticker_keyword_gated, ticker_regex_gated
+        period = report.get('report_date', '')
+        source_type = report.get('source_type', '')
+        llm_used = bool((summary.prompt_tokens or 0) > 0 or (summary.response_tokens or 0) > 0)
+        with counter_lock:
+            counters['processed'] += summary.reports_processed
+            counters['data_points'] += summary.data_points_extracted
+            counters['errors'] += summary.errors
+            counters['keyword_gated'] += summary.keyword_gated
+            counters['regex_gated'] += summary.regex_gated
+            counters['report_done_count'] += 1
+
+            ticker_processed += summary.reports_processed
+            ticker_data_points += summary.data_points_extracted
+            ticker_errors += summary.errors
+            ticker_keyword_gated += summary.keyword_gated
+            ticker_regex_gated += summary.regex_gated
+            progress = counters['report_done_count']
+            running_total_dp = counters['data_points']
+
+        _event(
+            db, run_id, 'extract', 'report_done',
+            ticker=ticker, period=period, source_type=source_type,
+            worker_id=worker_id,
+            llm_used=int(llm_used),
+            data_points=summary.data_points_extracted,
+            review_flagged=summary.review_flagged,
+            progress=progress,
+            total=counters['total_reports'],
+            running_total_dp=running_total_dp,
+            prompt_tokens=summary.prompt_tokens,
+            response_tokens=summary.response_tokens,
+        )
+
+    def _record_report_failure(report: dict, error: Exception, worker_id: int) -> None:
+        nonlocal ticker_errors
+        period = report.get('report_date', '')
+        source_type = report.get('source_type', '')
+        with counter_lock:
+            counters['errors'] += 1
+            ticker_errors += 1
+            failures.append({'ticker': ticker, 'error': str(error)})
+        _event(
+            db, run_id, 'extract', 'report_extract_failed',
+            ticker=ticker, level='WARNING',
+            worker_id=worker_id,
+            report_id=report.get('id'), period=period,
+            source_type=source_type, error=str(error),
+        )
+
+    def worker(worker_id: int) -> None:
+        local_db = MinerDB(db.db_path)
+        while True:
+            if _is_cancelled(run_id):
+                break
+            try:
+                report_id = work_queue.get_nowait()
+            except queue.Empty:
+                break
+            if not local_db.claim_report_for_extraction(report_id):
+                log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
+                continue
+            report = local_db.get_report(report_id)
+            if not report:
+                continue
+            _event(
+                db, run_id, 'extract', 'report_start',
+                ticker=ticker,
+                worker_id=worker_id,
+                report_id=report.get('id'),
+                period=report.get('report_date', ''),
+                source_type=report.get('source_type', ''),
+            )
+            try:
+                summary = extract_report(report, local_db, registry)
+                _record_report_success(report, summary, worker_id)
+            except Exception as e:
+                _record_report_failure(report, e, worker_id)
+
+    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+        futures = [pool.submit(worker, i) for i in range(effective_workers)]
+        for future in as_completed(futures):
+            future.result()
+
+    db.upsert_pipeline_run_ticker(run_id, ticker, extracted=1)
+    _event(
+        db, run_id, 'extract', 'ticker_done',
+        ticker=ticker,
+        reports_processed=ticker_processed,
+        data_points=ticker_data_points,
+        errors=ticker_errors,
+        keyword_gated=ticker_keyword_gated,
+        regex_gated=ticker_regex_gated,
+        workers=effective_workers,
+    )
+
+
+def _scrape_ticker_for_pipeline(
+    *,
+    db_path: str,
+    run_id: int,
+    ticker: str,
+    include_ir: bool,
+    ir_semaphore,
+    edgar_semaphore,
+    ir_throttle,
+    edgar_throttle,
+    host_backoff_seconds: float,
+    max_retries: int,
+) -> dict:
+    import requests
+    from datetime import date
+    from infra.db import MinerDB
+    from scrapers.ir_scraper import IRScraper
+    from scrapers.edgar_connector import EdgarConnector
+
+    local_db = MinerDB(db_path)
+    company = local_db.get_company(ticker)
+    if company is None:
+        return {'ticker': ticker, 'before_reports': 0, 'after_reports': 0, 'ingested_delta': 0, 'failures': ['ticker_not_found']}
+
+    failures = []
+    before_reports = _count_reports_for_tickers(local_db, [ticker])
+    _event(local_db, run_id, 'ingest', 'ticker_start', ticker=ticker, before_reports=before_reports)
+
+    if include_ir:
+        with ir_semaphore:
+            if _is_cancelled(run_id):
+                raise _RunCancelled()
+            _event(local_db, run_id, 'ingest', 'ticker_source_start', ticker=ticker, source='ir')
+            try:
+                ir_scraper = IRScraper(db=local_db, session=requests.Session())
+                ir_scraper._pipeline_run_id = run_id
+                ir_scraper._request_throttle = ir_throttle
+                ir_scraper._host_backoff_seconds = host_backoff_seconds
+                ir_scraper._max_retries = max_retries
+                ir_result = ir_scraper.scrape_company(company)
+                _event(
+                    local_db, run_id, 'ingest', 'ticker_source_done',
+                    ticker=ticker, source='ir',
+                    reports_ingested=ir_result.reports_ingested,
+                    errors=ir_result.errors,
+                )
+            except Exception as e:
+                failures.append(f'ir:{e}')
+                _event(local_db, run_id, 'ingest', 'ticker_source_failed', ticker=ticker, source='ir', level='WARNING', error=str(e))
+    else:
+        _event(local_db, run_id, 'ingest', 'ir_skipped', ticker=ticker, reason='include_ir=false')
+
+    with edgar_semaphore:
+        if _is_cancelled(run_id):
+            raise _RunCancelled()
+        _event(local_db, run_id, 'ingest', 'ticker_source_start', ticker=ticker, source='edgar')
+        try:
+            edgar = EdgarConnector(db=local_db, session=requests.Session())
+            edgar._pipeline_run_id = run_id
+            edgar._request_throttle = edgar_throttle
+            edgar._host_backoff_seconds = host_backoff_seconds
+            edgar._max_retries = max_retries
+            if company.get('cik'):
+                edgar_result = edgar.fetch_all_filings(
+                    cik=company['cik'],
+                    ticker=ticker,
+                    since_date=date(2019, 1, 1),
+                    filing_regime=company.get('filing_regime', 'domestic'),
+                )
+                _event(
+                    local_db, run_id, 'ingest', 'ticker_source_done',
+                    ticker=ticker, source='edgar',
+                    reports_ingested=edgar_result.reports_ingested,
+                    errors=edgar_result.errors,
+                )
+            else:
+                _event(local_db, run_id, 'ingest', 'ticker_source_skipped', ticker=ticker, source='edgar', reason='no_cik')
+        except Exception as e:
+            failures.append(f'edgar:{e}')
+            _event(local_db, run_id, 'ingest', 'ticker_source_failed', ticker=ticker, source='edgar', level='WARNING', error=str(e))
+
+    after_reports = _count_reports_for_tickers(local_db, [ticker])
+    ingested_delta = max(0, after_reports - before_reports)
+    _event(
+        local_db, run_id, 'ingest', 'ticker_done',
+        ticker=ticker,
+        before_reports=before_reports,
+        after_reports=after_reports,
+        ingested_delta=ingested_delta,
+        failures=len(failures),
+    )
+    return {
+        'ticker': ticker,
+        'before_reports': before_reports,
+        'after_reports': after_reports,
+        'ingested_delta': ingested_delta,
+        'failures': failures,
+    }
+
+
 def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[str]) -> None:
     from app_globals import get_db, get_registry
-    from interpreters.interpret_pipeline import extract_report
-    from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
     from orchestration import run_bootstrap_probe_for_ticker as _run_bootstrap_probe_for_ticker
-    from routes.reports import _run_ir_ingest, _run_edgar_ingest
 
     db = get_db()
     db.update_pipeline_run(run_id, status='running')
@@ -526,100 +783,109 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         # Stage: ingest (IR + EDGAR, or EDGAR-only when include_ir=False)
         # Uses the same _run_ir_ingest / _run_edgar_ingest functions as individual UI buttons.
         # The scrape_queue / ScrapeWorker is for manual per-company triggers only.
-        before_reports = _count_reports_for_tickers(db, scrape_targets)
-        if include_ir:
-            _run_ir_ingest(
-                str(uuid.uuid4()),
-                auto_extract=False,
-                warm_model=bool(config.get('warm_model', True)),
-                tickers=scrape_targets,
-                pipeline_run_id=run_id,
-            )
-        else:
-            _event(db, run_id, 'ingest', 'ir_skipped', reason='include_ir=false')
-        _run_edgar_ingest(
-            str(uuid.uuid4()),
-            auto_extract=False,
-            warm_model=bool(config.get('warm_model', True)),
-            tickers=scrape_targets,
-            pipeline_run_id=run_id,
-        )
-        after_reports = _count_reports_for_tickers(db, scrape_targets)
-        ingested_delta = max(0, after_reports - before_reports)
-        _event(db, run_id, 'ingest', 'stage_end', before_reports=before_reports, after_reports=after_reports, ingested_delta=ingested_delta)
-        if ingested_delta > 0:
-            for t in scrape_targets:
-                db.upsert_pipeline_run_ticker(run_id, t, ingested=1)
-
-        # Stage: extraction
         registry = get_registry()
         force_reextract = bool(config.get('force_reextract', False))
-        reports = []
-        for t in scrape_targets:
-            first_filing = db.get_btc_first_filing_date(t)
-            reports.extend(_build_extraction_batch(db, t, first_filing, force_reextract))
-        _event(db, run_id, 'extract', 'stage_preflight',
-               total_pending=len(reports), force_reextract=int(force_reextract))
-        if reports and bool(config.get('warm_model', True)):
-            def _pipeline_ollama_log(msg: str) -> None:
-                _event(db, run_id, 'extract', 'ollama_status', message=msg)
-            ensure_ollama_running(log_fn=_pipeline_ollama_log)
-            warmup_result = warm_ollama_for_extraction(db=db, reason='pipeline_overnight_extract', force=True)
-            _event(db, run_id, 'extract', 'ollama_warmup',
-                   warmed=int(bool(warmup_result.get('warmed'))),
-                   model=warmup_result.get('model', ''),
-                   reason=warmup_result.get('reason', ''))
-            if warmup_result.get('warmed'):
-                # Invalidate the LLM availability cache so the first extract_report
-                # call gets a fresh check (not a stale False from a prior failed run).
-                try:
-                    import interpreters.interpret_pipeline as _ipl
-                    _ipl._llm_available_cache_time = 0.0
-                except Exception:
-                    pass
-        total_reports = len(reports)
-        processed = data_points = errors = keyword_gated = regex_gated = 0
-        extracted_tickers = set()
-        _event(db, run_id, 'extract', 'stage_start', total_reports=total_reports)
-        for i, report in enumerate(reports):
-            if _is_cancelled(run_id):
-                raise _RunCancelled()
-            ticker = report.get('ticker', '')
-            period = report.get('report_date', '')
-            source_type = report.get('source_type', '')
-            try:
-                summary = extract_report(report, db, registry)
-                processed += summary.reports_processed
-                dp_delta = summary.data_points_extracted
-                rv_delta = summary.review_flagged
-                data_points += dp_delta
-                errors += summary.errors
-                keyword_gated += summary.keyword_gated
-                regex_gated += summary.regex_gated
-                extracted_tickers.add(ticker)
+        extract_workers = max(1, int(config.get('extract_workers', 2)))
+        ir_workers = max(1, int(config.get('ir_workers', 2)))
+        edgar_workers = max(1, int(config.get('edgar_workers', 1)))
+        edgar_min_interval_ms = max(0, int(config.get('edgar_min_interval_ms', int(EDGAR_REQUEST_DELAY_SECONDS * 1000))))
+        host_backoff_seconds = max(0.0, float(config.get('host_backoff_seconds', 15)))
+        max_retries = max(1, int(config.get('max_retries', 2)))
+        total_before_reports = total_after_reports = total_ingested_delta = 0
+        extraction_counters = {
+            'total_reports': 0,
+            'report_done_count': 0,
+            'processed': 0,
+            'data_points': 0,
+            'errors': 0,
+            'keyword_gated': 0,
+            'regex_gated': 0,
+        }
+        ollama_prepared = False
+        _event(
+            db, run_id, 'ingest', 'stage_start',
+            tickers=len(scrape_targets), include_ir=int(include_ir),
+            ir_workers=ir_workers, edgar_workers=edgar_workers,
+        )
+        _event(db, run_id, 'extract', 'stage_start', mode='streaming_by_ticker', total_tickers=len(scrape_targets))
+        from scrapers.request_throttle import HostThrottle
+        ir_semaphore = threading.Semaphore(ir_workers)
+        edgar_semaphore = threading.Semaphore(edgar_workers)
+        ir_throttle = HostThrottle(
+            min_interval_ms=int(IR_REQUEST_DELAY_SECONDS * 1000),
+            cooldown_seconds=host_backoff_seconds,
+        )
+        edgar_throttle = HostThrottle(
+            min_interval_ms=edgar_min_interval_ms,
+            cooldown_seconds=host_backoff_seconds,
+        )
+        pool_workers = max(1, min(len(scrape_targets), max(ir_workers, edgar_workers) * 2))
+        with ThreadPoolExecutor(max_workers=pool_workers) as scrape_pool:
+            scrape_futures = {
+                scrape_pool.submit(
+                    _scrape_ticker_for_pipeline,
+                    db_path=db.db_path,
+                    run_id=run_id,
+                    ticker=t,
+                    include_ir=include_ir,
+                    ir_semaphore=ir_semaphore,
+                    edgar_semaphore=edgar_semaphore,
+                    ir_throttle=ir_throttle,
+                    edgar_throttle=edgar_throttle,
+                    host_backoff_seconds=host_backoff_seconds,
+                    max_retries=max_retries,
+                ): t
+                for t in scrape_targets
+            }
+            for future in as_completed(scrape_futures):
+                if _is_cancelled(run_id):
+                    raise _RunCancelled()
+                t = scrape_futures[future]
+                result = future.result()
+                total_before_reports += result['before_reports']
+                total_after_reports += result['after_reports']
+                total_ingested_delta += result['ingested_delta']
+                for failure in result.get('failures') or []:
+                    failures.append({'ticker': t, 'error': failure})
+                if result['ingested_delta'] > 0:
+                    db.upsert_pipeline_run_ticker(run_id, t, ingested=1)
+
+                first_filing = db.get_btc_first_filing_date(t)
+                ticker_reports = _build_extraction_batch(db, t, first_filing, force_reextract)
+                extraction_counters['total_reports'] += len(ticker_reports)
                 _event(
-                    db, run_id, 'extract', 'report_done',
-                    ticker=ticker, period=period, source_type=source_type,
-                    data_points=dp_delta, review_flagged=rv_delta,
-                    progress=i + 1, total=total_reports,
-                    running_total_dp=data_points,
-                    prompt_tokens=summary.prompt_tokens,
-                    response_tokens=summary.response_tokens,
+                    db, run_id, 'extract', 'ticker_preflight',
+                    ticker=t,
+                    pending_reports=len(ticker_reports),
+                    force_reextract=int(force_reextract),
+                    running_total_pending=extraction_counters['total_reports'],
                 )
-            except Exception as e:
-                errors += 1
-                failures.append({'ticker': ticker, 'error': str(e)})
-                _event(
-                    db, run_id, 'extract', 'report_extract_failed',
-                    ticker=ticker, level='WARNING',
-                    report_id=report.get('id'), period=period,
-                    source_type=source_type, error=str(e),
+                if ticker_reports and bool(config.get('warm_model', True)) and not ollama_prepared:
+                    _warm_pipeline_ollama_if_needed(db, run_id)
+                    ollama_prepared = True
+                _extract_reports_for_ticker(
+                    db=db,
+                    run_id=run_id,
+                    ticker=t,
+                    reports=ticker_reports,
+                    registry=registry,
+                    counters=extraction_counters,
+                    failures=failures,
+                    num_workers=extract_workers,
                 )
-        for t in extracted_tickers:
-            db.upsert_pipeline_run_ticker(run_id, t, extracted=1)
+
+        _event(
+            db, run_id, 'ingest', 'stage_end',
+            before_reports=total_before_reports,
+            after_reports=total_after_reports,
+            ingested_delta=total_ingested_delta,
+        )
         _event(db, run_id, 'extract', 'stage_end',
-               reports_processed=processed, data_points=data_points,
-               errors=errors, keyword_gated=keyword_gated, regex_gated=regex_gated)
+               reports_processed=extraction_counters['processed'],
+               data_points=extraction_counters['data_points'],
+               errors=extraction_counters['errors'],
+               keyword_gated=extraction_counters['keyword_gated'],
+               regex_gated=extraction_counters['regex_gated'])
 
         # Stage: auto-gap-fill for quarterly/annual reporters.
         # Expands quarterly data_points into monthly inferred rows so all companies
@@ -665,9 +931,9 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             'recommendations': recommendations,
             'scout': scout_summary,
             'failures': failures,
-            'reports_processed': processed,
-            'data_points_extracted': data_points,
-            'extract_errors': errors,
+            'reports_processed': extraction_counters['processed'],
+            'data_points_extracted': extraction_counters['data_points'],
+            'extract_errors': extraction_counters['errors'],
             'totals': snapshot.get('totals', {}),
         }
         final_status = 'partial_complete' if failures else 'complete'
@@ -794,6 +1060,12 @@ def start_overnight_pipeline():
         'scout_as_of_date': body.get('scout_as_of_date'),
         'probe_skip_companies': bool(body.get('probe_skip_companies', False)),
         'force_reextract': bool(body.get('force_reextract', False)),
+        'extract_workers': max(1, int(body.get('extract_workers', 2))),
+        'ir_workers': max(1, int(body.get('ir_workers', 2))),
+        'edgar_workers': max(1, int(body.get('edgar_workers', 1))),
+        'edgar_min_interval_ms': max(0, int(body.get('edgar_min_interval_ms', int(EDGAR_REQUEST_DELAY_SECONDS * 1000)))),
+        'host_backoff_seconds': max(0.0, float(body.get('host_backoff_seconds', 15))),
+        'max_retries': max(1, int(body.get('max_retries', 2))),
     }
     run = db.create_pipeline_run(
         triggered_by=str(body.get('triggered_by') or 'ops_ui'),
