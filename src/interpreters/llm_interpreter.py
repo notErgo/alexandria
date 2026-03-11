@@ -831,6 +831,8 @@ class LLMInterpreter:
         # Output format block
         lines.append("=== OUTPUT FORMAT ===")
         lines.append("Return ONLY this JSON object, no other text:")
+        lines.append("The top-level JSON value MUST be an object keyed by metric name.")
+        lines.append("Do NOT return an array, list, markdown code fence, commentary, or repeated per-metric objects.")
         lines.append("{")
         for metric in metrics:
             unit = _BATCH_UNIT_HINTS.get(metric, "")
@@ -1374,6 +1376,13 @@ class LLMInterpreter:
             else:
                 log.debug("Could not parse LLM quarterly batch JSON: %s", e)
                 return {}
+
+        if not isinstance(data, dict):
+            log.debug(
+                "Ignoring LLM quarterly batch response with top-level %s instead of object",
+                type(data).__name__,
+            )
+            return {}
 
         # Quarterly/annual data gets wider valid ranges for flow metrics
         valid_ranges = _QUARTERLY_VALID_RANGES if period_type in ('quarterly', 'annual') else METRIC_VALID_RANGES

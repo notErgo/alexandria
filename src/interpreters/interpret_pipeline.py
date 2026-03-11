@@ -201,6 +201,43 @@ def _is_monthly_source_type(source_type: str) -> bool:
     return source_type in _MONTHLY_SOURCE_TYPES
 
 
+_QUARTERLY_8K_URL_RE = re.compile(r'/q([1-4])(\d{2})shareholderletter', re.IGNORECASE)
+_QUARTERLY_8K_TEXT_RE = re.compile(
+    r'\bshareholder\s+letter\s+q([1-4])\s+(20\d{2})\b', re.IGNORECASE
+)
+
+
+def _infer_quarterly_covering_period(report: dict) -> Optional[str]:
+    """Infer covering_period for quarter-style 8-K shareholder letters.
+
+    Some issuers publish quarterly shareholder letters as 8-K exhibits. Those
+    documents should flow through the quarterly path even though their
+    ``source_type`` remains ``edgar_8k``.
+    """
+    if report.get('source_type') not in {'edgar_8k', 'edgar_8ka'}:
+        return report.get('covering_period')
+
+    covering_period = report.get('covering_period')
+    if covering_period:
+        return covering_period
+
+    source_url = report.get('source_url') or ''
+    m = _QUARTERLY_8K_URL_RE.search(source_url)
+    if m:
+        quarter = int(m.group(1))
+        year = 2000 + int(m.group(2))
+        return f"{year:04d}-Q{quarter}"
+
+    raw_text = (report.get('raw_text') or '')[:2000]
+    m = _QUARTERLY_8K_TEXT_RE.search(raw_text)
+    if m:
+        quarter = int(m.group(1))
+        year = int(m.group(2))
+        return f"{year:04d}-Q{quarter}"
+
+    return None
+
+
 def _get_missing_metrics(db, ticker: str, period: str, all_metrics: list) -> list:
     """Return metrics with no entry in data_points for the given (ticker, period)."""
     return [m for m in all_metrics if not db.data_point_exists(ticker, period, m)]
@@ -965,13 +1002,23 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
         source_type = report.get('source_type', '')
 
+        inferred_covering_period = _infer_quarterly_covering_period(report)
+        treat_as_quarterly_8k = bool(
+            source_type in {'edgar_8k', 'edgar_8ka'} and inferred_covering_period
+        )
+        effective_report = (
+            {**report, 'covering_period': inferred_covering_period}
+            if treat_as_quarterly_8k else report
+        )
+
         # Build ExtractionRunConfig if not supplied by caller.
-        # Annual SEC sources → annual; quarterly SEC → quarterly; all else → monthly.
+        # Annual SEC sources → annual; quarterly SEC sources and quarter-style
+        # 8-K shareholder letters → quarterly; all else → monthly.
         if config is None:
             from miner_types import ExtractionRunConfig
             if source_type in _ANNUAL_SOURCES:
                 _eg = 'annual'
-            elif source_type in _QUARTERLY_SOURCES:
+            elif source_type in _QUARTERLY_SOURCES or treat_as_quarterly_8k:
                 _eg = 'quarterly'
             else:
                 _eg = 'monthly'
@@ -983,8 +1030,8 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
         # Route quarterly and annual SEC filings to the dedicated extraction path.
         # These do not use regex extraction — LLM only with wider text window.
-        if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES:
-            return _interpret_quarterly_report(report, db, registry, summary, attribution)
+        if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES or treat_as_quarterly_8k:
+            return _interpret_quarterly_report(effective_report, db, registry, summary, attribution)
 
         # Keyword gate for ALL non-quarterly/annual sources: skip LLM if no BTC
         # mining signals appear in the document.
@@ -1159,6 +1206,20 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 report, db, llm_interpreter, llm_text, all_metrics,
                 CONFIDENCE_REVIEW_THRESHOLD, summary,
             )
+
+        if _is_monthly_source_type(source_type):
+            try:
+                db.refresh_review_precedence_for_month(
+                    report.get('ticker'),
+                    report.get('report_date'),
+                )
+            except Exception as _refresh_err:
+                log.debug(
+                    "Review precedence refresh failed for %s %s: %s",
+                    report.get('ticker'),
+                    report.get('report_date'),
+                    _refresh_err,
+                )
 
         summary.reports_processed += 1
 

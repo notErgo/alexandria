@@ -372,6 +372,19 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
     seen: set[str] = set()
     results: list[tuple[str, str, Optional[date]]] = []
 
+    def _is_official_ir_detail_link(full_url: str) -> bool:
+        parsed = urlparse(full_url)
+        if not allowed_host or parsed.netloc.lower() != allowed_host:
+            return False
+        path = (parsed.path or "").lower()
+        detail_markers = (
+            "/detail/",
+            "/news-release-details/",
+            "/news/news-details/",
+            "/press-releases/detail/",
+        )
+        return any(marker in path for marker in detail_markers)
+
     for link in soup.find_all("a", href=True):
         href = (link.get("href") or "").strip()
         if not href or href.startswith("#") or href.lower().startswith("javascript:"):
@@ -385,7 +398,7 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
         title = link.get_text(" ", strip=True)
         slug_text = full_url.replace("-", " ").replace("/", " ")
         check_text = f"{title} {slug_text}".strip()
-        if not is_mining_activity_pr(check_text):
+        if not (_is_official_ir_detail_link(full_url) or is_mining_activity_pr(check_text)):
             continue
 
         if full_url in seen:

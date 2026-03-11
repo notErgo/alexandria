@@ -277,6 +277,22 @@ class TestDiscoveryHelpers:
         assert links[0][1] == "https://www.prnewswire.com/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html"
         assert links[0][2] == date(2026, 1, 1)
 
+    def test_discovery_link_extraction_keeps_mara_ir_detail_pages(self):
+        company = {"ticker": "MARA", "pr_base_url": "https://ir.mara.com"}
+        html = """
+        <html><body>
+          <a href="/news-events/press-releases/detail/1400/mara-prices-convertible-notes-offering">
+            MARA Prices Convertible Notes Offering
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(company, html, "https://ir.mara.com/news-events/press-releases")
+        assert len(links) == 1
+        assert links[0][1] == (
+            "https://ir.mara.com/news-events/press-releases/detail/1400/"
+            "mara-prices-convertible-notes-offering"
+        )
+
 
 class TestCleanSparkHistoricalTemplates:
     def test_cleanspark_pre_april_2023_returns_no_candidates(self):

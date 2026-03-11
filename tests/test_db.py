@@ -27,6 +27,11 @@ class TestSchema:
                        VALUES('NONEXISTENT', '2024-01-01', 'archive_pdf')"""
                 )
 
+    def test_review_queue_precedence_columns_exist(self, db):
+        with db._get_connection() as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+        assert {'source_role', 'precedence_state', 'precedence_reason'} <= cols
+
 
 class TestCompanyCRUD:
     def test_insert_and_retrieve_company(self, db):
@@ -192,6 +197,114 @@ class TestReviewQueueCRUD:
         assert dp['confidence'] == 1.0
         results = db_with_company.query_data_points(ticker='MARA')
         assert results[0]['value'] == 695.0
+
+    def test_quarterly_review_item_deferred_when_monthly_reports_pending(self, db_with_company):
+        for month in ('2025-01-01', '2025-02-01', '2025-03-01'):
+            db_with_company.insert_report(make_report(
+                report_date=month,
+                source_type='ir_press_release',
+                raw_text='MARA mined bitcoin this month.',
+            ))
+
+        item_id = db_with_company.insert_review_item(make_review_item(
+            period='2025-Q1',
+            metric='production_btc',
+            raw_value='2100',
+            report_id=None,
+            time_grain='quarterly',
+            expected_granularity='quarterly',
+        ))
+        item = db_with_company.get_review_item(item_id)
+
+        assert item['source_role'] == 'quarterly_fallback'
+        assert item['precedence_state'] == 'deferred'
+        assert db_with_company.get_review_items(status='PENDING') == []
+        assert db_with_company.count_review_items(status='PENDING') == 0
+        assert db_with_company.count_review_items(status='PENDING', include_inactive=True) == 1
+
+    def test_refresh_review_precedence_activates_quarterly_when_monthly_gap_remains(self, db_with_company):
+        for month in ('2025-01-01', '2025-02-01'):
+            report_id = db_with_company.insert_report(make_report(
+                report_date=month,
+                source_type='ir_press_release',
+                raw_text='MARA mined bitcoin this month.',
+            ))
+            db_with_company.mark_report_extracted(report_id)
+            db_with_company.insert_data_point(make_data_point(
+                report_id=report_id,
+                period=month,
+                metric='production_btc',
+                value=700.0,
+            ))
+
+        pending_id = db_with_company.insert_report(make_report(
+            report_date='2025-03-01',
+            source_type='ir_press_release',
+            raw_text='MARA mined bitcoin this month.',
+        ))
+        item_id = db_with_company.insert_review_item(make_review_item(
+            period='2025-Q1',
+            metric='production_btc',
+            raw_value='2100',
+            time_grain='quarterly',
+            expected_granularity='quarterly',
+        ))
+        assert db_with_company.get_review_item(item_id)['precedence_state'] == 'deferred'
+
+        db_with_company.mark_report_extracted(pending_id)
+        db_with_company.refresh_review_precedence_for_covering_period('MARA', '2025-Q1')
+        item = db_with_company.get_review_item(item_id)
+
+        assert item['precedence_state'] == 'active'
+        active = db_with_company.get_review_items(status='PENDING')
+        assert len(active) == 1
+        assert active[0]['id'] == item_id
+
+    def test_refresh_review_precedence_suppresses_quarterly_when_monthly_metric_complete(self, db_with_company):
+        for month, value in (
+            ('2025-01-01', 700.0),
+            ('2025-02-01', 680.0),
+            ('2025-03-01', 720.0),
+        ):
+            report_id = db_with_company.insert_report(make_report(
+                report_date=month,
+                source_type='ir_press_release',
+                raw_text='MARA mined bitcoin this month.',
+            ))
+            db_with_company.mark_report_extracted(report_id)
+            db_with_company.insert_data_point(make_data_point(
+                report_id=report_id,
+                period=month,
+                metric='production_btc',
+                value=value,
+            ))
+
+        item_id = db_with_company.insert_review_item(make_review_item(
+            period='2025-Q1',
+            metric='production_btc',
+            raw_value='2100',
+            time_grain='quarterly',
+            expected_granularity='quarterly',
+        ))
+        item = db_with_company.get_review_item(item_id)
+
+        assert item['precedence_state'] == 'suppressed'
+        assert db_with_company.get_review_items(status='PENDING') == []
+
+    def test_get_review_items_returns_chronological_order(self, db_with_company):
+        newer_id = db_with_company.insert_review_item(make_review_item(
+            period='2025-03-01',
+            metric='production_btc',
+        ))
+        older_id = db_with_company.insert_review_item(make_review_item(
+            period='2025-01-01',
+            metric='production_btc',
+            raw_value='650.0',
+        ))
+
+        items = db_with_company.get_review_items(status='PENDING')
+
+        assert [item['id'] for item in items] == [older_id, newer_id]
 
 
 class TestCompanyStatus:

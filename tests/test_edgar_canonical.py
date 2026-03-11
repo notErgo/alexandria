@@ -60,8 +60,8 @@ class TestPipelineDefaultExcludesIR:
 
         monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
 
-    def test_pipeline_start_default_include_ir_is_false(self, client, monkeypatch):
-        """POST with empty body stores include_ir=False."""
+    def test_pipeline_start_default_include_ir_is_true(self, client, monkeypatch):
+        """POST with empty body stores include_ir=True."""
         self._patch_thread(monkeypatch)
 
         resp = client.post('/api/pipeline/overnight/start', json={'tickers': ['MARA']})
@@ -70,7 +70,7 @@ class TestPipelineDefaultExcludesIR:
 
         status_resp = client.get(f'/api/pipeline/overnight/{run_id}/status')
         config = status_resp.get_json()['data']['run']['config']
-        assert config['include_ir'] is False
+        assert config['include_ir'] is True
 
     def test_pipeline_explicit_false_accepted(self, client, monkeypatch):
         """POST with include_ir=False stores False."""
@@ -88,7 +88,7 @@ class TestPipelineDefaultExcludesIR:
         assert config['include_ir'] is False
 
     def test_pipeline_explicit_true_still_accepted(self, client, monkeypatch):
-        """POST with include_ir=True stores True (opt-in still works)."""
+        """POST with include_ir=True stores True."""
         self._patch_thread(monkeypatch)
 
         resp = client.post('/api/pipeline/overnight/start', json={
@@ -350,15 +350,15 @@ class TestOpsUIDefaults:
         with open(self.OPS_HTML, encoding='utf-8') as f:
             return f.read()
 
-    def test_pipeline_include_ir_checkbox_unchecked_by_default(self):
-        """The pipeline-include-ir checkbox must NOT have the 'checked' attribute."""
+    def test_pipeline_include_ir_checkbox_checked_by_default(self):
+        """The pipeline-include-ir checkbox must have the 'checked' attribute."""
         import re
         html = self._get_ops_html()
         match = re.search(r'<input[^>]*id="pipeline-include-ir"[^>]*>', html)
         assert match, "Element id='pipeline-include-ir' not found in ops.html"
         element = match.group(0)
-        assert 'checked' not in element, (
-            f"pipeline-include-ir should NOT have 'checked', got: {element}"
+        assert 'checked' in element, (
+            f"pipeline-include-ir should have 'checked', got: {element}"
         )
 
     def test_ops_html_ir_label_contains_deprecated(self):

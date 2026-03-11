@@ -43,6 +43,10 @@ _ANALYST_METHODS = frozenset({
     'review_approved', 'review_edited', 'manual',
 })
 
+_REVIEW_PRECEDENCE_ACTIVE = 'active'
+_REVIEW_PRECEDENCE_DEFERRED = 'deferred'
+_REVIEW_PRECEDENCE_SUPPRESSED = 'suppressed'
+
 
 def _to_signed64(v: Optional[int]) -> Optional[int]:
     """Convert an unsigned 64-bit simhash to a signed int64 for SQLite storage."""
@@ -161,6 +165,9 @@ class MinerDB:
                             confidence     REAL NOT NULL,
                             source_snippet TEXT,
                             status         TEXT NOT NULL DEFAULT 'PENDING',
+                            source_role    TEXT NOT NULL DEFAULT 'primary',
+                            precedence_state TEXT NOT NULL DEFAULT 'active',
+                            precedence_reason TEXT,
                             reviewer_note  TEXT,
                             created_at     TEXT DEFAULT (datetime('now')),
                             reviewed_at    TEXT
@@ -372,6 +379,11 @@ class MinerDB:
                     self._migrate_v40(conn)
                     conn.execute("PRAGMA user_version = 40")
                     version = 40
+
+                if version < 41:
+                    self._migrate_v41(conn)
+                    conn.execute("PRAGMA user_version = 41")
+                    version = 41
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -1602,6 +1614,33 @@ class MinerDB:
             WHERE extraction_method IN ('{analyst_methods}')
         """)
 
+    def _migrate_v41(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v40 → v41: review queue precedence metadata.
+
+        Adds:
+        - review_queue.source_role: primary vs quarterly/annual fallback provenance
+        - review_queue.precedence_state: active, deferred, suppressed
+        - review_queue.precedence_reason: machine-readable JSON explanation
+        """
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+        if 'source_role' not in cols:
+            conn.execute(
+                "ALTER TABLE review_queue ADD COLUMN source_role TEXT NOT NULL DEFAULT 'primary'"
+            )
+        if 'precedence_state' not in cols:
+            conn.execute(
+                "ALTER TABLE review_queue ADD COLUMN "
+                f"precedence_state TEXT NOT NULL DEFAULT '{_REVIEW_PRECEDENCE_ACTIVE}'"
+            )
+        if 'precedence_reason' not in cols:
+            conn.execute(
+                "ALTER TABLE review_queue ADD COLUMN precedence_reason TEXT"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rq_status_precedence "
+            "ON review_queue(status, precedence_state)"
+        )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -2433,7 +2472,8 @@ class MinerDB:
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
-                f"SELECT * FROM reports {where} ORDER BY ticker, report_date",
+                f"SELECT * FROM reports {where} "
+                f"ORDER BY ticker, report_date, {self._report_extraction_order_sql()}, id",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -2632,7 +2672,8 @@ class MinerDB:
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
             rows = conn.execute(
-                f"SELECT * FROM reports {where} ORDER BY ticker, report_date",
+                f"SELECT * FROM reports {where} "
+                f"ORDER BY ticker, report_date, {self._report_extraction_order_sql()}, id",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -2667,6 +2708,164 @@ class MinerDB:
                 (ticker, source_url),
             ).fetchone()
             return row is not None
+
+    def _resolve_review_precedence(self, conn, item: dict) -> dict:
+        """Return source_role / precedence_state for a review_queue item."""
+        from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+        from period_utils import quarter_to_month_range
+
+        time_grain = item.get('time_grain') or self._derive_time_grain(item['period'])
+        source_role = item.get('source_role') or 'primary'
+        precedence_state = item.get('precedence_state') or _REVIEW_PRECEDENCE_ACTIVE
+        precedence_reason = item.get('precedence_reason')
+        report_id = item.get('report_id')
+
+        if time_grain != 'quarterly':
+            return {
+                'source_role': source_role,
+                'precedence_state': precedence_state,
+                'precedence_reason': precedence_reason,
+            }
+
+        company = conn.execute(
+            "SELECT reporting_cadence FROM companies WHERE ticker = ?",
+            (item['ticker'],),
+        ).fetchone()
+        if not company or (company[0] or 'monthly') != 'monthly':
+            return {
+                'source_role': source_role,
+                'precedence_state': precedence_state,
+                'precedence_reason': precedence_reason,
+            }
+
+        months = quarter_to_month_range(item['period'])
+        if not months:
+            return {
+                'source_role': 'quarterly_fallback',
+                'precedence_state': _REVIEW_PRECEDENCE_ACTIVE,
+                'precedence_reason': precedence_reason,
+            }
+
+        month_periods = [m + '-01' for m in months]
+        month_placeholders = ','.join('?' * len(month_periods))
+        report_placeholders = ','.join('?' * len(MONTHLY_EXTRACTION_SOURCE_TYPES))
+        report_rows = conn.execute(
+            f"""SELECT report_date, extraction_status
+                FROM reports
+               WHERE ticker = ?
+                 AND report_date IN ({month_placeholders})
+                 AND source_type IN ({report_placeholders})""",
+            [item['ticker'], *month_periods, *MONTHLY_EXTRACTION_SOURCE_TYPES],
+        ).fetchall()
+        pending_months = sorted({
+            r['report_date'][:7] for r in report_rows
+            if (r['extraction_status'] or 'pending') in ('pending', 'failed', 'running')
+        })
+        if pending_months:
+            return {
+                'source_role': 'quarterly_fallback',
+                'precedence_state': _REVIEW_PRECEDENCE_DEFERRED,
+                'precedence_reason': json.dumps({
+                    'reason': 'monthly_reports_pending',
+                    'months': pending_months,
+                    'covering_period': item['period'],
+                }),
+            }
+
+        metric = item['metric']
+        monthly_dp_rows = conn.execute(
+            f"""SELECT DISTINCT substr(period, 1, 7) AS month
+                FROM data_points
+               WHERE ticker = ?
+                 AND metric = ?
+                 AND period IN ({month_placeholders})
+                 AND time_grain = 'monthly'
+                 AND coalesce(source_period_type, 'monthly') = 'monthly'""",
+            [item['ticker'], metric, *month_periods],
+        ).fetchall()
+        monthly_review_rows = conn.execute(
+            f"""SELECT DISTINCT substr(period, 1, 7) AS month
+                FROM review_queue
+               WHERE ticker = ?
+                 AND metric = ?
+                 AND period IN ({month_placeholders})
+                 AND time_grain = 'monthly'
+                 AND status = 'PENDING'
+                 AND coalesce(precedence_state, '{_REVIEW_PRECEDENCE_ACTIVE}') = '{_REVIEW_PRECEDENCE_ACTIVE}'""",
+            [item['ticker'], metric, *month_periods],
+        ).fetchall()
+        covered_months = sorted({
+            *(r['month'] for r in monthly_dp_rows),
+            *(r['month'] for r in monthly_review_rows),
+        })
+        if len(covered_months) == len(months):
+            return {
+                'source_role': 'quarterly_fallback',
+                'precedence_state': _REVIEW_PRECEDENCE_SUPPRESSED,
+                'precedence_reason': json.dumps({
+                    'reason': 'monthly_metric_coverage_complete',
+                    'months': covered_months,
+                    'covering_period': item['period'],
+                }),
+            }
+
+        return {
+            'source_role': 'quarterly_fallback',
+            'precedence_state': _REVIEW_PRECEDENCE_ACTIVE,
+            'precedence_reason': json.dumps({
+                'reason': 'monthly_gap_remaining',
+                'months': covered_months,
+                'covering_period': item['period'],
+            }),
+        }
+
+    def refresh_review_precedence_for_covering_period(self, ticker: str, covering_period: str) -> int:
+        """Recompute deferred / suppressed quarterly review items for one quarter."""
+        updated = 0
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT id, ticker, period, metric, time_grain, report_id, source_role,
+                          precedence_state, precedence_reason
+                     FROM review_queue
+                    WHERE ticker = ?
+                      AND period = ?
+                      AND time_grain = 'quarterly'""",
+                (ticker, covering_period),
+            ).fetchall()
+            for row in rows:
+                current = dict(row)
+                resolved = self._resolve_review_precedence(conn, current)
+                if (
+                    resolved['source_role'] != (current.get('source_role') or 'primary')
+                    or resolved['precedence_state'] != (current.get('precedence_state') or _REVIEW_PRECEDENCE_ACTIVE)
+                    or resolved['precedence_reason'] != current.get('precedence_reason')
+                ):
+                    conn.execute(
+                        """UPDATE review_queue
+                              SET source_role = ?, precedence_state = ?, precedence_reason = ?
+                            WHERE id = ?""",
+                        (
+                            resolved['source_role'],
+                            resolved['precedence_state'],
+                            resolved['precedence_reason'],
+                            current['id'],
+                        ),
+                    )
+                    updated += 1
+        return updated
+
+    def refresh_review_precedence_for_month(self, ticker: str, period: str) -> int:
+        """Recompute quarterly review precedence for the quarter containing one month."""
+        try:
+            year = int(period[:4])
+            month = int(period[5:7])
+        except (TypeError, ValueError):
+            return 0
+        quarter = ((month - 1) // 3) + 1
+        return self.refresh_review_precedence_for_covering_period(
+            ticker=ticker,
+            covering_period=f"{year:04d}-Q{quarter}",
+        )
 
     def report_exists_by_url_hash(self, url_hash: str, ticker: str = None) -> bool:
         """Return True if a report with this source_url_hash already exists.
@@ -2865,6 +3064,25 @@ class MinerDB:
         if row is None:
             return _DEFAULT_SOURCE_PRIORITY
         return _SOURCE_PRIORITY.get(row[0], _DEFAULT_SOURCE_PRIORITY)
+
+    def _report_extraction_order_sql(self) -> str:
+        """Return a SQL CASE expression for chronology-first extraction ordering.
+
+        The primary sort key is always report_date. This secondary key ensures
+        monthly sources are processed before SEC event filings and quarterly /
+        annual filings when multiple documents share the same report_date.
+        """
+        from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+
+        monthly_types = "', '".join(MONTHLY_EXTRACTION_SOURCE_TYPES)
+        return (
+            "CASE "
+            f"WHEN source_type IN ('{monthly_types}') THEN 0 "
+            "WHEN source_type = 'edgar_8k' OR source_type = 'edgar_8ka' THEN 1 "
+            "WHEN source_type IN ('edgar_10q', 'edgar_6k') THEN 2 "
+            "WHEN source_type IN ('edgar_10k', 'edgar_20f', 'edgar_40f') THEN 3 "
+            "ELSE 4 END"
+        )
 
     def insert_data_point(self, dp: dict) -> int:
         period = dp['period']
@@ -3517,13 +3735,20 @@ class MinerDB:
         time_grain = item.get('time_grain') or self._derive_time_grain(period)
         expected_granularity = item.get('expected_granularity')
         with self._get_connection() as conn:
+            precedence = self._resolve_review_precedence(conn, {
+                **item,
+                'period': period,
+                'time_grain': time_grain,
+            })
             cursor = conn.execute(
                 """INSERT INTO review_queue
                    (data_point_id, ticker, period, metric, raw_value, confidence,
-                    source_snippet, status, llm_value, regex_value, agreement_status, report_id,
+                    source_snippet, status, source_role, precedence_state, precedence_reason,
+                    llm_value, regex_value, agreement_status, report_id,
                     expected_granularity, time_grain)
                    VALUES (:data_point_id, :ticker, :period, :metric, :raw_value,
                            :confidence, :source_snippet, :status,
+                           :source_role, :precedence_state, :precedence_reason,
                            :llm_value, :regex_value, :agreement_status, :report_id,
                            :expected_granularity, :time_grain)""",
                 {
@@ -3535,6 +3760,9 @@ class MinerDB:
                     'confidence':           item['confidence'],
                     'source_snippet':       item.get('source_snippet'),
                     'status':               item.get('status', 'PENDING'),
+                    'source_role':          precedence['source_role'],
+                    'precedence_state':     precedence['precedence_state'],
+                    'precedence_reason':    precedence['precedence_reason'],
                     'llm_value':            item.get('llm_value'),
                     'regex_value':          item.get('regex_value'),
                     'agreement_status':     item.get('agreement_status'),
@@ -3561,12 +3789,17 @@ class MinerDB:
         ticker: Optional[str] = None,
         period: Optional[str] = None,
         metric: Optional[str] = None,
+        include_inactive: bool = False,
     ) -> list:
         conditions = []
         params: list = []
         if status:
             conditions.append("status = ?")
             params.append(status)
+        if not include_inactive:
+            conditions.append(
+                f"coalesce(precedence_state, '{_REVIEW_PRECEDENCE_ACTIVE}') = '{_REVIEW_PRECEDENCE_ACTIVE}'"
+            )
         if ticker:
             conditions.append("ticker = ?")
             params.append(ticker)
@@ -3578,7 +3811,10 @@ class MinerDB:
             conditions.append("metric = ?")
             params.append(metric)
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        sql = f"SELECT * FROM review_queue {where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        sql = (
+            f"SELECT * FROM review_queue {where} "
+            "ORDER BY period ASC, created_at ASC, id ASC LIMIT ? OFFSET ?"
+        )
         params += [limit, offset]
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -3634,21 +3870,32 @@ class MinerDB:
                           reviewer_note, created_at
                    FROM review_queue
                    WHERE ticker = ? AND period = ? AND metric = ?
+                     AND coalesce(precedence_state, 'active') = 'active'
                    ORDER BY created_at DESC""",
                 [ticker, period, metric],
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def count_review_items(self, status: Optional[str] = "PENDING") -> int:
+    def count_review_items(
+        self,
+        status: Optional[str] = "PENDING",
+        include_inactive: bool = False,
+    ) -> int:
         with self._get_connection() as conn:
+            clauses = []
+            params: list = []
             if status:
-                return conn.execute(
-                    "SELECT COUNT(*) FROM review_queue WHERE status = ?", (status,)
-                ).fetchone()[0]
-            else:
-                return conn.execute(
-                    "SELECT COUNT(*) FROM review_queue"
-                ).fetchone()[0]
+                clauses.append("status = ?")
+                params.append(status)
+            if not include_inactive:
+                clauses.append(
+                    f"coalesce(precedence_state, '{_REVIEW_PRECEDENCE_ACTIVE}') = '{_REVIEW_PRECEDENCE_ACTIVE}'"
+                )
+            where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+            return conn.execute(
+                f"SELECT COUNT(*) FROM review_queue{where}",
+                params,
+            ).fetchone()[0]
 
     def approve_review_item(self, id: int) -> dict:
         with self._get_connection() as conn:
@@ -3711,6 +3958,8 @@ class MinerDB:
             source_ref=f"review_queue:{id}",
             time_grain=_time_grain,
         )
+        if _time_grain == 'monthly':
+            self.refresh_review_precedence_for_month(item['ticker'], item['period'])
         return dp
 
     def reject_review_item(self, id: int, note: str) -> None:
@@ -3784,6 +4033,8 @@ class MinerDB:
             source_ref=f"review_queue:{id}",
             time_grain=_time_grain,
         )
+        if _time_grain == 'monthly':
+            self.refresh_review_precedence_for_month(item['ticker'], item['period'])
         return dp
 
 

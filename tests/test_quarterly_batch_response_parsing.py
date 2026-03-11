@@ -53,6 +53,12 @@ class TestParseQuarterlyBatchResponse:
         result = interpreter._parse_quarterly_batch_response(raw, ['production_btc'])
         assert 'production_btc' not in result
 
+    def test_parse_returns_empty_when_top_level_json_is_list(self, interpreter):
+        """Malformed list-shaped responses must not raise and must be ignored."""
+        raw = '[{"metric": "production_btc", "value": 2100.0, "unit": "BTC", "confidence": 0.9}]'
+        result = interpreter._parse_quarterly_batch_response(raw, ['production_btc'])
+        assert result == {}
+
     def test_parse_handles_multiple_metrics(self, interpreter):
         """Multiple metrics in one response are all parsed correctly."""
         raw = (

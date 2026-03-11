@@ -995,6 +995,102 @@ class TestKeywordGate:
         assert summary.keyword_gated == 0, "production report must pass gate even with no DB keywords"
         mock_llm.extract_quarterly_batch.assert_called_once()
 
+    def test_quarterly_review_is_deferred_while_monthly_reports_are_pending(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """Low-confidence quarterly review stays out of the active queue until monthly docs catch up."""
+        import interpreters.interpret_pipeline as _ep
+        from miner_types import ExtractionResult
+
+        for month in ('2025-01-01', '2025-02-01', '2025-03-01'):
+            db_with_company.insert_report(make_report(
+                report_date=month,
+                source_type='ir_press_release',
+                raw_text='MARA mined bitcoin this month.',
+            ))
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=2100.0, unit='BTC', confidence=0.60,
+                extraction_method='llm_test', source_snippet='bitcoin produced 2100',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA bitcoin produced 2100 BTC in Q1 2025.',
+            report_date='2025-03-31',
+            source_type='edgar_10q',
+            covering_period='2025-Q1',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.review_flagged == 1
+        assert db_with_company.get_review_items(status='PENDING') == []
+        deferred = db_with_company.get_review_items(status='PENDING', include_inactive=True)
+        assert len(deferred) == 1
+        assert deferred[0]['precedence_state'] == 'deferred'
+
+    def test_quarterly_8k_shareholder_letter_uses_quarterly_path(
+        self, db_with_company, registry, monkeypatch
+    ):
+        """Quarter-style 8-K shareholder letters should not enter the monthly queue."""
+        import interpreters.interpret_pipeline as _ep
+        from miner_types import ExtractionResult
+
+        for month in ('2025-07-01', '2025-08-01', '2025-09-01'):
+            db_with_company.insert_report(make_report(
+                report_date=month,
+                source_type='ir_press_release',
+                raw_text='MARA mined bitcoin this month.',
+            ))
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=1900.0, unit='BTC', confidence=0.60,
+                extraction_method='llm_test', source_snippet='BTC Produced | 1,900',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA Shareholder Letter Q3 2025. BTC Produced | 1,900',
+            report_date='2025-11-04',
+            source_type='edgar_8k',
+            source_url='https://www.sec.gov/Archives/edgar/data/1507605/000150760525000026/q325shareholderletter.htm',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company, registry)
+
+        assert summary.review_flagged == 1
+        mock_llm.extract_quarterly_batch.assert_called_once()
+        active = db_with_company.get_review_items(status='PENDING')
+        assert active == []
+        deferred = db_with_company.get_review_items(status='PENDING', include_inactive=True)
+        assert len(deferred) == 1
+        assert deferred[0]['period'] == '2025-Q3'
+        assert deferred[0]['time_grain'] == 'quarterly'
+        assert deferred[0]['precedence_state'] == 'deferred'
+
 
 class TestBoilerplateStrippingBySourceType:
     """Verify extract_report strips IR/archive boilerplate and EDGAR footers before LLM."""

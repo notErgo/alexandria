@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import queue
 import threading
 import time
 import uuid
@@ -43,6 +42,26 @@ _EDGAR_SOURCE_TYPES = (
 _NON_EDGAR_SOURCE_TYPES = MONTHLY_EXTRACTION_SOURCE_TYPES
 
 
+def _report_chronology_key(report: dict) -> tuple:
+    report_date = report.get('report_date') or ''
+    source_type = report.get('source_type') or ''
+    if source_type in MONTHLY_EXTRACTION_SOURCE_TYPES:
+        source_rank = 0
+    elif source_type in ('edgar_8k', 'edgar_8ka'):
+        source_rank = 1
+    elif source_type in ('edgar_10q', 'edgar_6k'):
+        source_rank = 2
+    elif source_type in ('edgar_10k', 'edgar_20f', 'edgar_40f'):
+        source_rank = 3
+    else:
+        source_rank = 4
+    return (report_date, source_rank, int(report.get('id') or 0))
+
+
+def _sort_reports_chronologically(reports: list[dict]) -> list[dict]:
+    return sorted(reports, key=_report_chronology_key)
+
+
 def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool = False) -> list:
     """Collect reports eligible for extraction for one ticker.
 
@@ -60,7 +79,7 @@ def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool
                 if not r.get('source_type', '').startswith('edgar')
                 or r.get('report_date', '') >= first_filing
             ]
-        return batch
+        return _sort_reports_chronologically(batch)
     else:
         edgar_batch = db.get_unextracted_reports(
             ticker=ticker,
@@ -71,7 +90,7 @@ def _build_extraction_batch(db, ticker: str, first_filing, force_reextract: bool
             ticker=ticker,
             source_types=list(_NON_EDGAR_SOURCE_TYPES),
         )
-        return edgar_batch + non_edgar_batch
+        return _sort_reports_chronologically(edgar_batch + non_edgar_batch)
 
 
 class _RunCancelled(Exception):
@@ -312,18 +331,15 @@ def _extract_reports_for_ticker(
         _event(db, run_id, 'extract', 'ticker_skipped', ticker=ticker, reason='no_pending_reports')
         return
 
-    effective_workers = max(1, min(int(num_workers), len(reports)))
+    ordered_reports = _sort_reports_chronologically(reports)
+    effective_workers = 1
     ticker_processed = ticker_data_points = ticker_errors = 0
     ticker_keyword_gated = ticker_regex_gated = 0
-    report_ids = [int(r['id']) for r in reports if r.get('id') is not None]
-    work_queue: queue.Queue = queue.Queue()
-    for report_id in report_ids:
-        work_queue.put(report_id)
-
     counter_lock = threading.Lock()
     _event(
         db, run_id, 'extract', 'ticker_start',
-        ticker=ticker, pending_reports=len(reports), workers=effective_workers,
+        ticker=ticker, pending_reports=len(ordered_reports), workers=effective_workers,
+        strict_chronology=1,
     )
 
     def _record_report_success(report: dict, summary, worker_id: int) -> None:
@@ -378,39 +394,34 @@ def _extract_reports_for_ticker(
             source_type=source_type, error=str(error),
         )
 
-    def worker(worker_id: int) -> None:
-        local_db = MinerDB(db.db_path)
-        while True:
-            if _is_cancelled(run_id):
-                break
-            try:
-                report_id = work_queue.get_nowait()
-            except queue.Empty:
-                break
-            if not local_db.claim_report_for_extraction(report_id):
-                log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
-                continue
-            report = local_db.get_report(report_id)
-            if not report:
-                continue
-            _event(
-                db, run_id, 'extract', 'report_start',
-                ticker=ticker,
-                worker_id=worker_id,
-                report_id=report.get('id'),
-                period=report.get('report_date', ''),
-                source_type=report.get('source_type', ''),
-            )
-            try:
-                summary = extract_report(report, local_db, registry)
-                _record_report_success(report, summary, worker_id)
-            except Exception as e:
-                _record_report_failure(report, e, worker_id)
-
-    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
-        futures = [pool.submit(worker, i) for i in range(effective_workers)]
-        for future in as_completed(futures):
-            future.result()
+    local_db = MinerDB(db.db_path)
+    worker_id = 0
+    for report in ordered_reports:
+        if _is_cancelled(run_id):
+            break
+        report_id = report.get('id')
+        if report_id is None:
+            continue
+        report_id = int(report_id)
+        if not local_db.claim_report_for_extraction(report_id):
+            log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
+            continue
+        claimed_report = local_db.get_report(report_id)
+        if not claimed_report:
+            continue
+        _event(
+            db, run_id, 'extract', 'report_start',
+            ticker=ticker,
+            worker_id=worker_id,
+            report_id=claimed_report.get('id'),
+            period=claimed_report.get('report_date', ''),
+            source_type=claimed_report.get('source_type', ''),
+        )
+        try:
+            summary = extract_report(claimed_report, local_db, registry)
+            _record_report_success(claimed_report, summary, worker_id)
+        except Exception as e:
+            _record_report_failure(claimed_report, e, worker_id)
 
     db.upsert_pipeline_run_ticker(run_id, ticker, extracted=1)
     _event(
@@ -1047,7 +1058,7 @@ def start_overnight_pipeline():
         'probe_timeout_seconds': int(body.get('probe_timeout_seconds', 12)),
         'require_probe_success': bool(body.get('require_probe_success', True)),
         'require_non_skip_recommendation': bool(body.get('require_non_skip_recommendation', True)),
-        'include_ir': bool(body.get('include_ir', False)),
+        'include_ir': bool(body.get('include_ir', True)),
         'include_crawl': bool(body.get('include_crawl', False)),
         'crawl_provider': body.get('crawl_provider') or None,
         'crawl_timeout_seconds': int(body.get('crawl_timeout_seconds', 1800)),

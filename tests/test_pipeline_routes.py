@@ -490,7 +490,7 @@ def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path)
     ]
 
 
-def test_extract_reports_for_ticker_bounds_workers_and_claims_reports(monkeypatch, tmp_path):
+def test_extract_reports_for_ticker_enforces_serial_chronology_and_claims_reports(monkeypatch, tmp_path):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
     import routes.pipeline as pipeline_mod
     import interpreters.interpret_pipeline as interpret_mod
@@ -520,28 +520,6 @@ def test_extract_reports_for_ticker_bounds_workers_and_claims_reports(monkeypatc
     run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
     run_id = int(run['id'])
     extracted = []
-    seen_workers = []
-
-    class _ImmediateFuture:
-        def __init__(self, fn, *args, **kwargs):
-            self._result = fn(*args, **kwargs)
-
-        def result(self):
-            return self._result
-
-    class _ImmediateExecutor:
-        def __init__(self, max_workers):
-            seen_workers.append(max_workers)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def submit(self, fn, *args, **kwargs):
-            return _ImmediateFuture(fn, *args, **kwargs)
-
     def _fake_extract(report, local_db, registry, **kwargs):
         extracted.append(report['id'])
         local_db.mark_report_extracted(report['id'])
@@ -551,8 +529,6 @@ def test_extract_reports_for_ticker_bounds_workers_and_claims_reports(monkeypatc
         return summary
 
     monkeypatch.setattr(interpret_mod, 'extract_report', _fake_extract)
-    monkeypatch.setattr(pipeline_mod, 'ThreadPoolExecutor', _ImmediateExecutor)
-    monkeypatch.setattr(pipeline_mod, 'as_completed', lambda futures: futures)
 
     counters = {
         'total_reports': len(reports),
@@ -576,8 +552,7 @@ def test_extract_reports_for_ticker_bounds_workers_and_claims_reports(monkeypatc
         num_workers=10,
     )
 
-    assert seen_workers == [3]
-    assert sorted(extracted) == sorted(report_ids)
+    assert extracted == report_ids
     assert counters['processed'] == 3
     assert counters['data_points'] == 3
     assert counters['errors'] == 0
