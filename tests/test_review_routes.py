@@ -228,6 +228,17 @@ class TestApproveFinalDataPoints:
 
 class TestReviewPurgeRoute:
     def test_purge_review_queue_preserves_reports(self, app_with_review, db_with_review):
+        db_with_review.insert_data_point({
+            'report_id': db_with_review._report_id,
+            'ticker': 'MARA',
+            'period': '2024-01-01',
+            'metric': 'production_btc',
+            'value': 700.0,
+            'unit': 'BTC',
+            'confidence': 0.9,
+            'extraction_method': 'llm_test',
+            'source_snippet': 'MARA Holdings mined 700 BTC in January 2024.',
+        })
         with app_with_review.test_client() as c:
             resp = c.post(
                 '/api/delete/review',
@@ -238,10 +249,12 @@ class TestReviewPurgeRoute:
             data = resp.get_json()
             assert data['success'] is True
             assert data['data']['reports_preserved'] is True
+            assert data['data']['counts']['data_points_deleted'] == 1
             assert data['data']['counts']['review_queue_deleted'] == 1
             assert data['data']['counts']['final_data_points_deleted'] == 0
             assert db_with_review.get_report(db_with_review._report_id) is not None
             assert db_with_review.count_review_items(status='PENDING') == 0
+            assert db_with_review.query_data_points(ticker='MARA') == []
 
     def test_purge_review_queue_resets_report_to_pending(self, app_with_review, db_with_review):
         db_with_review.mark_report_extracted(db_with_review._report_id)
@@ -259,6 +272,17 @@ class TestReviewPurgeRoute:
         assert report['extracted_at'] is None
 
     def test_purge_final_preserves_reports_and_review_queue(self, app_with_review, db_with_review):
+        db_with_review.insert_data_point({
+            'report_id': db_with_review._report_id,
+            'ticker': 'MARA',
+            'period': '2024-01-01',
+            'metric': 'production_btc',
+            'value': 700.0,
+            'unit': 'BTC',
+            'confidence': 0.9,
+            'extraction_method': 'llm_test',
+            'source_snippet': 'MARA Holdings mined 700 BTC in January 2024.',
+        })
         db_with_review.upsert_final_data_point(
             'MARA',
             '2024-01-01',
@@ -279,11 +303,13 @@ class TestReviewPurgeRoute:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data['success'] is True
+            assert data['data']['counts']['data_points_deleted'] == 1
             assert data['data']['counts']['review_queue_deleted'] == 0
             assert data['data']['counts']['final_data_points_deleted'] == 1
             assert db_with_review.get_report(db_with_review._report_id) is not None
             assert len(db_with_review.get_review_items(status='PENDING', limit=50, offset=0)) == 1
             assert db_with_review.get_final_data_points('MARA') == []
+            assert db_with_review.query_data_points(ticker='MARA') == []
 
     def test_purge_requires_confirm(self, app_with_review):
         with app_with_review.test_client() as c:

@@ -35,6 +35,7 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
         from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
 
@@ -56,6 +57,7 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
         db = MagicMock()
         db.mark_report_extraction_running.side_effect = lambda rid: call_order.append('running')
         db.mark_report_extracted.side_effect = lambda rid: call_order.append('extracted')
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
 
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
@@ -82,6 +84,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         from miner_types import ExtractionSummary
 
         db = MagicMock()
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
@@ -101,6 +104,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         from miner_types import ExtractionSummary
 
         db = MagicMock()
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
@@ -120,6 +124,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         from miner_types import ExtractionSummary
 
         db = MagicMock()
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
@@ -141,6 +146,7 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
         from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
 
@@ -180,12 +186,12 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
 class TestSuccessfulExtractionMarksDone(unittest.TestCase):
     """Happy path: successful extraction must still call mark_report_extracted."""
 
-    def test_successful_extraction_marks_done(self):
+    def test_monthly_llm_unavailable_resets_to_pending(self):
         from interpreters.interpret_pipeline import extract_report
 
         db = MagicMock()
-        db.data_point_exists.return_value = False
-        db.get_trailing_values.return_value = []
+        db.get_metric_rules.return_value = []
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
         registry = MagicMock()
         registry.metrics = {'production_btc': MagicMock()}
 
@@ -194,11 +200,11 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
-                    with patch('interpreters.interpret_pipeline._try_gap_fill'):
-                        mock_llm_fn.return_value = None
-                        extract_report(report, db, registry)
+                    mock_llm_fn.return_value = None
+                    extract_report(report, db, registry)
 
-        db.mark_report_extracted.assert_called_once_with(report['id'])
+        db.reset_report_to_pending.assert_called_once_with(report['id'])
+        db.mark_report_extracted.assert_not_called()
 
 
 if __name__ == '__main__':

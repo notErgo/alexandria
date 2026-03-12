@@ -235,7 +235,7 @@ def _parse_html(path: str) -> str:
         return ""
 
 
-def _build_html_covered(archive_path: Path) -> set:
+def _build_html_covered(archive_path: Path, tickers: Optional[list[str] | set[str]] = None) -> set:
     """
     Return the set of (ticker, date) pairs that have at least one HTML file.
 
@@ -248,11 +248,14 @@ def _build_html_covered(archive_path: Path) -> set:
     this pre-scan fast.
     """
     covered: set = set()
+    ticker_filter = {str(t).upper() for t in (tickers or []) if str(t).strip()} or None
     for html_path in archive_path.rglob("*.html"):
         if not is_production_filename(html_path.name):
             continue
         ticker = infer_ticker_from_path(str(html_path))
         if ticker is None:
+            continue
+        if ticker_filter is not None and ticker not in ticker_filter:
             continue
         period = infer_period_from_filename(str(html_path), ticker, read_body=False)
         if period is not None:
@@ -267,7 +270,13 @@ class ArchiveIngestor:
     db: object  # MinerDB
     registry: object  # PatternRegistry
 
-    def ingest_all(self, force: bool = False, progress_callback=None):
+    def ingest_all(
+        self,
+        force: bool = False,
+        progress_callback=None,
+        tickers: Optional[list[str] | set[str]] = None,
+        auto_extract_monthly: bool = True,
+    ):
         """
         Walk archive_dir, parse all production report files, extract metrics,
         write results to DB. Returns IngestSummary.
@@ -294,10 +303,11 @@ class ArchiveIngestor:
 
         summary = IngestSummary()
         archive_path = Path(self.archive_dir)
+        ticker_filter = {str(t).upper() for t in (tickers or []) if str(t).strip()} or None
 
         # Phase 0: scan archive to update asset_manifest before processing
         try:
-            scan_result = scan_archive_directory(archive_path, self.db)
+            scan_result = scan_archive_directory(archive_path, self.db, tickers=ticker_filter)
             log.info(
                 "Manifest scan complete: total=%d new=%d legacy=%d",
                 scan_result.total_found, scan_result.newly_discovered, scan_result.legacy_undated,
@@ -310,7 +320,7 @@ class ArchiveIngestor:
         # (cleaner text, faster parsing, no PDF rendering artifacts, one fewer
         # LLM call). Undated HTMLs (strategy 4 required) are not in html_covered
         # but they never have corresponding PDFs in the archive anyway.
-        html_covered = _build_html_covered(archive_path)
+        html_covered = _build_html_covered(archive_path, tickers=ticker_filter)
         log.info("Pre-scan: %d (ticker, period) pairs covered by HTML", len(html_covered))
 
         # Pre-count qualifying candidates so we can report accurate progress
@@ -318,6 +328,7 @@ class ArchiveIngestor:
             fp for fp in sorted(archive_path.rglob("*"))
             if fp.suffix.lower() in (".pdf", ".html")
             and infer_ticker_from_path(str(fp)) is not None
+            and (ticker_filter is None or infer_ticker_from_path(str(fp)) in ticker_filter)
             and (is_production_filename(fp.name) or is_quarterly_filing(fp.name))
         ]
         _total_candidates = len(_all_candidates)
@@ -509,14 +520,16 @@ class ArchiveIngestor:
                 # Mark as done so get_unextracted_reports() doesn't pick it up again
                 self.db.mark_report_extracted(report_id)
             else:
-                # Monthly press release — delegate to shared extraction pipeline.
-                # Pipeline runs LLM+regex+agreement and marks the report extracted.
-                stored_report = self.db.get_report(report_id)
-                if stored_report:
-                    ext_summary = extract_report(stored_report, self.db, self.registry)
-                    summary.data_points_extracted += ext_summary.data_points_extracted
-                    summary.review_flagged += ext_summary.review_flagged
-                    summary.errors += ext_summary.errors
+                if auto_extract_monthly:
+                    # Monthly press release — delegate to shared extraction pipeline.
+                    # Some callers, such as the overnight pipeline, ingest first and
+                    # then run the warmed shared extraction stage separately.
+                    stored_report = self.db.get_report(report_id)
+                    if stored_report:
+                        ext_summary = extract_report(stored_report, self.db, self.registry)
+                        summary.data_points_extracted += ext_summary.data_points_extracted
+                        summary.review_flagged += ext_summary.review_flagged
+                        summary.errors += ext_summary.errors
 
         return summary
 
@@ -547,4 +560,3 @@ def _create_chunks_from_result(report_id: int, result, db) -> int:
         except Exception as e:
             log.warning("Failed to upsert chunk %d for report %d: %s", i, report_id, e)
     return count
-

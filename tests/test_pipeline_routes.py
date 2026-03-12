@@ -276,6 +276,41 @@ def test_overnight_start_rejects_when_live_run_thread_exists(client, monkeypatch
     pipeline_mod._run_threads.pop(int(active_run['id']), None)
 
 
+def test_overnight_start_recovers_stale_running_report_claims(client, monkeypatch):
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    db = app_globals.get_db()
+    report_id = db.insert_report(make_report(
+        ticker='MARA',
+        raw_text='MARA mined 700 BTC.',
+        report_date='2024-09-01',
+    ))
+    db.mark_report_extraction_running(report_id)
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            return None
+
+        def is_alive(self):
+            return False
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+
+    resp = client.post('/api/pipeline/overnight/start', json={'tickers': ['MARA']})
+
+    assert resp.status_code == 202
+    refreshed = db.get_report(report_id)
+    assert refreshed['extraction_status'] == 'pending'
+    assert refreshed['extraction_attempts'] == 0
+
+
 def test_overnight_start_accepts_force_reextract(client, monkeypatch):
     """force_reextract flag must be stored in the pipeline run config."""
     import app_globals
@@ -330,6 +365,35 @@ def test_overnight_start_accepts_extract_workers(client, monkeypatch):
     cfg_raw = run.get('config_json') or "{}"
     cfg = json.loads(cfg_raw) if isinstance(cfg_raw, str) else cfg_raw
     assert int(cfg.get('extract_workers')) == 5
+
+
+def test_overnight_start_accepts_ir_workers(client, monkeypatch):
+    """ir_workers must be stored in the pipeline run config."""
+    import app_globals
+    import routes.pipeline as pipeline_mod
+
+    class _DummyThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            self.name = name
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(pipeline_mod.threading, 'Thread', _DummyThread)
+
+    resp = client.post('/api/pipeline/overnight/start', json={
+        'tickers': ['MARA'],
+        'ir_workers': 4,
+    })
+    assert resp.status_code == 202
+    run_id = int(resp.get_json()['data']['run_id'])
+    run = app_globals.get_db().get_pipeline_run(run_id)
+    cfg_raw = run.get('config_json') or "{}"
+    cfg = json.loads(cfg_raw) if isinstance(cfg_raw, str) else cfg_raw
+    assert int(cfg.get('ir_workers')) == 4
 
 
 def test_pipeline_preflight_returns_json(client):
@@ -573,6 +637,86 @@ def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path)
     ]
 
 
+def test_scrape_ticker_for_pipeline_runs_archive_ingest_first(monkeypatch, tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import config as config_mod
+    import routes.pipeline as pipeline_mod
+    from miner_types import IngestSummary
+
+    db = MinerDB(str(tmp_path / 'archive-stage.db'))
+    db.insert_company({
+        'ticker': 'MARA',
+        'name': 'MARA',
+        'tier': 1,
+        'ir_url': 'https://example.com/mara',
+        'pr_base_url': 'https://example.com',
+        'cik': '0001437491',
+        'active': 1,
+        'scraper_mode': 'rss',
+    })
+
+    call_order = []
+
+    class _FakeArchiveIngestor:
+        def __init__(self, archive_dir, db, registry):
+            self.archive_dir = archive_dir
+            self.db = db
+            self.registry = registry
+
+        def ingest_all(self, force=False, progress_callback=None, tickers=None, auto_extract_monthly=True):
+            call_order.append(('archive', tuple(tickers or []), auto_extract_monthly))
+            summary = IngestSummary()
+            summary.reports_ingested = 2
+            summary.data_points_extracted = 3
+            return summary
+
+    class _FakeIRScraper:
+        def __init__(self, db, session):
+            pass
+
+        def scrape_company(self, company):
+            call_order.append(('ir', company['ticker']))
+            return IngestSummary()
+
+    class _FakeEdgarConnector:
+        def __init__(self, db, session):
+            pass
+
+        def fetch_all_filings(self, cik, ticker, since_date, filing_regime):
+            call_order.append(('edgar', ticker))
+            return IngestSummary()
+
+    monkeypatch.setattr(pipeline_mod, '_event', lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline_mod, '_is_cancelled', lambda run_id: False)
+    monkeypatch.setattr(pipeline_mod, '_count_reports_for_tickers', lambda db_obj, tickers: 0)
+    monkeypatch.setattr(config_mod, 'ARCHIVE_DIR', str(tmp_path))
+    monkeypatch.setattr('scrapers.archive_ingestor.ArchiveIngestor', _FakeArchiveIngestor)
+    monkeypatch.setattr('scrapers.ir_scraper.IRScraper', _FakeIRScraper)
+    monkeypatch.setattr('scrapers.edgar_connector.EdgarConnector', _FakeEdgarConnector)
+    monkeypatch.setattr('interpreters.pattern_registry.PatternRegistry.load', lambda config_dir: object())
+
+    result = pipeline_mod._scrape_ticker_for_pipeline(
+        db_path=db.db_path,
+        run_id=1,
+        ticker='MARA',
+        include_ir=True,
+        ir_semaphore=pipeline_mod.threading.Semaphore(1),
+        edgar_semaphore=pipeline_mod.threading.Semaphore(1),
+        ir_throttle=None,
+        edgar_throttle=None,
+        host_backoff_seconds=0,
+        max_retries=1,
+    )
+
+    assert call_order == [
+        ('archive', ('MARA',), False),
+        ('ir', 'MARA'),
+        ('edgar', 'MARA'),
+    ]
+    assert result['archive_reports_ingested'] == 2
+    assert result['archive_data_points_extracted'] == 3
+
+
 def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(monkeypatch, tmp_path):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
     import time
@@ -628,7 +772,6 @@ def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(mo
         'data_points': 0,
         'errors': 0,
         'keyword_gated': 0,
-        'regex_gated': 0,
     }
     failures = []
 
@@ -671,3 +814,89 @@ def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(mo
     ]
     assert [int(row['report_id']) for row in done_events] == report_ids
     assert '"workers": 3' in ticker_start['details_json']
+
+
+def test_extract_reports_for_ticker_limits_claimed_running_rows_to_worker_count(monkeypatch, tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import threading
+    import routes.pipeline as pipeline_mod
+    import interpreters.interpret_pipeline as interpret_mod
+    from miner_types import ExtractionSummary
+
+    db = MinerDB(str(tmp_path / 'bounded-claims.db'))
+    db.insert_company({
+        'ticker': 'MARA',
+        'name': 'MARA',
+        'tier': 1,
+        'ir_url': 'https://example.com/mara',
+        'pr_base_url': 'https://example.com',
+        'cik': '0001437491',
+        'active': 1,
+        'scraper_mode': 'rss',
+    })
+    report_ids = [
+        db.insert_report(make_report(
+            ticker='MARA',
+            raw_text=f'MARA mined {700 + i} BTC.',
+            report_date=f'2024-{i + 1:02d}-01',
+            source_url=f'https://example.com/report-{i}',
+        ))
+        for i in range(4)
+    ]
+    reports = [db.get_report(rid) for rid in report_ids]
+    run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA']}, config={})
+    run_id = int(run['id'])
+    started = 0
+    started_lock = threading.Lock()
+    all_workers_started = threading.Event()
+    release_workers = threading.Event()
+
+    def _fake_extract(report, local_db, registry, **kwargs):
+        nonlocal started
+        with started_lock:
+            started += 1
+            if started == 2:
+                all_workers_started.set()
+        release_workers.wait(timeout=2.0)
+        local_db.mark_report_extracted(report['id'])
+        summary = ExtractionSummary()
+        summary.reports_processed = 1
+        return summary
+
+    monkeypatch.setattr(interpret_mod, 'extract_report', _fake_extract)
+
+    counters = {
+        'total_reports': len(reports),
+        'report_done_count': 0,
+        'processed': 0,
+        'data_points': 0,
+        'errors': 0,
+        'keyword_gated': 0,
+    }
+    failures = []
+    worker = threading.Thread(
+        target=pipeline_mod._extract_reports_for_ticker,
+        kwargs={
+            'db': db,
+            'run_id': run_id,
+            'ticker': 'MARA',
+            'reports': reports,
+            'registry': object(),
+            'counters': counters,
+            'failures': failures,
+            'num_workers': 2,
+        },
+    )
+    worker.start()
+    assert all_workers_started.wait(timeout=2.0)
+
+    with db._get_connection() as conn:
+        running_now = conn.execute(
+            "SELECT COUNT(*) FROM reports WHERE ticker='MARA' AND extraction_status='running'"
+        ).fetchone()[0]
+    assert running_now == 2
+
+    release_workers.set()
+    worker.join(timeout=5.0)
+    assert not worker.is_alive()
+    assert failures == []

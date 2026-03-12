@@ -113,7 +113,6 @@ def _summary_to_dict(summary) -> dict:
         'review_flagged': int(summary.review_flagged or 0),
         'errors': int(summary.errors or 0),
         'keyword_gated': int(summary.keyword_gated or 0),
-        'regex_gated': int(summary.regex_gated or 0),
         'prompt_tokens': int(summary.prompt_tokens or 0),
         'response_tokens': int(summary.response_tokens or 0),
         'temporal_rejects': int(getattr(summary, 'temporal_rejects', 0) or 0),
@@ -215,6 +214,17 @@ def _cleanup_orphaned_process_runs(db) -> list[int]:
             details={'reason': 'thread_missing'},
         )
     return orphaned
+
+
+def _recover_stale_report_claims(db) -> int:
+    """Release report rows left in extraction_status='running' without a live run."""
+    active_runs = [
+        run for run in db.list_pipeline_runs_by_status(['queued', 'running'])
+        if _is_run_thread_alive(int(run['id']))
+    ]
+    if active_runs:
+        return 0
+    return db.reset_interrupted_report_extractions()
 
 
 def _event(db, run_id: int, stage: str, event: str, *, ticker: str = None, level: str = 'INFO', **details) -> None:
@@ -439,7 +449,7 @@ def _extract_reports_for_ticker(
     ordered_reports = _sort_reports_chronologically(reports)
     effective_workers = max(1, min(int(num_workers), len(ordered_reports)))
     ticker_processed = ticker_data_points = ticker_errors = 0
-    ticker_keyword_gated = ticker_regex_gated = 0
+    ticker_keyword_gated = 0
     counter_lock = threading.Lock()
     _event(
         db, run_id, 'extract', 'ticker_start',
@@ -449,7 +459,7 @@ def _extract_reports_for_ticker(
 
     def _record_report_success(report: dict, summary, worker_id: int) -> None:
         nonlocal ticker_processed, ticker_data_points, ticker_errors
-        nonlocal ticker_keyword_gated, ticker_regex_gated
+        nonlocal ticker_keyword_gated
         period = report.get('report_date', '')
         source_type = report.get('source_type', '')
         llm_used = bool((summary.prompt_tokens or 0) > 0 or (summary.response_tokens or 0) > 0)
@@ -458,14 +468,12 @@ def _extract_reports_for_ticker(
             counters['data_points'] += summary.data_points_extracted
             counters['errors'] += summary.errors
             counters['keyword_gated'] += summary.keyword_gated
-            counters['regex_gated'] += summary.regex_gated
             counters['report_done_count'] += 1
 
             ticker_processed += summary.reports_processed
             ticker_data_points += summary.data_points_extracted
             ticker_errors += summary.errors
             ticker_keyword_gated += summary.keyword_gated
-            ticker_regex_gated += summary.regex_gated
             progress = counters['report_done_count']
             running_total_dp = counters['data_points']
 
@@ -500,30 +508,8 @@ def _extract_reports_for_ticker(
         )
 
     claim_db = MinerDB(db.db_path)
-    staged_reports: list[tuple[dict, int]] = []
-    for idx, report in enumerate(ordered_reports):
-        if _is_cancelled(run_id):
-            break
-        report_id = report.get('id')
-        if report_id is None:
-            continue
-        report_id = int(report_id)
-        worker_id = idx % effective_workers
-        if not claim_db.claim_report_for_extraction(report_id):
-            log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
-            continue
-        claimed_report = claim_db.get_report(report_id)
-        if not claimed_report:
-            continue
-        staged_reports.append((claimed_report, worker_id))
-        _event(
-            db, run_id, 'extract', 'report_start',
-            ticker=ticker,
-            worker_id=worker_id,
-            report_id=claimed_report.get('id'),
-            period=claimed_report.get('report_date', ''),
-            source_type=claimed_report.get('source_type', ''),
-        )
+    claim_index = 0
+    ordered_iter = iter(ordered_reports)
 
     def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
         local_db = MinerDB(db.db_path)
@@ -538,12 +524,47 @@ def _extract_reports_for_ticker(
             'queue_status': _staged_status_for_payload(payload),
         }
 
+    def _claim_next_report() -> tuple[dict, int] | None:
+        nonlocal claim_index
+        for report in ordered_iter:
+            if _is_cancelled(run_id):
+                return None
+            report_id = report.get('id')
+            if report_id is None:
+                continue
+            report_id = int(report_id)
+            worker_id = claim_index % effective_workers
+            claim_index += 1
+            if not claim_db.claim_report_for_extraction(report_id):
+                log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
+                continue
+            claimed_report = claim_db.get_report(report_id)
+            if not claimed_report:
+                continue
+            _event(
+                db, run_id, 'extract', 'report_start',
+                ticker=ticker,
+                worker_id=worker_id,
+                report_id=claimed_report.get('id'),
+                period=claimed_report.get('report_date', ''),
+                source_type=claimed_report.get('source_type', ''),
+            )
+            return claimed_report, worker_id
+        return None
+
     with ThreadPoolExecutor(max_workers=effective_workers) as pool:
-        futures = [
-            pool.submit(_run_buffered_extraction, claimed_report, worker_id)
-            for claimed_report, worker_id in staged_reports
-        ]
-        for (claimed_report, worker_id), future in zip(staged_reports, futures):
+        inflight: list[tuple[dict, int, object]] = []
+        while len(inflight) < effective_workers:
+            claimed = _claim_next_report()
+            if claimed is None:
+                break
+            claimed_report, worker_id = claimed
+            inflight.append(
+                (claimed_report, worker_id, pool.submit(_run_buffered_extraction, claimed_report, worker_id))
+            )
+
+        while inflight:
+            claimed_report, worker_id, future = inflight.pop(0)
             if _is_cancelled(run_id):
                 break
             try:
@@ -583,6 +604,15 @@ def _extract_reports_for_ticker(
                 db.finalize_extraction_commit(int(claimed_report['id']), status='failed')
                 db.mark_report_extraction_failed(int(claimed_report['id']), str(e)[:500])
                 _record_report_failure(claimed_report, e, worker_id)
+            if _is_cancelled(run_id):
+                break
+            claimed = _claim_next_report()
+            if claimed is None:
+                continue
+            next_report, next_worker_id = claimed
+            inflight.append(
+                (next_report, next_worker_id, pool.submit(_run_buffered_extraction, next_report, next_worker_id))
+            )
 
     db.upsert_pipeline_run_ticker(run_id, ticker, extracted=1)
     _event(
@@ -592,7 +622,6 @@ def _extract_reports_for_ticker(
         data_points=ticker_data_points,
         errors=ticker_errors,
         keyword_gated=ticker_keyword_gated,
-        regex_gated=ticker_regex_gated,
         workers=effective_workers,
     )
 
@@ -612,7 +641,10 @@ def _scrape_ticker_for_pipeline(
 ) -> dict:
     import requests
     from datetime import date
+    from config import ARCHIVE_DIR, CONFIG_DIR
     from infra.db import MinerDB
+    from interpreters.pattern_registry import PatternRegistry
+    from scrapers.archive_ingestor import ArchiveIngestor
     from scrapers.ir_scraper import IRScraper
     from scrapers.edgar_connector import EdgarConnector
 
@@ -624,6 +656,28 @@ def _scrape_ticker_for_pipeline(
     failures = []
     before_reports = _count_reports_for_tickers(local_db, [ticker])
     _event(local_db, run_id, 'ingest', 'ticker_start', ticker=ticker, before_reports=before_reports)
+
+    try:
+        archive_ingestor = ArchiveIngestor(
+            archive_dir=ARCHIVE_DIR,
+            db=local_db,
+            registry=PatternRegistry.load(CONFIG_DIR),
+        )
+        archive_result = archive_ingestor.ingest_all(
+            tickers=[ticker],
+            auto_extract_monthly=False,
+        )
+        _event(
+            local_db, run_id, 'ingest', 'ticker_source_done',
+            ticker=ticker, source='archive',
+            reports_ingested=archive_result.reports_ingested,
+            errors=archive_result.errors,
+            data_points_extracted=archive_result.data_points_extracted,
+        )
+    except Exception as e:
+        archive_result = None
+        failures.append(f'archive:{e}')
+        _event(local_db, run_id, 'ingest', 'ticker_source_failed', ticker=ticker, source='archive', level='WARNING', error=str(e))
 
     if include_ir:
         with ir_semaphore:
@@ -694,6 +748,8 @@ def _scrape_ticker_for_pipeline(
         'after_reports': after_reports,
         'ingested_delta': ingested_delta,
         'failures': failures,
+        'archive_reports_ingested': int(getattr(archive_result, 'reports_ingested', 0)),
+        'archive_data_points_extracted': int(getattr(archive_result, 'data_points_extracted', 0)),
     }
 
 
@@ -971,7 +1027,6 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             'data_points': 0,
             'errors': 0,
             'keyword_gated': 0,
-            'regex_gated': 0,
         }
         ollama_prepared = False
         _event(
@@ -991,60 +1046,52 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             min_interval_ms=edgar_min_interval_ms,
             cooldown_seconds=host_backoff_seconds,
         )
-        pool_workers = max(1, min(len(scrape_targets), max(ir_workers, edgar_workers) * 2))
-        with ThreadPoolExecutor(max_workers=pool_workers) as scrape_pool:
-            scrape_futures = {
-                scrape_pool.submit(
-                    _scrape_ticker_for_pipeline,
-                    db_path=db.db_path,
-                    run_id=run_id,
-                    ticker=t,
-                    include_ir=include_ir,
-                    ir_semaphore=ir_semaphore,
-                    edgar_semaphore=edgar_semaphore,
-                    ir_throttle=ir_throttle,
-                    edgar_throttle=edgar_throttle,
-                    host_backoff_seconds=host_backoff_seconds,
-                    max_retries=max_retries,
-                ): t
-                for t in scrape_targets
-            }
-            for future in as_completed(scrape_futures):
-                if _is_cancelled(run_id):
-                    raise _RunCancelled()
-                t = scrape_futures[future]
-                result = future.result()
-                total_before_reports += result['before_reports']
-                total_after_reports += result['after_reports']
-                total_ingested_delta += result['ingested_delta']
-                for failure in result.get('failures') or []:
-                    failures.append({'ticker': t, 'error': failure})
-                if result['ingested_delta'] > 0:
-                    db.upsert_pipeline_run_ticker(run_id, t, ingested=1)
+        for t in scrape_targets:
+            if _is_cancelled(run_id):
+                raise _RunCancelled()
+            result = _scrape_ticker_for_pipeline(
+                db_path=db.db_path,
+                run_id=run_id,
+                ticker=t,
+                include_ir=include_ir,
+                ir_semaphore=ir_semaphore,
+                edgar_semaphore=edgar_semaphore,
+                ir_throttle=ir_throttle,
+                edgar_throttle=edgar_throttle,
+                host_backoff_seconds=host_backoff_seconds,
+                max_retries=max_retries,
+            )
+            total_before_reports += result['before_reports']
+            total_after_reports += result['after_reports']
+            total_ingested_delta += result['ingested_delta']
+            for failure in result.get('failures') or []:
+                failures.append({'ticker': t, 'error': failure})
+            if result['ingested_delta'] > 0:
+                db.upsert_pipeline_run_ticker(run_id, t, ingested=1)
 
-                first_filing = db.get_btc_first_filing_date(t)
-                ticker_reports = _build_extraction_batch(db, t, first_filing, force_reextract)
-                extraction_counters['total_reports'] += len(ticker_reports)
-                _event(
-                    db, run_id, 'extract', 'ticker_preflight',
-                    ticker=t,
-                    pending_reports=len(ticker_reports),
-                    force_reextract=int(force_reextract),
-                    running_total_pending=extraction_counters['total_reports'],
-                )
-                if ticker_reports and bool(config.get('warm_model', True)) and not ollama_prepared:
-                    _warm_pipeline_ollama_if_needed(db, run_id)
-                    ollama_prepared = True
-                _extract_reports_for_ticker(
-                    db=db,
-                    run_id=run_id,
-                    ticker=t,
-                    reports=ticker_reports,
-                    registry=registry,
-                    counters=extraction_counters,
-                    failures=failures,
-                    num_workers=extract_workers,
-                )
+            first_filing = db.get_btc_first_filing_date(t)
+            ticker_reports = _build_extraction_batch(db, t, first_filing, force_reextract)
+            extraction_counters['total_reports'] += len(ticker_reports)
+            _event(
+                db, run_id, 'extract', 'ticker_preflight',
+                ticker=t,
+                pending_reports=len(ticker_reports),
+                force_reextract=int(force_reextract),
+                running_total_pending=extraction_counters['total_reports'],
+            )
+            if ticker_reports and bool(config.get('warm_model', True)) and not ollama_prepared:
+                _warm_pipeline_ollama_if_needed(db, run_id)
+                ollama_prepared = True
+            _extract_reports_for_ticker(
+                db=db,
+                run_id=run_id,
+                ticker=t,
+                reports=ticker_reports,
+                registry=registry,
+                counters=extraction_counters,
+                failures=failures,
+                num_workers=extract_workers,
+            )
 
         _event(
             db, run_id, 'ingest', 'stage_end',
@@ -1056,8 +1103,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                reports_processed=extraction_counters['processed'],
                data_points=extraction_counters['data_points'],
                errors=extraction_counters['errors'],
-               keyword_gated=extraction_counters['keyword_gated'],
-               regex_gated=extraction_counters['regex_gated'])
+               keyword_gated=extraction_counters['keyword_gated'])
 
         # Stage: auto-gap-fill for quarterly/annual reporters.
         # Expands quarterly data_points into monthly inferred rows so all companies
@@ -1224,6 +1270,8 @@ def start_overnight_pipeline():
             'code': 'ALREADY_RUNNING',
             'message': f"Pipeline run {active['id']} is already active",
         }, 'data': {'active_run_id': int(active['id'])}}), 409
+
+    _recover_stale_report_claims(db)
 
     config = {
         'skip_probe': bool(body.get('skip_probe', False)),

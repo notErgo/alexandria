@@ -591,23 +591,8 @@ def operations_extract():
                         continue
 
                     claim_db = MinerDB(db.db_path)
-                    staged_reports: list[tuple[dict, int]] = []
-                    for idx, report in enumerate(ordered_reports):
-                        report_id = report.get('id')
-                        if report_id is None:
-                            continue
-                        report_id = int(report_id)
-                        worker_id = idx % effective_workers
-                        if force:
-                            claim_db.mark_report_extraction_running(report_id)
-                            claimed = True
-                        else:
-                            claimed = claim_db.claim_report_for_extraction(report_id)
-                        if not claimed:
-                            continue
-                        claimed_report = claim_db.get_report(report_id)
-                        if claimed_report:
-                            staged_reports.append((claimed_report, worker_id))
+                    claim_index = 0
+                    ordered_iter = iter(ordered_reports)
 
                     def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
                         local_db = MinerDB(db.db_path)
@@ -627,12 +612,40 @@ def operations_extract():
                             'queue_status': _staged_status_for_payload(payload),
                         }
 
+                    def _claim_next_report() -> tuple[dict, int] | None:
+                        nonlocal claim_index
+                        for report in ordered_iter:
+                            report_id = report.get('id')
+                            if report_id is None:
+                                continue
+                            report_id = int(report_id)
+                            worker_id = claim_index % effective_workers
+                            claim_index += 1
+                            if force:
+                                claim_db.mark_report_extraction_running(report_id)
+                                claimed = True
+                            else:
+                                claimed = claim_db.claim_report_for_extraction(report_id)
+                            if not claimed:
+                                continue
+                            claimed_report = claim_db.get_report(report_id)
+                            if claimed_report:
+                                return claimed_report, worker_id
+                        return None
+
                     with ThreadPoolExecutor(max_workers=effective_workers) as pool:
-                        futures = [
-                            pool.submit(_run_buffered_extraction, claimed_report, worker_id)
-                            for claimed_report, worker_id in staged_reports
-                        ]
-                        for (claimed_report, _worker_id), future in zip(staged_reports, futures):
+                        inflight: list[tuple[dict, int, object]] = []
+                        while len(inflight) < effective_workers:
+                            claimed = _claim_next_report()
+                            if claimed is None:
+                                break
+                            claimed_report, worker_id = claimed
+                            inflight.append(
+                                (claimed_report, worker_id, pool.submit(_run_buffered_extraction, claimed_report, worker_id))
+                            )
+
+                        while inflight:
+                            claimed_report, _worker_id, future = inflight.pop(0)
                             try:
                                 result = future.result()
                                 payload = result['payload']
@@ -654,6 +667,13 @@ def operations_extract():
                                 line = f'[{ts}] {group_ticker} {period_label} ERROR: {type(e).__name__}'
                                 log.error("Task %s: error on report %d: %s", task_id, claimed_report.get('id'), e, exc_info=True)
                                 _append_progress_line(line, errors=1)
+                            claimed = _claim_next_report()
+                            if claimed is None:
+                                continue
+                            next_report, next_worker_id = claimed
+                            inflight.append(
+                                (next_report, next_worker_id, pool.submit(_run_buffered_extraction, next_report, next_worker_id))
+                            )
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'

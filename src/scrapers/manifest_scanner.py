@@ -80,12 +80,14 @@ def compute_file_checksum(path: Path) -> str:
     return h.hexdigest()
 
 
-def scan_archive_directory(archive_root: Path, db) -> ScanResult:
+def scan_archive_directory(archive_root: Path, db, tickers: Optional[list[str] | set[str]] = None) -> ScanResult:
     """Walk archive_root/Miner Monthly/ and upsert manifest entries.
 
     Args:
         archive_root: Path to the root of the Miner archive (OffChain/Miner/)
         db: MinerDB instance
+        tickers: Optional ticker filter. When supplied, only matching archive
+            directories are scanned and linked.
 
     Returns:
         ScanResult with counts
@@ -101,6 +103,7 @@ def scan_archive_directory(archive_root: Path, db) -> ScanResult:
 
     result = ScanResult()
     tickers_seen: set = set()
+    ticker_filter = {str(t).upper() for t in (tickers or []) if str(t).strip()} or None
 
     # Pre-fetch all existing report dates per ticker for O(1) lookup
     existing_dates_by_ticker: dict = {}
@@ -119,6 +122,8 @@ def scan_archive_directory(archive_root: Path, db) -> ScanResult:
         if ticker is None:
             log.debug("Could not detect ticker for: %s", path)
             result.failed += 1
+            continue
+        if ticker_filter is not None and ticker not in ticker_filter:
             continue
 
         tickers_seen.add(ticker)

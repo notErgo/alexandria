@@ -72,11 +72,13 @@ def purge_review_artifacts():
 
         reason = str(body.get('reason') or '').strip() or None
         counts = {
+            'data_points_deleted': 0,
             'review_queue_deleted': 0,
             'final_data_points_deleted': 0,
             'final_archive_batch_id': None,
         }
 
+        counts['data_points_deleted'] = db.purge_data_points(ticker=ticker)
         if 'queue' in targets:
             counts['review_queue_deleted'] = db.purge_review_queue(ticker=ticker)
         if 'final' in targets:

@@ -925,17 +925,6 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             metric_rules_by_name=metric_rules_by_name,
         )
 
-        if _is_monthly_source_type(source_type) and not regex_by_metric:
-            log.info(
-                "event=regex_gate_skip ticker=%s period=%s source=%s "
-                "— no regex metric candidates found, skipping LLM",
-                report.get('ticker'), report.get('report_date'), source_type,
-            )
-            db.mark_report_extracted(report['id'])
-            summary.reports_processed += 1
-            summary.regex_gated += 1
-            return summary
-
         llm_interpreter = _get_llm_interpreter(db)
         llm_available = _check_llm_available(llm_interpreter)
 

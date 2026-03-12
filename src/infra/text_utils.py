@@ -81,6 +81,51 @@ _EDGAR_FOOTER_SENTINELS = [
     _re.compile(r'^\s*EXHIBIT\s+INDEX\s*$', _re.MULTILINE),
 ]
 
+_Q4_SHELL_MARKERS = (
+    'cookie settings our cookie policy close we use cookies on q4inc.com',
+    'all changes will be saved automatically',
+    'optional cookies help us understand how you use this website',
+)
+
+
+def _extract_meta_text(soup) -> str:
+    """Return title/description text that may contain article body on shell pages."""
+    chunks: list[str] = []
+    seen: set[str] = set()
+
+    def _push(value: str | None) -> None:
+        if not value:
+            return
+        text = _re.sub(r'\s+', ' ', str(value)).strip()
+        if len(text) < 20:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        chunks.append(text)
+
+    title = None
+    for prop in ('og:title', 'twitter:title'):
+        node = soup.find('meta', attrs={'property': prop}) or soup.find('meta', attrs={'name': prop})
+        if node and node.get('content'):
+            title = node.get('content')
+            break
+    if title is None and soup.title and soup.title.string:
+        title = soup.title.string
+    _push(title)
+
+    for key, value in (
+        ('property', 'og:description'),
+        ('name', 'twitter:description'),
+        ('name', 'description'),
+    ):
+        node = soup.find('meta', attrs={key: value})
+        if node and node.get('content'):
+            _push(node.get('content'))
+
+    return "\n".join(chunks)
+
 
 def extract_document_title(raw_html: str | None, raw_text: str | None = None) -> str | None:
     """Return a best-effort document title from stored HTML or plain text.
@@ -256,7 +301,13 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
     from parsers.annual_report_parser import convert_tables_to_pipe_text
     soup = BeautifulSoup(html, "lxml")
     convert_tables_to_pipe_text(soup)
-    return soup.get_text(separator=separator, strip=True)
+    plain = soup.get_text(separator=separator, strip=True)
+    lower_plain = plain.lower()
+    if any(marker in lower_plain for marker in _Q4_SHELL_MARKERS):
+        meta_text = _extract_meta_text(soup)
+        if meta_text:
+            return meta_text
+    return plain
 
 
 def make_html_report_fields(

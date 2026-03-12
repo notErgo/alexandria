@@ -172,6 +172,49 @@ class TestHTMLPriorityOverPDF:
         assert db.report_exists('MARA', '2024-09-01', 'archive_html'), \
             "HTML report must be ingested"
 
+    def test_ticker_filtered_ingest_only_processes_selected_ticker(self, tmp_path, db, monkeypatch):
+        """Ticker filter must prevent unrelated archive directories from being ingested."""
+        from scrapers.archive_ingestor import ArchiveIngestor
+        from interpreters.pattern_registry import PatternRegistry
+        from interpreters.llm_interpreter import LLMInterpreter
+        import os
+
+        monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
+
+        for ticker in ('MARA', 'RIOT'):
+            db.insert_company({
+                'ticker': ticker,
+                'name': ticker,
+                'tier': 1,
+                'ir_url': 'https://example.com',
+                'pr_base_url': None,
+                'cik': '0001437491',
+                'active': 1,
+            })
+
+        mara_dir = tmp_path / "MARA MONTHLY"
+        mara_dir.mkdir()
+        (mara_dir / "Marathon September 2024 Production Update.html").write_text(
+            "Marathon mined 736 BTC in September 2024.",
+            encoding="utf-8",
+        )
+
+        riot_dir = tmp_path / "RIOT MONTHLY"
+        riot_dir.mkdir()
+        (riot_dir / "Riot September 2024 Production Update.html").write_text(
+            "Riot mined 412 BTC in September 2024.",
+            encoding="utf-8",
+        )
+
+        config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+        registry = PatternRegistry.load(config_dir)
+
+        ingestor = ArchiveIngestor(archive_dir=str(tmp_path), db=db, registry=registry)
+        ingestor.ingest_all(tickers=['MARA'])
+
+        assert db.report_exists('MARA', '2024-09-01', 'archive_html')
+        assert not db.report_exists('RIOT', '2024-09-01', 'archive_html')
+
 
 class TestTwoPassHTMLExtraction:
     def test_table_result_preferred_over_prose(self):

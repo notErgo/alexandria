@@ -2521,7 +2521,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </summary>
       <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
         <div style="color:var(--theme-text-muted);margin-bottom:0.6rem;font-size:0.78rem">
-          Deletes review queue and finalized values while preserving scraped reports and source documents.
+          Deletes raw data points, review queue, and finalized values while preserving scraped reports and source documents.
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
           <input id="rv-rp-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)"
@@ -3756,7 +3756,7 @@ function renderCompanies() {
           + activeBadge
         + '</td>'
       + '<td>' + escapeHtml(c.name) + nameExtra + '</td>'
-      + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px">from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
+      + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px" title="Crawler backfill floor, not verified monthly production coverage start">crawl from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
       + '<td style="white-space:nowrap">'
           + '<input id="pr-start-year-input-' + escapeAttr(c.ticker) + '" type="number" min="2009" max="2100" step="1"'
             + ' value="' + escapeAttr(prStartValue) + '" style="width:84px;font-size:0.78rem" placeholder="year">'
@@ -3790,7 +3790,7 @@ function renderCompanies() {
             + 'Fetches and stores each matching press release as raw text. '
             + 'Stops automatically when a full page of production PRs is already ingested — '
             + 'so incremental runs only fetch what is new. '
-            + (c.pr_start_year ? 'Covers releases from ' + escapeHtml(String(c.pr_start_year)) + ' onward.' : ''),
+            + (c.pr_start_year ? 'Crawler backfill floor is ' + escapeHtml(String(c.pr_start_year)) + ' onward; this is not a guarantee of complete monthly mining coverage from that year.' : ''),
           rss: 'Fetches the RSS feed URL, which provides a rolling window of the most recent '
             + '~10 press releases. Suitable for staying current but does not backfill history. '
             + 'For full historical coverage, switch to index mode.',
@@ -7885,18 +7885,19 @@ async function rvPurgeReviewArtifacts() {
     const data = await resp.json();
     if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
     const counts = data.data && data.data.counts ? data.data.counts : {};
+    const dataPointsDeleted = counts.data_points_deleted || 0;
     const queueDeleted = counts.review_queue_deleted || 0;
     const finalDeleted = counts.final_data_points_deleted || 0;
     const archived = counts.final_archive_batch_id;
     statusEl.textContent = 'Deleted REVIEW stage for ' + (data.data.ticker || 'ALL')
-      + ': ' + queueDeleted + ' review_queue, ' + finalDeleted + ' final_data_points'
+      + ': ' + dataPointsDeleted + ' data_points, ' + queueDeleted + ' review_queue, ' + finalDeleted + ' final_data_points'
       + (archived ? (' (archive batch #' + archived + ')') : '')
       + '. Reports preserved.';
     statusEl.style.color = 'var(--theme-success)';
     document.getElementById('rv-rp-confirm').value = '';
     rvReviewPurgeOnInput();
     await loadReview();
-    showToast('Review artifacts purged. Scraped reports preserved.', false);
+    showToast('Review-stage data purged. Scraped reports preserved.', false);
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;
     statusEl.style.color = 'var(--theme-danger)';
@@ -7943,13 +7944,14 @@ async function dzPurgeReviewArtifacts() {
     if (!resp.ok || !data.success) throw new Error((data.error && data.error.message) || ('HTTP ' + resp.status));
     const counts = data.data && data.data.counts ? data.data.counts : {};
     statusEl.textContent = 'Deleted REVIEW stage for ' + (data.data.ticker || 'ALL')
-      + ': ' + (counts.review_queue_deleted || 0) + ' review_queue, '
+      + ': ' + (counts.data_points_deleted || 0) + ' data_points, '
+      + (counts.review_queue_deleted || 0) + ' review_queue, '
       + (counts.final_data_points_deleted || 0) + ' final_data_points. Reports preserved.';
     statusEl.style.color = 'var(--theme-success)';
     document.getElementById('dz-rp-confirm').value = '';
     dzReviewPurgeOnInput();
     if (_reviewLoaded) await loadReview();
-    showToast('Review artifacts purged. Scraped reports preserved.', false);
+    showToast('Review-stage data purged. Scraped reports preserved.', false);
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;
     statusEl.style.color = 'var(--theme-danger)';

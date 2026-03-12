@@ -33,6 +33,24 @@ class TestHtmlToPlain:
         result = html_to_plain("Just plain text, no tags")
         assert result == "Just plain text, no tags"
 
+    def test_q4_shell_page_falls_back_to_meta_description(self):
+        from infra.text_utils import html_to_plain
+        html = """
+        <html>
+          <head>
+            <title>CleanSpark Announces January 2022 Bitcoin Production</title>
+            <meta property="og:description" content="Month-to-month bitcoin production increased 35%. January monthly production: 305. Total BTC holdings as of January 31: 471.">
+          </head>
+          <body>
+            <div>Cookie settings Our Cookie Policy Close We use cookies on q4inc.com</div>
+            <div>All changes will be saved automatically.</div>
+          </body>
+        </html>
+        """
+        result = html_to_plain(html)
+        assert "January monthly production: 305" in result
+        assert "Cookie settings" not in result
+
 
 class TestMakeHtmlReportFields:
     def test_returns_both_fields(self):
@@ -91,6 +109,23 @@ class TestMakeHtmlReportFields:
         assert report["ticker"] == "MARA"
         assert report["raw_html"] is not None
         assert "150" in report["raw_text"]
+
+    def test_shell_html_uses_meta_text_for_raw_text(self):
+        from infra.text_utils import make_html_report_fields
+        html = """
+        <html>
+          <head>
+            <meta property="og:title" content="CleanSpark Announces February 2022 Bitcoin Production">
+            <meta property="og:description" content="February monthly production: 276. Total BTC holdings: 566.">
+          </head>
+          <body>
+            <div>Cookie settings Our Cookie Policy Close We use cookies on q4inc.com</div>
+          </body>
+        </html>
+        """
+        fields = make_html_report_fields(html)
+        assert "February monthly production: 276" in fields["raw_text"]
+        assert "Cookie settings" not in fields["raw_text"]
 
 
 class TestObserverSwarmStoresRawHtml:

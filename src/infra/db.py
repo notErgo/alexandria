@@ -2533,6 +2533,20 @@ class MinerDB:
                 (report_id,),
             )
 
+    def reset_interrupted_report_extractions(self) -> int:
+        """Reset orphaned report-level extraction claims left in 'running'.
+
+        A report reaches 'running' as soon as a worker claims it for extraction.
+        If the process/thread dies before extract_report() commits success/failure,
+        the row becomes invisible to get_unextracted_reports(), which only returns
+        pending/failed reports. Startup recovery should release those stale claims.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET extraction_status = 'pending' WHERE extraction_status = 'running'"
+            )
+            return int(conn.execute("SELECT changes()").fetchone()[0])
+
     def report_exists_by_accession(self, accession_number: str) -> bool:
         """Return True if a report with this accession_number already exists."""
         with self._get_connection() as conn:

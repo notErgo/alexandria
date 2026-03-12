@@ -187,8 +187,8 @@ class TestUnifiedProductionGate:
         result2 = get_mining_detection_phrases(_Db())
         assert result1 == result2
 
-    def test_monthly_ir_requires_regex_hit_before_llm(self, db_with_company, registry, monkeypatch):
-        """Monthly miner docs with keyword hits but no regex candidates must not reach LLM."""
+    def test_monthly_ir_without_metric_keywords_is_keyword_gated(self, db_with_company, registry, monkeypatch):
+        """Monthly miner docs without mining metric keywords must be filtered by the keyword gate."""
         import interpreters.interpret_pipeline as _ep
 
         llm_calls = []
@@ -220,4 +220,4 @@ class TestUnifiedProductionGate:
         summary = extract_report(report, db_with_company, registry)
 
         assert len(llm_calls) == 0
-        assert summary.regex_gated == 1
+        assert summary.keyword_gated == 1

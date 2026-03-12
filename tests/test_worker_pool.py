@@ -56,6 +56,18 @@ class TestClaimReportForExtraction:
         db.mark_report_extracted(report_id)
         assert db.claim_report_for_extraction(report_id) is False
 
+    def test_reset_interrupted_report_extractions_releases_running_claims(self, db_with_report):
+        """Startup recovery must release report rows stranded in 'running'."""
+        db, report_id = db_with_report
+        db.claim_report_for_extraction(report_id)
+
+        recovered = db.reset_interrupted_report_extractions()
+
+        assert recovered == 1
+        report = db.get_report(report_id)
+        assert report['extraction_status'] == 'pending'
+        assert report['extraction_attempts'] == 0
+
     def test_concurrent_claims_only_one_wins(self, db_with_report):
         """Under concurrent access only one thread may claim a given report."""
         db, report_id = db_with_report
