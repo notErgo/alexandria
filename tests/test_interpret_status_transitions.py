@@ -206,6 +206,35 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
         db.reset_report_to_pending.assert_called_once_with(report['id'])
         db.mark_report_extracted.assert_not_called()
 
+    def test_monthly_transport_failure_resets_to_pending(self):
+        from interpreters.interpret_pipeline import extract_report
+
+        db = MagicMock()
+        db.get_metric_rules.return_value = []
+        db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
+        registry = MagicMock()
+        registry.metrics = {'production_btc': MagicMock()}
+
+        report = _make_report()
+
+        class _TransportFailLLM:
+            _last_call_meta = {}
+            _last_batch_summary = ''
+            _last_transport_error = True
+
+            def extract_batch(self, *args, **kwargs):
+                self._last_call_meta = {}
+                self._last_transport_error = True
+                return {}
+
+        with patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=_TransportFailLLM()):
+            with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
+                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
+                    extract_report(report, db, registry)
+
+        db.reset_report_to_pending.assert_called_once_with(report['id'])
+        db.mark_report_extracted.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

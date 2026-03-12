@@ -399,6 +399,14 @@ def _check_llm_available(llm_interpreter) -> bool:
     return result
 
 
+def _invalidate_llm_availability_cache() -> None:
+    global _llm_available_cache, _llm_available_cache_time, _llm_available_cache_extractor_id
+    with _llm_cache_lock:
+        _llm_available_cache = False
+        _llm_available_cache_time = 0.0
+        _llm_available_cache_extractor_id = None
+
+
 def _build_regex_by_metric(text: str, registry, report_date: str = None,
                             metric_rules_by_name: dict = None) -> dict:
     """Run regex extraction for all metrics. Returns best result per metric.
@@ -459,6 +467,7 @@ def _run_llm_batch(
         )
     result = llm_interpreter.extract_batch(text, metrics, ticker=ticker, config=config)
     meta = dict(llm_interpreter._last_call_meta)
+    meta['transport_error'] = getattr(llm_interpreter, '_last_transport_error', False) is True
     if result:
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
         return result, meta
@@ -479,6 +488,7 @@ def _run_llm_batch(
             fallback[metric] = r
         # Update meta with the last per-metric call (best-effort; final call wins)
         meta = dict(llm_interpreter._last_call_meta)
+        meta['transport_error'] = getattr(llm_interpreter, '_last_transport_error', False) is True
     return fallback, meta
 
 
@@ -717,6 +727,15 @@ def _interpret_quarterly_report(
         summary.errors += 1
         return summary
 
+    if getattr(llm_interpreter, '_last_transport_error', False) is True:
+        log.warning(
+            "Quarterly LLM transport failure for %s %s — resetting to pending",
+            ticker, covering_period,
+        )
+        _invalidate_llm_availability_cache()
+        db.reset_report_to_pending(report_id)
+        return summary
+
     # Per-metric fallback: mirrors _run_llm_batch(). When batch returns {} (e.g.
     # LLM responded with markdown prose instead of JSON), retry each metric
     # individually — single-metric prompts are simpler and more reliably parsed.
@@ -738,6 +757,14 @@ def _interpret_quarterly_report(
                     "Quarterly per-metric fallback failed for %s %s %s: %s",
                     ticker, covering_period, _m, _fb_err,
                 )
+        if getattr(llm_interpreter, '_last_transport_error', False) is True:
+            log.warning(
+                "Quarterly LLM transport failure for %s %s during fallback — resetting to pending",
+                ticker, covering_period,
+            )
+            _invalidate_llm_availability_cache()
+            db.reset_report_to_pending(report_id)
+            return summary
         llm_results = fallback
 
     for metric, result in llm_results.items():
@@ -956,6 +983,14 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 llm_interpreter, llm_text, all_metrics, ticker=ticker,
                 config=_run_config, regex_hits=regex_by_metric,
             )
+            if _batch_meta.get('transport_error'):
+                log.warning(
+                    "LLM transport failure for monthly report id=%s ticker=%s %s — resetting to pending",
+                    report.get('id'), report.get('ticker'), report_date,
+                )
+                _invalidate_llm_availability_cache()
+                db.reset_report_to_pending(report['id'])
+                return summary
             _batch_summary = getattr(llm_interpreter, '_last_batch_summary', '')
             if _batch_summary:
                 try:

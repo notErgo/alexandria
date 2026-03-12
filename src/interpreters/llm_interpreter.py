@@ -490,6 +490,7 @@ class LLMInterpreter:
         self._db = db  # Optional MinerDB for prompt lookup
         self._last_call_meta: dict = {}     # Populated by _call_ollama with timing fields
         self._last_batch_summary: str = ''  # Populated by _parse_batch_response
+        self._last_transport_error: bool = False
 
     @staticmethod
     def get_default_prompt(metric: str) -> str:
@@ -1180,12 +1181,14 @@ class LLMInterpreter:
                 "num_ctx": self._extract_num_ctx(),  # KV cache size; extraction prompts are ~3-4k tokens
             },
         }
+        self._last_transport_error = False
         try:
             resp = self._session.post(url, json=payload, timeout=LLM_TIMEOUT_SECONDS)
             if resp.status_code >= 400:
                 log.warning(
                     "Ollama returned HTTP %d for /api/generate", resp.status_code
                 )
+                self._last_transport_error = True
                 self._last_call_meta = {}
                 return None
             data = resp.json()
@@ -1210,10 +1213,12 @@ class LLMInterpreter:
             return response_text
         except requests.Timeout:
             log.warning("Ollama /api/generate timed out after %ds", LLM_TIMEOUT_SECONDS)
+            self._last_transport_error = True
             self._last_call_meta = {}
             return None
         except requests.RequestException as e:
             log.error("Ollama request failed: %s", e)
+            self._last_transport_error = True
             self._last_call_meta = {}
             return None
         except (ValueError, KeyError) as e:
