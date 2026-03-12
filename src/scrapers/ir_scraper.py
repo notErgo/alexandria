@@ -1548,7 +1548,8 @@ class IRScraper:
         ir_url = company.get('ir_url', '')
         pr_base_url = company.get('pr_base_url', '')
         ticker = company['ticker']
-        start_year = company.get('pr_start_year')
+        start_date = _get_pr_start_date(company)
+        start_year = start_date.year if start_date else None
         # When False, skip the "all already ingested" early-exit so a backfill
         # run can traverse pages that are fully covered in the DB and reach
         # older history beyond them.
@@ -1583,7 +1584,7 @@ class IRScraper:
                     log.debug("Could not infer period from PR title: %s", title)
                     continue
                 if start_year and period.year < start_year:
-                    log.debug("Skipping PR before pr_start_year=%d: %s %s", start_year, ticker, title)
+                    log.debug("Skipping PR before pr_start_date year=%d: %s %s", start_year, ticker, title)
                     continue
                 if not href.startswith("http"):
                     if not pr_base_url:
@@ -1799,14 +1800,15 @@ class IRScraper:
         ticker = company['ticker']
         ir_url = company.get('ir_url', '')
         pr_base_url = company.get('pr_base_url', '')
-        start_year = company.get('pr_start_year')
+        start_date_obj = _get_pr_start_date(company)
+        start_year = start_date_obj.year if start_date_obj else None
 
         if not ir_url:
             log.error("%s: ir_url not set for drupal_year mode", ticker)
             summary.errors += 1
             return summary
         if not start_year:
-            log.error("%s: pr_start_year not set for drupal_year mode", ticker)
+            log.error("%s: pr_start_date not set for drupal_year mode", ticker)
             summary.errors += 1
             return summary
 

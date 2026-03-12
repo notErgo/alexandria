@@ -73,7 +73,7 @@ Template: `ops.html`
 
 | ID    | Component | Source | API endpoint(s) | Script(s) |
 |-------|-----------|--------|-----------------|-----------|
-| 1.1.4 | Add Company form + bulk spreadsheet paste | n/a | `POST /api/companies` · `PUT /api/companies/<ticker>` · `GET /api/companies` | Single-add includes CIK, reporting_cadence, scraper mode. Bulk paste accepts TSV/CSV. Mode contract enforced at API: `rss -> rss_url`, `index -> ir_url`, `template -> url_template + pr_start_year`, `skip -> optional skip_reason` |
+| 1.1.4 | Add Company form + bulk spreadsheet paste | n/a | `POST /api/companies` · `PUT /api/companies/<ticker>` · `GET /api/companies` | Single-add includes CIK, reporting_cadence, scraper mode. Bulk paste accepts TSV/CSV. Mode contract enforced at API: `rss -> rss_url`, `index -> ir_url`, `template -> url_template + pr_start_date`, `skip -> optional skip_reason` |
 | 1.1.5 | Scraper governance + discovery probes | n/a | `GET /api/companies/scraper_governance` · `POST /api/companies/bootstrap_probe_all` · `POST /api/companies/<ticker>/bootstrap_probe` | Agent-proposed candidates probed deterministically, written to `source_audit`, produce governed mode recommendations |
 
 #### 1.2  Companies Table sub-tab

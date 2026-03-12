@@ -20,7 +20,7 @@ class TestRSSSkipsSameURL(unittest.TestCase):
             'ir_url': 'https://ir.mara.com/news-events/press-releases',
             'rss_url': 'https://ir.mara.com/rss',
             'scraper_mode': 'rss',
-            'pr_start_year': 2020,
+            'pr_start_date': '2020-01-01',
         }
 
     def test_rss_skips_when_url_already_ingested(self):
@@ -81,7 +81,7 @@ class TestRSSSkipsSameURL(unittest.TestCase):
 
         scraper = self._make_scraper(db, session)
 
-        def _fetch_side_effect(url, session):
+        def _fetch_side_effect(url, session, **kwargs):
             if 'rss' in url:
                 return mock_rss_resp
             return mock_page_resp
@@ -109,7 +109,7 @@ class TestRSSAllowsSamePeriodDifferentURL(unittest.TestCase):
             'ir_url': 'https://ir.mara.com',
             'rss_url': 'https://ir.mara.com/rss',
             'scraper_mode': 'rss',
-            'pr_start_year': 2020,
+            'pr_start_date': '2020-01-01',
         }
 
         rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -134,7 +134,7 @@ class TestRSSAllowsSamePeriodDifferentURL(unittest.TestCase):
         from scrapers.ir_scraper import IRScraper
         scraper = IRScraper(db=db, session=session)
 
-        def _fetch_side(url, session):
+        def _fetch_side(url, session, **kwargs):
             if 'rss' in url:
                 return mock_rss
             return mock_page
@@ -196,7 +196,7 @@ class TestRSSInflightDedup(unittest.TestCase):
             'ir_url': 'https://ir.mara.com/news-events/press-releases',
             'rss_url': 'https://ir.mara.com/rss',
             'scraper_mode': 'rss',
-            'pr_start_year': 2020,
+            'pr_start_date': '2020-01-01',
         }
 
         scraper_a = IRScraper(db=db, session=MagicMock())
@@ -226,7 +226,7 @@ class TestTemplatePathURLDedup(unittest.TestCase):
             'ir_url': 'https://www.riotplatforms.com',
             'scraper_mode': 'template',
             'url_template': 'https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/',
-            'pr_start_year': 2024,
+            'pr_start_date': '2024-01-01',
         }
 
         from scrapers.ir_scraper import IRScraper

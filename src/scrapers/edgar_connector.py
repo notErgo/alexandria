@@ -405,6 +405,8 @@ class EdgarConnector:
                         host, resp.status_code, url, cooldown, attempt + 1, max_attempts,
                     )
                     self._emit('host_cooldown', ticker=None, host=host, status=resp.status_code, cooldown_ms=int(cooldown * 1000))
+                    if self._request_throttle is None and cooldown > 0:
+                        time.sleep(cooldown)
                     continue
                 if resp.status_code == 400:
                     log.debug("EDGAR returned 400 for %s", url)

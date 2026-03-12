@@ -24,6 +24,17 @@ import requests
 
 import sys
 
+
+def _company_start_year(company: dict, fallback_year: int) -> int:
+    """Return the year portion of pr_start_date (or legacy pr_start_year fallback)."""
+    raw = company.get('pr_start_date') or company.get('pr_start_year')
+    if raw:
+        try:
+            return int(str(raw)[:4])
+        except (TypeError, ValueError):
+            pass
+    return fallback_year
+
 # Coverage scout is read-mostly and should work against read-only DB mounts.
 # Disable startup config sync unless explicitly overridden by caller.
 os.environ.setdefault("MINERS_AUTO_SYNC_COMPANIES", "0")
@@ -134,7 +145,7 @@ def _infer_cadence_windows(
 
     # ABTC and other event-driven profiles should default to announcement cadence.
     if ticker == "ABTC" or ((company.get("scrape_mode") or "").lower() == "index" and not report_dates):
-        start = date(company.get("pr_start_year") or as_of.year, 1, 1)
+        start = date(_company_start_year(company, as_of.year), 1, 1)
         return [{
             "ticker": ticker,
             "cadence": "announcement",
@@ -148,7 +159,7 @@ def _infer_cadence_windows(
     if len(evidence_dates) >= 4:
         deltas = [(evidence_dates[i] - evidence_dates[i - 1]).days for i in range(1, len(evidence_dates))]
         median_days = statistics.median(deltas)
-        start = date(company.get("pr_start_year") or evidence_dates[0].year, 1, 1)
+        start = date(_company_start_year(company, evidence_dates[0].year), 1, 1)
         if median_days <= 45:
             return [{
                 "ticker": ticker,
@@ -170,7 +181,7 @@ def _infer_cadence_windows(
 
     # Fallback using EDGAR forms.
     if any(f.form in {"10-Q", "10-K"} for f in edgar_filings):
-        start = date(company.get("pr_start_year") or as_of.year, 1, 1)
+        start = date(_company_start_year(company, as_of.year), 1, 1)
         return [{
             "ticker": ticker,
             "cadence": "quarterly",
@@ -180,7 +191,7 @@ def _infer_cadence_windows(
             "evidence": ["edgar_quarterly_forms_present"],
         }]
 
-    start = date(company.get("pr_start_year") or as_of.year, 1, 1)
+    start = date(_company_start_year(company, as_of.year), 1, 1)
     return [{
         "ticker": ticker,
         "cadence": "monthly",
@@ -206,7 +217,7 @@ def _expected_periods(
     expected: set[str] = set()
     for window in cadence_windows:
         cadence = window.get("cadence", "monthly")
-        start = _parse_iso_date(window.get("start_date")) or date(company.get("pr_start_year") or as_of.year, 1, 1)
+        start = _parse_iso_date(window.get("start_date")) or date(_company_start_year(company, as_of.year), 1, 1)
         end = _parse_iso_date(window.get("end_date")) or end_month
         start = _month_start(start)
         end = _month_start(min(end, end_month))
@@ -231,7 +242,7 @@ def _expected_periods(
                     expected.add(p.strftime("%Y-%m-01"))
 
     if not expected:
-        start = date(company.get("pr_start_year") or as_of.year, 1, 1)
+        start = date(_company_start_year(company, as_of.year), 1, 1)
         expected.update(_month_iter(_month_start(start), end_month))
     return sorted(expected)
 

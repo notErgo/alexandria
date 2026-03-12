@@ -109,7 +109,7 @@ class TestDrupalYearScraper:
         company = _make_company(pr_start_year=2024)
 
         fetched_urls = []
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             fetched_urls.append(url)
             if url == company['ir_url']:
                 return _make_response(BASE_PAGE_HTML)
@@ -143,7 +143,7 @@ class TestDrupalYearScraper:
 </body></html>"""
 
         fetch_calls = []
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             fetch_calls.append(url)
             if url == company['ir_url']:
                 return _make_response(page_with_noise)
@@ -242,7 +242,7 @@ class TestDrupalYearScraper:
 </body></html>"""
 
         fetched_urls = []
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             fetched_urls.append(url)
             if url == company['ir_url']:
                 return _make_response(BASE_PAGE_HTML)

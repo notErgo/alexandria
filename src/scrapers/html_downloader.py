@@ -257,7 +257,9 @@ class HTMLDownloader:
                          company.get('active'))
                 continue
 
-            start_year = since_year or company.get('pr_start_year') or 2020
+            raw_start = company.get('pr_start_date') or company.get('pr_start_year')
+            company_year = int(str(raw_start)[:4]) if raw_start else 2020
+            start_year = since_year or company_year
 
             log.info("Processing %s (mode=%s, from %d)", ticker, mode, start_year)
 

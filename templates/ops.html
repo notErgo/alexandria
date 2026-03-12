@@ -1030,7 +1030,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
       <div>
         <label style="font-size:0.75rem;display:block">PR Start Date</label>
-        <input id="ac-pr-start-year" type="date" style="width:160px">
+        <input id="ac-pr-start-date" type="date" style="width:160px">
       </div>
       <div style="min-width:320px">
         <label style="font-size:0.75rem;display:block">Skip Reason</label>
@@ -4097,7 +4097,7 @@ function onAddCompanyModeChange() {
   const ir = document.getElementById('ac-ir-url');
   const rss = document.getElementById('ac-rss-url');
   const tmpl = document.getElementById('ac-url-template');
-  const yr = document.getElementById('ac-pr-start-year');
+  const yr = document.getElementById('ac-pr-start-date');
   const skipReason = document.getElementById('ac-skip-reason');
   if (!help || !ir || !rss || !tmpl || !yr || !skipReason) return;
 
@@ -4396,7 +4396,7 @@ async function submitAddCompany() {
   const prnewswireUrl = document.getElementById('ac-prnewswire-url').value.trim();
   const globenewswireUrl = document.getElementById('ac-globenewswire-url').value.trim();
   const urlTemplate = document.getElementById('ac-url-template').value.trim();
-  const prStartDateRaw = document.getElementById('ac-pr-start-year').value.trim();
+  const prStartDateRaw = document.getElementById('ac-pr-start-date').value.trim();
   const skipReason = document.getElementById('ac-skip-reason').value.trim();
   const reportingCadence = document.getElementById('ac-reporting-cadence').value || 'monthly';
   document.getElementById('ac-error').textContent = '';

@@ -384,7 +384,7 @@ class TestTemplateModeBackfill:
 
         call_urls = []
 
-        def _fetch_side_effect(url, session):
+        def _fetch_side_effect(url, session, **kwargs):
             call_urls.append(url)
             # Only return content for Jan 2020; everything else 404
             if "january-2020" in url:
@@ -409,7 +409,7 @@ class TestTemplateModeBackfill:
         pr_resp.text = self._PR_HTML
         call_urls = []
 
-        def _fetch_side_effect(url, session):
+        def _fetch_side_effect(url, session, **kwargs):
             call_urls.append(url)
             if "riot-blockchain-announces-january-2020-production-update" in url:
                 return pr_resp
@@ -437,7 +437,7 @@ class TestTemplateModeBackfill:
         pr_resp.text = "<html><body><p>January 2026 operations update: 626 BTC mined.</p></body></html>"
         call_urls = []
 
-        def _fetch_side_effect(url, session):
+        def _fetch_side_effect(url, session, **kwargs):
             call_urls.append(url)
             if "CleanSpark-Releases-January-2026-Operational-Update" in url:
                 return pr_resp
@@ -555,7 +555,7 @@ class TestDiscoveryMode:
         <body><h1>CleanSpark Releases January 2024 Bitcoin Mining Update</h1><p>Mined 626 BTC.</p></body></html>
         """
 
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             if "January-2024-Bitcoin-Mining-Update" in url:
                 return article_resp
             return None
@@ -599,7 +599,7 @@ class TestDiscoveryMode:
         <body><h1>CleanSpark Releases January 2026 Operational Update</h1><p>Mined BTC in January 2026.</p></body></html>
         """
 
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             if "prnewswire.com/news/cleanspark%2C%20inc." in url:
                 return listing_resp
             if "operational-update-302678881.html" in url:
@@ -652,7 +652,7 @@ class TestDiscoveryMode:
         <body><h1>MARA Announces February 2024 Update</h1><p>February 2024 update.</p></body></html>
         """
 
-        def _fake_fetch(url, session):
+        def _fake_fetch(url, session, **kwargs):
             if "detail/1/" in url:
                 return jan_resp
             if "detail/2/" in url:
