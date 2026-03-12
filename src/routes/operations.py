@@ -453,39 +453,107 @@ def operations_extract():
         _expected_granularity = expected_granularity
 
         def _run():
+            ops_run_id: int | None = None
+            ops_counters: dict = {'processed': 0, 'data_points': 0, 'errors': 0}
             try:
                 import random as _random
                 from app_globals import get_db
-                from interpreters.interpret_pipeline import extract_report
                 from app_globals import get_registry
-                from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
-                from infra.db import MinerDB
-                from routes.pipeline import _BufferedExtractionDB, _replay_staged_payload, _sort_reports_chronologically, _staged_status_for_payload
+                from collections import OrderedDict
+                from routes.pipeline import (
+                    _BufferedExtractionDB,
+                    _replay_staged_payload,
+                    _sort_reports_chronologically,
+                    _staged_status_for_payload,
+                    prepare_extraction_runtime,
+                    _EDGAR_SOURCE_TYPES,
+                    _NON_EDGAR_SOURCE_TYPES,
+                    _extract_reports_for_ticker as _shared_extract_worker,
+                )
 
                 registry = get_registry()
+
+                try:
+                    ops_run = db.create_pipeline_run(
+                        triggered_by='manual_extract',
+                        config={'force': force, 'cadence': _cadence, 'extract_workers': _extract_workers},
+                    )
+                    ops_run_id = int(ops_run['id'])
+                    with _progress_lock:
+                        _extraction_progress[task_id]['run_id'] = ops_run_id
+                except Exception:
+                    log.warning("Task %s: failed to create pipeline_run row", task_id, exc_info=True)
 
                 source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
                 reports: list[dict] = []
                 if _tickers:
                     for selected_ticker in _tickers:
-                        _effective_from = _from_period or db.get_btc_first_filing_date(selected_ticker)
+                        first_filing = db.get_btc_first_filing_date(selected_ticker)
+                        edgar_from = _from_period or first_filing  # explicit override; anchor only for EDGAR
                         getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
-                        reports.extend(
-                            getter(
+                        if source_types is None:
+                            # cadence='all': split EDGAR vs non-EDGAR date gating
+                            reports.extend(getter(
                                 ticker=selected_ticker,
-                                source_types=source_types,
-                                from_period=_effective_from,
+                                source_types=list(_EDGAR_SOURCE_TYPES),
+                                from_period=edgar_from,
                                 to_period=_to_period,
-                            )
-                        )
+                            ))
+                            reports.extend(getter(
+                                ticker=selected_ticker,
+                                source_types=list(_NON_EDGAR_SOURCE_TYPES),
+                                from_period=_from_period,
+                                to_period=_to_period,
+                            ))
+                        else:
+                            edgar_in_scope = [t for t in source_types if t in _EDGAR_SOURCE_TYPES]
+                            non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
+                            if edgar_in_scope:
+                                reports.extend(getter(
+                                    ticker=selected_ticker,
+                                    source_types=edgar_in_scope,
+                                    from_period=edgar_from,
+                                    to_period=_to_period,
+                                ))
+                            if non_edgar_in_scope:
+                                reports.extend(getter(
+                                    ticker=selected_ticker,
+                                    source_types=non_edgar_in_scope,
+                                    from_period=_from_period,
+                                    to_period=_to_period,
+                                ))
                 else:
                     getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
-                    reports = getter(
-                        ticker=None,
-                        source_types=source_types,
-                        from_period=_from_period,
-                        to_period=_to_period,
-                    )
+                    if source_types is None:
+                        reports.extend(getter(
+                            ticker=None,
+                            source_types=list(_EDGAR_SOURCE_TYPES),
+                            from_period=_from_period,
+                            to_period=_to_period,
+                        ))
+                        reports.extend(getter(
+                            ticker=None,
+                            source_types=list(_NON_EDGAR_SOURCE_TYPES),
+                            from_period=_from_period,
+                            to_period=_to_period,
+                        ))
+                    else:
+                        edgar_in_scope = [t for t in source_types if t in _EDGAR_SOURCE_TYPES]
+                        non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
+                        if edgar_in_scope:
+                            reports.extend(getter(
+                                ticker=None,
+                                source_types=edgar_in_scope,
+                                from_period=_from_period,
+                                to_period=_to_period,
+                            ))
+                        if non_edgar_in_scope:
+                            reports.extend(getter(
+                                ticker=None,
+                                source_types=non_edgar_in_scope,
+                                from_period=_from_period,
+                                to_period=_to_period,
+                            ))
 
                 if _sample_n > 0 and len(reports) > _sample_n:
                     reports = _random.sample(reports, _sample_n)
@@ -513,30 +581,19 @@ def operations_extract():
                             logs.append(f'[{ts}] [Ollama] {msg}')
                             if len(logs) > 200:
                                 logs.pop(0)
-                    ensure_ollama_running(log_fn=_ops_log)
-                    warm_ollama_for_extraction(db=db, reason='operations_extract')
+                    prepare_extraction_runtime(
+                        db,
+                        warm_model=True,
+                        reason='operations_extract',
+                        log_fn=_ops_log,
+                    )
 
-                from collections import OrderedDict
                 grouped_reports: OrderedDict[str, list[dict]] = OrderedDict()
                 if _tickers:
                     for selected_ticker in _tickers:
                         grouped_reports[selected_ticker] = []
                 for report in reports:
                     grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
-
-                processed_count = 0
-
-                def _append_progress_line(line: str, pts: int = 0, errors: int = 0) -> None:
-                    nonlocal processed_count
-                    processed_count += 1
-                    with _progress_lock:
-                        _extraction_progress[task_id]['reports_processed'] = processed_count
-                        _extraction_progress[task_id]['data_points'] += pts
-                        _extraction_progress[task_id]['errors'] += errors
-                        logs = _extraction_progress[task_id]['logs']
-                        logs.append(line)
-                        if len(logs) > 200:
-                            logs.pop(0)
 
                 def _build_run_config(report_ticker: str):
                     if not _expected_granularity:
@@ -547,139 +604,59 @@ def operations_extract():
                         ticker=report_ticker,
                     )
 
-                def _format_success_line(report_row: dict, summary) -> str:
-                    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                    r_ticker = report_row.get('ticker', '?')
-                    r_period = report_row.get('covering_period') or report_row.get('report_date') or '?'
-                    r_type = report_row.get('source_type', '?')
-                    line = f'[{ts}] {r_ticker} {r_period} ({r_type}) -> {summary.data_points_extracted} pts, {summary.review_flagged} review'
-                    if summary.errors:
-                        line += f', {summary.errors} err'
-                    try:
-                        fresh = db.get_report(int(report_row['id']))
-                    except Exception:
-                        fresh = None
-                    llm_summary = (fresh or {}).get('llm_summary') or report_row.get('llm_summary') or ''
-                    if llm_summary:
-                        line += f' | {llm_summary[:120]}'
-                    return line
+                ops_counters = {
+                    'total_reports': len(reports),
+                    'report_done_count': 0,
+                    'processed': 0,
+                    'data_points': 0,
+                    'errors': 0,
+                    'keyword_gated': 0,
+                }
+                ops_failures: list = []
+
+                _run_id_for_worker = ops_run_id if ops_run_id is not None else 0
 
                 for group_ticker, ticker_reports in grouped_reports.items():
-                    ordered_reports = _sort_reports_chronologically(ticker_reports)
-                    if not ordered_reports:
-                        continue
-                    effective_workers = max(1, min(int(_extract_workers), len(ordered_reports)))
-                    log.info(
-                        "Task %s: processing %d report(s) for %s with %d worker(s)",
-                        task_id, len(ordered_reports), group_ticker, effective_workers
+                    ops_counters['total_reports'] = len(reports)
+                    _run_config = _build_run_config(group_ticker)
+                    _shared_extract_worker(
+                        db=db,
+                        run_id=_run_id_for_worker,
+                        ticker=group_ticker,
+                        reports=ticker_reports,
+                        registry=registry,
+                        counters=ops_counters,
+                        failures=ops_failures,
+                        num_workers=_extract_workers,
+                        run_config=_run_config,
+                        force_reextract=force,
                     )
-                    if effective_workers == 1:
-                        for report in ordered_reports:
-                            try:
-                                summary = extract_report(report, db, registry, config=_build_run_config(report.get('ticker', '')))
-                                _append_progress_line(
-                                    _format_success_line(report, summary),
-                                    pts=summary.data_points_extracted,
-                                    errors=summary.errors,
-                                )
-                            except Exception as e:
-                                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                                period_label = report.get('covering_period') or report.get('report_date') or '?'
-                                line = f'[{ts}] {group_ticker} {period_label} ERROR: {type(e).__name__}'
-                                log.error("Task %s: error on report %d: %s", task_id, report.get('id'), e, exc_info=True)
-                                _append_progress_line(line, errors=1)
-                        continue
+                    with _progress_lock:
+                        prog = _extraction_progress[task_id]
+                        prog['reports_processed'] = ops_counters['processed']
+                        prog['data_points'] = ops_counters['data_points']
+                        prog['errors'] = ops_counters['errors']
 
-                    claim_db = MinerDB(db.db_path)
-                    claim_index = 0
-                    ordered_iter = iter(ordered_reports)
-
-                    def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
-                        local_db = MinerDB(db.db_path)
-                        buffered_db = _BufferedExtractionDB(local_db)
-                        summary = extract_report(
-                            claimed_report,
-                            buffered_db,
-                            registry,
-                            config=_build_run_config(claimed_report.get('ticker', '')),
-                        )
-                        payload = buffered_db.staged_payload()
-                        return {
-                            'report': claimed_report,
-                            'worker_id': worker_id,
-                            'summary': summary,
-                            'payload': payload,
-                            'queue_status': _staged_status_for_payload(payload),
-                        }
-
-                    def _claim_next_report() -> tuple[dict, int] | None:
-                        nonlocal claim_index
-                        for report in ordered_iter:
-                            report_id = report.get('id')
-                            if report_id is None:
-                                continue
-                            report_id = int(report_id)
-                            worker_id = claim_index % effective_workers
-                            claim_index += 1
-                            if force:
-                                claim_db.mark_report_extraction_running(report_id)
-                                claimed = True
-                            else:
-                                claimed = claim_db.claim_report_for_extraction(report_id)
-                            if not claimed:
-                                continue
-                            claimed_report = claim_db.get_report(report_id)
-                            if claimed_report:
-                                return claimed_report, worker_id
-                        return None
-
-                    with ThreadPoolExecutor(max_workers=effective_workers) as pool:
-                        inflight: list[tuple[dict, int, object]] = []
-                        while len(inflight) < effective_workers:
-                            claimed = _claim_next_report()
-                            if claimed is None:
-                                break
-                            claimed_report, worker_id = claimed
-                            inflight.append(
-                                (claimed_report, worker_id, pool.submit(_run_buffered_extraction, claimed_report, worker_id))
-                            )
-
-                        while inflight:
-                            claimed_report, _worker_id, future = inflight.pop(0)
-                            try:
-                                result = future.result()
-                                payload = result['payload']
-                                queue_status = result['queue_status']
-                                if payload:
-                                    _replay_staged_payload(db, payload)
-                                if queue_status == 'failed':
-                                    db.mark_report_extraction_failed(int(claimed_report['id']), 'staged extraction failed')
-                                line = _format_success_line(claimed_report, result['summary'])
-                                _append_progress_line(
-                                    line,
-                                    pts=result['summary'].data_points_extracted,
-                                    errors=result['summary'].errors,
-                                )
-                            except Exception as e:
-                                db.mark_report_extraction_failed(int(claimed_report['id']), str(e)[:500])
-                                ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                                period_label = claimed_report.get('covering_period') or claimed_report.get('report_date') or '?'
-                                line = f'[{ts}] {group_ticker} {period_label} ERROR: {type(e).__name__}'
-                                log.error("Task %s: error on report %d: %s", task_id, claimed_report.get('id'), e, exc_info=True)
-                                _append_progress_line(line, errors=1)
-                            claimed = _claim_next_report()
-                            if claimed is None:
-                                continue
-                            next_report, next_worker_id = claimed
-                            inflight.append(
-                                (next_report, next_worker_id, pool.submit(_run_buffered_extraction, next_report, next_worker_id))
-                            )
+                if ops_run_id is not None:
+                    try:
+                        db.update_pipeline_run(ops_run_id, status='complete', summary={
+                            'processed': ops_counters.get('processed', 0),
+                            'data_points': ops_counters.get('data_points', 0),
+                            'errors': ops_counters.get('errors', 0),
+                        })
+                    except Exception:
+                        log.warning("Task %s: failed to update pipeline_run to complete", task_id, exc_info=True)
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'
                 log.info("Task %s complete for %s", task_id, _scope_label)
             except Exception as e:
                 log.error("Task %s failed: %s", task_id, e, exc_info=True)
+                if ops_run_id is not None:
+                    try:
+                        db.update_pipeline_run(ops_run_id, status='failed', error='Internal error')
+                    except Exception:
+                        pass
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'error'
                     _extraction_progress[task_id]['error_message'] = 'Internal error'

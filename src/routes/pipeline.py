@@ -429,6 +429,43 @@ def _warm_pipeline_ollama_if_needed(db, run_id: int) -> None:
             pass
 
 
+def prepare_extraction_runtime(
+    db,
+    *,
+    warm_model: bool,
+    reason: str,
+    log_fn=None,
+    run_id: int | None = None,
+) -> dict:
+    """Shared extraction runtime prep for pipeline and manual extraction flows."""
+    released = _recover_stale_report_claims(db)
+    if released:
+        msg = f"Released {released} stale extraction claims"
+        if run_id is not None:
+            _event(db, run_id, 'extract', 'stale_claims_recovered', released=released)
+        elif log_fn:
+            log_fn(msg)
+
+    if not warm_model:
+        return {'released_claims': released, 'warmed': False}
+
+    if run_id is not None:
+        _warm_pipeline_ollama_if_needed(db, run_id)
+        return {'released_claims': released, 'warmed': True}
+
+    from infra.ollama_warmup import warm_ollama_for_extraction, ensure_ollama_running
+
+    ensure_ollama_running(log_fn=log_fn)
+    warmup_result = warm_ollama_for_extraction(db=db, reason=reason, force=True)
+    if warmup_result.get('warmed'):
+        try:
+            import interpreters.interpret_pipeline as _ipl
+            _ipl._invalidate_llm_availability_cache()
+        except Exception:
+            pass
+    return {'released_claims': released, 'warmed': bool(warmup_result.get('warmed'))}
+
+
 def _extract_reports_for_ticker(
     db,
     run_id: int,
@@ -438,6 +475,9 @@ def _extract_reports_for_ticker(
     counters: dict,
     failures: list,
     num_workers: int,
+    *,
+    run_config=None,
+    force_reextract: bool = False,
 ) -> None:
     from interpreters.interpret_pipeline import extract_report
     from infra.db import MinerDB
@@ -514,7 +554,7 @@ def _extract_reports_for_ticker(
     def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
         local_db = MinerDB(db.db_path)
         buffered_db = _BufferedExtractionDB(local_db)
-        summary = extract_report(claimed_report, buffered_db, registry)
+        summary = extract_report(claimed_report, buffered_db, registry, config=run_config)
         payload = buffered_db.staged_payload()
         return {
             'report': claimed_report,
@@ -535,9 +575,12 @@ def _extract_reports_for_ticker(
             report_id = int(report_id)
             worker_id = claim_index % effective_workers
             claim_index += 1
-            if not claim_db.claim_report_for_extraction(report_id):
-                log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
-                continue
+            if force_reextract:
+                claim_db.mark_report_extraction_running(report_id)
+            else:
+                if not claim_db.claim_report_for_extraction(report_id):
+                    log.debug("pipeline worker=%d skipping report %d (already claimed)", worker_id, report_id)
+                    continue
             claimed_report = claim_db.get_report(report_id)
             if not claimed_report:
                 continue
@@ -1080,7 +1123,12 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 running_total_pending=extraction_counters['total_reports'],
             )
             if ticker_reports and bool(config.get('warm_model', True)) and not ollama_prepared:
-                _warm_pipeline_ollama_if_needed(db, run_id)
+                prepare_extraction_runtime(
+                    db,
+                    warm_model=True,
+                    reason='pipeline_overnight_extract',
+                    run_id=run_id,
+                )
                 ollama_prepared = True
             _extract_reports_for_ticker(
                 db=db,

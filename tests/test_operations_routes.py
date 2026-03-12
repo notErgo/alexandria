@@ -255,3 +255,349 @@ def test_progress_unknown_task_returns_404(client):
     """GET /api/operations/interpret/<task_id>/progress for unknown task returns 404."""
     resp = client.get('/api/operations/interpret/nonexistent-task-id/progress')
     assert resp.status_code == 404
+
+
+# ── Batch selection policy ────────────────────────────────────────────────────
+
+def test_ops_batch_archive_not_gated_by_btc_first_filing(monkeypatch):
+    """archive/IR reports are never date-gated by btc_first_filing_date."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'CLSK', 'name': 'CleanSpark', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001517767', 'active': 1})
+        db.update_company_config('CLSK', btc_first_filing_date='2022-01-01')
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        call_args = []
+
+        original_getter = db.get_unextracted_reports
+        def _capture_getter(ticker=None, source_types=None, from_period=None, to_period=None):
+            call_args.append({'ticker': ticker, 'source_types': list(source_types or []), 'from_period': from_period})
+            return []
+        monkeypatch.setattr(db, 'get_unextracted_reports', _capture_getter)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['CLSK'], 'cadence': 'all', 'warm_model': False,
+        })
+
+        # Non-EDGAR call must NOT have from_period set to the btc_first_filing_date anchor
+        from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+        non_edgar_calls = [c for c in call_args if set(c['source_types']) <= set(MONTHLY_EXTRACTION_SOURCE_TYPES)]
+        assert non_edgar_calls, f"Expected non-EDGAR get_unextracted_reports call, got: {call_args}"
+        for c in non_edgar_calls:
+            assert c['from_period'] is None, (
+                f"Non-EDGAR sources must not be gated by btc_first_filing_date, "
+                f"got from_period={c['from_period']!r}"
+            )
+
+
+def test_ops_batch_edgar_gated_by_btc_first_filing(monkeypatch):
+    """EDGAR reports ARE date-gated by btc_first_filing_date when no explicit from_period."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'CLSK', 'name': 'CleanSpark', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001517767', 'active': 1})
+        db.update_company_config('CLSK', btc_first_filing_date='2022-01-01')
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        call_args = []
+
+        def _capture_getter(ticker=None, source_types=None, from_period=None, to_period=None):
+            call_args.append({'ticker': ticker, 'source_types': list(source_types or []), 'from_period': from_period})
+            return []
+        monkeypatch.setattr(db, 'get_unextracted_reports', _capture_getter)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['CLSK'], 'cadence': 'all', 'warm_model': False,
+        })
+
+        edgar_types = {'edgar_8k', 'edgar_10k', 'edgar_10q', 'edgar_6k', 'edgar_20f', 'edgar_40f'}
+        edgar_calls = [c for c in call_args if set(c['source_types']) <= edgar_types and c['source_types']]
+        assert edgar_calls, f"Expected EDGAR get_unextracted_reports call, got: {call_args}"
+        for c in edgar_calls:
+            assert c['from_period'] == '2022-01-01', (
+                f"EDGAR sources must be gated by btc_first_filing_date='2022-01-01', "
+                f"got from_period={c['from_period']!r}"
+            )
+
+
+def test_ops_batch_cadence_quarterly_only_edgar_gated(monkeypatch):
+    """cadence='quarterly' makes only edgar_10q calls, and those are date-gated."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        db.update_company_config('MARA', btc_first_filing_date='2021-06-01')
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        call_args = []
+
+        def _capture_getter(ticker=None, source_types=None, from_period=None, to_period=None):
+            call_args.append({'source_types': list(source_types or []), 'from_period': from_period})
+            return []
+        monkeypatch.setattr(db, 'get_unextracted_reports', _capture_getter)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'cadence': 'quarterly', 'warm_model': False,
+        })
+
+        # All calls must be edgar_10q and date-gated
+        assert call_args, "Expected at least one get_unextracted_reports call"
+        for c in call_args:
+            assert 'edgar_10q' in c['source_types'], f"quarterly cadence should only call with edgar_10q, got {c}"
+            assert c['from_period'] == '2021-06-01', (
+                f"EDGAR quarterly must be gated by btc_first_filing_date, got from_period={c['from_period']!r}"
+            )
+
+
+def test_ops_batch_explicit_from_period_overrides_first_filing_for_edgar(monkeypatch):
+    """An explicit from_period overrides btc_first_filing_date for EDGAR sources."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        db.update_company_config('MARA', btc_first_filing_date='2021-06-01')
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        call_args = []
+
+        def _capture_getter(ticker=None, source_types=None, from_period=None, to_period=None):
+            call_args.append({'source_types': list(source_types or []), 'from_period': from_period})
+            return []
+        monkeypatch.setattr(db, 'get_unextracted_reports', _capture_getter)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'cadence': 'all', 'from_period': '2023-01-01', 'warm_model': False,
+        })
+
+        edgar_types = {'edgar_8k', 'edgar_10k', 'edgar_10q', 'edgar_6k', 'edgar_20f', 'edgar_40f'}
+        edgar_calls = [c for c in call_args if set(c['source_types']) <= edgar_types and c['source_types']]
+        assert edgar_calls
+        for c in edgar_calls:
+            assert c['from_period'] == '2023-01-01', (
+                f"Explicit from_period must override btc_first_filing_date for EDGAR, got {c['from_period']!r}"
+            )
+
+
+# ── Manual extract pipeline run persistence ───────────────────────────────────
+
+def test_manual_extract_creates_pipeline_run_row(monkeypatch):
+    """POST /api/operations/interpret creates a pipeline_runs DB row."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'warm_model': False,
+        })
+
+        with db._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT triggered_by, status FROM pipeline_runs WHERE triggered_by='manual_extract'"
+            ).fetchall()
+        assert len(rows) >= 1, "Expected at least one pipeline_runs row with triggered_by='manual_extract'"
+
+
+def test_manual_extract_run_completes_with_status_complete(monkeypatch):
+    """After extraction finishes, the pipeline_runs row is updated to status='complete'."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod, routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        # Stub out the shared worker so we don't actually call Ollama
+        def _noop_extract_for_ticker(db, run_id, ticker, reports, registry,
+                                      counters, failures, num_workers,
+                                      *, run_config=None, force_reextract=False):
+            pass
+
+        monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _noop_extract_for_ticker)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'warm_model': False,
+        })
+
+        with db._get_connection() as conn:
+            row = conn.execute(
+                "SELECT status FROM pipeline_runs WHERE triggered_by='manual_extract' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        assert row is not None
+        assert row['status'] == 'complete', f"Expected status='complete', got {row['status']!r}"
+
+
+def test_manual_extract_progress_includes_run_id(monkeypatch):
+    """GET /api/operations/interpret/<task_id>/progress includes run_id field."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod, routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        def _noop_extract_for_ticker(db, run_id, ticker, reports, registry,
+                                      counters, failures, num_workers,
+                                      *, run_config=None, force_reextract=False):
+            pass
+
+        monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _noop_extract_for_ticker)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target:
+                    self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        resp = client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'warm_model': False,
+        })
+        assert resp.status_code == 200
+        task_id = resp.get_json()['data']['task_id']
+
+        progress_resp = client.get(f'/api/operations/interpret/{task_id}/progress')
+        assert progress_resp.status_code == 200
+        data = progress_resp.get_json()['data']
+        assert 'run_id' in data, f"Progress should include run_id field, got keys: {list(data.keys())}"
+        assert isinstance(data['run_id'], int), f"run_id should be an int, got {data['run_id']!r}"

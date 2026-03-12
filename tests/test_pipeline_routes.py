@@ -900,3 +900,144 @@ def test_extract_reports_for_ticker_limits_claimed_running_rows_to_worker_count(
     worker.join(timeout=5.0)
     assert not worker.is_alive()
     assert failures == []
+
+
+def test_extract_reports_for_ticker_forwards_run_config(monkeypatch, tmp_path):
+    """_extract_reports_for_ticker forwards run_config kwarg to extract_report."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import routes.pipeline as pipeline_mod
+    import interpreters.interpret_pipeline as interpret_mod
+    from miner_types import ExtractionSummary, ExtractionRunConfig
+
+    db = MinerDB(str(tmp_path / 'run-config.db'))
+    db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                       'ir_url': 'https://example.com/mara', 'pr_base_url': 'https://example.com',
+                       'cik': '0001437491', 'active': 1, 'scraper_mode': 'rss'})
+    report_id = db.insert_report(make_report(
+        ticker='MARA', raw_text='MARA mined 100 BTC.', report_date='2024-01-01',
+        source_url='https://example.com/r1',
+    ))
+    reports = [db.get_report(report_id)]
+    run = db.create_pipeline_run(triggered_by='test', scope={}, config={})
+    run_id = int(run['id'])
+
+    captured_configs = []
+
+    def _fake_extract(report, local_db, registry, config=None, **kwargs):
+        captured_configs.append(config)
+        local_db.mark_report_extracted(report['id'])
+        s = ExtractionSummary()
+        s.reports_processed = 1
+        return s
+
+    monkeypatch.setattr(interpret_mod, 'extract_report', _fake_extract)
+
+    run_config = ExtractionRunConfig(expected_granularity='monthly', ticker='MARA')
+    counters = {'total_reports': 1, 'report_done_count': 0, 'processed': 0,
+                'data_points': 0, 'errors': 0, 'keyword_gated': 0}
+    pipeline_mod._extract_reports_for_ticker(
+        db=db, run_id=run_id, ticker='MARA', reports=reports,
+        registry=object(), counters=counters, failures=[], num_workers=1,
+        run_config=run_config,
+    )
+
+    assert len(captured_configs) == 1
+    assert captured_configs[0] is run_config
+
+
+def test_extract_reports_for_ticker_force_uses_mark_running_not_claim(monkeypatch, tmp_path):
+    """force_reextract=True uses mark_report_extraction_running, not claim_report_for_extraction."""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import routes.pipeline as pipeline_mod
+    import interpreters.interpret_pipeline as interpret_mod
+    from miner_types import ExtractionSummary
+
+    db = MinerDB(str(tmp_path / 'force-claim.db'))
+    db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                       'ir_url': 'https://example.com/mara', 'pr_base_url': 'https://example.com',
+                       'cik': '0001437491', 'active': 1, 'scraper_mode': 'rss'})
+    report_id = db.insert_report(make_report(
+        ticker='MARA', raw_text='MARA mined 100 BTC.', report_date='2024-01-01',
+        source_url='https://example.com/r1',
+    ))
+    # Mark as already extracted so claim_report_for_extraction would skip it
+    db.mark_report_extracted(report_id)
+    reports = [db.get_report(report_id)]
+    run = db.create_pipeline_run(triggered_by='test', scope={}, config={})
+    run_id = int(run['id'])
+
+    extracted_ids = []
+
+    def _fake_extract(report, local_db, registry, **kwargs):
+        extracted_ids.append(report['id'])
+        local_db.mark_report_extracted(report['id'])
+        s = ExtractionSummary()
+        s.reports_processed = 1
+        return s
+
+    monkeypatch.setattr(interpret_mod, 'extract_report', _fake_extract)
+
+    counters = {'total_reports': 1, 'report_done_count': 0, 'processed': 0,
+                'data_points': 0, 'errors': 0, 'keyword_gated': 0}
+    pipeline_mod._extract_reports_for_ticker(
+        db=db, run_id=run_id, ticker='MARA', reports=reports,
+        registry=object(), counters=counters, failures=[], num_workers=2,
+        force_reextract=True,
+    )
+
+    # With force_reextract=True, the already-extracted report should still be processed
+    assert extracted_ids == [report_id], (
+        "force_reextract=True should process already-extracted reports via mark_running"
+    )
+
+
+def test_operations_extract_delegates_to_shared_worker(monkeypatch, tmp_path):
+    """POST /api/operations/interpret delegates extraction to _extract_reports_for_ticker."""
+    import importlib
+    import app_globals, run_web
+    import routes.pipeline as pipeline_mod
+    import routes.operations as ops_mod
+    from miner_types import ExtractionSummary
+
+    db = MinerDB(str(tmp_path / 'delegate.db'))
+    db.insert_company({'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
+                       'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                       'cik': '0001437491', 'active': 1})
+    report_id = db.insert_report(make_report(
+        ticker='MARA', raw_text='MARA mined 100 BTC.', report_date='2024-01-01',
+        source_url='https://example.com/r1',
+    ))
+    app_globals._db = db
+    importlib.reload(run_web)
+    flask_app = run_web.create_app()
+    flask_app.config['TESTING'] = True
+    client = flask_app.test_client()
+
+    delegate_calls = []
+
+    def _fake_extract_for_ticker(db, run_id, ticker, reports, registry, counters,
+                                  failures, num_workers, *, run_config=None, force_reextract=False):
+        delegate_calls.append({'ticker': ticker, 'reports': reports,
+                                'force_reextract': force_reextract})
+        # Simulate successful extraction
+        counters['processed'] += len(reports)
+
+    monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_extract_for_ticker)
+
+    class _ImmediateThread:
+        def __init__(self, target=None, args=(), daemon=False, name=None):
+            self._target = target
+        def start(self):
+            if self._target:
+                self._target()
+
+    monkeypatch.setattr(ops_mod, '_active_tickers', set())
+    monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+    resp = client.post('/api/operations/interpret', json={
+        'tickers': ['MARA'], 'warm_model': False,
+    })
+    assert resp.status_code == 200
+
+    assert len(delegate_calls) >= 1
+    assert any(c['ticker'] == 'MARA' for c in delegate_calls)
