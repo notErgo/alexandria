@@ -49,17 +49,28 @@ def _normalize_optional_text(body: dict, key: str) -> str | None:
     return txt or None
 
 
-def _parse_optional_start_year(body: dict) -> tuple[int | None, str | None]:
-    raw = body.get('pr_start_year')
+def _parse_optional_start_date(body: dict) -> tuple[str | None, str | None]:
+    raw = body.get('pr_start_date')
+    # backward compat: accept pr_start_year as integer
+    if raw is None and body.get('pr_start_year') is not None:
+        yr = body.get('pr_start_year')
+        try:
+            raw = f"{int(yr):04d}-01-01"
+        except (TypeError, ValueError):
+            return None, 'pr_start_year must be an integer'
     if raw in (None, ''):
         return None, None
+    txt = str(raw).strip()
+    if not txt:
+        return None, None
+    from datetime import date as _date
     try:
-        year = int(raw)
-    except (TypeError, ValueError):
-        return None, 'pr_start_year must be an integer'
-    if year < 2009 or year > 2100:
-        return None, 'pr_start_year must be between 2009 and 2100'
-    return year, None
+        parsed = _date.fromisoformat(txt[:10])
+    except ValueError:
+        return None, 'pr_start_date must be a valid date in YYYY-MM-DD format'
+    if parsed.year < 2009 or parsed.year > 2100:
+        return None, 'pr_start_date year must be between 2009 and 2100'
+    return txt[:10], None
 
 
 def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
@@ -70,13 +81,13 @@ def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
     if mode == 'template':
         if not fields.get('url_template'):
             return "template mode requires non-empty url_template"
-        if not fields.get('pr_start_year'):
-            return "template mode requires pr_start_year"
+        if not fields.get('pr_start_date'):
+            return "template mode requires pr_start_date"
     if mode == 'discovery':
         if not fields.get('ir_url'):
             return "discovery mode requires non-empty ir_url"
-        if not fields.get('pr_start_year'):
-            return "discovery mode requires pr_start_year"
+        if not fields.get('pr_start_date'):
+            return "discovery mode requires pr_start_date"
     if mode == 'index' and not fields.get('ir_url'):
         return "index mode requires non-empty ir_url"
     if mode == 'playwright' and not fields.get('ir_url'):
@@ -161,7 +172,7 @@ def add_discovery_candidates(ticker):
             'ticker': ticker,
             'source_type': source_type,
             'url': url,
-            'pr_start_year': c.get('pr_start_year'),
+            'pr_start_date': c.get('pr_start_date'),
             'confidence': conf,
             'rationale': c.get('rationale'),
             'proposed_by': proposed_by,
@@ -309,7 +320,7 @@ def create_company():
     url_template = _normalize_optional_text(body, 'url_template')
     skip_reason = _normalize_optional_text(body, 'skip_reason')
     sandbox_note = _normalize_optional_text(body, 'sandbox_note')
-    pr_start_year, year_err = _parse_optional_start_year(body)
+    pr_start_date, year_err = _parse_optional_start_date(body)
 
     if not ticker or len(ticker) > 10:
         return jsonify({'success': False, 'error': {'message': 'ticker required (max 10 chars)'}}), 400
@@ -328,7 +339,7 @@ def create_company():
         'prnewswire_url': prnewswire_url,
         'globenewswire_url': globenewswire_url,
         'url_template': url_template,
-        'pr_start_year': pr_start_year,
+        'pr_start_date': pr_start_date,
         'skip_reason': skip_reason,
     }
     mode_err = _validate_mode_requirements(scraper_mode, field_map)
@@ -348,7 +359,7 @@ def create_company():
             prnewswire_url=prnewswire_url,
             globenewswire_url=globenewswire_url,
             url_template=url_template,
-            pr_start_year=pr_start_year,
+            pr_start_date=pr_start_date,
             skip_reason=skip_reason,
             sandbox_note=sandbox_note,
         )
@@ -477,7 +488,7 @@ def update_company(ticker):
     allowed = {
         'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
         'rss_url', 'prnewswire_url', 'globenewswire_url',
-        'url_template', 'pr_start_year', 'skip_reason', 'sandbox_note',
+        'url_template', 'pr_start_date', 'skip_reason', 'sandbox_note',
         'active', 'btc_first_filing_date', 'reporting_cadence',
     }
     _VALID_REPORTING_CADENCES = ('monthly', 'quarterly', 'annual')
@@ -496,11 +507,11 @@ def update_company(ticker):
         kwargs['scraper_mode'] = str(kwargs['scraper_mode']).strip().lower()
     if 'scraper_mode' in kwargs and kwargs['scraper_mode'] not in _VALID_SCRAPER_MODES:
         return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
-    if 'pr_start_year' in kwargs:
-        year, year_err = _parse_optional_start_year(kwargs)
+    if 'pr_start_date' in kwargs:
+        date_val, year_err = _parse_optional_start_date(kwargs)
         if year_err:
             return jsonify({'success': False, 'error': {'message': year_err}}), 400
-        kwargs['pr_start_year'] = year
+        kwargs['pr_start_date'] = date_val
     if 'reporting_cadence' in kwargs:
         rc = (kwargs['reporting_cadence'] or '').strip().lower()
         if rc not in _VALID_REPORTING_CADENCES:
@@ -526,7 +537,7 @@ def update_company(ticker):
         'prnewswire_url': kwargs.get('prnewswire_url', existing.get('prnewswire_url')),
         'globenewswire_url': kwargs.get('globenewswire_url', existing.get('globenewswire_url')),
         'url_template': kwargs.get('url_template', existing.get('url_template')),
-        'pr_start_year': kwargs.get('pr_start_year', existing.get('pr_start_year')),
+        'pr_start_date': kwargs.get('pr_start_date', existing.get('pr_start_date')),
         'skip_reason': kwargs.get('skip_reason', existing.get('skip_reason')),
     }
     mode_err = _validate_mode_requirements(effective_mode, mode_fields)

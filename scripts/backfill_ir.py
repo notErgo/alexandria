@@ -103,12 +103,13 @@ def _run_extraction(db: MinerDB, tickers: list, dry_run: bool) -> None:
 def _run_backfill(company: dict, db: MinerDB, session: req_lib.Session, dry_run: bool) -> None:
     ticker = company['ticker']
     mode = (company.get('scraper_mode') or '').strip().lower()
-    start_year = company.get('pr_start_year')
+    start_date = company.get('pr_start_date')
+    start_year = int(str(start_date)[:4]) if start_date else None
     ir_url = company.get('ir_url') or ''
 
     log.info(
-        "backfill_start ticker=%s mode=%s pr_start_year=%s ir_url=%s dry_run=%s",
-        ticker, mode, start_year, ir_url, dry_run,
+        "backfill_start ticker=%s mode=%s pr_start_date=%s ir_url=%s dry_run=%s",
+        ticker, mode, start_date, ir_url, dry_run,
     )
 
     if mode == 'skip':

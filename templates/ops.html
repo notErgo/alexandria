@@ -1029,8 +1029,8 @@ tr.is-reviewed td { opacity: 0.65; }
         <input id="ac-url-template" type="text" style="width:310px" placeholder="https://site/{month}-{year}-production-update">
       </div>
       <div>
-        <label style="font-size:0.75rem;display:block">PR Start Year</label>
-        <input id="ac-pr-start-year" type="number" min="2009" max="2100" step="1" style="width:100px" placeholder="2023">
+        <label style="font-size:0.75rem;display:block">PR Start Date</label>
+        <input id="ac-pr-start-year" type="date" style="width:160px">
       </div>
       <div style="min-width:320px">
         <label style="font-size:0.75rem;display:block">Skip Reason</label>
@@ -3708,7 +3708,7 @@ function renderCompanies() {
       ? '<span class="scraper-badge scraper-badge-' + escapeHtml(c.scraper_status) + '">' + escapeHtml(c.scraper_status) + '</span>'
       : '<span style="color:var(--theme-text-muted);font-size:0.75rem">never run</span>';
     const lastScrape = c.last_scrape_at ? c.last_scrape_at.slice(0, 10) : '—';
-    const prStartValue = Number.isInteger(c.pr_start_year) ? String(c.pr_start_year) : '';
+    const prStartValue = c.pr_start_date || '';
 
     // URL column: show ir_url link, rss_url link if present, url_template if present
     let urlParts = [];
@@ -3756,13 +3756,13 @@ function renderCompanies() {
           + activeBadge
         + '</td>'
       + '<td>' + escapeHtml(c.name) + nameExtra + '</td>'
-      + '<td>' + modeBadge + (c.pr_start_year ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px" title="Crawler backfill floor, not verified monthly production coverage start">crawl from ' + escapeHtml(String(c.pr_start_year)) + '</span>' : '') + '</td>'
+      + '<td>' + modeBadge + (c.pr_start_date ? '<span style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:4px" title="Crawler backfill floor, not verified monthly production coverage start">crawl from ' + escapeHtml(c.pr_start_date || '') + '</span>' : '') + '</td>'
       + '<td style="white-space:nowrap">'
-          + '<input id="pr-start-year-input-' + escapeAttr(c.ticker) + '" type="number" min="2009" max="2100" step="1"'
-            + ' value="' + escapeAttr(prStartValue) + '" style="width:84px;font-size:0.78rem" placeholder="year">'
+          + '<input id="pr-start-date-input-' + escapeAttr(c.ticker) + '" type="date"'
+            + ' value="' + escapeAttr(prStartValue) + '" style="width:140px;font-size:0.78rem">'
           + '<button class="btn btn-sm btn-secondary" style="margin-left:4px" data-ticker="' + escapeAttr(c.ticker) + '"'
             + ' onclick="savePrStartYear(this.getAttribute(\'data-ticker\'))">Save</button>'
-          + '<div id="pr-start-year-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:2px">'
+          + '<div id="pr-start-date-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:2px">'
             + (prStartValue ? 'Current ' + escapeHtml(prStartValue) : 'Required for discovery/template')
             + '</div>'
         + '</td>'
@@ -3790,11 +3790,11 @@ function renderCompanies() {
             + 'Fetches and stores each matching press release as raw text. '
             + 'Stops automatically when a full page of production PRs is already ingested — '
             + 'so incremental runs only fetch what is new. '
-            + (c.pr_start_year ? 'Crawler backfill floor is ' + escapeHtml(String(c.pr_start_year)) + ' onward; this is not a guarantee of complete monthly mining coverage from that year.' : ''),
+            + (c.pr_start_date ? 'Crawler backfill floor is ' + escapeHtml(c.pr_start_date || '') + ' onward; this is not a guarantee of complete monthly mining coverage from that year.' : ''),
           rss: 'Fetches the RSS feed URL, which provides a rolling window of the most recent '
             + '~10 press releases. Suitable for staying current but does not backfill history. '
             + 'For full historical coverage, switch to index mode.',
-          template: 'Generates one URL per month from the configured URL template and pr_start_year. '
+          template: 'Generates one URL per month from the configured URL template and pr_start_date. '
             + 'Fetches each month\'s press release in sequence until the current month. '
             + 'Suitable for IR sites with predictable URL patterns.',
           playwright: 'Uses a headless browser to render JavaScript-heavy IR pages before extracting links. '
@@ -4396,7 +4396,7 @@ async function submitAddCompany() {
   const prnewswireUrl = document.getElementById('ac-prnewswire-url').value.trim();
   const globenewswireUrl = document.getElementById('ac-globenewswire-url').value.trim();
   const urlTemplate = document.getElementById('ac-url-template').value.trim();
-  const prStartYearRaw = document.getElementById('ac-pr-start-year').value.trim();
+  const prStartDateRaw = document.getElementById('ac-pr-start-year').value.trim();
   const skipReason = document.getElementById('ac-skip-reason').value.trim();
   const reportingCadence = document.getElementById('ac-reporting-cadence').value || 'monthly';
   document.getElementById('ac-error').textContent = '';
@@ -4408,7 +4408,7 @@ async function submitAddCompany() {
   if (prnewswireUrl) payload.prnewswire_url = prnewswireUrl;
   if (globenewswireUrl) payload.globenewswire_url = globenewswireUrl;
   if (urlTemplate) payload.url_template = urlTemplate;
-  if (prStartYearRaw) payload.pr_start_year = Number(prStartYearRaw);
+  if (prStartDateRaw) payload.pr_start_date = prStartDateRaw;
   if (skipReason) payload.skip_reason = skipReason;
 
   const resp = await fetch('/api/companies', {
@@ -4459,15 +4459,15 @@ async function saveCadence(ticker) {
 }
 
 async function savePrStartYear(ticker) {
-  const input = document.getElementById('pr-start-year-input-' + ticker);
-  const msgEl = document.getElementById('pr-start-year-msg-' + ticker);
+  const input = document.getElementById('pr-start-date-input-' + ticker);
+  const msgEl = document.getElementById('pr-start-date-msg-' + ticker);
   const raw = (input?.value || '').trim();
   msgEl.textContent = 'Saving…';
   try {
     const resp = await fetch('/api/companies/' + encodeURIComponent(ticker), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pr_start_year: raw ? Number(raw) : null }),
+      body: JSON.stringify({ pr_start_date: raw || null }),
     });
     const data = await resp.json();
     if (!data.success) { msgEl.textContent = data.error?.message || 'Error'; return; }

@@ -180,7 +180,7 @@ class TestDownloadAllModeSelection:
             "active": True,
             "scraper_mode": "discovery",
             "ir_url": "https://investors.cleanspark.com/news",
-            "pr_start_year": 2020,
+            "pr_start_date": "2020-01-01",
         }
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(downloader, "_download_discovery", lambda *args, **kwargs: type("S", (), {

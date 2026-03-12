@@ -5,13 +5,16 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 
-def _make_company(ticker='BTDR', ir_url='https://ir.example.com/news', pr_start_year=2024):
+def _make_company(ticker='BTDR', ir_url='https://ir.example.com/news', pr_start_year=None, pr_start_date='2024-01-01'):
+    # Accept pr_start_year for backward compat in tests; prefer pr_start_date
+    if pr_start_year is not None and pr_start_date == '2024-01-01':
+        pr_start_date = f"{pr_start_year}-01-01"
     return {
         'ticker': ticker,
         'ir_url': ir_url,
         'pr_base_url': 'https://ir.example.com',
         'scraper_mode': 'drupal_year',
-        'pr_start_year': pr_start_year,
+        'pr_start_date': pr_start_date,
         'active': True,
         'skip_reason': None,
     }
@@ -188,10 +191,10 @@ class TestDrupalYearScraper:
         assert result.reports_ingested == 0
 
     def test_missing_pr_start_year_returns_error(self, tmp_path):
-        """Missing pr_start_year increments errors and returns immediately."""
+        """Missing pr_start_date increments errors and returns immediately."""
         scraper, db = self._get_scraper(tmp_path)
         company = _make_company()
-        company['pr_start_year'] = None
+        company['pr_start_date'] = None
 
         result = scraper._scrape_drupal_year(company)
         assert result.errors == 1

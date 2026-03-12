@@ -71,6 +71,13 @@ _8K_SEARCH_TERMS: list = [
     '"production and operations"',
     '"digital asset production"',
     '"hash rate"',
+    '"bitcoin mining"',
+    '"BTC mining"',
+    '"exahash"',
+    '"petahash"',
+    '"mining capacity"',
+    '"mining operations"',
+    '"bitcoin holdings"',
 ]
 
 
@@ -624,14 +631,14 @@ class EdgarConnector:
     def detect_btc_first_filing_date(self, cik: str, ticker: str) -> Optional[str]:
         """Find the earliest SEC filing date that mentions any active search keyword.
 
-        Uses EDGAR full-text search sorted ascending, takes the first result.
-        Stores the result in companies.btc_first_filing_date if a match is found.
+        Uses EDGAR full-text search sorted ascending, paginating through results
+        to find the first filing by this specific company.  Stores the result in
+        companies.btc_first_filing_date if a match is found.
         Returns ISO date string YYYY-MM-DD or None if no match found.
 
         If btc_first_filing_date is already stored for this ticker, returns it
         immediately without hitting EDGAR (idempotent).
         """
-        # Return cached value if already detected
         stored = self.db.get_btc_first_filing_date(ticker)
         if stored:
             return stored
@@ -641,43 +648,50 @@ class EdgarConnector:
             log.warning("detect_btc_first_filing_date: no keywords available for %s", ticker)
             return None
 
-        # EDGAR EFTS 'entity' parameter is a text search on company name, NOT a CIK
-        # filter.  Passing a numeric CIK as entity returns cross-company noise.
-        # Instead request ciks+adsh in _source so we can filter hits ourselves via
-        # _hit_matches_target_entity(), which checks _source.ciks and _source.adsh.
-        params = {
-            'q': query,
-            'dateRange': 'custom',
-            'startdt': '1993-01-01',
-            'forms': '8-K,8-K/A,10-K,10-K/A,10-Q,10-Q/A',
-            'sort': 'file-date',
-            'order': 'asc',
-            'hits.hits.total.value': 1,
-        }
-        data = self._edgar_request(EDGAR_BASE_URL, params)
-        if data is None:
-            log.warning("detect_btc_first_filing_date: no EDGAR response for %s", ticker)
-            return None
+        _MAX_PAGES = 5
+        _PAGE_SIZE = 10
 
-        hits = data.get('hits', {}).get('hits', [])
-        if not hits:
-            log.info("detect_btc_first_filing_date: no keyword hits found for %s", ticker)
-            return None
-
-        # Filter hits to only those filed by the target company.
         filed_date = None
-        for hit in hits:
-            source = hit.get('_source', {})
-            if _hit_matches_target_entity(source, cik):
-                raw_date = source.get('file_date', '')
-                if raw_date:
-                    filed_date = raw_date[:10]
-                    break
+        for page in range(_MAX_PAGES):
+            params = {
+                'q': query,
+                'dateRange': 'custom',
+                'startdt': '1993-01-01',
+                'forms': '8-K,8-K/A,10-K,10-K/A,10-Q,10-Q/A',
+                'sort': 'file-date',
+                'order': 'asc',
+                'from': page * _PAGE_SIZE,
+            }
+            data = self._edgar_request(EDGAR_BASE_URL, params)
+            if data is None:
+                log.warning("detect_btc_first_filing_date: no EDGAR response for %s (page %d)", ticker, page)
+                break
+
+            hits = data.get('hits', {}).get('hits', [])
+            if not hits:
+                log.info("detect_btc_first_filing_date: no more hits for %s after page %d", ticker, page)
+                break
+
+            for hit in hits:
+                source = hit.get('_source', {})
+                if _hit_matches_target_entity(source, cik):
+                    raw_date = source.get('file_date', '')
+                    if raw_date:
+                        filed_date = raw_date[:10]
+                        break
+
+            if filed_date:
+                break
+
+            log.debug(
+                "detect_btc_first_filing_date: page %d had %d hits, none matched %s — continuing",
+                page, len(hits), ticker,
+            )
 
         if not filed_date:
             log.info(
-                "detect_btc_first_filing_date: no entity-matched hits for %s in first page",
-                ticker,
+                "detect_btc_first_filing_date: no entity-matched hits for %s after %d pages",
+                ticker, _MAX_PAGES,
             )
             return None
 

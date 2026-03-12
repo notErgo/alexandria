@@ -99,7 +99,7 @@ def generate_prompt(ticker: str, contract: dict, company: dict, contracts_dir: P
     evidence_urls = _pick_evidence_urls(sources)
     year_filter = _build_year_filter_instructions(company)
     edgar_prereq_note = _build_edgar_prereq_note(company)
-    pr_start_year = company.get('pr_start_year') or 2021
+    pr_start_year = (company.get('pr_start_date') or '')[:4] or '2021'
     output_path = str(_DATA_RESULTS_DIR / ticker / 'results.json')
 
     filled = (

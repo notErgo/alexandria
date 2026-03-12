@@ -65,7 +65,7 @@ def _make_company(ticker, name='Test Corp', pr_start_year=2021, year_filter_temp
     c = {
         'ticker': ticker,
         'name': name,
-        'pr_start_year': pr_start_year,
+        'pr_start_date': f'{pr_start_year}-01-01',
         'ir_url': f'https://ir.example.com/{ticker.lower()}',
         'active': True,
     }

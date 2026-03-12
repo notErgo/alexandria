@@ -179,7 +179,7 @@ def run_bootstrap_probe_for_ticker(
             seed_candidates.append({
                 'source_type': 'TEMPLATE',
                 'url': company['url_template'],
-                'pr_start_year': company.get('pr_start_year'),
+                'pr_start_date': company.get('pr_start_date'),
             })
         if company.get('ir_url'):
             seed_candidates.append({'source_type': 'IR_PRIMARY', 'url': company['ir_url']})
@@ -190,7 +190,7 @@ def run_bootstrap_probe_for_ticker(
                 'ticker': ticker,
                 'source_type': c['source_type'],
                 'url': c['url'],
-                'pr_start_year': c.get('pr_start_year'),
+                'pr_start_date': c.get('pr_start_date'),
                 'proposed_by': 'bootstrap_seed',
                 'verified': 0,
             })
@@ -210,7 +210,7 @@ def run_bootstrap_probe_for_ticker(
             'ticker': ticker,
             'source_type': c['source_type'],
             'url': c['url'],
-            'pr_start_year': c.get('pr_start_year'),
+            'pr_start_date': c.get('pr_start_date'),
             'confidence': c.get('confidence'),
             'rationale': c.get('rationale'),
             'proposed_by': c.get('proposed_by') or 'agent',
@@ -259,8 +259,8 @@ def run_bootstrap_probe_for_ticker(
                 updates['globenewswire_url'] = chosen['url']
         elif recommended_mode == 'template' and chosen:
             updates['url_template'] = chosen['url']
-            if chosen.get('pr_start_year'):
-                updates['pr_start_year'] = chosen.get('pr_start_year')
+            if chosen.get('pr_start_date'):
+                updates['pr_start_date'] = chosen.get('pr_start_date')
         elif recommended_mode == 'index' and chosen:
             updates['ir_url'] = chosen['url']
         if recommended_mode == 'skip':

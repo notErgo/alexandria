@@ -59,7 +59,7 @@ def test_create_company_template_requires_template_and_start_year(client):
         'url_template': 'https://example.com/{month}-{year}',
     })
     assert resp.status_code == 400
-    assert 'pr_start_year' in resp.get_json()['error']['message']
+    assert 'pr_start_date' in resp.get_json()['error']['message']
 
 
 def test_create_company_index_requires_ir_url(client):
@@ -79,13 +79,13 @@ def test_create_company_template_persists_mode_fields(client):
         'scraper_mode': 'template',
         'ir_url': 'https://example.com/news',
         'url_template': 'https://example.com/{month}-{year}',
-        'pr_start_year': 2022,
+        'pr_start_date': '2022-01-01',
     })
     assert resp.status_code == 201
     data = resp.get_json()['data']
     assert data['scraper_mode'] == 'template'
     assert data['url_template'] == 'https://example.com/{month}-{year}'
-    assert data['pr_start_year'] == 2022
+    assert data['pr_start_date'] == '2022-01-01'
 
 
 def test_update_company_mode_validates_effective_configuration(client):

@@ -21,6 +21,13 @@ _8K_SEARCH_TERMS: list = [
     '"production and operations"',
     '"digital asset production"',
     '"hash rate"',
+    '"bitcoin mining"',
+    '"BTC mining"',
+    '"exahash"',
+    '"petahash"',
+    '"mining capacity"',
+    '"mining operations"',
+    '"bitcoin holdings"',
 ]
 
 def get_all_active_rows(db) -> list:

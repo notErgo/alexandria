@@ -117,6 +117,29 @@ _BOT_CHALLENGE_MARKERS: tuple[str, ...] = (
     "/cdn-cgi/challenge-platform/",
 )
 
+
+def _get_pr_start_date(company: dict):
+    """Return the configured press release start date for a company.
+
+    Checks 'pr_start_date' (YYYY-MM-DD string) first.
+    Falls back to 'pr_start_year' (int) -> date(year, 1, 1) for backward compat.
+    Returns None if neither is configured.
+    """
+    from datetime import date as _date
+    raw = company.get('pr_start_date')
+    if raw:
+        try:
+            return _date.fromisoformat(str(raw)[:10])
+        except ValueError:
+            pass
+    year = company.get('pr_start_year')
+    if year:
+        try:
+            return _date(int(year), 1, 1)
+        except (TypeError, ValueError):
+            pass
+    return None
+
 _MONTH_NAMES = [
     "", "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
@@ -1091,15 +1114,16 @@ class IRScraper:
 
         summary = IngestSummary()
         ticker = company["ticker"]
-        start_year = company.get("pr_start_year")
+        start_date = _get_pr_start_date(company)
         if not company.get("ir_url"):
             log.error("%s: ir_url not set for discovery mode", ticker)
             summary.errors += 1
             return summary
-        if not start_year:
-            log.error("%s: pr_start_year not set for discovery mode", ticker)
+        if not start_date:
+            log.error("%s: pr_start_date not set for discovery mode", ticker)
             summary.errors += 1
             return summary
+        start_year = start_date.year
 
         page_urls = discovery_page_urls_for_company(company)
         if not page_urls:
@@ -1169,10 +1193,10 @@ class IRScraper:
                 seen_urls.add(full_url)
 
                 period_hint = hinted_period or infer_period_from_text(full_url)
-                if period_hint and period_hint.year >= start_year:
+                if period_hint and date(period_hint.year, period_hint.month, 1) >= start_date:
                     page_has_recent = True
 
-                if period_hint and period_hint.year < start_year:
+                if period_hint and date(period_hint.year, period_hint.month, 1) < start_date:
                     continue
 
                 url_hash = hashlib.sha256(full_url.encode()).hexdigest()
@@ -1335,7 +1359,7 @@ class IRScraper:
                 log.debug("%s: could not infer period for discovered PR %s", ticker, full_url)
                 self._release_url(ticker, url_hash)
                 continue
-            if page_period.year < start_year:
+            if date(page_period.year, page_period.month, 1) < start_date:
                 self._release_url(ticker, url_hash)
                 continue
 
@@ -1378,8 +1402,8 @@ class IRScraper:
         summary = IngestSummary()
         ticker = company["ticker"]
         url_template = company.get("url_template")
-        start_year = company.get("pr_start_year")
-        # When True, bypass the fast-forward so all months from pr_start_year are
+        start_date = _get_pr_start_date(company)
+        # When True, bypass the fast-forward so all months from pr_start_date are
         # attempted even when the DB already holds recent IR reports.  URL-hash
         # dedup prevents re-inserting already-ingested months.
         backfill_mode = company.get("backfill_mode", False)
@@ -1388,12 +1412,13 @@ class IRScraper:
             log.error("%s: url_template not set but scrape_mode is 'template'", ticker)
             summary.errors += 1
             return summary
-        if not start_year:
-            log.error("%s: pr_start_year not set", ticker)
+        if not start_date:
+            log.error("%s: pr_start_date not set", ticker)
             summary.errors += 1
             return summary
+        start_year = start_date.year
 
-        # Walk months from the LATER OF (pr_start_year-01, latest IR period in DB)
+        # Walk months from the LATER OF (pr_start_date, latest IR period in DB)
         # up to the most recently COMPLETED month (we don't attempt the current
         # in-progress month — reports publish after month-end).
         today = date.today()
@@ -1408,17 +1433,17 @@ class IRScraper:
             try:
                 ly, lm = int(latest[:4]), int(latest[5:7])
                 start_from = date(ly, lm + 1, 1) if lm < 12 else date(ly + 1, 1, 1)
-                # Never go before pr_start_year — respect the configured floor
-                current = max(date(start_year, 1, 1), start_from)
+                # Never go before pr_start_date — respect the configured floor
+                current = max(start_date, start_from)
                 log.info("%s: fast-forwarding to %s (latest IR: %s)", ticker, current, latest)
             except (ValueError, IndexError) as e:
                 log.warning(
-                    "%s: could not parse latest_ir_period %r (%s) — starting from %d",
-                    ticker, latest, e, start_year,
+                    "%s: could not parse latest_ir_period %r (%s) — starting from %s",
+                    ticker, latest, e, start_date,
                 )
-                current = date(start_year, 1, 1)
+                current = start_date
         else:
-            current = date(start_year, 1, 1)
+            current = start_date
             if backfill_mode:
                 log.info("%s: backfill_mode=True — starting from %s", ticker, current)
 

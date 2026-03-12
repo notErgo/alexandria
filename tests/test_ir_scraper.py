@@ -344,7 +344,7 @@ class TestTemplateModeBackfill:
         "ticker": "RIOT",
         "scraper_mode": "template",
         "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
-        "pr_start_year": 2020,
+        "pr_start_date": "2020-01-01",
         "pr_base_url": "https://www.riotplatforms.com",
     }
     _PR_HTML = "<html><body><p>January 2020 production: 150 BTC mined.</p></body></html>"
@@ -403,7 +403,7 @@ class TestTemplateModeBackfill:
 
     def test_riot_historical_slug_fallback_uses_working_candidate(self):
         scraper = self._make_scraper(latest_ir=None)
-        company = {**self._COMPANY_BASE, "pr_start_year": 2020, "backfill_mode": True}
+        company = {**self._COMPANY_BASE, "pr_start_date": "2020-01-01", "backfill_mode": True}
 
         pr_resp = MagicMock()
         pr_resp.text = self._PR_HTML
@@ -429,7 +429,7 @@ class TestTemplateModeBackfill:
             "ticker": "CLSK",
             "scraper_mode": "template",
             "url_template": "https://investors.cleanspark.com/news/news-details/{year}/CleanSpark-Releases-{Month}-{year}-Bitcoin-Mining-Update/default.aspx",
-            "pr_start_year": 2024,
+            "pr_start_date": "2024-01-01",
             "pr_base_url": "https://investors.cleanspark.com",
         }
 
@@ -461,7 +461,7 @@ class TestIndexModeStopOnAllSeen:
         "scraper_mode": "index",
         "ir_url": "https://www.riotplatforms.com/press-releases/",
         "pr_base_url": "https://www.riotplatforms.com",
-        "pr_start_year": 2020,
+        "pr_start_date": "2020-01-01",
     }
 
     # Two-page listing: page 1 has a 2025 PR (already ingested),
@@ -538,7 +538,7 @@ class TestDiscoveryMode:
             "scraper_mode": "discovery",
             "ir_url": "https://investors.cleanspark.com/news",
             "pr_base_url": "https://investors.cleanspark.com",
-            "pr_start_year": 2020,
+            "pr_start_date": "2020-01-01",
         }
 
         listing_resp = MagicMock()
@@ -582,7 +582,7 @@ class TestDiscoveryMode:
             "scraper_mode": "discovery",
             "ir_url": "https://investors.cleanspark.com/news/",
             "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
-            "pr_start_year": 2023,
+            "pr_start_date": "2023-01-01",
         }
 
         listing_resp = MagicMock()
@@ -627,7 +627,7 @@ class TestDiscoveryMode:
             "scraper_mode": "discovery",
             "ir_url": "https://ir.mara.com/news-events/press-releases",
             "pr_base_url": "https://ir.mara.com",
-            "pr_start_year": 2024,
+            "pr_start_date": "2024-01-01",
         }
 
         listing_resp = MagicMock()
@@ -678,7 +678,7 @@ class TestDiscoveryMode:
             "scraper_mode": "discovery",
             "ir_url": "https://ir.mara.com/news-events/press-releases",
             "pr_base_url": "https://ir.mara.com",
-            "pr_start_year": 2024,
+            "pr_start_date": "2024-01-01",
         }
 
         listing_resp = MagicMock()
@@ -745,7 +745,7 @@ class TestScrapeModeDispatch:
 
     def test_dispatch_discovery_mode(self):
         scraper = IRScraper(db=MagicMock(), session=MagicMock())
-        company = {"ticker": "MARA", "scraper_mode": "discovery", "ir_url": "https://ir.mara.com", "pr_start_year": 2020}
+        company = {"ticker": "MARA", "scraper_mode": "discovery", "ir_url": "https://ir.mara.com", "pr_start_date": "2020-01-01"}
         with patch.object(scraper, "_scrape_discovery", return_value="ok") as discovery:
             assert scraper.scrape_company(company) == "ok"
             discovery.assert_called_once_with(company)
@@ -1130,3 +1130,34 @@ class TestPlaywrightPagination:
             "<html><body>/news-details/2025/ page-1</body></html>",
             "<html><body>/news-details/2020/ page-1</body></html>",
         ]
+
+
+class TestGetPrStartDate:
+    def test_returns_date_from_pr_start_date_string(self):
+        from scrapers.ir_scraper import _get_pr_start_date
+        from datetime import date
+        company = {'pr_start_date': '2020-12-10'}
+        assert _get_pr_start_date(company) == date(2020, 12, 10)
+
+    def test_fallback_to_pr_start_year(self):
+        from scrapers.ir_scraper import _get_pr_start_date
+        from datetime import date
+        company = {'pr_start_year': 2020}
+        assert _get_pr_start_date(company) == date(2020, 1, 1)
+
+    def test_pr_start_date_takes_priority_over_pr_start_year(self):
+        from scrapers.ir_scraper import _get_pr_start_date
+        from datetime import date
+        company = {'pr_start_date': '2020-12-10', 'pr_start_year': 2018}
+        assert _get_pr_start_date(company) == date(2020, 12, 10)
+
+    def test_returns_none_when_neither_set(self):
+        from scrapers.ir_scraper import _get_pr_start_date
+        assert _get_pr_start_date({}) is None
+        assert _get_pr_start_date({'pr_start_date': None, 'pr_start_year': None}) is None
+
+    def test_invalid_date_falls_back_to_year(self):
+        from scrapers.ir_scraper import _get_pr_start_date
+        from datetime import date
+        company = {'pr_start_date': 'not-a-date', 'pr_start_year': 2021}
+        assert _get_pr_start_date(company) == date(2021, 1, 1)

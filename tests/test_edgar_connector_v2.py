@@ -391,3 +391,44 @@ class TestBtcFirstFilingDate:
 
         conn._get_submissions.assert_called_once()
         conn._edgar_request.assert_not_called()
+
+
+def test_detect_btc_first_filing_date_paginates_to_find_company(monkeypatch):
+    """When the first page of EDGAR hits has no match for the company CIK,
+    detect_btc_first_filing_date should paginate to the next page and find it."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from unittest.mock import MagicMock, patch
+    import requests
+    from scrapers.edgar_connector import EdgarConnector
+
+    db = MagicMock()
+    db.get_btc_first_filing_date.return_value = None
+    db.set_btc_first_filing_date = MagicMock()
+    # Return empty so build_edgar_search_query falls back to hardcoded _8K_SEARCH_TERMS
+    db.get_all_metric_keywords.return_value = []
+
+    session = MagicMock(spec=requests.Session)
+    connector = EdgarConnector(db=db, session=session)
+
+    # Page 0: hit from a different company (CIK 9999999 not 827876)
+    page0_hit = {'_source': {'ciks': ['9999999'], 'file_date': '2018-01-01', 'adsh': '9999999-18-000001'}}
+    # Page 1: hit from CLSK (CIK 827876)
+    page1_hit = {'_source': {'ciks': ['827876'], 'file_date': '2020-12-14', 'adsh': '0000827876-20-000099'}}
+
+    call_count = [0]
+    def _fake_edgar_request(url, params):
+        page = call_count[0]
+        call_count[0] += 1
+        if page == 0:
+            return {'hits': {'hits': [page0_hit]}}
+        elif page == 1:
+            return {'hits': {'hits': [page1_hit]}}
+        return {'hits': {'hits': []}}
+
+    connector._edgar_request = _fake_edgar_request
+
+    result = connector.detect_btc_first_filing_date(cik='0000827876', ticker='CLSK')
+    assert result == '2020-12-14', f"Expected '2020-12-14', got {result}"
+    assert call_count[0] == 2, f"Expected 2 EDGAR requests (pagination), got {call_count[0]}"
+    db.set_btc_first_filing_date.assert_called_once_with('CLSK', '2020-12-14')
