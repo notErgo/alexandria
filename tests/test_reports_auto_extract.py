@@ -105,42 +105,92 @@ def test_ingest_edgar_passes_auto_extract_flag(tmp_path, monkeypatch):
     assert thread.started is True
 
 
-def test_extract_pending_reports_aggregates_counts(monkeypatch):
-    import routes.reports as reports
-    import interpreters.interpret_pipeline as pipeline
+def test_run_auto_extract_uses_run_extraction_phase_with_monthly_types(tmp_path, monkeypatch):
+    """_run_auto_extract delegates to run_extraction_phase with the supplied source_types."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
     import app_globals
+    import routes.reports as reports_mod
+    import routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
-    class _Summary:
-        reports_processed = 1
-        data_points_extracted = 2
-        review_flagged = 1
-        errors = 0
+    db = MinerDB(str(tmp_path / 'test.db'))
+    db.insert_company({
+        'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+        'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+        'cik': '0001437491', 'active': 1,
+    })
+    app_globals._db = db
 
-    class _FakeDB:
-        def get_unextracted_reports(self, ticker=None, source_types=None):
-            assert source_types == [
-                'ir_press_release',
-                'archive_html',
-                'archive_pdf',
-                'prnewswire_press_release',
-                'globenewswire_press_release',
-                'wire_press_release',
-            ]
-            return [{'id': 1}, {'id': 2}]
+    extraction_calls = []
 
-    calls = []
+    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        extraction_calls.append({
+            'tickers': list(tickers),
+            'source_types': kwargs.get('source_types'),
+            'extract_workers': kwargs.get('extract_workers'),
+        })
+        return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
-    def _fake_extract(report, db, registry):
-        calls.append(report['id'])
-        return _Summary()
-
+    monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
     monkeypatch.setattr(app_globals, 'get_registry', lambda: object())
-    monkeypatch.setattr(pipeline, 'extract_report', _fake_extract)
 
-    totals = reports._extract_pending_reports(_FakeDB())
+    reports_mod._run_auto_extract(
+        db,
+        tickers=['MARA'],
+        source_types=list(MONTHLY_EXTRACTION_SOURCE_TYPES),
+        triggered_by='auto_extract_ir',
+    )
 
-    assert calls == [1, 2]
-    assert totals['reports_processed'] == 2
-    assert totals['data_points_extracted'] == 4
-    assert totals['review_flagged'] == 2
-    assert totals['errors'] == 0
+    assert len(extraction_calls) == 1, f"Expected run_extraction_phase called once, got {extraction_calls}"
+    call = extraction_calls[0]
+    assert call['source_types'] == list(MONTHLY_EXTRACTION_SOURCE_TYPES)
+    assert call['tickers'] == ['MARA']
+    assert call['extract_workers'] >= 1
+
+
+def test_run_auto_extract_uses_run_extraction_phase_with_edgar_types(tmp_path, monkeypatch):
+    """_run_auto_extract with EDGAR source_types delegates correctly."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals
+    import routes.reports as reports_mod
+    import routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    from routes.pipeline import _EDGAR_SOURCE_TYPES
+
+    db = MinerDB(str(tmp_path / 'test.db'))
+    db.insert_company({
+        'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+        'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+        'cik': '0001437491', 'active': 1,
+    })
+    app_globals._db = db
+
+    extraction_calls = []
+
+    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        extraction_calls.append({
+            'source_types': kwargs.get('source_types'),
+            'extract_workers': kwargs.get('extract_workers'),
+        })
+        return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
+
+    monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
+    monkeypatch.setattr(app_globals, 'get_registry', lambda: object())
+
+    reports_mod._run_auto_extract(
+        db,
+        tickers=['MARA'],
+        source_types=list(_EDGAR_SOURCE_TYPES),
+        triggered_by='auto_extract_edgar',
+    )
+
+    assert len(extraction_calls) == 1
+    assert extraction_calls[0]['source_types'] == list(_EDGAR_SOURCE_TYPES)
+    assert extraction_calls[0]['extract_workers'] >= 1

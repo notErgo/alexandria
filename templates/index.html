@@ -273,6 +273,10 @@
   <div class="card">
     <form class="filter-form" id="doc-filter-form" onsubmit="return false">
       <div class="form-group">
+        <label>Report ID</label>
+        <input type="number" id="db-report-id" placeholder="jump to any report…" min="1" style="width:11rem" />
+      </div>
+      <div class="form-group">
         <label>Company</label>
         <select id="db-ticker">
           <option value="">All companies</option>
@@ -503,6 +507,34 @@ async function fetchDocuments() {
   banner.hidden = true;
   const listEl = document.getElementById('doc-list-items');
   listEl.innerHTML = '<div class="doc-list-empty">Loading...</div>';
+
+  // Direct report ID lookup — bypasses all other filters
+  const reportIdVal = (document.getElementById('db-report-id') || {}).value;
+  const reportIdNum = reportIdVal ? parseInt(reportIdVal, 10) : NaN;
+  if (!isNaN(reportIdNum) && reportIdNum > 0) {
+    try {
+      const resp = await fetch(`/api/data/document/${reportIdNum}`);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Report ${reportIdNum} not found`);
+      }
+      const json = await resp.json();
+      const doc = json.data;
+      renderDocList([{
+        id: doc.id, ticker: doc.ticker, report_date: doc.report_date,
+        source_type: doc.source_type, extraction_status: doc.extraction_status,
+        data_point_count: (doc.matches || []).length,
+      }]);
+      const firstItem = document.querySelector('.doc-list-item');
+      await selectDocument(reportIdNum, firstItem);
+    } catch(e) {
+      listEl.innerHTML = '<div class="doc-list-empty">Report not found.</div>';
+      banner.textContent = 'Error: ' + e.message;
+      banner.hidden = false;
+    }
+    return;
+  }
+
   try {
     const resp = await fetch('/api/data/documents?' + docCurrentParams().toString());
     if (!resp.ok) {
@@ -586,6 +618,7 @@ async function openDocumentViewer(reportId, focusSnippet) {
     if (viewerMetaEl) {
       viewerMetaEl.style.display = '';
       viewerMetaEl.innerHTML = `
+        <span><strong>ID:</strong> ${escapeHtml(String(doc.id))}</span>
         <span><strong>Type:</strong> ${escapeHtml(doc.source_type || '—')}</span>
         <span><strong>Status:</strong> ${escapeHtml(doc.extraction_status || '—')}</span>
         <span><strong>Matches:</strong> ${doc.matches.length}</span>

@@ -13,10 +13,12 @@ Operations panel API routes.
   GET  /operations                                 — render operations.html
 """
 import logging
+import random as _random
 import threading
 import uuid
 import re
 import json
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -452,26 +454,19 @@ def operations_extract():
         _sample_n = sample_n
         _expected_granularity = expected_granularity
 
+        from app_globals import get_registry
+        from routes.pipeline import (
+            _sort_reports_chronologically,
+            _EDGAR_SOURCE_TYPES,
+            _NON_EDGAR_SOURCE_TYPES,
+            run_extraction_phase,
+        )
+        registry = get_registry()
+
         def _run():
             ops_run_id: int | None = None
             ops_counters: dict = {'processed': 0, 'data_points': 0, 'errors': 0}
             try:
-                import random as _random
-                from app_globals import get_db
-                from app_globals import get_registry
-                from collections import OrderedDict
-                from routes.pipeline import (
-                    _BufferedExtractionDB,
-                    _replay_staged_payload,
-                    _sort_reports_chronologically,
-                    _staged_status_for_payload,
-                    prepare_extraction_runtime,
-                    _EDGAR_SOURCE_TYPES,
-                    _NON_EDGAR_SOURCE_TYPES,
-                    _extract_reports_for_ticker as _shared_extract_worker,
-                )
-
-                registry = get_registry()
 
                 try:
                     ops_run = db.create_pipeline_run(
@@ -573,21 +568,6 @@ def operations_extract():
                         if len(logs) > 200:
                             logs.pop(0)
 
-                if warm_model and reports:
-                    def _ops_log(msg: str) -> None:
-                        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-                        with _progress_lock:
-                            logs = _extraction_progress[task_id]['logs']
-                            logs.append(f'[{ts}] [Ollama] {msg}')
-                            if len(logs) > 200:
-                                logs.pop(0)
-                    prepare_extraction_runtime(
-                        db,
-                        warm_model=True,
-                        reason='operations_extract',
-                        log_fn=_ops_log,
-                    )
-
                 grouped_reports: OrderedDict[str, list[dict]] = OrderedDict()
                 if _tickers:
                     for selected_ticker in _tickers:
@@ -595,7 +575,7 @@ def operations_extract():
                 for report in reports:
                     grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
 
-                def _build_run_config(report_ticker: str):
+                def _ops_run_config_factory(report_ticker: str):
                     if not _expected_granularity:
                         return None
                     from miner_types import ExtractionRunConfig
@@ -604,38 +584,27 @@ def operations_extract():
                         ticker=report_ticker,
                     )
 
-                ops_counters = {
-                    'total_reports': len(reports),
-                    'report_done_count': 0,
-                    'processed': 0,
-                    'data_points': 0,
-                    'errors': 0,
-                    'keyword_gated': 0,
-                }
-                ops_failures: list = []
+                def _ops_progress_callback(c: dict) -> None:
+                    with _progress_lock:
+                        prog = _extraction_progress[task_id]
+                        prog['reports_processed'] = c['processed']
+                        prog['data_points'] = c['data_points']
+                        prog['errors'] = c['errors']
 
                 _run_id_for_worker = ops_run_id if ops_run_id is not None else 0
 
-                for group_ticker, ticker_reports in grouped_reports.items():
-                    ops_counters['total_reports'] = len(reports)
-                    _run_config = _build_run_config(group_ticker)
-                    _shared_extract_worker(
-                        db=db,
-                        run_id=_run_id_for_worker,
-                        ticker=group_ticker,
-                        reports=ticker_reports,
-                        registry=registry,
-                        counters=ops_counters,
-                        failures=ops_failures,
-                        num_workers=_extract_workers,
-                        run_config=_run_config,
-                        force_reextract=force,
-                    )
-                    with _progress_lock:
-                        prog = _extraction_progress[task_id]
-                        prog['reports_processed'] = ops_counters['processed']
-                        prog['data_points'] = ops_counters['data_points']
-                        prog['errors'] = ops_counters['errors']
+                ops_counters = run_extraction_phase(
+                    db,
+                    _run_id_for_worker,
+                    tickers=list(grouped_reports.keys()),
+                    registry=registry,
+                    prebuilt_batches=dict(grouped_reports),
+                    force_reextract=force,
+                    warm_model=warm_model,
+                    extract_workers=_extract_workers,
+                    run_config_factory=_ops_run_config_factory if _expected_granularity else None,
+                    progress_callback=_ops_progress_callback,
+                )
 
                 if ops_run_id is not None:
                     try:

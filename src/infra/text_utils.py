@@ -88,6 +88,50 @@ _Q4_SHELL_MARKERS = (
 )
 
 
+# CSS selectors tried in order when extracting the article body from a
+# Playwright-rendered Q4/Equisolve page.  The first element whose stripped
+# text exceeds _ARTICLE_BODY_MIN_CHARS is used.
+_ARTICLE_BODY_SELECTORS: tuple[str, ...] = (
+    "article",
+    "[role='main']",
+    ".press-release-body",
+    ".news-detail-body",
+    ".article-body",
+    ".article-content",
+    ".q4-press-release",
+    ".module-body",
+    # Equisolve ASP.NET IDs contain "Body" or "Content" + "PressRelease"
+    "[id*='pressRelease']",
+    "[id*='PressRelease']",
+    "[id*='Body']",
+    "[id*='Content']",
+)
+
+# Minimum character count for an element to be considered an article body.
+# A real mining press release body will always exceed this threshold.
+_ARTICLE_BODY_MIN_CHARS: int = 300
+
+
+def _extract_article_body_from_q4_page(soup) -> str:
+    """Try to extract article body text from a Playwright-rendered Q4/Equisolve page.
+
+    Tries a prioritised list of CSS selectors.  Returns the text of the first
+    element whose stripped plain text exceeds _ARTICLE_BODY_MIN_CHARS.
+    Returns an empty string if nothing substantial is found.
+    """
+    for selector in _ARTICLE_BODY_SELECTORS:
+        try:
+            node = soup.select_one(selector)
+        except Exception:
+            continue
+        if node is None:
+            continue
+        text = _re.sub(r'\s+', ' ', node.get_text(separator=' ', strip=True)).strip()
+        if len(text) >= _ARTICLE_BODY_MIN_CHARS:
+            return text
+    return ""
+
+
 def _extract_meta_text(soup) -> str:
     """Return title/description text that may contain article body on shell pages."""
     chunks: list[str] = []
@@ -304,6 +348,12 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
     plain = soup.get_text(separator=separator, strip=True)
     lower_plain = plain.lower()
     if any(marker in lower_plain for marker in _Q4_SHELL_MARKERS):
+        # Playwright-rendered Equisolve/Q4 page: the article body lives inside
+        # a specific container element.  Try to extract it before falling back
+        # to meta tags (which only contain the short og:description synopsis).
+        article_body = _extract_article_body_from_q4_page(soup)
+        if article_body:
+            return article_body
         meta_text = _extract_meta_text(soup)
         if meta_text:
             return meta_text

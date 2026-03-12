@@ -669,6 +669,139 @@ def _extract_reports_for_ticker(
     )
 
 
+def _build_extraction_batch_for_source_types(
+    db,
+    ticker,
+    source_types: list,
+    force_reextract: bool = False,
+) -> list:
+    """Build extraction batch for an explicit source_types list.
+
+    Unlike _build_extraction_batch, this does NOT apply btc_first_filing_date
+    date-gating. Callers supply source_types to restrict scope; date-gating is
+    their responsibility.
+    """
+    if force_reextract:
+        batch = db.get_all_reports_for_extraction(ticker=ticker, source_types=source_types)
+        for r in batch:
+            db.reset_report_extraction_status(r['id'])
+    else:
+        batch = db.get_unextracted_reports(ticker=ticker, source_types=source_types)
+    return _sort_reports_chronologically(batch)
+
+
+def run_extraction_phase(
+    db,
+    run_id: int,
+    tickers: list,
+    registry,
+    *,
+    source_types=None,
+    force_reextract: bool = False,
+    warm_model: bool = True,
+    extract_workers: int = 2,
+    run_config_factory=None,
+    cancel_check=None,
+    progress_callback=None,
+    prebuilt_batches=None,
+    failures=None,
+) -> dict:
+    """Canonical extraction phase used by all extraction entry points.
+
+    Emits stage_start, ticker_preflight (per ticker), and stage_end events.
+    Handles Ollama warmup once (first ticker with pending reports).
+    Calls _extract_reports_for_ticker per ticker.
+
+    source_types=None: use _build_extraction_batch (EDGAR date-gated by btc_first_filing_date).
+    source_types=<list>: use _build_extraction_batch_for_source_types (no date-gating).
+    prebuilt_batches: if provided, skip batch-building entirely and use caller-supplied map.
+
+    extract_workers: parallel LLM workers per ticker (default 2).
+    cancel_check: callable() -> bool; called before each ticker; if True, stops.
+    progress_callback: callable(counters_copy) -> None; called after each ticker.
+    run_config_factory: callable(ticker) -> ExtractionRunConfig | None; called per ticker.
+    failures: optional caller-supplied list for failure accumulation; creates new list if None.
+    """
+    counters = {
+        'total_reports': 0,
+        'report_done_count': 0,
+        'processed': 0,
+        'data_points': 0,
+        'errors': 0,
+        'keyword_gated': 0,
+        'review_flagged': 0,
+    }
+    if failures is None:
+        failures = []
+
+    if not tickers:
+        _event(db, run_id, 'extract', 'stage_start',
+               mode='batched_by_ticker', total_tickers=0, total_reports=0)
+        _event(db, run_id, 'extract', 'stage_end',
+               reports_processed=0, data_points=0, errors=0, keyword_gated=0)
+        return counters
+
+    # Build all batches first (separated-phases contract: batch-build before any extraction)
+    if prebuilt_batches is not None:
+        ticker_batches = {t: prebuilt_batches.get(t, []) for t in tickers}
+    else:
+        ticker_batches = {}
+        for ticker in tickers:
+            if source_types is None:
+                first_filing = db.get_btc_first_filing_date(ticker)
+                batch = _build_extraction_batch(db, ticker, first_filing, force_reextract)
+            else:
+                batch = _build_extraction_batch_for_source_types(
+                    db, ticker, source_types, force_reextract
+                )
+            ticker_batches[ticker] = batch
+
+    counters['total_reports'] = sum(len(b) for b in ticker_batches.values())
+
+    _event(db, run_id, 'extract', 'stage_start',
+           mode='batched_by_ticker',
+           total_tickers=len(tickers),
+           total_reports=counters['total_reports'])
+
+    ollama_prepared = False
+    for ticker in tickers:
+        if cancel_check and cancel_check():
+            break
+        reports = ticker_batches.get(ticker, [])
+        _event(db, run_id, 'extract', 'ticker_preflight',
+               ticker=ticker,
+               pending_reports=len(reports),
+               force_reextract=int(force_reextract),
+               running_total_pending=counters['total_reports'])
+        if reports and warm_model and not ollama_prepared:
+            prepare_extraction_runtime(
+                db, warm_model=True, reason='run_extraction_phase', run_id=run_id,
+            )
+            ollama_prepared = True
+        run_config = run_config_factory(ticker) if run_config_factory else None
+        _extract_reports_for_ticker(
+            db=db,
+            run_id=run_id,
+            ticker=ticker,
+            reports=reports,
+            registry=registry,
+            counters=counters,
+            failures=failures,
+            num_workers=max(1, int(extract_workers)),
+            run_config=run_config,
+            force_reextract=force_reextract,
+        )
+        if progress_callback:
+            progress_callback(dict(counters))
+
+    _event(db, run_id, 'extract', 'stage_end',
+           reports_processed=counters['processed'],
+           data_points=counters['data_points'],
+           errors=counters['errors'],
+           keyword_gated=counters['keyword_gated'])
+    return counters
+
+
 def _scrape_ticker_for_pipeline(
     *,
     db_path: str,
@@ -1063,21 +1196,11 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         host_backoff_seconds = max(0.0, float(config.get('host_backoff_seconds', 15)))
         max_retries = max(1, int(config.get('max_retries', 2)))
         total_before_reports = total_after_reports = total_ingested_delta = 0
-        extraction_counters = {
-            'total_reports': 0,
-            'report_done_count': 0,
-            'processed': 0,
-            'data_points': 0,
-            'errors': 0,
-            'keyword_gated': 0,
-        }
-        ollama_prepared = False
         _event(
             db, run_id, 'ingest', 'stage_start',
             tickers=len(scrape_targets), include_ir=int(include_ir),
             ir_workers=ir_workers, edgar_workers=edgar_workers,
         )
-        _event(db, run_id, 'extract', 'stage_start', mode='streaming_by_ticker', total_tickers=len(scrape_targets))
         from scrapers.request_throttle import HostThrottle
         ir_semaphore = threading.Semaphore(ir_workers)
         edgar_semaphore = threading.Semaphore(edgar_workers)
@@ -1089,6 +1212,8 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             min_interval_ms=edgar_min_interval_ms,
             cooldown_seconds=host_backoff_seconds,
         )
+        # Collect (ticker, batch) pairs after scraping all tickers — separated phases.
+        ticker_batches: list = []
         for t in scrape_targets:
             if _is_cancelled(run_id):
                 raise _RunCancelled()
@@ -1111,35 +1236,9 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 failures.append({'ticker': t, 'error': failure})
             if result['ingested_delta'] > 0:
                 db.upsert_pipeline_run_ticker(run_id, t, ingested=1)
-
             first_filing = db.get_btc_first_filing_date(t)
-            ticker_reports = _build_extraction_batch(db, t, first_filing, force_reextract)
-            extraction_counters['total_reports'] += len(ticker_reports)
-            _event(
-                db, run_id, 'extract', 'ticker_preflight',
-                ticker=t,
-                pending_reports=len(ticker_reports),
-                force_reextract=int(force_reextract),
-                running_total_pending=extraction_counters['total_reports'],
-            )
-            if ticker_reports and bool(config.get('warm_model', True)) and not ollama_prepared:
-                prepare_extraction_runtime(
-                    db,
-                    warm_model=True,
-                    reason='pipeline_overnight_extract',
-                    run_id=run_id,
-                )
-                ollama_prepared = True
-            _extract_reports_for_ticker(
-                db=db,
-                run_id=run_id,
-                ticker=t,
-                reports=ticker_reports,
-                registry=registry,
-                counters=extraction_counters,
-                failures=failures,
-                num_workers=extract_workers,
-            )
+            batch = _build_extraction_batch(db, t, first_filing, force_reextract)
+            ticker_batches.append((t, batch))
 
         _event(
             db, run_id, 'ingest', 'stage_end',
@@ -1147,11 +1246,22 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             after_reports=total_after_reports,
             ingested_delta=total_ingested_delta,
         )
-        _event(db, run_id, 'extract', 'stage_end',
-               reports_processed=extraction_counters['processed'],
-               data_points=extraction_counters['data_points'],
-               errors=extraction_counters['errors'],
-               keyword_gated=extraction_counters['keyword_gated'])
+
+        # Stage: extract — runs after all scraping is complete (separated phases).
+        extraction_tickers = [t for t, _ in ticker_batches]
+        prebuilt = {t: batch for t, batch in ticker_batches}
+        extraction_counters = run_extraction_phase(
+            db,
+            run_id,
+            tickers=extraction_tickers,
+            registry=registry,
+            prebuilt_batches=prebuilt,
+            force_reextract=force_reextract,
+            warm_model=bool(config.get('warm_model', True)),
+            extract_workers=extract_workers,
+            cancel_check=lambda: _is_cancelled(run_id),
+            failures=failures,
+        )
 
         # Stage: auto-gap-fill for quarterly/annual reporters.
         # Expands quarterly data_points into monthly inferred rows so all companies

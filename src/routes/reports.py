@@ -23,33 +23,53 @@ def _update_progress(task_id: str, state: dict) -> None:
         _ingest_progress[task_id] = state
 
 
-def _extract_pending_reports(db, ticker: Optional[str] = None) -> dict:
-    """Run extraction over currently unextracted reports and return summary counts."""
-    from interpreters.interpret_pipeline import extract_report
+def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) -> dict:
+    """Run extraction via run_extraction_phase for ingest auto-extract chaining.
+
+    Creates a pipeline_runs row for audit trail. Uses extract_workers=2 for parallelism.
+    Returns a dict with keys: reports_processed, data_points_extracted, review_flagged, errors.
+    """
     from app_globals import get_registry
+    from routes.pipeline import run_extraction_phase
 
     registry = get_registry()
-    reports = db.get_unextracted_reports(
-        ticker=ticker,
-        source_types=list(MONTHLY_EXTRACTION_SOURCE_TYPES),
+    run_id: Optional[int] = None
+    try:
+        run = db.create_pipeline_run(
+            triggered_by=triggered_by,
+            config={'source_types': source_types, 'tickers': tickers},
+        )
+        run_id = int(run['id'])
+    except Exception:
+        log.warning("auto_extract: failed to create pipeline_run row", exc_info=True)
+
+    if run_id is None:
+        log.warning("auto_extract: skipping extraction (no pipeline_run row)")
+        return {'reports_processed': 0, 'data_points_extracted': 0, 'review_flagged': 0, 'errors': 0}
+
+    counters = run_extraction_phase(
+        db,
+        run_id,
+        tickers=tickers,
+        registry=registry,
+        source_types=source_types,
+        warm_model=False,
+        extract_workers=2,
     )
-    totals = {
-        'reports_processed': 0,
-        'data_points_extracted': 0,
-        'review_flagged': 0,
-        'errors': 0,
+    try:
+        db.update_pipeline_run(run_id, status='complete', summary={
+            'processed': counters.get('processed', 0),
+            'data_points': counters.get('data_points', 0),
+            'errors': counters.get('errors', 0),
+        })
+    except Exception:
+        log.warning("auto_extract: failed to update pipeline_run to complete", exc_info=True)
+    return {
+        'reports_processed': counters.get('processed', 0),
+        'data_points_extracted': counters.get('data_points', 0),
+        'review_flagged': counters.get('review_flagged', 0),
+        'errors': counters.get('errors', 0),
     }
-    for report in reports:
-        try:
-            summary = extract_report(report, db, registry)
-            totals['reports_processed'] += summary.reports_processed
-            totals['data_points_extracted'] += summary.data_points_extracted
-            totals['review_flagged'] += summary.review_flagged
-            totals['errors'] += summary.errors
-        except Exception:
-            log.error("Extraction failed for report id=%s", report.get('id'), exc_info=True)
-            totals['errors'] += 1
-    return totals
 
 
 def _run_ir_ingest(
@@ -105,8 +125,13 @@ def _run_ir_ingest(
             'review_flagged': 0,
             'errors': 0,
         }
+        extracted = {
+            'reports_processed': 0,
+            'data_points_extracted': 0,
+            'review_flagged': 0,
+            'errors': 0,
+        }
         if auto_extract:
-            from infra.ollama_warmup import warm_ollama_for_extraction
             _update_progress(task_id, {
                 'status': 'running',
                 'source': 'ir',
@@ -114,9 +139,13 @@ def _run_ir_ingest(
                 'phase': 'extracting',
                 **totals,
             })
-            if warm_model:
-                warm_ollama_for_extraction(db=db, reason='ingest_ir_auto_extract')
-            extracted = _extract_pending_reports(db)
+            extract_tickers = [c['ticker'] for c in companies]
+            extracted = _run_auto_extract(
+                db,
+                tickers=extract_tickers,
+                source_types=list(MONTHLY_EXTRACTION_SOURCE_TYPES),
+                triggered_by='auto_extract_ir',
+            )
             totals['data_points_extracted'] += extracted['data_points_extracted']
             totals['review_flagged'] += extracted['review_flagged']
             totals['errors'] += extracted['errors']
@@ -187,7 +216,7 @@ def _run_edgar_ingest(
             'errors': 0,
         }
         if auto_extract:
-            from infra.ollama_warmup import warm_ollama_for_extraction
+            from routes.pipeline import _EDGAR_SOURCE_TYPES
             _update_progress(task_id, {
                 'status': 'running',
                 'source': 'edgar',
@@ -195,9 +224,13 @@ def _run_edgar_ingest(
                 'phase': 'extracting',
                 **totals,
             })
-            if warm_model:
-                warm_ollama_for_extraction(db=db, reason='ingest_edgar_auto_extract')
-            extracted = _extract_pending_reports(db)
+            extract_tickers = [c['ticker'] for c in companies if c.get('cik')]
+            extracted = _run_auto_extract(
+                db,
+                tickers=extract_tickers,
+                source_types=list(_EDGAR_SOURCE_TYPES),
+                triggered_by='auto_extract_edgar',
+            )
             totals['data_points_extracted'] += extracted['data_points_extracted']
             totals['review_flagged'] += extracted['review_flagged']
             totals['errors'] += extracted['errors']

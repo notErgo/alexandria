@@ -524,13 +524,11 @@ def test_manual_extract_run_completes_with_status_complete(monkeypatch):
         flask_app.config['TESTING'] = True
         client = flask_app.test_client()
 
-        # Stub out the shared worker so we don't actually call Ollama
-        def _noop_extract_for_ticker(db, run_id, ticker, reports, registry,
-                                      counters, failures, num_workers,
-                                      *, run_config=None, force_reextract=False):
-            pass
+        def _noop_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+            return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                    'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
-        monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _noop_extract_for_ticker)
+        monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _noop_run_extraction_phase)
 
         class _ImmediateThread:
             def __init__(self, target=None, args=(), daemon=False, name=None):
@@ -573,12 +571,11 @@ def test_manual_extract_progress_includes_run_id(monkeypatch):
         flask_app.config['TESTING'] = True
         client = flask_app.test_client()
 
-        def _noop_extract_for_ticker(db, run_id, ticker, reports, registry,
-                                      counters, failures, num_workers,
-                                      *, run_config=None, force_reextract=False):
-            pass
+        def _noop_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+            return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                    'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
-        monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _noop_extract_for_ticker)
+        monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _noop_run_extraction_phase)
 
         class _ImmediateThread:
             def __init__(self, target=None, args=(), daemon=False, name=None):
@@ -601,3 +598,50 @@ def test_manual_extract_progress_includes_run_id(monkeypatch):
         data = progress_resp.get_json()['data']
         assert 'run_id' in data, f"Progress should include run_id field, got keys: {list(data.keys())}"
         assert isinstance(data['run_id'], int), f"run_id should be an int, got {data['run_id']!r}"
+
+
+def test_operations_uses_run_extraction_phase(monkeypatch):
+    """POST /api/operations/interpret calls run_extraction_phase (not _extract_reports_for_ticker directly)."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals, routes.operations as ops_mod, routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        db.insert_company({'ticker': 'MARA', 'name': 'MARA', 'tier': 1,
+                            'ir_url': 'https://example.com', 'pr_base_url': 'https://example.com',
+                            'cik': '0001437491', 'active': 1})
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        calls = []
+
+        def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+            calls.append({'tickers': list(tickers), 'extract_workers': kwargs.get('extract_workers'),
+                          'force_reextract': kwargs.get('force_reextract')})
+            return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                    'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
+
+        monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target: self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        resp = client.post('/api/operations/interpret', json={
+            'tickers': ['MARA'], 'warm_model': False, 'extract_workers': 4,
+        })
+        assert resp.status_code == 200
+
+        assert len(calls) == 1, f"Expected run_extraction_phase called once, got: {calls}"
+        assert calls[0]['extract_workers'] == 4

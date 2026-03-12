@@ -547,25 +547,21 @@ def test_execute_overnight_run_passes_scope_to_ingest(monkeypatch, tmp_path):
     }]
 
 
-def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path):
+def test_execute_overnight_run_separates_scrape_and_extract_phases(monkeypatch, tmp_path):
+    """Pipeline scrapes all tickers before extracting any (separated phases)."""
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
     import app_globals
     import routes.pipeline as pipeline_mod
 
-    db = MinerDB(str(tmp_path / 'streaming.db'))
+    db = MinerDB(str(tmp_path / 'sep.db'))
     for ticker, cik in [('MARA', '0001437491'), ('RIOT', '0001167419')]:
         db.insert_company({
-            'ticker': ticker,
-            'name': ticker,
-            'tier': 1,
+            'ticker': ticker, 'name': ticker, 'tier': 1,
             'ir_url': f'https://example.com/{ticker.lower()}',
             'pr_base_url': 'https://example.com',
-            'cik': cik,
-            'active': 1,
-            'scraper_mode': 'rss',
+            'cik': cik, 'active': 1, 'scraper_mode': 'rss',
         })
     app_globals._db = db
-
     run = db.create_pipeline_run(triggered_by='test', scope={'tickers': ['MARA', 'RIOT']}, config={})
     run_id = int(run['id'])
     call_order = []
@@ -573,68 +569,46 @@ def test_execute_overnight_run_streams_per_ticker_extract(monkeypatch, tmp_path)
     class _ImmediateFuture:
         def __init__(self, fn, *args, **kwargs):
             self._result = fn(*args, **kwargs)
-
         def result(self):
             return self._result
 
     class _ImmediateExecutor:
-        def __init__(self, max_workers):
-            self.max_workers = max_workers
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
+        def __init__(self, max_workers): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
         def submit(self, fn, *args, **kwargs):
             return _ImmediateFuture(fn, *args, **kwargs)
 
     def _fake_scrape(**kwargs):
-        ticker = kwargs['ticker']
-        call_order.append(('scrape', ticker, kwargs['include_ir']))
-        return {
-            'ticker': ticker,
-            'before_reports': 0,
-            'after_reports': 1,
-            'ingested_delta': 1,
-            'failures': [],
-        }
+        call_order.append(('scrape', kwargs['ticker']))
+        return {'ticker': kwargs['ticker'], 'before_reports': 0,
+                'after_reports': 0, 'ingested_delta': 0, 'failures': []}
 
-    def _fake_extract_reports_for_ticker(db, run_id, ticker, reports, registry, counters, failures, num_workers):
-        call_order.append(('extract', ticker, num_workers, len(reports)))
+    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        for t in tickers:
+            call_order.append(('extract', t))
+        return {'total_reports': 0, 'processed': 0, 'data_points': 0,
+                'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
     monkeypatch.setattr(pipeline_mod, 'ThreadPoolExecutor', _ImmediateExecutor)
     monkeypatch.setattr(pipeline_mod, 'as_completed', lambda futures: futures)
     monkeypatch.setattr(pipeline_mod, '_scrape_ticker_for_pipeline', _fake_scrape)
-    monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_extract_reports_for_ticker)
-    monkeypatch.setattr(
-        pipeline_mod,
-        '_build_extraction_batch',
-        lambda db_obj, ticker, first_filing, force_reextract=False: [{'id': 1, 'ticker': ticker}],
-    )
+    monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
 
     pipeline_mod._execute_overnight_run(
         run_id,
-        {
-            'skip_probe': True,
-            'include_ir': True,
-            'include_crawl': False,
-            'warm_model': False,
-            'probe_skip_companies': False,
-            'force_reextract': False,
-            'extract_workers': 4,
-            'scout_mode': 'never',
-        },
+        {'skip_probe': True, 'include_ir': True, 'include_crawl': False,
+         'warm_model': False, 'probe_skip_companies': False,
+         'force_reextract': False, 'scout_mode': 'never'},
         ['MARA', 'RIOT'],
     )
 
     assert call_order == [
-        ('scrape', 'MARA', True),
-        ('extract', 'MARA', 4, 1),
-        ('scrape', 'RIOT', True),
-        ('extract', 'RIOT', 4, 1),
-    ]
+        ('scrape', 'MARA'),
+        ('scrape', 'RIOT'),
+        ('extract', 'MARA'),
+        ('extract', 'RIOT'),
+    ], f"Expected separated phases, got: {call_order}"
 
 
 def test_scrape_ticker_for_pipeline_runs_archive_ingest_first(monkeypatch, tmp_path):

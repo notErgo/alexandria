@@ -408,6 +408,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 42")
                     version = 42
 
+                if version < 43:
+                    self._migrate_v43(conn)
+                    conn.execute("PRAGMA user_version = 43")
+                    version = 43
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1686,6 +1691,18 @@ class MinerDB:
             "CREATE INDEX IF NOT EXISTS idx_ecq_run_ticker_status_seq "
             "ON extraction_commit_queue(run_id, ticker, status, sequence_key)"
         )
+
+    def _migrate_v43(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v42 → v43: asset_manifest checksum and drift tracking."""
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(asset_manifest)").fetchall()}
+        for col, defn in [
+            ('file_checksum', 'TEXT'),
+            ('file_mtime',    'REAL'),
+            ('file_size',     'INTEGER'),
+            ('drift_status',  "TEXT NOT NULL DEFAULT 'ok'"),
+        ]:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE asset_manifest ADD COLUMN {col} {defn}")
 
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
@@ -4655,9 +4672,11 @@ class MinerDB:
             cursor = conn.execute(
                 """INSERT OR REPLACE INTO asset_manifest
                    (ticker, period, source_type, file_path, filename,
-                    ingest_state, report_id, ingest_error, notes)
+                    ingest_state, report_id, ingest_error, notes,
+                    file_checksum, file_mtime, file_size)
                    VALUES (:ticker, :period, :source_type, :file_path, :filename,
-                           :ingest_state, :report_id, :ingest_error, :notes)""",
+                           :ingest_state, :report_id, :ingest_error, :notes,
+                           :file_checksum, :file_mtime, :file_size)""",
                 {
                     'ticker': entry['ticker'],
                     'period': entry.get('period'),
@@ -4668,6 +4687,9 @@ class MinerDB:
                     'report_id': entry.get('report_id'),
                     'ingest_error': entry.get('ingest_error'),
                     'notes': entry.get('notes'),
+                    'file_checksum': entry.get('file_checksum'),
+                    'file_mtime': entry.get('file_mtime'),
+                    'file_size': entry.get('file_size'),
                 },
             )
             return cursor.lastrowid
@@ -4721,6 +4743,26 @@ class MinerDB:
                 (file_path,),
             ).fetchone()
             return dict(row) if row else None
+
+    def get_asset_manifest_by_id(self, manifest_id: int) -> Optional[dict]:
+        """Alias for get_manifest_by_id — used by manifest_scanner."""
+        return self.get_manifest_by_id(manifest_id)
+
+    def set_manifest_drift_status(self, manifest_id: int, status: str) -> None:
+        """Update drift_status on an asset_manifest row."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE asset_manifest SET drift_status=? WHERE id=?",
+                (status, manifest_id),
+            )
+
+    def get_all_asset_manifests(self) -> list:
+        """Return all asset_manifest rows ordered by ticker, period."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM asset_manifest ORDER BY ticker, period"
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def update_manifest_period(self, manifest_id: int, period: str) -> None:
         """Assign a period to a legacy_undated manifest entry and reset state to pending."""

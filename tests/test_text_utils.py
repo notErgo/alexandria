@@ -51,6 +51,71 @@ class TestHtmlToPlain:
         assert "January monthly production: 305" in result
         assert "Cookie settings" not in result
 
+    def test_q4_shell_page_with_article_body_returns_article_content(self):
+        """When a Playwright-rendered Equisolve page has both a Q4 cookie banner
+        and an actual article body container, html_to_plain should return the
+        article body — not just the short og:description meta tag."""
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "CleanSpark Provides Bitcoin Mining Operation Update. "
+            "For the month of January 2021, CleanSpark successfully mined 305 BTC. "
+            "Deployed hashrate of approximately 1.5 EH/s as of January 31, 2021. "
+            "Bitcoin holdings as of January 31, 2021: 471 BTC. "
+            "The company continues to expand its mining operations in Georgia. "
+            "Management commentary: We believe in taking a big-picture approach to bitcoin mining "
+            "and are focused on sustainable and responsible growth."
+        )
+        html = f"""
+        <html>
+          <head>
+            <meta property="og:description" content="January production: 305 BTC.">
+          </head>
+          <body>
+            <nav>Skip to main content Stock Information Investor Relations Overview</nav>
+            <div>Cookie settings Our Cookie Policy Close We use cookies on q4inc.com</div>
+            <article>
+              {article_body}
+            </article>
+            <footer>Copyright 2021 CleanSpark Inc.</footer>
+          </body>
+        </html>
+        """
+        result = html_to_plain(html)
+        assert "1.5 EH/s" in result, "article body metric should be in result"
+        assert "471 BTC" in result, "article body BTC holdings should be in result"
+        assert "January production: 305 BTC." not in result, "short meta description should be superseded by article body"
+        assert "Cookie settings" not in result
+
+    def test_q4_shell_equisolve_aspnet_id_selector(self):
+        """Equisolve ASP.NET pages use IDs like 'divPressReleaseBody' — html_to_plain
+        should extract the body even when the container has no semantic tag."""
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "CleanSpark Announces July 2021 Bitcoin Production Results. "
+            "Bitcoin Mined during July 2021: 436 BTC. "
+            "Average Operational Hashrate: 1.8 EH/s. "
+            "Total Bitcoin Holdings as of July 31: 1,407 BTC. "
+            "The company continues to scale its operations efficiently. "
+            "Looking ahead, management expects continued growth in deployed hashrate."
+        )
+        html = f"""
+        <html>
+          <head>
+            <meta property="og:description" content="July production: 436 BTC.">
+          </head>
+          <body>
+            <div>Cookie settings Our Cookie Policy Close We use cookies on q4inc.com</div>
+            <div id="ctl00_ContentPlaceHolder1_divPressReleaseBody">
+              {article_body}
+            </div>
+          </body>
+        </html>
+        """
+        result = html_to_plain(html)
+        assert "1.8 EH/s" in result, "hashrate from article body should be present"
+        assert "1,407 BTC" in result, "holdings from article body should be present"
+        assert "Cookie settings" not in result
+
 
 class TestMakeHtmlReportFields:
     def test_returns_both_fields(self):
