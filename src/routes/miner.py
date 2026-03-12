@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request, Response
 
 from app_globals import get_db, get_registry
 from interpreters.regex_interpreter import extract_all
+from infra.text_utils import extract_document_title
 
 log = logging.getLogger('miners.routes.miner')
 
@@ -92,6 +93,66 @@ METRIC_UNITS = {
     'hpc_revenue_usd':      'USD',
     'gpu_count':            '',
 }
+
+_KEYWORD_COLOR_RANKS = {1: 'orange', 2: 'blue', 3: 'green'}
+
+
+def _metric_keyword_rows(db, metric: str) -> list[dict]:
+    try:
+        return db.get_metric_keywords(metric, active_only=True)
+    except Exception:
+        return []
+
+
+def _attribute_keyword(db, metric: str, snippet: str | None) -> dict:
+    snippet_text = (snippet or '').strip()
+    if not snippet_text:
+        return {
+            'matched_keyword': None,
+            'keyword_rank': None,
+            'keyword_color_key': None,
+        }
+    lower = snippet_text.lower()
+    matches = []
+    for idx, row in enumerate(_metric_keyword_rows(db, metric), start=1):
+        phrase = str(row.get('phrase') or '').strip()
+        if not phrase or phrase.lower() not in lower:
+            continue
+        exclude_terms = [p.strip().lower() for p in str(row.get('exclude_terms') or '').split(',') if p.strip()]
+        if exclude_terms and any(term in lower for term in exclude_terms):
+            continue
+        matches.append({'phrase': phrase, 'rank': idx})
+    if len(matches) != 1:
+        return {
+            'matched_keyword': None,
+            'keyword_rank': None,
+            'keyword_color_key': None,
+        }
+    match = matches[0]
+    color_key = _KEYWORD_COLOR_RANKS.get(match['rank'], 'yellow')
+    return {
+        'matched_keyword': match['phrase'],
+        'keyword_rank': match['rank'],
+        'keyword_color_key': color_key,
+    }
+
+
+def _report_document_title(db, report_id: int | None, report_row: dict | None = None) -> str | None:
+    if report_row is None and report_id is None:
+        return None
+    report = report_row or db.get_report(report_id)
+    if not report:
+        return None
+    raw_html = db.get_report_raw_html(report['id'])
+    raw_text = db.get_report_raw_text(report['id']) or ''
+    source_type = report.get('source_type') or ''
+    if raw_html and source_type.startswith('edgar_'):
+        try:
+            from infra.text_utils import edgar_to_plain, strip_edgar_boilerplate
+            raw_text = strip_edgar_boilerplate(edgar_to_plain(raw_html))
+        except Exception:
+            pass
+    return extract_document_title(raw_html, raw_text)
 
 
 def _build_monthly_spine(min_period: str, max_period: str) -> list:
@@ -344,6 +405,7 @@ def get_miner_timeline(ticker: str):
                 'report_date': row[1],
                 'source_type': row[2],
                 'source_url':  row[3],
+                'document_title': _report_document_title(db, row[0]),
             }
             all_docs_by_period.setdefault(ym, []).append(entry)
             new_prio = _REPORT_PRIORITY.get(row[2], _DEFAULT_PRIORITY)
@@ -430,6 +492,8 @@ def get_miner_timeline(ticker: str):
                 {
                     'id':          d['id'],
                     'source_type': d['source_type'],
+                    'source_url':  d.get('source_url'),
+                    'document_title': d.get('document_title'),
                     'report_date': d['report_date'],
                     'priority':    _REPORT_PRIORITY.get(d['source_type'], _DEFAULT_PRIORITY),
                 }
@@ -445,6 +509,7 @@ def get_miner_timeline(ticker: str):
                 'report_date':   report_info['report_date'] if report_info else None,
                 'source_type':   report_info['source_type'] if report_info else None,
                 'source_url':    report_info['source_url'] if report_info else None,
+                'document_title': report_info.get('document_title') if report_info else None,
                 'doc_priority':  _REPORT_PRIORITY.get(report_info['source_type'], _DEFAULT_PRIORITY) if report_info else None,
                 'alt_docs':      alt_docs,
                 'is_gap':        is_gap,
@@ -544,6 +609,7 @@ def get_miner_analysis(ticker: str, period: str):
         if report_id_filter is not None:
             accepted = [dp for dp in accepted if dp.get('report_id') == report_id_filter]
         for dp in accepted:
+            keyword_meta = _attribute_keyword(db, dp['metric'], dp.get('source_snippet', ''))
             all_matches.append({
                 'metric': dp['metric'],
                 'metric_label': METRIC_LABELS.get(dp['metric'], dp['metric']),
@@ -554,6 +620,7 @@ def get_miner_analysis(ticker: str, period: str):
                 'confidence': dp.get('confidence', 0.0),
                 'source_snippet': dp.get('source_snippet', ''),
                 'status': 'accepted',
+                **keyword_meta,
             })
 
         # Pending review queue items (not yet accepted)
@@ -576,6 +643,7 @@ def get_miner_analysis(ticker: str, period: str):
             if metric in accepted_metrics:
                 continue  # already shown in accepted
             value = row[1] if row[1] is not None else row[2]
+            keyword_meta = _attribute_keyword(db, metric, row[4] or '')
             all_matches.append({
                 'metric': metric,
                 'metric_label': METRIC_LABELS.get(metric, metric),
@@ -586,6 +654,7 @@ def get_miner_analysis(ticker: str, period: str):
                 'confidence': row[3] or 0.0,
                 'source_snippet': row[4] or '',
                 'status': 'pending_review',
+                **keyword_meta,
             })
 
         # Sort: metric order first, then confidence descending
@@ -670,6 +739,7 @@ def get_period_reports(ticker: str, period: str):
         for d in docs:
             d['priority'] = _REPORT_PRIORITY.get(d['source_type'], _DEFAULT_PRIORITY)
             d['priority_label'] = _PRIORITY_LABELS.get(d['priority'], 'Unknown')
+            d['document_title'] = _report_document_title(db, d['id'], d)
 
         # Sort by priority DESC then report_date DESC (same rule as find_report_for_period)
         docs.sort(key=lambda d: (d['priority'], d['report_date'] or ''), reverse=True)

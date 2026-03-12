@@ -365,8 +365,9 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   border-top: 2px solid var(--theme-border);
   border-radius: 8px 8px 0 0;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.3);
-  height: 420px;
-  max-height: 60vh;
+  height: min(68vh, 760px);
+  min-height: 360px;
+  max-height: 80vh;
   overflow: hidden;
 }
 #doc-panel.visible { display: flex; }
@@ -377,6 +378,16 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   padding: 0.6rem 0.75rem;
   border-bottom: 1px solid var(--theme-border);
   flex-shrink: 0;
+}
+.doc-panel-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#miner-review-panel {
+  flex: 1;
+  min-height: 0;
 }
 #doc-panel-title {
   font-size: 0.9rem;
@@ -2583,7 +2594,7 @@ tr.is-reviewed td { opacity: 0.65; }
     <span id="doc-search-count"></span>
     <button class="doc-panel-close" id="doc-search-close" title="Close search (Esc)" style="margin-left:auto">✕</button>
   </div>
-  <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
+  <div class="doc-panel-body">
     <div id="miner-review-panel"></div>
   </div>
   <!-- Pattern generator — shown after text selection in source view -->

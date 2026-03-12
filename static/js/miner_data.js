@@ -10,6 +10,7 @@ let _currentDocText = '';         // raw text for pattern generator (set when do
 let _lastSelectedRowIdx = -1;     // row index of the last selected row (for Shift+click range)
 let _tableMode = 'view';
 let _expandedDocsPeriod = null;
+let _selectedReportIds = {};
 
 // Metric highlight colours — 5 known colours; extras assigned from a palette.
 const _METRIC_COLORS_KNOWN = {
@@ -479,6 +480,7 @@ async function selectCompany(ticker) {
   localStorage.setItem('miner-data-ticker', ticker);
   closeDocPanel();
   _expandedDocsPeriod = null;
+  _selectedReportIds = {};
 
   // Reset cached SEC + finalized data on company switch
   _secRows = [];
@@ -735,12 +737,15 @@ function renderTable(allRows) {
         ${typeCell}${dateCell}${acceptBtn}
       </tr>`);
     if (_expandedDocsPeriod === row.period) {
+      const selectedDocId = _selectedReportIds[row.period] != null ? _selectedReportIds[row.period] : row.report_id;
       const docs = [{
         id: row.report_id,
         source_type: row.source_type,
+        source_url: row.source_url,
+        document_title: row.document_title,
         report_date: row.report_date,
         priority: row.doc_priority,
-        selected: true,
+        selected: selectedDocId === row.report_id,
       }].concat(altDocs);
       parts.push(`<tr class="timeline-docs-subrow"><td colspan="${METRICS_ORDER.length + 5}">`
         + `<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap"><strong style="font-size:0.78rem">Documents for ${escapeHtml(row.period_label)}</strong>`
@@ -750,7 +755,8 @@ function renderTable(allRows) {
             const cls = doc.selected ? 'timeline-doc-chip selected' : 'timeline-doc-chip';
             const pr = doc.priority != null ? 'p' + doc.priority + '/3' : '';
             const docId = doc.id != null ? String(doc.id) : '';
-            return `<button type="button" class="${cls}" onclick="event.stopPropagation();openDocumentFromRow('${escapeHtml(row.period)}','${escapeHtml(docId)}')"><span>${escapeHtml(srcTypeLabel(doc.source_type || ''))} ${doc.report_date ? '· ' + escapeHtml(String(doc.report_date).slice(0, 10)) : ''}</span><span style="font-size:0.7rem;color:inherit">${escapeHtml(pr)}</span></button>`;
+            const label = doc.document_title || `${srcTypeLabel(doc.source_type || '')}${doc.report_date ? ' · ' + String(doc.report_date).slice(0, 10) : ''}`;
+            return `<button type="button" class="${cls}" onclick="event.stopPropagation();openDocumentFromRow('${escapeHtml(row.period)}','${escapeHtml(docId)}')"><span>${escapeHtml(label)}</span><span style="font-size:0.7rem;color:inherit">${escapeHtml(pr)}</span></button>`;
           }).join('')
         + `</div></td></tr>`);
     }
@@ -767,17 +773,29 @@ function toggleRowDocs(period) {
 function openDocumentFromRow(period, reportId) {
   if (!_ticker) return;
   const row = _rows.find(function(r) { return r.period === period; });
+  const numericReportId = reportId ? parseInt(reportId, 10) : null;
+  if (numericReportId != null) _selectedReportIds[period] = numericReportId;
   _selectedPeriod = period;
   document.querySelectorAll('#timeline-tbody tr[data-period]').forEach(function(tr) {
     tr.classList.toggle('selected', tr.getAttribute('data-period') === period);
   });
+  if (_expandedDocsPeriod === period) renderTable(_rows);
   const panel = document.getElementById('doc-panel');
   if (panel) {
     panel.classList.add('visible');
     panel.style.display = 'flex';
   }
+  const selectedDoc = row ? ([{
+    id: row.report_id,
+    source_type: row.source_type,
+    source_url: row.source_url,
+    document_title: row.document_title,
+    report_date: row.report_date,
+  }].concat(row.alt_docs || [])).find(function(doc) {
+    return doc.id === numericReportId;
+  }) : null;
   document.getElementById('doc-panel-title-text').textContent =
-    `${_ticker} · ${period.slice(0, 7)}${row && row.source_type ? ' · ' + row.source_type : ''}`;
+    `${_ticker} · ${period.slice(0, 7)}${selectedDoc && selectedDoc.document_title ? ' · ' + selectedDoc.document_title : (selectedDoc && selectedDoc.source_type ? ' · ' + selectedDoc.source_type : (row && row.source_type ? ' · ' + row.source_type : ''))}`;
   document.getElementById('pattern-panel').style.display = 'none';
   document.getElementById('pattern-save-status').textContent = '';
   document.getElementById('apply-result').style.display = 'none';
@@ -786,11 +804,14 @@ function openDocumentFromRow(period, reportId) {
     : METRICS_ORDER.slice();
   ReviewPanel.openCell(_ticker, period, null, {
     nullMetrics: nullMetrics,
-    reportId: reportId ? parseInt(reportId, 10) : null,
+    reportId: numericReportId,
   });
 }
 
 function setMinerTableMode(mode) {
+  if (mode !== 'edit' && _editingCell) {
+    cancelInlineEdit();
+  }
   _tableMode = mode === 'edit' ? 'edit' : 'view';
   const viewBtn = document.getElementById('table-mode-view-btn');
   const editBtn = document.getElementById('table-mode-edit-btn');
@@ -996,6 +1017,19 @@ function selectPeriod(period) {
 
   // Find the row to get source info and compute null metrics
   const row = _rows.find(r => r.period === period);
+  if (row && _selectedReportIds[period] == null && row.report_id != null) {
+    _selectedReportIds[period] = row.report_id;
+  }
+  const selectedId = _selectedReportIds[period];
+  const selectedDoc = row ? ([{
+    id: row.report_id,
+    source_type: row.source_type,
+    source_url: row.source_url,
+    document_title: row.document_title,
+    report_date: row.report_date,
+  }].concat(row.alt_docs || [])).find(function(doc) {
+    return doc.id === selectedId;
+  }) : null;
   const nullMetrics = row
     ? METRICS_ORDER.filter(function(m) { return !row.metrics[m] || row.metrics[m].value == null; })
     : METRICS_ORDER.slice();
@@ -1005,7 +1039,7 @@ function selectPeriod(period) {
   panel.classList.add('visible');
   panel.style.display = 'flex';
   document.getElementById('doc-panel-title-text').textContent =
-    `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
+    `${_ticker} · ${periodLabel}${selectedDoc && selectedDoc.document_title ? ' · ' + selectedDoc.document_title : (selectedDoc && selectedDoc.source_type ? ' · ' + selectedDoc.source_type : (row && row.source_type ? ' · ' + row.source_type : ''))}`;
 
   // Reset pattern panel state (pattern generator is separate from ReviewPanel)
   document.getElementById('pattern-panel').style.display = 'none';
@@ -1013,7 +1047,10 @@ function selectPeriod(period) {
   document.getElementById('apply-result').style.display = 'none';
 
   // Open ReviewPanel for this cell (no specific metric — shows all analysis)
-  ReviewPanel.openCell(_ticker, period, null, {nullMetrics: nullMetrics});
+  ReviewPanel.openCell(_ticker, period, null, {
+    nullMetrics: nullMetrics,
+    reportId: selectedId != null ? selectedId : null,
+  });
 
   // Intentionally no scrollIntoView — doc-panel is position:fixed at viewport bottom.
 }
@@ -1023,6 +1060,7 @@ function selectPeriod(period) {
 // ── Close doc panel ────────────────────────────────────────────────────────
 function closeDocPanel() {
   _selectedPeriod = null;
+  _expandedDocsPeriod = null;
   const panel = document.getElementById('doc-panel');
   panel.classList.remove('visible');
   panel.style.display = 'none';
@@ -1265,7 +1303,12 @@ async function saveGeneratedPattern() {
 function openInNewTab() {
   if (!_ticker || !_selectedPeriod) return;
   const row = _rows.find(function(r) { return r.period === _selectedPeriod; });
-  const url = row && row.source_url;
+  const selectedId = _selectedReportIds[_selectedPeriod];
+  const selectedDoc = row ? ([{
+    id: row.report_id,
+    source_url: row.source_url,
+  }].concat(row.alt_docs || [])).find(function(doc) { return doc.id === selectedId; }) : null;
+  const url = (selectedDoc && selectedDoc.source_url) || (row && row.source_url);
   if (url) {
     window.open(url, '_blank', 'noopener');
   } else {

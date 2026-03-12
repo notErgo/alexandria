@@ -82,6 +82,63 @@ _EDGAR_FOOTER_SENTINELS = [
 ]
 
 
+def extract_document_title(raw_html: str | None, raw_text: str | None = None) -> str | None:
+    """Return a best-effort document title from stored HTML or plain text.
+
+    Priority:
+    1. ``og:title`` / ``twitter:title`` meta tags
+    2. ``<title>``
+    3. first ``<h1>``
+    4. first plausible non-boilerplate plain-text line
+    """
+    def _clean(candidate: str | None) -> str | None:
+        if not candidate:
+            return None
+        text = _re.sub(r'\s+', ' ', str(candidate)).strip(" \t\r\n-|\u2013\u2014")
+        if len(text) < 8:
+            return None
+        if len(text) > 220:
+            text = text[:217].rstrip() + "..."
+        return text or None
+
+    if raw_html:
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(raw_html, "lxml")
+            for prop in ('og:title', 'twitter:title'):
+                node = soup.find('meta', attrs={'property': prop}) or soup.find('meta', attrs={'name': prop})
+                if node and node.get('content'):
+                    title = _clean(node.get('content'))
+                    if title:
+                        return title
+            if soup.title and soup.title.string:
+                title = _clean(soup.title.string)
+                if title:
+                    return title
+            h1 = soup.find('h1')
+            if h1:
+                title = _clean(h1.get_text(" ", strip=True))
+                if title:
+                    return title
+        except Exception:
+            pass
+
+    if raw_text:
+        lines = [_clean(line) for line in str(raw_text).splitlines()]
+        for line in lines[:20]:
+            if not line:
+                continue
+            lower = line.lower()
+            if lower in {'source:', 'email'}:
+                continue
+            if _IR_DATE_LINE_RE.match(line):
+                continue
+            if lower.startswith('distributed by '):
+                continue
+            return line
+    return None
+
+
 def strip_press_release_boilerplate(text: str | None) -> str:
     """Remove IR website navigation and boilerplate footer from plain-text PRs.
 

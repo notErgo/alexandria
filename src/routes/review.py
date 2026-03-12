@@ -14,6 +14,7 @@ Provides endpoints for the analyst review UI:
 import logging
 
 from flask import Blueprint, jsonify, request
+from infra.text_utils import extract_document_title
 
 log = logging.getLogger('miners.routes.review')
 
@@ -157,17 +158,19 @@ def get_review_document(item_id):
             }})
 
         raw_text = db.get_report_raw_text(report['id']) or ''
+        raw_html = db.get_report_raw_html(report['id'])
         source_type = report.get('source_type') or ''
         if source_type.startswith('edgar_'):
-            raw_html = db.get_report_raw_html(report['id'])
             if raw_html:
                 from infra.text_utils import edgar_to_plain, strip_edgar_boilerplate
                 raw_text = strip_edgar_boilerplate(edgar_to_plain(raw_html))
             else:
                 from infra.text_utils import strip_edgar_boilerplate
                 raw_text = strip_edgar_boilerplate(raw_text)
+        document_title = extract_document_title(raw_html, raw_text)
         return jsonify({'success': True, 'data': {
             'raw_text': raw_text,
+            'document_title': document_title,
             'source_url': report.get('source_url'),
             'source_type': report.get('source_type'),
             'report_id': report.get('id'),

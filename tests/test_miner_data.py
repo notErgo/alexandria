@@ -122,6 +122,8 @@ def app_with_report(app, tmp_path, monkeypatch):
         'published_date': None,
         'source_type': 'archive_html',
         'source_url': None,
+        'raw_html': '<html><head><title>MARA January 2022 Results</title></head>'
+                    '<body><h1>MARA January 2022 Results</h1></body></html>',
         'raw_text': 'MARA mined 742 bitcoin during January 2022. Holdings of 3215 bitcoin.',
         'parsed_at': '2024-01-01T00:00:00',
     })
@@ -332,6 +334,17 @@ class TestMinerAnalysis:
             assert 'value' in m
             assert 'confidence' in m
             assert 'source_snippet' in m
+            assert 'matched_keyword' in m
+            assert 'keyword_rank' in m
+            assert 'keyword_color_key' in m
+
+    def test_period_reports_include_document_title(self, app_with_report):
+        """Period report list includes a derived document title."""
+        resp = app_with_report.get('/api/miner/MARA/2022-01/reports')
+        assert resp.status_code == 200
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        assert body['data']['selected']['document_title'] == 'MARA January 2022 Results'
 
 
 # ── TestMinerRawSource ────────────────────────────────────────────────────────

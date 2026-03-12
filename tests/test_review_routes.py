@@ -19,6 +19,8 @@ def db_with_review(db_with_company):
         'published_date': '2024-01-15',
         'source_type': 'archive_html',
         'source_url': 'https://example.com/mara-jan-2024.html',
+        'raw_html': '<html><head><meta property="og:title" content="MARA January 2024 Production Update"></head>'
+                    '<body><h1>Ignored Header</h1><p>MARA Holdings mined 700 BTC in January 2024.</p></body></html>',
         'raw_text': 'MARA Holdings mined 700 BTC in January 2024. Total holdings: 15,000 BTC.',
         'parsed_at': '2024-01-15T10:00:00',
     })
@@ -102,6 +104,7 @@ class TestReviewDocumentRoute:
             assert data['success'] is True
             assert 'raw_text' in data['data']
             assert len(data['data']['raw_text']) > 0
+            assert data['data']['document_title'] == 'MARA January 2024 Production Update'
 
     def test_get_document_invalid_id_returns_404(self, app_with_review):
         """GET /api/review/99999/document → 404."""
