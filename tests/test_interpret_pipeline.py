@@ -210,49 +210,6 @@ class TestExtractReportBatchPath:
         assert len(batch_called) == 1, "extract_batch must be called exactly once"
         assert len(extract_called) == 0, "per-metric extract() must not be called"
 
-    def test_pipeline_falls_back_to_per_metric_when_batch_empty(
-        self, db_with_company, registry, monkeypatch
-    ):
-        """When extract_batch returns {}, fallback calls extract_batch([metric]) per metric.
-
-        Step 6 changed the per-metric fallback from extract() to extract_batch([metric])
-        so that ExtractionRunConfig is forwarded uniformly. extract() must NOT be called.
-        """
-        import interpreters.interpret_pipeline as _ep
-
-        batch_call_count = []
-        extract_called = []
-
-        def fake_batch(text, metrics, ticker=None, **kw):
-            batch_call_count.append(len(metrics))
-            return {}
-
-        mock_llm = _make_mock_llm()
-        mock_llm.extract_batch = fake_batch
-        mock_llm.extract = lambda text, metric, **kw: extract_called.append(metric) or None
-        mock_llm.extract_for_period.return_value = {}
-        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-
-        report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
-            report_date='2024-09-01',
-        ))
-        report = db_with_company.get_report(report_id)
-
-        from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
-
-        # Per-metric fallback calls extract_batch, NOT extract()
-        assert len(extract_called) == 0, (
-            "extract() must NOT be called in the fallback path; "
-            "extract_batch([metric]) is used instead"
-        )
-        # 1 batch call + N per-metric fallback calls
-        n_metrics = len(registry.metrics)
-        assert len(batch_call_count) == 1 + n_metrics, (
-            f"Expected 1 batch + {n_metrics} per-metric calls, got {len(batch_call_count)}"
-        )
-
     def test_pipeline_batch_marks_report_extracted(
         self, db_with_company, registry, monkeypatch
     ):
@@ -772,7 +729,9 @@ class TestActiveMetricFilter:
 
         mock_llm = _MockLLM2()
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
+        import infra.keyword_service
+        monkeypatch.setattr(infra.keyword_service, 'get_mining_detection_phrases',
+                            lambda db: ['bitcoin', 'btc produced'])
 
         report_id = db_with_company.insert_report({
             'ticker': 'MARA', 'report_date': '2024-09-01',
@@ -1062,7 +1021,10 @@ class TestKeywordGate:
 
         monkeypatch.setattr(
             db_with_company, 'get_all_metric_keywords',
-            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+            lambda active_only=True: [
+                {'phrase': 'bitcoin produced', 'metric_key': 'production_btc'},
+                {'phrase': 'btc produced', 'metric_key': 'production_btc'},
+            ],
         )
         mock_llm = MagicMock()
         mock_llm.check_connectivity.return_value = True
@@ -1106,7 +1068,10 @@ class TestKeywordGate:
 
         monkeypatch.setattr(
             db_with_company, 'get_all_metric_keywords',
-            lambda active_only=True: [{'phrase': 'bitcoin produced', 'metric_key': 'production_btc'}],
+            lambda active_only=True: [
+                {'phrase': 'bitcoin produced', 'metric_key': 'production_btc'},
+                {'phrase': 'produced', 'metric_key': 'production_btc'},
+            ],
         )
         mock_llm = MagicMock()
         mock_llm.check_connectivity.return_value = True
@@ -1191,114 +1156,6 @@ class TestBoilerplateStrippingBySourceType:
         assert "About MARA Holdings" not in captured['llm_text']
         assert "Forward-Looking Statements" not in captured['llm_text']
         assert "700 BTC" in captured['llm_text']
-
-class TestPerMetricFallbackGate:
-    """Per-metric fallback loop is skipped when both LLM batch and regex find nothing."""
-
-    @pytest.fixture
-    def db_with_company(self, db):
-        db.insert_company({
-            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
-            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
-            'pr_base_url': 'https://www.marathondh.com',
-            'cik': '0001437491', 'active': 1,
-        })
-        return db
-
-    def test_per_metric_fallback_skipped_when_regex_also_empty(
-        self, db_with_company, registry, monkeypatch
-    ):
-        """When LLM batch returns empty AND regex found nothing, per-metric calls must not fire.
-
-        Both LLM and regex failing on the same document means there is nothing to
-        extract. Running N individual LLM calls after that is pure waste.
-        """
-        import interpreters.interpret_pipeline as _ep
-
-        call_log = []
-
-        class _BatchEmptyLLM:
-            _last_call_meta = {}
-            _last_batch_summary = ''
-
-            def extract_batch(self, text, metrics, **kw):
-                call_log.append(('batch', list(metrics)))
-                return {}
-
-            def extract(self, *a, **kw):
-                return None
-
-            def extract_historical_periods(self, *a, **kw):
-                return {}
-
-            def check_connectivity(self):
-                return True
-
-        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _BatchEmptyLLM())
-
-        # Text passes keyword gate (contains "bitcoin") but has no numeric production
-        # figures — regex will find zero matches.
-        report_id = db_with_company.insert_report(make_report(
-            raw_text=(
-                'MARA Holdings announces board changes. Hash rate data was not disclosed. '
-                'Bitcoin production figures are unavailable for this filing period.'
-            ),
-            report_date='2018-06-01',
-        ))
-        report = db_with_company.get_report(report_id)
-
-        from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
-
-        # Gating-only mode should skip the LLM entirely when regex also found nothing.
-        batch_calls = [c for c in call_log if c[0] == 'batch']
-        assert len(batch_calls) == 0, (
-            f"Expected no LLM calls when regex gate finds nothing, got {len(batch_calls)}: {batch_calls}"
-        )
-
-    def test_per_metric_fallback_runs_when_regex_has_hits(
-        self, db_with_company, registry, monkeypatch
-    ):
-        """When LLM batch returns empty but regex found something, per-metric fallback fires."""
-        import interpreters.interpret_pipeline as _ep
-
-        call_log = []
-
-        class _BatchEmptyLLM:
-            _last_call_meta = {}
-            _last_batch_summary = ''
-
-            def extract_batch(self, text, metrics, **kw):
-                call_log.append(('batch', list(metrics)))
-                return {}
-
-            def extract(self, *a, **kw):
-                return None
-
-            def extract_historical_periods(self, *a, **kw):
-                return {}
-
-            def check_connectivity(self):
-                return True
-
-        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: _BatchEmptyLLM())
-
-        # Text with a real production figure — regex will match production_btc.
-        report_id = db_with_company.insert_report(make_report(
-            raw_text='MARA mined 700 BTC in September 2024. Bitcoin production was strong.',
-            report_date='2024-09-01',
-        ))
-        report = db_with_company.get_report(report_id)
-
-        from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
-
-        batch_calls = [c for c in call_log if c[0] == 'batch']
-        # Batch (1) + per-metric fallback (N metrics) must all have fired.
-        assert len(batch_calls) > 1, (
-            "Per-metric fallback must run when regex found hits but LLM batch was empty"
-        )
-
 
 class TestBoilerplateStrippingBySourceType2:
     """edgar_8k boilerplate stripping (moved here to avoid class-level fixture conflict)."""

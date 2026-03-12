@@ -440,11 +440,8 @@ def _run_llm_batch(
     ticker: str = None,
     expected_granularity: str = 'monthly',
     config=None,
-    regex_hits: dict = None,
 ) -> tuple:
-    """
-    Try batch extraction first (1 Ollama call for all metrics).
-    Falls back to per-metric extract_batch([metric]) if batch returns empty.
+    """Run one batch LLM extraction call for all metrics.
 
     Returns (results: dict, meta: dict) where meta contains timing info from
     llm_interpreter._last_call_meta (populated by _call_ollama).
@@ -453,12 +450,7 @@ def _run_llm_batch(
         over expected_granularity and is forwarded to extract_batch so the
         temporal anchor is included in the prompt.
     expected_granularity: legacy param used when config is None.
-    regex_hits: dict of regex results keyed by metric (from _build_regex_by_metric).
-        When supplied and empty, the per-metric fallback loop is skipped — if both
-        the batch call and regex found nothing, individual per-metric calls will
-        almost certainly also find nothing and would only waste LLM cycles.
     """
-    # Resolve config — create one if not supplied so callers get consistent behaviour
     if config is None:
         from miner_types import ExtractionRunConfig
         config = ExtractionRunConfig(
@@ -470,26 +462,7 @@ def _run_llm_batch(
     meta['transport_error'] = getattr(llm_interpreter, '_last_transport_error', False) is True
     if result:
         log.info("  LLM batch returned %d/%d metrics", len(result), len(metrics))
-        return result, meta
-    log.warning("  LLM batch empty — falling back to per-metric (%d calls)", len(metrics))
-    # Skip per-metric fallback when regex also found nothing. Both LLM and regex
-    # failing means the document almost certainly has no extractable values —
-    # individual metric calls will match this outcome and only waste LLM cycles.
-    if regex_hits is not None and not regex_hits:
-        log.info(
-            "  Skipping per-metric fallback: regex also found 0 hits — document likely non-extractable"
-        )
-        return {}, meta
-    fallback = {}
-    for metric in metrics:
-        single = llm_interpreter.extract_batch(text, [metric], ticker=ticker, config=config)
-        r = single.get(metric)
-        if r is not None:
-            fallback[metric] = r
-        # Update meta with the last per-metric call (best-effort; final call wins)
-        meta = dict(llm_interpreter._last_call_meta)
-        meta['transport_error'] = getattr(llm_interpreter, '_last_transport_error', False) is True
-    return fallback, meta
+    return result, meta
 
 
 def _apply_llm_result(
@@ -947,11 +920,6 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         except Exception as _mre:
             log.debug("Could not load metric_rules (non-fatal): %s", _mre)
 
-        regex_by_metric = _build_regex_by_metric(
-            text, registry, report_date=report_date,
-            metric_rules_by_name=metric_rules_by_name,
-        )
-
         llm_interpreter = _get_llm_interpreter(db)
         llm_available = _check_llm_available(llm_interpreter)
 
@@ -964,8 +932,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
             return summary
 
         # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],
-        # etc.) from the back of the document before sending to LLM. Regex extraction
-        # still runs on the full raw_text. Use ContextWindowSelector to budget the window.
+        # etc.) from the back of the document before sending to LLM.
         _clean_text = _clean_for_llm(text)
         _ctx_selector = ContextWindowSelector(doc_type=report.get('source_type', ''))
         _ctx_windows = _ctx_selector.select_windows(report['id'], _clean_text, 'production_btc', db)
@@ -974,14 +941,11 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         all_metrics = _active_metric_keys(db, registry)
         ticker = report.get('ticker')
 
-        # Primary batch LLM call — pays prefill once for all metrics on window 0.
-        # Falls back to per-metric extract_batch([metric]) if batch returns empty,
-        # unless regex also found nothing (saves N wasted LLM calls on empty docs).
         llm_by_metric = {}
         if llm_available:
             llm_by_metric, _batch_meta = _run_llm_batch(
                 llm_interpreter, llm_text, all_metrics, ticker=ticker,
-                config=_run_config, regex_hits=regex_by_metric,
+                config=_run_config,
             )
             if _batch_meta.get('transport_error'):
                 log.warning(
@@ -1023,31 +987,6 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
 
             summary.prompt_tokens += _batch_meta.get('prompt_tokens', 0)
             summary.response_tokens += _batch_meta.get('response_tokens', 0)
-
-            # Per-metric fallback: each metric that still needs higher confidence gets
-            # its own select_windows call so the context window is metric-appropriate.
-            _needs_fallback = [
-                m for m in all_metrics
-                if _ctx_selector.needs_fallback(llm_by_metric.get(m), db)
-            ]
-            for _fb_metric in _needs_fallback:
-                _fb_windows = _ctx_selector.select_windows(
-                    report['id'], _clean_text, _fb_metric, db
-                )
-                for _fb_window in _fb_windows[1:2]:
-                    log.debug(
-                        "Fallback window %d: retrying %s for %s %s",
-                        _fb_window['window_index'], _fb_metric,
-                        ticker, report.get('report_date'),
-                    )
-                    _fb_results = llm_interpreter.extract_batch(
-                        _fb_window['text'], [_fb_metric], ticker=ticker, config=_run_config
-                    )
-                    if _fb_metric in _fb_results and not _ctx_selector.needs_fallback(
-                        _fb_results[_fb_metric], db
-                    ):
-                        llm_by_metric[_fb_metric] = _fb_results[_fb_metric]
-                        break
 
         for metric in all_metrics:
             _apply_llm_result(

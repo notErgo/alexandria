@@ -759,14 +759,16 @@ class LLMInterpreter:
         config: Optional ExtractionRunConfig. When supplied, prepend a TEMPORAL SCOPE block.
         period: Optional period string forwarded to the temporal anchor.
         """
-        # Temporal anchor block (prepended before preamble when config is supplied)
+        # Temporal anchor block (prepended before preamble when granularity is set)
         _temporal_prefix = ''
-        if config is not None:
+        if config is not None and config.expected_granularity is not None:
             _temporal_prefix = self._build_temporal_anchor(config.expected_granularity, period)
 
-        # Preamble: use DB override if available, otherwise hardcoded constant
+        # Preamble priority: custom_prompt_preamble > DB override > hardcoded constant
         preamble = _DEFAULT_BATCH_PREAMBLE
-        if self._db is not None:
+        if config is not None and config.custom_prompt_preamble:
+            preamble = config.custom_prompt_preamble
+        elif self._db is not None:
             try:
                 db_preamble = self._db.get_config('llm_batch_preamble')
                 if db_preamble:

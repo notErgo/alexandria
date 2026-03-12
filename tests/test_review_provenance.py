@@ -201,7 +201,7 @@ class TestReviewDocumentUsesReportId(unittest.TestCase):
 
 
 class TestReviewItemHasReportId(unittest.TestCase):
-    """Fix 4: all three review-routing branches must write report_id to review_queue."""
+    """_apply_llm_result must write report_id to review_queue on all review-routing branches."""
 
     def _make_report(self, report_id=77):
         return {
@@ -233,21 +233,18 @@ class TestReviewItemHasReportId(unittest.TestCase):
 
     def test_llm_only_low_confidence_includes_report_id(self):
         """LLM_ONLY low-confidence branch must include report_id in insert_review_item."""
-        from interpreters.interpret_pipeline import _apply_agreement
+        from interpreters.interpret_pipeline import _apply_llm_result
         report = self._make_report(report_id=77)
         db = self._make_db()
         llm_result = self._make_result(value=750.0, confidence=0.5, method='llm')
 
-        _apply_agreement(
+        _apply_llm_result(
             metric='production_btc',
-            regex_best=None,
             llm_result=llm_result,
             db=db,
             report=report,
-            llm_available=True,
             confidence_threshold=0.75,
             summary=self._make_summary(),
-            llm_interpreter=None,
         )
 
         db.insert_review_item.assert_called_once()
@@ -255,22 +252,22 @@ class TestReviewItemHasReportId(unittest.TestCase):
         self.assertIn('report_id', call_args)
         self.assertEqual(call_args['report_id'], 77)
 
-    def test_review_queue_branch_includes_report_id(self):
-        """REVIEW_QUEUE branch (regex/LLM disagree) must include report_id in insert_review_item."""
-        from interpreters.interpret_pipeline import _apply_agreement
+    def test_outlier_flagged_includes_report_id(self):
+        """Outlier-flagged LLM result must include report_id in insert_review_item."""
+        from interpreters.interpret_pipeline import _apply_llm_result
         report = self._make_report(report_id=88)
         db = self._make_db()
-        # production_btc threshold=1%; 1000 vs 1020 = 2% diff → REVIEW_QUEUE
-        regex_result = self._make_result(value=1000.0, confidence=0.9, method='regex')
-        llm_result = self._make_result(value=1020.0, confidence=0.9, method='llm')
+        # Trailing history: recent values around 100 BTC; 750 BTC is a large outlier
+        db.get_trailing_data_points.return_value = [
+            {'value': 100.0}, {'value': 105.0}, {'value': 98.0},
+        ]
+        llm_result = self._make_result(value=750.0, confidence=0.95, method='llm')
 
-        _apply_agreement(
+        _apply_llm_result(
             metric='production_btc',
-            regex_best=regex_result,
             llm_result=llm_result,
             db=db,
             report=report,
-            llm_available=True,
             confidence_threshold=0.75,
             summary=self._make_summary(),
             llm_interpreter=None,
@@ -280,29 +277,6 @@ class TestReviewItemHasReportId(unittest.TestCase):
         call_args = db.insert_review_item.call_args[0][0]
         self.assertIn('report_id', call_args)
         self.assertEqual(call_args['report_id'], 88)
-
-    def test_legacy_regex_only_low_confidence_includes_report_id(self):
-        """Legacy regex-only low-confidence branch must include report_id in insert_review_item."""
-        from interpreters.interpret_pipeline import _apply_agreement
-        report = self._make_report(report_id=99)
-        db = self._make_db()
-        regex_result = self._make_result(value=750.0, confidence=0.5, method='regex')
-
-        _apply_agreement(
-            metric='production_btc',
-            regex_best=regex_result,
-            llm_result=None,
-            db=db,
-            report=report,
-            llm_available=False,
-            confidence_threshold=0.75,
-            summary=self._make_summary(),
-        )
-
-        db.insert_review_item.assert_called_once()
-        call_args = db.insert_review_item.call_args[0][0]
-        self.assertIn('report_id', call_args)
-        self.assertEqual(call_args['report_id'], 99)
 
 
 if __name__ == '__main__':

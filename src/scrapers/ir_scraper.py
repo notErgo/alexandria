@@ -1124,6 +1124,7 @@ class IRScraper:
             summary.errors += 1
             return summary
         start_year = start_date.year
+        start_month = date(start_date.year, start_date.month, 1)
 
         page_urls = discovery_page_urls_for_company(company)
         if not page_urls:
@@ -1193,10 +1194,10 @@ class IRScraper:
                 seen_urls.add(full_url)
 
                 period_hint = hinted_period or infer_period_from_text(full_url)
-                if period_hint and date(period_hint.year, period_hint.month, 1) >= start_date:
+                if period_hint and date(period_hint.year, period_hint.month, 1) >= start_month:
                     page_has_recent = True
 
-                if period_hint and date(period_hint.year, period_hint.month, 1) < start_date:
+                if period_hint and date(period_hint.year, period_hint.month, 1) < start_month:
                     continue
 
                 url_hash = hashlib.sha256(full_url.encode()).hexdigest()
@@ -1359,7 +1360,7 @@ class IRScraper:
                 log.debug("%s: could not infer period for discovered PR %s", ticker, full_url)
                 self._release_url(ticker, url_hash)
                 continue
-            if date(page_period.year, page_period.month, 1) < start_date:
+            if date(page_period.year, page_period.month, 1) < start_month:
                 self._release_url(ticker, url_hash)
                 continue
 
@@ -1417,8 +1418,12 @@ class IRScraper:
             summary.errors += 1
             return summary
         start_year = start_date.year
+        # Normalize to month-start so a day > 1 (e.g. "2020-12-10") doesn't
+        # create a sub-month dead zone — December 2020 must be included when
+        # pr_start_date is 2020-12-10.
+        start_month = date(start_date.year, start_date.month, 1)
 
-        # Walk months from the LATER OF (pr_start_date, latest IR period in DB)
+        # Walk months from the LATER OF (pr_start_date month-start, latest IR period in DB)
         # up to the most recently COMPLETED month (we don't attempt the current
         # in-progress month — reports publish after month-end).
         today = date.today()
@@ -1433,17 +1438,17 @@ class IRScraper:
             try:
                 ly, lm = int(latest[:4]), int(latest[5:7])
                 start_from = date(ly, lm + 1, 1) if lm < 12 else date(ly + 1, 1, 1)
-                # Never go before pr_start_date — respect the configured floor
-                current = max(start_date, start_from)
+                # Never go before pr_start_date month-start — respect the configured floor
+                current = max(start_month, start_from)
                 log.info("%s: fast-forwarding to %s (latest IR: %s)", ticker, current, latest)
             except (ValueError, IndexError) as e:
                 log.warning(
                     "%s: could not parse latest_ir_period %r (%s) — starting from %s",
-                    ticker, latest, e, start_date,
+                    ticker, latest, e, start_month,
                 )
-                current = start_date
+                current = start_month
         else:
-            current = start_date
+            current = start_month
             if backfill_mode:
                 log.info("%s: backfill_mode=True — starting from %s", ticker, current)
 

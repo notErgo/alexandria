@@ -35,6 +35,7 @@ def test_run_extraction_phase_delegates_to_extract_reports_for_ticker(monkeypatc
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, first_filing, force_reextract=False: [{'id': 1}])
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
         db, run_id, ['MARA'], object(),
@@ -175,6 +176,7 @@ def test_run_extraction_phase_cancel_check_stops_early(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, ff, force_reextract=False: [{'id': 1}])
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     call_count = [0]
     def _cancel_after_first():
@@ -206,6 +208,7 @@ def test_run_extraction_phase_progress_callback_called_per_ticker(monkeypatch, t
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, ff, force_reextract=False: [{'id': 1}])
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
         db, run_id, ['MARA', 'RIOT'], object(),
@@ -237,6 +240,7 @@ def test_run_extraction_phase_run_config_factory_called_per_ticker(monkeypatch, 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, ff, force_reextract=False: [{'id': 1}])
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
         db, run_id, ['MARA', 'RIOT'], object(),
@@ -291,6 +295,7 @@ def test_run_extraction_phase_prebuilt_batches_skips_batch_building(monkeypatch,
         worker_reports.extend(reports)
 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _worker)
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pm_report = {'id': 99, 'ticker': 'MARA'}
     pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], object(),
@@ -313,6 +318,7 @@ def test_run_extraction_phase_default_extract_workers_is_2(monkeypatch, tmp_path
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _worker)
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, t, ff, force_reextract=False: [{'id': 1}])
+    monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], object())
 

@@ -396,8 +396,10 @@ def test_overnight_start_accepts_ir_workers(client, monkeypatch):
     assert int(cfg.get('ir_workers')) == 4
 
 
-def test_pipeline_preflight_returns_json(client):
+def test_pipeline_preflight_returns_json(client, monkeypatch):
     """GET /api/pipeline/preflight must return 200 with expected fields."""
+    import infra.ollama_warmup as _ow
+    monkeypatch.setattr(_ow, 'warm_ollama_for_extraction', lambda **kw: {'warmed': False, 'model': ''})
     resp = client.get('/api/pipeline/preflight')
     assert resp.status_code == 200
     data = resp.get_json()
@@ -409,8 +411,10 @@ def test_pipeline_preflight_returns_json(client):
     assert 'keyword_count' in preflight
 
 
-def test_pipeline_preflight_counts_pending_vs_extracted(client):
+def test_pipeline_preflight_counts_pending_vs_extracted(client, monkeypatch):
     """Preflight counts must correctly reflect pending vs extracted reports."""
+    import infra.ollama_warmup as _ow
+    monkeypatch.setattr(_ow, 'warm_ollama_for_extraction', lambda **kw: {'warmed': False, 'model': ''})
     import app_globals
     from infra.db import MinerDB
 

@@ -411,19 +411,11 @@ async function boot() {
         if (typeof populateChartMetricSelect === 'function') populateChartMetricSelect();
         const sel = document.getElementById('pattern-metric');
         sel.innerHTML = '';
-        const repromptSel = document.getElementById('reprompt-metrics-filter');
-        if (repromptSel) repromptSel.innerHTML = '';
         metrics.forEach(function(m) {
           const opt = document.createElement('option');
           opt.value = m.key;
           opt.textContent = m.label || m.key;
           sel.appendChild(opt);
-          if (repromptSel) {
-            const opt2 = document.createElement('option');
-            opt2.value = m.key;
-            opt2.textContent = m.label || m.key;
-            repromptSel.appendChild(opt2);
-          }
         });
       }
     }
@@ -1523,112 +1515,65 @@ function renderFinalizedTable() {
   }).join('');
 }
 
-async function doReprompt() {
+async function doExtract() {
   if (!_ticker) { showToast('Select a company first', true); return; }
-  const commentary = document.getElementById('interp-commentary').value.trim();
-  const btn = document.getElementById('reprompt-btn');
-  const statusEl = document.getElementById('reprompt-status');
+  const scopeEl = document.getElementById('extract-scope');
+  const scope = scopeEl ? scopeEl.value : 'both';
+  const customPromptEl = document.getElementById('custom-prompt-input');
+  const customPromptPanel = document.getElementById('custom-prompt-panel');
+  const customPrompt = (customPromptEl && customPromptPanel && customPromptPanel.style.display !== 'none')
+    ? customPromptEl.value.trim() : '';
+  const btn = document.getElementById('extract-btn');
+  const statusEl = document.getElementById('extract-status');
   btn.disabled = true;
-  statusEl.textContent = 'Calling LLM…';
-  document.getElementById('suggestions-area').style.display = 'none';
+  statusEl.textContent = 'Starting…';
   try {
-    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/reprompt`, {
+    const payload = {ticker: _ticker, force: true, source_scope: scope};
+    if (customPrompt) payload.custom_prompt = customPrompt;
+    const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-      commentary,
-      metrics: Array.from(document.getElementById('reprompt-metrics-filter').selectedOptions).map(function(o) { return o.value; }),
-    }),
+      body: JSON.stringify(payload),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const body = await resp.json();
     if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const suggestions = body.data.suggestions || [];
-    if (suggestions.length === 0) {
-      statusEl.textContent = 'No suggestions returned.';
-    } else {
-      statusEl.textContent = `${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'}`;
-      renderSuggestions(suggestions);
-      document.getElementById('suggestions-area').style.display = '';
-    }
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-    showToast(`Reprompt failed: ${err.message}`, true);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function doRerunSec() {
-  if (!_ticker) { showToast('Select a company first', true); return; }
-  const btn = document.getElementById('rerun-sec-btn');
-  const statusEl = document.getElementById('rerun-sec-status');
-  btn.disabled = true;
-  statusEl.textContent = 'Running…';
-  try {
-    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/rerun-sec`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const d = body.data;
-    statusEl.textContent =
-      `Done: ${d.reports_processed} reports, ${d.data_points_extracted} data points` +
-      (d.errors > 0 ? `, ${d.errors} errors` : '');
-    // Refresh SEC and reconcile views with updated data
+    const taskId = body.data.task_id;
+    await _pollExtractionProgress(taskId, statusEl);
     _secRows = [];
     await loadSecData(_ticker);
     loadInterpretData(_ticker);
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
-    showToast(`Re-interpret failed: ${err.message}`, true);
+    showToast(`Extraction failed: ${err.message}`, true);
   } finally {
     btn.disabled = false;
   }
 }
 
-function renderSuggestions(suggestions) {
-  const container = document.getElementById('suggestion-cards');
-  container.innerHTML = suggestions.map(function(s, i) {
-    const periodLabel = s.period ? s.period.slice(0, 7) : s.period;
-    return `<div class="suggestion-card" id="sug-card-${i}">
-      <div class="sug-header">
-        <span>${escapeHtml(s.metric)}</span>
-        <span style="color:var(--theme-text-muted)">${escapeHtml(periodLabel)}</span>
-        <span style="color:var(--theme-accent);font-weight:700">${(s.value || 0).toLocaleString()}</span>
-        <span style="color:var(--theme-text-muted);font-size:0.75rem">(conf: ${(s.confidence || 0).toFixed(2)})</span>
-      </div>
-      <div class="sug-rationale">${escapeHtml(s.rationale || '')}</div>
-      <div class="sug-actions">
-        <button class="btn btn-primary btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem"
-          onclick="acceptSuggestion(${i})">Accept</button>
-        <button class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem"
-          onclick="document.getElementById('sug-card-${i}').style.opacity='0.4'">Skip</button>
-      </div>
-    </div>`;
-  }).join('');
-  // Store suggestions for accept callbacks
-  container._suggestions = suggestions;
+async function _pollExtractionProgress(taskId, statusEl) {
+  for (let i = 0; i < 600; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const resp = await fetch(`/api/operations/interpret/${encodeURIComponent(taskId)}/progress`);
+      if (!resp.ok) break;
+      const body = await resp.json();
+      const prog = body.data || {};
+      const status = prog.status || 'running';
+      statusEl.textContent = `${prog.reports_processed || 0}/${prog.reports_total || '?'} reports, ${prog.data_points || 0} data points`;
+      if (status === 'complete') { statusEl.textContent += ' — done'; break; }
+      if (status === 'error') { statusEl.textContent = `Error: ${prog.error_message || 'unknown'}`; break; }
+    } catch (_) { break; }
+  }
 }
 
-function acceptSuggestion(idx) {
-  const container = document.getElementById('suggestion-cards');
-  const suggestions = container._suggestions || [];
-  const s = suggestions[idx];
-  if (!s) return;
-  _stagedValues.push({
-    period: s.period,
-    metric: s.metric,
-    value:  s.value,
-    unit:   '',
-    analyst_note: '',
-    source_ref: '',
-  });
-  document.getElementById(`sug-card-${idx}`).style.opacity = '0.4';
-  renderStagingTable();
-  document.getElementById('staging-area').style.display = '';
+function toggleCustomPrompt() {
+  const panel = document.getElementById('custom-prompt-panel');
+  const btn = document.getElementById('custom-prompt-toggle');
+  if (!panel) return;
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : '';
+  if (btn) btn.textContent = visible ? 'Custom prompt' : 'Hide custom prompt';
 }
 
 function renderStagingTable() {

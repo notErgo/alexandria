@@ -90,6 +90,9 @@ class TestExtractionPipelineQuarterlyPath:
         mock_db.get_quarterly_data_point.return_value = None
         mock_db.insert_data_point.side_effect = lambda dp: inserted_dps.append(dp) or 1
         mock_db.upsert_data_point_quarterly.side_effect = lambda dp: inserted_dps.append(dp) or 1
+        mock_db.get_all_metric_keywords.return_value = [
+            {'phrase': 'bitcoin mined', 'metric_key': 'production_btc'},
+        ]
 
         mock_registry = MagicMock()
         mock_registry.metrics = {'production_btc': []}

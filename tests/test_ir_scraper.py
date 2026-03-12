@@ -452,6 +452,37 @@ class TestTemplateModeBackfill:
         assert inserted["ticker"] == "CLSK"
         assert inserted["source_url"].endswith("/CleanSpark-Releases-January-2026-Operational-Update/default.aspx")
 
+    def test_pr_start_date_day_gt_1_includes_start_month(self):
+        """Regression: pr_start_date with day > 1 (e.g. 2020-12-10) must not
+        exclude the first month.  date(2020,12,1) < date(2020,12,10) so naive
+        comparison would skip December 2020 entirely.
+        Uses RIOT so riot_candidate_urls() generates 2020 URLs."""
+        scraper = self._make_scraper(latest_ir=None)
+        company = {
+            "ticker": "RIOT",
+            "scraper_mode": "template",
+            "url_template": "https://www.riotplatforms.com/riot-announces-{month}-{year}-production-and-operations-updates/",
+            "pr_start_date": "2020-12-10",
+            "pr_base_url": "https://www.riotplatforms.com",
+            "backfill_mode": True,
+        }
+
+        pr_resp = MagicMock()
+        pr_resp.text = "<html><body><p>December 2020 production: 100 BTC mined.</p></body></html>"
+        call_urls = []
+
+        def _fetch_side_effect(url, session, **kwargs):
+            call_urls.append(url)
+            if "december-2020" in url.lower():
+                return pr_resp
+            return None
+
+        with patch("scrapers.ir_scraper._fetch_with_rate_limit", side_effect=_fetch_side_effect):
+            result = scraper._scrape_template(company)
+
+        dec_urls = [u for u in call_urls if "december-2020" in u.lower()]
+        assert dec_urls, "December 2020 URL was never attempted — month-start normalization missing"
+
 
 class TestIndexModeStopOnAllSeen:
     """_scrape_index early-exit behaviour: stop_on_all_seen flag."""
@@ -727,6 +758,54 @@ class TestDiscoveryMode:
 
         assert len(sessions_created) == 2
         assert db.insert_report.call_count == 2
+
+    def test_pr_start_date_day_gt_1_includes_start_month_in_discovery(self):
+        """Regression: pr_start_date='2020-12-10' must not skip December 2020 PRs.
+        The period hint resolves to date(2020,12,1) which must compare >= start_month
+        date(2020,12,1), not against the raw start_date date(2020,12,10)."""
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "CLSK",
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.cleanspark.com/news",
+            "pr_base_url": "https://investors.cleanspark.com",
+            "pr_start_date": "2020-12-10",
+        }
+
+        listing_resp = MagicMock()
+        listing_resp.text = """
+        <html><body>
+          <a href="/news/news-details/2020/CleanSpark-Announces-December-2020-Production-Update/default.aspx">
+            CleanSpark Announces December 2020 Production Update
+          </a>
+        </body></html>
+        """
+        article_resp = MagicMock()
+        article_resp.text = """
+        <html><head><meta property="article:published_time" content="2021-01-05T08:00:00Z" /></head>
+        <body><h1>CleanSpark Announces December 2020 Production Update</h1><p>Mined 100 BTC.</p></body></html>
+        """
+
+        def _fake_fetch(url, session, **kwargs):
+            if "December-2020" in url:
+                return article_resp
+            return None
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
+            "scrapers.ir_scraper._fetch_with_rate_limit",
+            side_effect=_fake_fetch,
+        ):
+            result = scraper._scrape_discovery(company)
+
+        assert result.reports_ingested == 1, (
+            "December 2020 PR was not ingested — month-start normalization missing in _scrape_discovery"
+        )
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted["report_date"] == "2020-12-01"
+
 
 class TestScrapeModeDispatch:
     def test_dispatch_uses_scraper_mode_key(self):

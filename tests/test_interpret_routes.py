@@ -97,8 +97,13 @@ class TestClearAllReviewed:
             assert resp.status_code == 404
 
 
-class TestRepromptMetricValidation:
-    """Tests for _VALID_METRICS_FALLBACK correctness in reprompt endpoint."""
+class TestFallbackMetricValidation:
+    """Tests for _VALID_METRICS_FALLBACK correctness in finalize endpoint.
+
+    The reprompt/rerun-sec endpoints have been removed. LLM extraction goes
+    through POST /api/operations/interpret. The _VALID_METRICS_FALLBACK concern
+    now applies to the finalize() route.
+    """
 
     @pytest.fixture
     def app_with_company_db_error(self, db_with_company, monkeypatch):
@@ -106,8 +111,6 @@ class TestRepromptMetricValidation:
         import app_globals
         monkeypatch.setattr(app_globals, 'get_db', lambda: db_with_company)
 
-        # Make get_metric_schema always raise so _get_valid_metrics falls back
-        original = db_with_company.get_metric_schema
         def raise_error(*a, **kw):
             raise RuntimeError("DB unavailable")
         monkeypatch.setattr(db_with_company, 'get_metric_schema', raise_error)
@@ -119,25 +122,36 @@ class TestRepromptMetricValidation:
         app.config['TESTING'] = True
         return app
 
-    def test_reprompt_accepts_holdings_btc_when_db_unavailable(self, app_with_company_db_error):
-        """When DB unavailable, 'holdings_btc' must be accepted (not rejected as unknown)."""
+    def test_finalize_accepts_holdings_btc_when_db_unavailable(self, app_with_company_db_error):
+        """When DB unavailable, 'holdings_btc' must be in fallback (not rejected)."""
         with app_with_company_db_error.test_client() as c:
             resp = c.post(
-                '/api/interpret/MARA/reprompt',
-                json={'metrics': ['holdings_btc']},
+                '/api/interpret/MARA/finalize',
+                json={'values': [{'metric': 'holdings_btc', 'period': '2024-01-01', 'value': 100.0}]},
             )
-            # Must NOT return 400 INVALID_METRIC
-            assert resp.status_code != 400, (
+            assert resp.status_code != 400 or resp.get_json().get('error', {}).get('code') != 'VALIDATION_ERROR', (
                 f"holdings_btc wrongly rejected; response: {resp.get_json()}"
             )
 
-    def test_reprompt_rejects_hodl_btc(self, app_with_company_db_error):
-        """Deprecated 'hodl_btc' must be rejected regardless of fallback."""
+    def test_finalize_rejects_hodl_btc(self, app_with_company_db_error):
+        """Deprecated 'hodl_btc' must be rejected by fallback."""
         with app_with_company_db_error.test_client() as c:
             resp = c.post(
-                '/api/interpret/MARA/reprompt',
-                json={'metrics': ['hodl_btc']},
+                '/api/interpret/MARA/finalize',
+                json={'values': [{'metric': 'hodl_btc', 'period': '2024-01-01', 'value': 100.0}]},
             )
             assert resp.status_code == 400
             data = resp.get_json()
-            assert data['error']['code'] == 'INVALID_METRIC'
+            assert data['error']['code'] == 'VALIDATION_ERROR'
+
+    def test_reprompt_endpoint_removed(self, app_with_company):
+        """The /reprompt endpoint has been removed — must return 404."""
+        with app_with_company.test_client() as c:
+            resp = c.post('/api/interpret/MARA/reprompt', json={})
+            assert resp.status_code == 404
+
+    def test_rerun_sec_endpoint_removed(self, app_with_company):
+        """The /rerun-sec endpoint has been removed — must return 404."""
+        with app_with_company.test_client() as c:
+            resp = c.post('/api/interpret/MARA/rerun-sec', json={})
+            assert resp.status_code == 404

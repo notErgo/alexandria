@@ -296,16 +296,22 @@ class ExtractionRunConfig:
     """Configuration for a single extraction run.
 
     expected_granularity controls which time-period figures the LLM and
-    write-time validator will accept. Invalid values raise ValueError.
+    write-time validator will accept. None disables granularity validation.
+
+    custom_prompt_preamble, when non-empty, replaces the default batch
+    preamble sent to the LLM (highest priority: overrides DB and hardcoded
+    default). Pass this to override the extraction prompt for a single run.
     """
-    expected_granularity: str
+    expected_granularity: Optional[str] = None
     ticker: str = ''
     run_id: Optional[int] = None
+    custom_prompt_preamble: Optional[str] = None
 
     def __post_init__(self):
-        valid = {'monthly', 'quarterly', 'annual'}
-        if self.expected_granularity not in valid:
-            raise ValueError(
-                f"expected_granularity must be one of {valid}, "
-                f"got {self.expected_granularity!r}"
-            )
+        if self.expected_granularity is not None:
+            valid = {'monthly', 'quarterly', 'annual'}
+            if self.expected_granularity not in valid:
+                raise ValueError(
+                    f"expected_granularity must be one of {valid}, "
+                    f"got {self.expected_granularity!r}"
+                )

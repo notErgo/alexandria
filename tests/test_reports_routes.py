@@ -26,6 +26,14 @@ def test_auto_extract_ir_uses_run_extraction_phase(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
 
+    # IRScraper.scrape_company must be patched: insert_company uses INSERT OR IGNORE, so
+    # sync_companies_from_config() (run on MinerDB init) sets MARA to scraper_mode='rss'
+    # from companies.json before the test's insert_company call, which is then silently ignored.
+    # Without this patch, _run_ir_ingest makes real HTTP requests to the MARA RSS feed.
+    from scrapers.ir_scraper import IRScraper
+    from miner_types import IngestSummary
+    monkeypatch.setattr(IRScraper, 'scrape_company', lambda self, company: IngestSummary())
+
     import uuid
     task_id = str(uuid.uuid4())
     import routes.reports as reports_mod

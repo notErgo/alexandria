@@ -377,48 +377,6 @@ class TestRunLlmBatch:
             interp.extract.return_value = extract_return
         return interp
 
-    def test_run_llm_batch_per_metric_fallback_uses_extract_batch(self):
-        """After batch returns {}, per-metric fallback calls extract_batch([metric]) not extract()."""
-        from miner_types import ExtractionRunConfig, ExtractionResult
-        from interpreters.interpret_pipeline import _run_llm_batch
-
-        metric_result = ExtractionResult(
-            metric='production_btc', value=700.0, unit='BTC',
-            confidence=0.9, extraction_method='llm_test',
-            source_snippet='mined 700 BTC', pattern_id='llm_test',
-            period_granularity='monthly',
-        )
-        interp = self._make_interp()
-        # First call (batch) returns {}; second call (per-metric) returns result
-        interp.extract_batch.side_effect = [{}, {'production_btc': metric_result}]
-        cfg = ExtractionRunConfig(expected_granularity='monthly', ticker='MARA')
-
-        result, meta = _run_llm_batch(interp, 'text', ['production_btc'], config=cfg)
-
-        assert 'production_btc' in result
-        # extract() should NOT have been called — per-metric fallback uses extract_batch
-        interp.extract.assert_not_called()
-        assert interp.extract_batch.call_count == 2
-
-    def test_run_llm_batch_per_metric_fallback_respects_granularity(self):
-        """Per-metric fallback passes config to extract_batch so granularity is forwarded."""
-        from miner_types import ExtractionRunConfig, ExtractionResult
-        from interpreters.interpret_pipeline import _run_llm_batch
-
-        interp = self._make_interp()
-        interp.extract_batch.return_value = {}
-        cfg = ExtractionRunConfig(expected_granularity='quarterly', ticker='MARA')
-
-        _run_llm_batch(interp, 'text', ['production_btc'], config=cfg)
-
-        # The second call (per-metric) should receive the config
-        calls = interp.extract_batch.call_args_list
-        assert len(calls) >= 2
-        _, kwargs = calls[1]
-        assert kwargs.get('config') is cfg or (
-            len(calls[1][0]) > 3 and calls[1][0][3] is cfg
-        )
-
     def test_fallback_window_does_not_trigger_nested_per_metric(self):
         """Fallback window loop calls extract_batch directly, not _run_llm_batch."""
         # This is a structural test — we ensure _run_llm_batch is not called recursively

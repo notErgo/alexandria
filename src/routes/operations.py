@@ -363,42 +363,53 @@ def _extract_scope_label(tickers: list[str]) -> str:
 
 @bp.route('/api/operations/interpret', methods=['POST'])
 def operations_extract():
-    """Trigger background extraction for a ticker (or all tickers). Returns task_id.
+    """Trigger background LLM extraction for a ticker (or all tickers). Returns task_id.
+
+    This is the single endpoint for all LLM extraction — used by the ops page,
+    the Interpret tab, and the full overnight pipeline.
 
     Body parameters:
-        ticker (str, optional): Legacy single-ticker scope.
-        tickers (list[str], optional): Explicit ticker scope. Empty = all tickers.
+        ticker (str, optional): Single-ticker scope.
+        tickers (list[str], optional): Multi-ticker scope. Empty = all tickers.
         force (bool): Re-extract already-extracted reports (default false).
         warm_model (bool): Warm Ollama before starting (default true).
+        source_scope (str): 'ir' | 'sec' | 'both' (default 'both').
+            'ir'  = IR press releases + archive files only.
+            'sec' = EDGAR filings only (8-K, 10-Q, 10-K, 6-K, 20-F, 40-F).
+            'both' = all source types (default).
         cadence (str): 'monthly' | 'quarterly' | 'annual' | 'all' (default 'all').
-            Filters reports to the matching source_types.
-        from_period (str): Inclusive earliest report_date to include (YYYY-MM or YYYY-MM-DD).
-        to_period (str): Inclusive latest report_date to include (YYYY-MM or YYYY-MM-DD).
-        extract_workers (int): Parallel LLM workers for one ticker scope (default 1, max 12).
-        sample (int): If > 0, randomly pick at most this many reports (max 10).
-            Use for prompt debugging — quick feedback without a full run.
+            Further filters within the source_scope selection.
+        custom_prompt (str, optional): Preamble override sent to the LLM batch
+            prompt for this run. Overrides DB and hardcoded defaults.
+        from_period (str): Inclusive earliest report_date (YYYY-MM or YYYY-MM-DD).
+        to_period (str): Inclusive latest report_date.
+        extract_workers (int): Parallel LLM workers (default 2, max 12).
+        sample (int): Random report sample for prompt debugging (max 10).
     """
     try:
         body = request.get_json(silent=True) or {}
         from app_globals import get_db
         from infra.keyword_service import get_mining_detection_phrases
+
         tickers = _normalize_extract_tickers(body)
         ticker = tickers[0] if len(tickers) == 1 else None
         scope_label = _extract_scope_label(tickers)
         force = bool(body.get('force', False))
         warm_model = bool(body.get('warm_model', True))
+        source_scope = (body.get('source_scope') or 'both').strip().lower()
         cadence = (body.get('cadence') or 'all').strip().lower()
+        custom_prompt = (body.get('custom_prompt') or '').strip() or None
         from_period = (body.get('from_period') or '').strip() or None
         to_period = (body.get('to_period') or '').strip() or None
-        extract_workers = max(1, min(int(body.get('extract_workers') or 1), 12))
-        sample_n = int(body.get('sample') or 0)
-        sample_n = max(0, min(sample_n, 10))  # clamp 0-10
-        # expected_granularity: caller may supply explicitly; otherwise derive from cadence.
-        # When cadence='all', granularity is inferred per-report inside extract_report().
+        extract_workers = max(1, min(int(body.get('extract_workers') or 2), 12))
+        sample_n = max(0, min(int(body.get('sample') or 0), 10))
+
+        # expected_granularity: explicit override, or derived from cadence.
         _cadence_grain_map = {'monthly': 'monthly', 'quarterly': 'quarterly', 'annual': 'annual'}
         expected_granularity = (body.get('expected_granularity') or '').strip().lower() or None
         if expected_granularity is None and cadence in _cadence_grain_map:
             expected_granularity = _cadence_grain_map[cadence]
+
         run_key = scope_label or '__ALL__'
         db = get_db()
         keyword_phrases = get_mining_detection_phrases(db)
@@ -411,7 +422,6 @@ def operations_extract():
                 ),
             }}), 400
 
-        # 409 guard — prevent duplicate extraction runs
         with _active_tickers_lock:
             if run_key in _active_tickers:
                 return jsonify({'success': False, 'error': {
@@ -427,6 +437,7 @@ def operations_extract():
                 'ticker': ticker or 'ALL',
                 'tickers': tickers or None,
                 'scope_label': scope_label,
+                'source_scope': source_scope,
                 'cadence': cadence,
                 'from_period': from_period,
                 'to_period': to_period,
@@ -440,14 +451,17 @@ def operations_extract():
             }
 
         log.info(
-            "Starting extraction task %s for scope %s (force=%s, warm_model=%s, extract_workers=%s)",
-            task_id, scope_label, force, warm_model, extract_workers
+            "event=extract_start task_id=%s scope=%s force=%s source_scope=%s "
+            "warm_model=%s workers=%s custom_prompt=%s",
+            task_id, scope_label, force, source_scope, warm_model, extract_workers, bool(custom_prompt),
         )
 
-        # Capture loop-local values for the thread closure.
+        # Capture closure-local copies of all loop variables.
         _tickers = list(tickers)
         _scope_label = scope_label
+        _source_scope = source_scope
         _cadence = cadence
+        _custom_prompt = custom_prompt
         _from_period = from_period
         _to_period = to_period
         _extract_workers = extract_workers
@@ -456,7 +470,6 @@ def operations_extract():
 
         from app_globals import get_registry
         from routes.pipeline import (
-            _sort_reports_chronologically,
             _EDGAR_SOURCE_TYPES,
             _NON_EDGAR_SOURCE_TYPES,
             run_extraction_phase,
@@ -467,11 +480,14 @@ def operations_extract():
             ops_run_id: int | None = None
             ops_counters: dict = {'processed': 0, 'data_points': 0, 'errors': 0}
             try:
-
                 try:
                     ops_run = db.create_pipeline_run(
                         triggered_by='manual_extract',
-                        config={'force': force, 'cadence': _cadence, 'extract_workers': _extract_workers},
+                        config={
+                            'force': force, 'cadence': _cadence,
+                            'source_scope': _source_scope,
+                            'extract_workers': _extract_workers,
+                        },
                     )
                     ops_run_id = int(ops_run['id'])
                     with _progress_lock:
@@ -479,55 +495,41 @@ def operations_extract():
                 except Exception:
                     log.warning("Task %s: failed to create pipeline_run row", task_id, exc_info=True)
 
-                source_types = _CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None
-                reports: list[dict] = []
-                if _tickers:
-                    for selected_ticker in _tickers:
-                        first_filing = db.get_btc_first_filing_date(selected_ticker)
-                        edgar_from = _from_period or first_filing  # explicit override; anchor only for EDGAR
-                        getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
-                        if source_types is None:
-                            # cadence='all': split EDGAR vs non-EDGAR date gating
-                            reports.extend(getter(
-                                ticker=selected_ticker,
-                                source_types=list(_EDGAR_SOURCE_TYPES),
-                                from_period=edgar_from,
-                                to_period=_to_period,
-                            ))
-                            reports.extend(getter(
-                                ticker=selected_ticker,
-                                source_types=list(_NON_EDGAR_SOURCE_TYPES),
-                                from_period=_from_period,
-                                to_period=_to_period,
-                            ))
-                        else:
-                            edgar_in_scope = [t for t in source_types if t in _EDGAR_SOURCE_TYPES]
-                            non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
-                            if edgar_in_scope:
-                                reports.extend(getter(
-                                    ticker=selected_ticker,
-                                    source_types=edgar_in_scope,
-                                    from_period=edgar_from,
-                                    to_period=_to_period,
-                                ))
-                            if non_edgar_in_scope:
-                                reports.extend(getter(
-                                    ticker=selected_ticker,
-                                    source_types=non_edgar_in_scope,
-                                    from_period=_from_period,
-                                    to_period=_to_period,
-                                ))
+                # Resolve the effective source type list from source_scope, then cadence.
+                # source_scope='ir'   → IR/archive only (no EDGAR date gating)
+                # source_scope='sec'  → EDGAR types only (apply btc_first_filing_date gate)
+                # source_scope='both' → use cadence-based selection (existing default)
+                if _source_scope == 'ir':
+                    _effective_types = list(_NON_EDGAR_SOURCE_TYPES)
+                    _edgar_only = False
+                elif _source_scope == 'sec':
+                    _effective_types = list(_EDGAR_SOURCE_TYPES)
+                    _edgar_only = True
                 else:
-                    getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
+                    _effective_types = None  # cadence-based split below
+                    _edgar_only = False
+
+                source_types = (
+                    _effective_types if _effective_types is not None
+                    else (_CADENCE_SOURCE_TYPES.get(_cadence) if _cadence != 'all' else None)
+                )
+
+                reports: list[dict] = []
+                getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
+                for selected_ticker in (_tickers or [None]):
+                    first_filing = db.get_btc_first_filing_date(selected_ticker) if selected_ticker else None
+                    edgar_from = _from_period or first_filing
+
                     if source_types is None:
+                        # cadence='all' + source_scope='both': preserve EDGAR date gating
                         reports.extend(getter(
-                            ticker=None,
+                            ticker=selected_ticker,
                             source_types=list(_EDGAR_SOURCE_TYPES),
-                            from_period=_from_period,
+                            from_period=edgar_from,
                             to_period=_to_period,
                         ))
                         reports.extend(getter(
-                            ticker=None,
+                            ticker=selected_ticker,
                             source_types=list(_NON_EDGAR_SOURCE_TYPES),
                             from_period=_from_period,
                             to_period=_to_period,
@@ -537,14 +539,14 @@ def operations_extract():
                         non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
                         if edgar_in_scope:
                             reports.extend(getter(
-                                ticker=None,
+                                ticker=selected_ticker,
                                 source_types=edgar_in_scope,
-                                from_period=_from_period,
+                                from_period=edgar_from,
                                 to_period=_to_period,
                             ))
                         if non_edgar_in_scope:
                             reports.extend(getter(
-                                ticker=None,
+                                ticker=selected_ticker,
                                 source_types=non_edgar_in_scope,
                                 from_period=_from_period,
                                 to_period=_to_period,
@@ -552,36 +554,31 @@ def operations_extract():
 
                 if _sample_n > 0 and len(reports) > _sample_n:
                     reports = _random.sample(reports, _sample_n)
-                    log.info(
-                        "Task %s: sample mode — picked %d of %d reports",
-                        task_id, _sample_n, len(reports) + (_sample_n - len(reports)),
-                    )
+                    log.info("Task %s: sample mode — picked %d reports", task_id, len(reports))
 
                 with _progress_lock:
                     _extraction_progress[task_id]['reports_total'] = len(reports)
                     if not reports:
-                        logs = _extraction_progress[task_id]['logs']
-                        logs.append(
+                        _extraction_progress[task_id]['logs'].append(
                             "No stored reports matched the selected filters. "
-                            "Ingest first if the source documents have not been added to reports yet."
+                            "Ingest first if source documents have not been added to reports yet."
                         )
-                        if len(logs) > 200:
-                            logs.pop(0)
 
                 grouped_reports: OrderedDict[str, list[dict]] = OrderedDict()
                 if _tickers:
-                    for selected_ticker in _tickers:
-                        grouped_reports[selected_ticker] = []
+                    for t in _tickers:
+                        grouped_reports[t] = []
                 for report in reports:
                     grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
 
                 def _ops_run_config_factory(report_ticker: str):
-                    if not _expected_granularity:
+                    if not _expected_granularity and not _custom_prompt:
                         return None
                     from miner_types import ExtractionRunConfig
                     return ExtractionRunConfig(
                         expected_granularity=_expected_granularity,
                         ticker=report_ticker,
+                        custom_prompt_preamble=_custom_prompt,
                     )
 
                 def _ops_progress_callback(c: dict) -> None:
@@ -591,18 +588,16 @@ def operations_extract():
                         prog['data_points'] = c['data_points']
                         prog['errors'] = c['errors']
 
-                _run_id_for_worker = ops_run_id if ops_run_id is not None else 0
-
                 ops_counters = run_extraction_phase(
                     db,
-                    _run_id_for_worker,
+                    ops_run_id if ops_run_id is not None else 0,
                     tickers=list(grouped_reports.keys()),
                     registry=registry,
                     prebuilt_batches=dict(grouped_reports),
                     force_reextract=force,
                     warm_model=warm_model,
                     extract_workers=_extract_workers,
-                    run_config_factory=_ops_run_config_factory if _expected_granularity else None,
+                    run_config_factory=_ops_run_config_factory,
                     progress_callback=_ops_progress_callback,
                 )
 
@@ -618,9 +613,10 @@ def operations_extract():
 
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'
-                log.info("Task %s complete for %s", task_id, _scope_label)
+                log.info("event=extract_complete task_id=%s scope=%s", task_id, _scope_label)
+
             except Exception as e:
-                log.error("Task %s failed: %s", task_id, e, exc_info=True)
+                log.error("event=extract_failed task_id=%s error=%s", task_id, e, exc_info=True)
                 if ops_run_id is not None:
                     try:
                         db.update_pipeline_run(ops_run_id, status='failed', error='Internal error')
@@ -633,8 +629,7 @@ def operations_extract():
                 with _active_tickers_lock:
                     _active_tickers.discard(run_key)
 
-        t = threading.Thread(target=_run, daemon=True, name=f"extract-{run_key}")
-        t.start()
+        threading.Thread(target=_run, daemon=True, name=f"extract-{run_key}").start()
 
         return jsonify({'success': True, 'data': {
             'task_id': task_id,
