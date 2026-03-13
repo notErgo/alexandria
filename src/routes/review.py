@@ -416,3 +416,42 @@ def reject_review_item(item_id):
     except Exception:
         log.error("Error rejecting review item %d", item_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/review/<int:item_id>/no_data', methods=['POST'])
+def no_data_review_item(item_id):
+    """
+    Mark a review item as 'no data' — analyst confirms this document contains
+    no data for this metric. Writes a no_data verdict so the pipeline will
+    not re-surface this (report, metric) pair.
+
+    For LLM_EMPTY items: no confirmation required.
+    For all other items: requires {"confirmed": true} in the request body.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        item = db.get_review_item(item_id)
+        if item is None:
+            return jsonify({'success': False, 'error': {'message': 'Review item not found'}}), 404
+
+        if item.get('agreement_status') != 'LLM_EMPTY':
+            body = request.get_json(silent=True) or {}
+            if not body.get('confirmed'):
+                return jsonify({'success': False, 'error': {
+                    'code': 'CONFIRMATION_REQUIRED',
+                    'message': "This item has data — set confirmed=true to mark as no_data",
+                }}), 400
+
+        report_id = item.get('report_id')
+        metric = item['metric']
+
+        if report_id is not None:
+            db.upsert_report_metric_verdict(report_id, metric, 'no_data')
+
+        db.reject_review_item(item_id, note='no_data')
+        return jsonify({'success': True, 'data': {'verdict': 'no_data', 'item_id': item_id}})
+    except Exception:
+        log.error("Error in no_data_review_item %d", item_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

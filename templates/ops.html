@@ -1626,6 +1626,16 @@ tr.is-reviewed td { opacity: 0.65; }
           <button class="btn btn-sm btn-secondary" onclick="runRequeueMissing()" style="font-size:0.75rem">Re-extract gap months</button>
           <span id="gap-requeue-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
         </div>
+        <div style="margin-top:0.5rem;border-top:1px solid var(--theme-border,#333);padding-top:0.4rem">
+          <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.3rem">All metrics (SSOT):</div>
+          <div style="display:flex;gap:0.5rem;align-items:flex-start">
+            <div id="requeue-metric-select" style="display:inline-block"></div>
+            <div style="display:flex;flex-direction:column;gap:0.3rem">
+              <button id="btn-requeue-missing" class="btn btn-sm btn-primary">Re-extract gaps</button>
+              <span id="requeue-status" class="status-text" style="font-size:0.75rem;color:var(--theme-text-muted)"></span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
@@ -2139,13 +2149,16 @@ tr.is-reviewed td { opacity: 0.65; }
         <th>Doc Type</th>
         <th>Ingest State</th>
         <th data-sort="parse_quality">Parse</th>
+        <th>Extraction</th>
+        <th data-sort="char_count" data-sort-type="num">Chars</th>
         <th data-sort="metrics_found" data-sort-type="num">Metrics</th>
         <th>Extracted</th>
         <th>File</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody id="registry-tbody">
-      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
+      <tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
     </tbody>
   </table>
   <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
@@ -4860,21 +4873,40 @@ async function loadRegistry() {
   document.getElementById('reg-count').textContent = items.length + ' items';
   const tbody = document.getElementById('registry-tbody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">No records.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">No records.</td></tr>';
     return;
   }
   tbody.innerHTML = items.map(function(item) {
     const parseQual = item.parse_quality || '';
-    const parseColor = parseQual === 'parse_failed' ? 'var(--theme-danger)' : parseQual === 'ok' ? 'var(--theme-success)' : 'var(--theme-text-muted)';
+    const pqBadge = parseQual === 'ok' ? '<span class="badge-parse-ok">ok</span>'
+      : parseQual === 'parse_failed' ? '<span class="badge-parse-failed">fail</span>'
+      : parseQual ? '<span class="badge-empty">' + escapeHtml(parseQual) + '</span>' : '—';
+
+    const es = item.extraction_status || '';
+    const esBadge = es === 'done' ? '<span class="badge-done">done</span>'
+      : es === 'pending' ? '<span class="badge-pending">pending</span>'
+      : es === 'keyword_gated' ? '<span class="badge-keyword-gated">gated</span>'
+      : es ? '<span class="badge-empty">' + escapeHtml(es) + '</span>' : '—';
+
+    const chars = item.char_count != null ? Number(item.char_count).toLocaleString() : '—';
+
+    const reportId = item.report_id || item.report_id_join || '';
+    const scanBtn = reportId
+      ? '<button class="btn btn-sm btn-muted scan-kw-btn" data-report-id="' + escapeAttr(String(reportId)) + '">Scan</button>'
+      : '';
+
     return '<tr>'
       + '<td style="font-weight:600">' + escapeHtml(item.ticker || '') + '</td>'
       + '<td>' + escapeHtml(item.period || '') + '</td>'
       + '<td style="font-size:0.75rem">' + escapeHtml(item.source_type || '') + '</td>'
       + '<td style="font-size:0.75rem">' + escapeHtml(item.ingest_state || '') + '</td>'
-      + '<td style="font-size:0.75rem;color:' + parseColor + '">' + escapeHtml(parseQual || '—') + '</td>'
+      + '<td>' + pqBadge + '</td>'
+      + '<td>' + esBadge + '</td>'
+      + '<td style="text-align:right;font-size:0.75rem">' + chars + '</td>'
       + '<td style="text-align:right">' + escapeHtml(String(item.metrics_found || 0)) + '</td>'
       + '<td style="font-size:0.72rem;color:var(--theme-text-muted)">' + escapeHtml((item.extracted_at || '—').slice(0, 16)) + '</td>'
       + '<td style="font-size:0.72rem;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="' + escapeAttr(item.source_path || '') + '">' + escapeHtml((item.source_path || item.source_url || '').split('/').slice(-1)[0]) + '</td>'
+      + '<td>' + scanBtn + '</td>'
       + '</tr>';
   }).join('');
 }
@@ -5581,6 +5613,7 @@ function renderReview() {
       + '<td style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();acceptItem(this.getAttribute(\'data-id\'))">Accept</button>'
         + '<button class="btn btn-sm btn-secondary" data-id="' + escapeAttr(String(item.id)) + '" onclick="event.stopPropagation();rejectItem(this.getAttribute(\'data-id\'))">R</button>'
+        + '<button class="btn btn-sm btn-muted no-data-btn" data-item-id="' + escapeAttr(String(item.id)) + '" data-agreement-status="' + escapeAttr(item.agreement_status || '') + '">No data</button>'
       + '</td>'
       + '</tr>'
       + docsHtml;
@@ -5728,6 +5761,36 @@ async function rejectItem(id) {
   if (active && String(active.id) === String(id)) closeDocPanel();
   loadReview();
 }
+
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.no-data-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  const itemId = btn.dataset.itemId;
+  const status = btn.dataset.agreementStatus;
+
+  function doNoData() {
+    const body = status !== 'LLM_EMPTY' ? JSON.stringify({confirmed: true}) : null;
+    fetch('/api/review/' + itemId + '/no_data', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: body,
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        loadReview();
+      } else {
+        showToast((data.error && data.error.message) ? data.error.message : 'Error', true);
+      }
+    });
+  }
+
+  if (status !== 'LLM_EMPTY') {
+    if (!confirm('This item has data. Mark as no_data anyway?')) return;
+  }
+  doNoData();
+});
 
 async function bulkFinalize() {
   const ids = Array.from(document.querySelectorAll('.rv-cb:checked'))
@@ -8034,6 +8097,63 @@ async function runRequeueMissing() {
     if (msgEl) msgEl.textContent = 'Request failed: ' + e.message;
   }
 }
+
+function loadRequeueMetrics() {
+  const container = document.getElementById('requeue-metric-select');
+  if (!container) return;
+  fetch('/api/metric_schema')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) return;
+      const metrics = data.data || [];
+      const sel = document.createElement('select');
+      sel.id = 'requeue-metric-list';
+      sel.multiple = true;
+      sel.size = Math.min(metrics.length, 5);
+      sel.style.cssText = 'font-size:0.78rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);border-radius:3px;padding:2px 4px;';
+      metrics.forEach(function(m) {
+        const opt = document.createElement('option');
+        opt.value = m.key;
+        opt.textContent = m.label || m.key;
+        sel.appendChild(opt);
+      });
+      container.appendChild(sel);
+    })
+    .catch(function() {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadRequeueMetrics();
+  const requeueBtn = document.getElementById('btn-requeue-missing');
+  if (requeueBtn) {
+    requeueBtn.addEventListener('click', function() {
+      const sel = document.getElementById('requeue-metric-list');
+      if (!sel) return;
+      const metrics = Array.from(sel.selectedOptions).map(function(o) { return o.value; });
+      if (!metrics.length) { showToast('Select at least one metric', true); return; }
+      const statusEl = document.getElementById('requeue-status');
+      if (statusEl) statusEl.textContent = 'Queuing...';
+      fetch('/api/operations/requeue-missing', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({metrics: metrics}),
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!statusEl) return;
+        if (data.success) {
+          const d = data.data || {};
+          statusEl.textContent = 'Queued ' + (d.requeued_count !== undefined ? d.requeued_count : '') + ' reports';
+        } else {
+          statusEl.textContent = 'Error: ' + ((data.error && data.error.message) ? data.error.message : 'unknown');
+        }
+      })
+      .catch(function(err) {
+        if (statusEl) statusEl.textContent = 'Request failed: ' + err.message;
+      });
+    });
+  }
+});
 
 function _startPipelinePoll() {
   if (_pipelinePollTimer) clearInterval(_pipelinePollTimer);

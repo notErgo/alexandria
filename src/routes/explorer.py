@@ -300,7 +300,9 @@ def registry():
                        r.id as report_id_join,
                        r.extracted_at,
                        r.parse_quality,
+                       r.extraction_status,
                        r.published_date,
+                       length(r.raw_text) as char_count,
                        (SELECT COUNT(*) FROM data_points dp
                         WHERE dp.ticker=am.ticker AND dp.period=am.period) as metrics_found
                 FROM asset_manifest am

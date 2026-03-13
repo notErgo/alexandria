@@ -318,6 +318,54 @@ def get_document(report_id: int):
     }})
 
 
+@bp.route('/api/data/documents/<int:report_id>/keywords')
+def document_keywords(report_id: int):
+    """Return keyword scan results for a report.
+
+    Query params:
+      phrases  (required, comma-separated list of phrases to scan for)
+
+    Response data.results is a list of {phrase, found, count, offsets} per phrase.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        phrases_str = request.args.get('phrases', '').strip()
+        if not phrases_str:
+            return jsonify({'success': False, 'error': {
+                'code': 'PHRASES_REQUIRED',
+                'message': "'phrases' query parameter is required",
+            }}), 400
+
+        phrases = [p.strip() for p in phrases_str.split(',') if p.strip()]
+        if not phrases:
+            return jsonify({'success': False, 'error': {
+                'code': 'PHRASES_REQUIRED',
+                'message': "'phrases' must contain at least one non-empty phrase",
+            }}), 400
+
+        # Verify report exists
+        with db._get_connection() as conn:
+            exists = conn.execute(
+                "SELECT id FROM reports WHERE id = ?", (report_id,)
+            ).fetchone()
+        if not exists:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND',
+                'message': f"Report {report_id} not found",
+            }}), 404
+
+        results = db.scan_document_keywords(report_id, phrases)
+        return jsonify({'success': True, 'data': {
+            'report_id': report_id,
+            'results': results,
+        }})
+    except Exception:
+        log.error("Error in document_keywords %d", report_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
 @bp.route('/api/export.csv')
 def export_csv():
     from app_globals import get_db

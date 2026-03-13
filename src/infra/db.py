@@ -418,6 +418,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 44")
                     version = 44
 
+                if version < 45:
+                    self._migrate_v45(conn)
+                    conn.execute("PRAGMA user_version = 45")
+                    version = 45
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1727,6 +1732,63 @@ class MinerDB:
         if 'pr_start_date' not in cand_existing:
             conn.execute("ALTER TABLE scraper_discovery_candidates ADD COLUMN pr_start_date TEXT")
 
+    def _migrate_v45(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v44 → v45: report_metric_verdict table."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS report_metric_verdict (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                metric TEXT NOT NULL,
+                verdict TEXT NOT NULL CHECK(verdict IN ('no_data','has_data')),
+                acked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                UNIQUE(report_id, metric)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rmv_report_id
+                ON report_metric_verdict(report_id)
+        """)
+
+    # ── Report metric verdict CRUD ──────────────────────────────────────────────
+
+    def upsert_report_metric_verdict(self, report_id: int, metric: str, verdict: str) -> None:
+        """Insert or update a verdict for (report_id, metric). verdict must be 'no_data' or 'has_data'."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO report_metric_verdict (report_id, metric, verdict)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(report_id, metric) DO UPDATE SET
+                       verdict = excluded.verdict,
+                       acked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')""",
+                (report_id, metric, verdict),
+            )
+
+    def get_report_metric_verdict(self, report_id: int, metric: str) -> Optional[str]:
+        """Return verdict string ('no_data' or 'has_data') or None if not set."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT verdict FROM report_metric_verdict WHERE report_id = ? AND metric = ?",
+                (report_id, metric),
+            ).fetchone()
+        return row[0] if row else None
+
+    def get_report_metric_verdicts(self, report_id: int) -> dict:
+        """Return dict of {metric: verdict} for all verdicts on this report."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT metric, verdict FROM report_metric_verdict WHERE report_id = ?",
+                (report_id,),
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def delete_report_metric_verdict(self, report_id: int, metric: str) -> None:
+        """Remove a verdict for (report_id, metric)."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "DELETE FROM report_metric_verdict WHERE report_id = ? AND metric = ?",
+                (report_id, metric),
+            )
+
     # ── Reviewed periods CRUD ─────────────────────────────────────────────────
 
     def get_reviewed_periods(self, ticker: str) -> set:
@@ -2331,13 +2393,14 @@ class MinerDB:
         to_date: Optional[str] = None,
         source_type: Optional[str] = None,
         extraction_status: Optional[str] = None,
+        parse_quality: Optional[str] = None,
         limit: int = 500,
     ) -> list:
         """Search reports with metadata and aggregated data_point counts.
 
         Returns a list of dicts with shape:
           {id, ticker, report_date, source_type, extraction_status, source_url,
-           data_point_count}
+           parse_quality, char_count, data_point_count}
 
         raw_text is intentionally excluded; use get_report_raw_text() for the
         document viewer endpoint.
@@ -2359,12 +2422,17 @@ class MinerDB:
         if extraction_status:
             clauses.append("r.extraction_status = ?")
             params.append(extraction_status)
+        if parse_quality:
+            clauses.append("r.parse_quality = ?")
+            params.append(parse_quality)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
         with self._get_connection() as conn:
             rows = conn.execute(
                 f"""SELECT r.id, r.ticker, r.report_date, r.source_type,
                            r.extraction_status, r.source_url,
+                           r.parse_quality,
+                           LENGTH(r.raw_text) AS char_count,
                            COUNT(dp.id) AS data_point_count
                     FROM reports r
                     LEFT JOIN data_points dp ON dp.report_id = r.id
@@ -2864,6 +2932,7 @@ class MinerDB:
         tickers: Optional[list] = None,
         from_period: Optional[str] = None,
         to_period: Optional[str] = None,
+        exclude_no_data_acked: bool = True,
     ) -> list:
         """Return reports where extraction_status='done' AND no data_point exists for ANY
         of the given metrics.
@@ -2876,6 +2945,8 @@ class MinerDB:
             tickers: optional list of ticker symbols to scope the query
             from_period: earliest report_date to include (YYYY-MM or YYYY-MM-DD)
             to_period: latest report_date to include (YYYY-MM or YYYY-MM-DD)
+            exclude_no_data_acked: when True, exclude reports where ALL requested metrics
+                have a 'no_data' verdict in report_metric_verdict (default True)
         """
         if not metrics:
             return []
@@ -2905,6 +2976,17 @@ class MinerDB:
         if to_period:
             clauses.append("r.report_date <= ?")
             params.append(to_period if len(to_period) > 7 else to_period + '-31')
+        if exclude_no_data_acked:
+            no_data_placeholders = ','.join('?' * len(metrics))
+            clauses.append(
+                f"""(
+                    SELECT COUNT(*) FROM report_metric_verdict rmv
+                    WHERE rmv.report_id = r.id
+                      AND rmv.verdict = 'no_data'
+                      AND rmv.metric IN ({no_data_placeholders})
+                ) < {len(metrics)}"""
+            )
+            params.extend(metrics)
 
         where = "WHERE " + " AND ".join(clauses)
         with self._get_connection() as conn:
@@ -4215,6 +4297,8 @@ class MinerDB:
             source_ref=f"review_queue:{id}",
             time_grain=_time_grain,
         )
+        if item.get('report_id') is not None:
+            self.upsert_report_metric_verdict(item['report_id'], item['metric'], 'has_data')
         if _time_grain == 'monthly':
             self.refresh_review_precedence_for_month(item['ticker'], item['period'])
         return dp
@@ -4290,6 +4374,8 @@ class MinerDB:
             source_ref=f"review_queue:{id}",
             time_grain=_time_grain,
         )
+        if item.get('report_id') is not None:
+            self.upsert_report_metric_verdict(item['report_id'], item['metric'], 'has_data')
         if _time_grain == 'monthly':
             self.refresh_review_precedence_for_month(item['ticker'], item['period'])
         return dp
@@ -5105,7 +5191,7 @@ class MinerDB:
         Period states (priority order, highest first):
           accepted > extracted_in_review > ingested_pending_extraction > pending_ingest > legacy_undated > no_source
         """
-        from coverage_logic import compute_cell_state, generate_month_range, summarize_grid
+        from coverage_logic import compute_cell_state_v2, generate_month_range, summarize_grid
 
         periods = generate_month_range(months)
         if not periods:
@@ -5140,10 +5226,19 @@ class MinerDB:
                 (period_start, period_end),
             ).fetchall()
 
-            # Bulk-fetch review_queue PENDING items in period range
+            # Bulk-fetch review_queue PENDING items (non-LLM_EMPTY) in period range
             rq_rows = conn.execute(
                 """SELECT ticker, period FROM review_queue
-                   WHERE period >= ? AND period <= ? AND status='PENDING'""",
+                   WHERE period >= ? AND period <= ? AND status='PENDING'
+                     AND coalesce(agreement_status, '') != 'LLM_EMPTY'""",
+                (period_start, period_end),
+            ).fetchall()
+
+            # Bulk-fetch LLM_EMPTY review_queue items (pending, un-reviewed)
+            llm_empty_rows = conn.execute(
+                """SELECT ticker, period FROM review_queue
+                   WHERE period >= ? AND period <= ?
+                     AND status='PENDING' AND agreement_status='LLM_EMPTY'""",
                 (period_start, period_end),
             ).fetchall()
 
@@ -5160,6 +5255,7 @@ class MinerDB:
 
         dp_set: set = {(r['ticker'], r['period']) for r in dp_rows}
         rq_set: set = {(r['ticker'], r['period']) for r in rq_rows}
+        llm_empty_set: set = {(r['ticker'], r['period']) for r in llm_empty_rows}
 
         grid: dict = {}
         for ticker in tickers:
@@ -5171,7 +5267,16 @@ class MinerDB:
                 has_dp = tp in dp_set
                 has_rq = tp in rq_set
 
-                state = compute_cell_state(m_list, r_list, has_dp, has_rq)
+                state = compute_cell_state_v2(
+                    is_analyst_gap=False,
+                    has_data_point=has_dp,
+                    has_review_pending=has_rq,
+                    has_manifest=bool(m_list),
+                    has_parse_error=any(m.get('parse_quality') == 'parse_failed' for m in m_list),
+                    has_extract_error=False,
+                    has_scraper_error=False,
+                    has_llm_empty_rq=tp in llm_empty_set,
+                )
                 cell: dict = {'state': state}
 
                 # Add report_id if available
@@ -5187,6 +5292,39 @@ class MinerDB:
         return grid
 
     # ── Document Chunks ───────────────────────────────────────────────────────
+
+    def scan_document_keywords(self, report_id: int, phrases: list) -> list:
+        """Scan a report's raw_text for each phrase (case-insensitive).
+
+        Returns a list of dicts: [{phrase, found, count, offsets}].
+        Uses Python str.lower().find() for offset collection.
+        """
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT raw_text FROM reports WHERE id = ?", (report_id,)
+            ).fetchone()
+        if not row or not row[0]:
+            return [{'phrase': p, 'found': False, 'count': 0, 'offsets': []} for p in phrases]
+
+        text_lower = row[0].lower()
+        results = []
+        for phrase in phrases:
+            phrase_lower = phrase.lower()
+            offsets = []
+            start = 0
+            while True:
+                pos = text_lower.find(phrase_lower, start)
+                if pos == -1:
+                    break
+                offsets.append(pos)
+                start = pos + 1
+            results.append({
+                'phrase': phrase,
+                'found': len(offsets) > 0,
+                'count': len(offsets),
+                'offsets': offsets,
+            })
+        return results
 
     def upsert_document_chunk(self, entry: dict) -> int:
         """Insert or replace a document chunk. Returns lastrowid."""

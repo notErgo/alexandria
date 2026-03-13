@@ -4,6 +4,7 @@ Coverage dashboard API routes.
   GET  /api/coverage/summary        — aggregate coverage counts
   GET  /api/coverage/grid           — heatmap grid (?months=36)
   GET  /api/coverage/assets/<ticker>/<period> — cell detail
+  GET  /api/coverage/period_trace   — pipeline trace for a (ticker, period) pair
   POST /api/manifest/scan           — scan archive directory
   GET  /coverage                    — render coverage.html
 """
@@ -125,6 +126,163 @@ def coverage_assets(ticker: str, period: str):
         }})
     except Exception:
         log.error('Error in coverage_assets', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/coverage/period_trace')
+def period_trace():
+    """Return pipeline trace for a (ticker, period) pair.
+
+    Query params:
+      ticker  (required)
+      period  (required, YYYY-MM or YYYY-MM-01)
+      metric  (optional, filter per_metric to this metric only)
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        ticker = request.args.get('ticker', '').upper()
+        period = request.args.get('period', '')
+        metric_filter = request.args.get('metric', None)
+
+        if not ticker or not period:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT',
+                'message': "'ticker' and 'period' are required",
+            }}), 400
+
+        # Normalize period to YYYY-MM-01
+        period_ym = period[:7]
+        period_db = period_ym + '-01'
+
+        # Fetch report for this ticker+period
+        with db._get_connection() as conn:
+            report_row = conn.execute(
+                """SELECT id, extraction_status, parse_quality, raw_text
+                   FROM reports
+                   WHERE ticker = ? AND report_date LIKE ?
+                   ORDER BY
+                     CASE source_type
+                       WHEN 'ir_press_release' THEN 3
+                       WHEN 'archive_html'     THEN 3
+                       WHEN 'archive_pdf'      THEN 3
+                       WHEN 'edgar_8k'         THEN 2
+                       ELSE 1
+                     END DESC,
+                     report_date DESC, id DESC
+                   LIMIT 1""",
+                (ticker, period_ym + '%'),
+            ).fetchone()
+
+            manifest_row = conn.execute(
+                """SELECT id FROM asset_manifest
+                   WHERE ticker = ? AND period = ?
+                   LIMIT 1""",
+                (ticker, period_db),
+            ).fetchone()
+
+            # Fetch active metrics from metric_schema
+            metric_rows = conn.execute(
+                "SELECT key FROM metric_schema WHERE active = 1 ORDER BY key"
+            ).fetchall()
+            active_metrics = [r[0] for r in metric_rows]
+            if metric_filter:
+                active_metrics = [m for m in active_metrics if m == metric_filter]
+
+        has_manifest = manifest_row is not None
+        has_report = report_row is not None
+
+        if has_report:
+            report_id = report_row['id']
+            extraction_status = report_row['extraction_status']
+            parse_quality = report_row['parse_quality']
+            raw_text = report_row['raw_text'] or ''
+            char_count = len(raw_text)
+            has_raw_text = bool(raw_text)
+        else:
+            report_id = None
+            extraction_status = None
+            parse_quality = None
+            char_count = 0
+            has_raw_text = False
+
+        # Per-metric breakdown
+        per_metric = {}
+        any_data_point = False
+        any_review_pending = False
+        any_llm_empty = False
+
+        for m in active_metrics:
+            dp = None
+            rq = None
+            if has_report:
+                with db._get_connection() as conn:
+                    dp_row = conn.execute(
+                        """SELECT id, value, unit, confidence, extraction_method
+                           FROM data_points
+                           WHERE ticker = ? AND period LIKE ? AND metric = ?
+                           LIMIT 1""",
+                        (ticker, period_ym + '%', m),
+                    ).fetchone()
+                    rq_row = conn.execute(
+                        """SELECT id, agreement_status, status, confidence
+                           FROM review_queue
+                           WHERE ticker = ? AND period LIKE ? AND metric = ?
+                             AND status = 'PENDING'
+                             AND coalesce(precedence_state, 'active') = 'active'
+                           LIMIT 1""",
+                        (ticker, period_ym + '%', m),
+                    ).fetchone()
+                if dp_row:
+                    dp = dict(dp_row)
+                    any_data_point = True
+                if rq_row:
+                    rq = dict(rq_row)
+                    if rq_row['agreement_status'] == 'LLM_EMPTY':
+                        any_llm_empty = True
+                    else:
+                        any_review_pending = True
+            per_metric[m] = {'data_point': dp, 'review_item': rq}
+
+        # Derive keyword_gated: extraction ran, document has text, but no data and no review items
+        keyword_gated = bool(
+            extraction_status == 'done'
+            and char_count > 0
+            and not any_data_point
+            and not any_review_pending
+            and not any_llm_empty
+        )
+
+        from coverage_logic import compute_cell_state_v2
+        cell_state = compute_cell_state_v2(
+            is_analyst_gap=False,
+            has_data_point=any_data_point,
+            has_review_pending=any_review_pending,
+            has_manifest=has_manifest,
+            has_parse_error=(parse_quality == 'parse_failed'),
+            has_extract_error=(extraction_status == 'done' and not any_data_point),
+            has_scraper_error=False,
+            has_llm_empty_rq=any_llm_empty,
+        )
+
+        return jsonify({'success': True, 'data': {
+            'ticker': ticker,
+            'period': period_db,
+            'has_manifest': has_manifest,
+            'has_raw_text': has_raw_text,
+            'char_count': char_count,
+            'parse_quality': parse_quality,
+            'extraction_status': extraction_status,
+            'keyword_gated': keyword_gated,
+            'has_data_point': any_data_point,
+            'has_review_pending': any_review_pending,
+            'has_llm_empty_rq': any_llm_empty,
+            'cell_state': cell_state,
+            'per_metric': per_metric,
+        }})
+    except Exception:
+        log.error('Error in period_trace', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 

@@ -1209,9 +1209,11 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('timeline-tbody').addEventListener('click', function(e) {
     const row = e.target.closest('tr[data-period]');
     if (!row) return;
-    // Skip editable cells — dblclick handles those; don't fire selectPeriod on
+    // Skip td-value cells — dblclick handles inline edit; don't fire selectPeriod on
     // the first click of a dblclick sequence (would cause scroll jump before edit).
-    if (e.target.closest('.td-value, .td-empty')) return;
+    // td-empty and td-nodoc cells have their own onclick (openPipelineTrace) that
+    // calls event.stopPropagation(), so they will not reach this handler anyway.
+    if (e.target.closest('.td-value')) return;
     selectPeriod(row.getAttribute('data-period'));
   });
 
@@ -1725,7 +1727,7 @@ function renderTable(allRows) {
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
-        return `<td class="td-empty" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+        return `<td class="td-empty" onclick="event.stopPropagation();openPipelineTrace('${escapeHtml(_ticker)}','${escapeHtml(row.period)}','${escapeHtml(metric)}')" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       }
       return `<td class="td-nodoc">—</td>`;
     });
@@ -2593,6 +2595,75 @@ async function applyPatternToArchive() {
     btn.disabled = false;
     btn.textContent = 'Apply to Archive';
   }
+}
+
+// ── Pipeline trace — shown when an empty or no-document cell is clicked ────
+function openPipelineTrace(ticker, period, metric) {
+  const params = new URLSearchParams({ticker: ticker, period: period});
+  if (metric) params.set('metric', metric);
+  fetch('/api/coverage/period_trace?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) return;
+      const d = data.data;
+      const stateLabel = d.cell_state || 'unknown';
+      let html = '<div class="pipeline-trace">';
+      html += '<table>';
+      html += '<tr><td>Ticker / Period</td><td>' + escapeHtml(d.ticker || ticker) + ' &nbsp; ' + escapeHtml(d.period || period) + '</td></tr>';
+      html += '<tr><td>Document</td><td>' + (d.has_raw_text ? 'found (' + (d.char_count || 0).toLocaleString() + ' chars)' : 'not found') + '</td></tr>';
+      html += '<tr><td>Parse quality</td><td>' + escapeHtml(d.parse_quality || '\u2014') + '</td></tr>';
+      html += '<tr><td>Keyword gate</td><td>' + (d.keyword_gated ? 'gated (no mining keywords found)' : 'passed') + '</td></tr>';
+      html += '<tr><td>Extraction</td><td>' + escapeHtml(d.extraction_status || '\u2014') + '</td></tr>';
+      html += '<tr><td>Data point</td><td>' + (d.has_data_point ? 'yes' : 'none') + '</td></tr>';
+      const rqLabel = d.has_llm_empty_rq ? 'LLM_EMPTY (pending)' : (d.has_review_pending ? 'pending' : 'none');
+      html += '<tr><td>Review items</td><td>' + rqLabel;
+      if (d.has_review_pending || d.has_llm_empty_rq) {
+        html += ' <a class="go-to-review pipeline-trace" href="#" onclick="switchToReviewTab(\'' + escapeHtml(ticker) + '\',\'' + escapeHtml(period) + '\');return false;">Go to review</a>';
+      }
+      html += '</td></tr>';
+      html += '<tr><td>Cell state</td><td><strong>' + escapeHtml(stateLabel) + '</strong></td></tr>';
+      html += '</table>';
+      if (metric && d.per_metric && d.per_metric[metric]) {
+        const pm = d.per_metric[metric];
+        html += '<div style="margin-top:8px;font-size:0.8rem;color:var(--theme-text-muted)">Metric: ' + escapeHtml(metric) + '</div>';
+        if (pm.data_point) {
+          html += '<div style="font-size:0.8rem;">Data point: ' + escapeHtml(String(pm.data_point.value)) + ' ' + escapeHtml(pm.data_point.unit || '') + '</div>';
+        }
+      }
+      html += '</div>';
+
+      // Highlight the selected row
+      _selectedPeriod = period;
+      document.querySelectorAll('#timeline-tbody tr[data-period]').forEach(function(r) {
+        r.classList.toggle('selected', r.getAttribute('data-period') === period);
+      });
+
+      // Show the doc panel with the trace content
+      const panel = document.getElementById('doc-panel');
+      panel.classList.add('visible');
+      document.getElementById('doc-panel-title-text').textContent =
+        ticker + ' \u00b7 ' + period.slice(0, 7) + (metric ? ' \u00b7 ' + metric : '') + ' \u2014 pipeline trace';
+
+      // Hide pattern panel state
+      document.getElementById('pattern-panel').style.display = 'none';
+      document.getElementById('pattern-save-status').textContent = '';
+      document.getElementById('apply-result').style.display = 'none';
+
+      // Render trace into the review panel container
+      const reviewContainer = document.getElementById('miner-review-panel');
+      if (reviewContainer) {
+        ReviewPanel.close();
+        reviewContainer.innerHTML = html;
+      }
+    })
+    .catch(function(err) {
+      showToast('Pipeline trace failed: ' + err.message, true);
+    });
+}
+
+function switchToReviewTab(ticker, period) {
+  const reviewTab = document.querySelector('[data-pane="review"]');
+  if (reviewTab) reviewTab.click();
 }
 </script>
 {% endblock %}

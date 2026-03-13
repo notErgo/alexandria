@@ -84,6 +84,12 @@ def _apply_llm_result(
                 log.debug("Skipping analyst-protected %s %s %s", ticker, period_str, metric)
                 return
 
+    # Skip if analyst has confirmed no data in this document for this metric
+    verdict = db.get_report_metric_verdict(report_id, metric)
+    if verdict == 'no_data':
+        log.debug("Skipping no_data acked metric %s %s %s", ticker, period_str, metric)
+        return
+
     _expected_grain = run_config.expected_granularity if run_config is not None else 'monthly'
     if llm_result is not None:
         _result_grain = getattr(llm_result, 'period_granularity', None)

@@ -105,6 +105,8 @@ input:focus, select:focus { outline: 2px solid var(--theme-accent); outline-offs
 .btn-danger { background: var(--theme-danger); color: white; }
 .btn-sm { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 .btn-xs { padding: 0.1rem 0.4rem; font-size: 0.72rem; }
+.btn-muted { background: var(--theme-bg-tertiary); color: var(--theme-text-muted); border: 1px solid var(--theme-border); }
+.btn-muted:hover { color: var(--theme-text-primary); }
 
 /* Tables */
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -733,3 +735,29 @@ body.dev-no-tips .info-bubble { display: none !important; }
 }
 .kw-chip-del:hover { color: var(--theme-danger); }
 #metric-schema-table tbody tr:hover td { background: var(--theme-bg-hover); }
+
+/* Report metric verdict and document diagnostic badges */
+.badge-parse-ok { background: #1a7a1a; color: #fff; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-parse-failed { background: #8b1a1a; color: #fff; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-empty { background: #555; color: #ccc; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-done { background: #1a4a8a; color: #fff; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-pending { background: #6a4f00; color: #ffe; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-keyword-gated { background: #444; color: #aaa; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; font-style: italic; }
+.badge-llm-empty { background: #4a3a6a; color: #ddd; padding: 1px 6px; border-radius: 3px; font-size: 0.75rem; }
+
+/* Keyword scan panel */
+.kw-panel { border: 1px solid var(--theme-border, #333); border-radius: 4px; padding: 8px 12px; margin: 6px 0; background: var(--theme-bg-secondary, #1a1a2e); }
+.kw-panel table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.kw-panel th { text-align: left; border-bottom: 1px solid var(--theme-border, #333); padding: 2px 6px; color: var(--theme-text-muted, #888); }
+.kw-panel td { padding: 2px 6px; }
+.kw-hit { color: #6fcf97; }
+.kw-miss { color: #888; }
+.kw-highlight { background: #4a3a00; color: #ffe; border-radius: 2px; padding: 0 2px; }
+.kw-phrase-input { width: 100%; margin-bottom: 6px; background: var(--theme-bg, #111); color: var(--theme-text, #eee); border: 1px solid var(--theme-border, #333); padding: 4px 8px; border-radius: 3px; font-size: 0.82rem; }
+
+/* Pipeline trace panel in doc panel */
+.pipeline-trace { font-size: 0.85rem; padding: 8px; }
+.pipeline-trace table { border-collapse: collapse; width: 100%; }
+.pipeline-trace td { padding: 3px 8px; }
+.pipeline-trace td:first-child { color: var(--theme-text-muted, #888); white-space: nowrap; width: 140px; }
+.pipeline-trace .go-to-review { font-size: 0.8rem; padding: 2px 8px; margin-left: 8px; }

@@ -426,7 +426,18 @@ def _insert_zero_extract_review_items(db, report: dict, metrics: list, summary) 
     period = report.get('report_date') or report.get('covering_period') or ''
     report_id = report.get('id')
 
-    for metric in metrics:
+    # Exclude metrics that already have any verdict (analyst has reviewed this doc+metric)
+    acked = db.get_report_metric_verdicts(report_id) if report_id is not None else {}
+    active_metrics = [m for m in metrics if m not in acked]
+    if not active_metrics:
+        log.debug(
+            "event=zero_extract_all_acked ticker=%s period=%s report_id=%s"
+            " — all metrics acked, skipping LLM_EMPTY inserts",
+            ticker, period, report_id,
+        )
+        return
+
+    for metric in active_metrics:
         try:
             db.insert_review_item({
                 'data_point_id':    None,
