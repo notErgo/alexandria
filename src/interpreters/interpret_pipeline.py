@@ -414,6 +414,48 @@ def _run_llm_batch(
     return result, meta
 
 
+def _insert_zero_extract_review_items(db, report: dict, metrics: list, summary) -> None:
+    """Insert one review_queue entry per metric with agreement_status='LLM_EMPTY'.
+
+    Called when a report passes the keyword gate but the LLM returns no values
+    for any metric and no review items were created via normal routing.  This
+    surfaces the miss so analysts can investigate rather than silently losing
+    the document.
+    """
+    ticker = report.get('ticker', '')
+    period = report.get('report_date') or report.get('covering_period') or ''
+    report_id = report.get('id')
+
+    for metric in metrics:
+        try:
+            db.insert_review_item({
+                'data_point_id':    None,
+                'ticker':           ticker,
+                'period':           period,
+                'metric':           metric,
+                'raw_value':        '',
+                'confidence':       0.0,
+                'source_snippet':   None,
+                'status':           'PENDING',
+                'llm_value':        None,
+                'regex_value':      None,
+                'agreement_status': 'LLM_EMPTY',
+                'report_id':        report_id,
+            })
+        except Exception as _rq_err:
+            log.debug(
+                "event=zero_extract_review_insert_fail ticker=%s period=%s metric=%s err=%s",
+                ticker, period, metric, _rq_err,
+            )
+
+    summary.zero_extract_misses += 1
+    log.warning(
+        "event=zero_extract_miss ticker=%s period=%s report_id=%s "
+        "— LLM passed keyword gate but returned zero values; inserted LLM_EMPTY review items",
+        ticker, period, report_id,
+    )
+
+
 def _interpret_quarterly_report(
     report: dict,
     db,
@@ -612,6 +654,16 @@ def _interpret_quarterly_report(
             })
             summary.review_flagged += 1
 
+    # Safety net: if the keyword gate passed but no values were extracted and no review
+    # items created, surface the miss as LLM_EMPTY entries so it is not silently dropped.
+    if (
+        summary.data_points_extracted == 0
+        and summary.review_flagged == 0
+        and summary.temporal_rejects == 0
+        and all_metrics
+    ):
+        _insert_zero_extract_review_items(db, report, all_metrics, summary)
+
     summary.reports_processed += 1
     db.mark_report_extracted(report_id)
     return summary
@@ -807,6 +859,17 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
                 metric_rule=metric_rules_by_name.get(metric),
                 run_config=_run_config,
             )
+
+        # Safety net: if the keyword gate passed but no values were extracted and no review
+        # items created, surface the miss as LLM_EMPTY entries so it is not silently dropped.
+        if (
+            llm_available
+            and summary.data_points_extracted == 0
+            and summary.review_flagged == 0
+            and summary.temporal_rejects == 0
+            and all_metrics
+        ):
+            _insert_zero_extract_review_items(db, report, all_metrics, summary)
 
         # Second-pass: try to fill prior-period gaps if LLM found figures for last month.
         # Skip entirely when the main pass stored 0 data points — a document that

@@ -2858,6 +2858,63 @@ class MinerDB:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_reports_missing_metric(
+        self,
+        metrics: list,
+        tickers: Optional[list] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
+    ) -> list:
+        """Return reports where extraction_status='done' AND no data_point exists for ANY
+        of the given metrics.
+
+        Used by the gap-targeted re-extract flow to identify reports that were previously
+        processed but produced no data for the specified metrics.
+
+        Args:
+            metrics: list of metric keys (e.g. ['production_btc', 'holdings_btc'])
+            tickers: optional list of ticker symbols to scope the query
+            from_period: earliest report_date to include (YYYY-MM or YYYY-MM-DD)
+            to_period: latest report_date to include (YYYY-MM or YYYY-MM-DD)
+        """
+        if not metrics:
+            return []
+
+        metric_placeholders = ','.join('?' * len(metrics))
+        clauses = [
+            "r.raw_text IS NOT NULL",
+            "r.raw_text != ''",
+            "r.extraction_status = 'done'",
+            # Return reports missing at least one of the given metrics:
+            # count of distinct covered metrics < total requested
+            f"""(
+                SELECT COUNT(DISTINCT dp.metric) FROM data_points dp
+                WHERE dp.report_id = r.id
+                  AND dp.metric IN ({metric_placeholders})
+            ) < {len(metrics)}""",
+        ]
+        params: list = list(metrics)
+
+        if tickers:
+            placeholders = ','.join('?' * len(tickers))
+            clauses.append(f"r.ticker IN ({placeholders})")
+            params.extend(tickers)
+        if from_period:
+            clauses.append("r.report_date >= ?")
+            params.append(from_period if len(from_period) > 7 else from_period + '-01')
+        if to_period:
+            clauses.append("r.report_date <= ?")
+            params.append(to_period if len(to_period) > 7 else to_period + '-31')
+
+        where = "WHERE " + " AND ".join(clauses)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT r.* FROM reports r {where} "
+                f"ORDER BY r.ticker, r.report_date, r.id",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def latest_ir_period(self, ticker: str) -> Optional[str]:
         """
         Return the YYYY-MM-DD of the most recently ingested ir_press_release report

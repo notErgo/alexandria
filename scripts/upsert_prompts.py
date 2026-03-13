@@ -16,7 +16,7 @@ from interpreters.llm_interpreter import _DEFAULT_PROMPTS
 from config import DATA_DIR
 from pathlib import Path
 
-NEW_KEYS = ['holdings_btc', 'sales_btc', 'unrestricted_holdings', 'restricted_holdings_btc']
+NEW_KEYS = ['production_btc', 'holdings_btc', 'sales_btc', 'unrestricted_holdings', 'restricted_holdings_btc']
 
 def main():
     db_path = str(Path(DATA_DIR) / 'minerdata.db')

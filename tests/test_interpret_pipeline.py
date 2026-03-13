@@ -1195,3 +1195,150 @@ class TestFindQuarterlyTextWindow:
         assert strategy == 'mda_header'
         # The 200-char lookback means some of the prefix is in the window
         assert 'PRIOR CONTEXT' in window
+
+
+class TestZeroExtractRouting:
+    """
+    When an LLM extraction pass succeeds (keyword gate passed, LLM responded)
+    but produces zero data_points AND zero review items, the pipeline must
+    insert review queue items with agreement_status='LLM_EMPTY' and increment
+    summary.zero_extract_misses.
+    """
+
+    @pytest.fixture
+    def db_with_riot(self, db):
+        """db fixture with RIOT pre-seeded."""
+        return db
+
+    def test_zero_extract_monthly_routes_to_review_queue(self, db_with_riot, monkeypatch):
+        """Monthly report: passes keyword gate, LLM returns all-None → review_queue entries."""
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        # LLM returns None for all metrics (zero-extract scenario)
+        mock_llm.extract_batch.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_riot.insert_report({
+            'ticker': 'RIOT',
+            'report_date': '2025-03-01',
+            'published_date': None,
+            'source_type': 'archive_html',
+            'source_url': None,
+            # Text passes keyword gate — contains 'bitcoin mined'
+            'raw_text': 'RIOT bitcoin mined 0 BTC. No production this month.',
+            'parsed_at': '2025-03-03T12:00:00',
+        })
+        report = db_with_riot.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_riot)
+
+        assert isinstance(summary, ExtractionSummary)
+        assert summary.zero_extract_misses >= 1, "zero_extract_misses must be incremented"
+
+        review_items = db_with_riot.get_review_items(ticker='RIOT')
+        llm_empty_items = [i for i in review_items if i.get('agreement_status') == 'LLM_EMPTY']
+        assert len(llm_empty_items) >= 1, "At least one LLM_EMPTY review item expected"
+
+    def test_zero_extract_quarterly_routes_to_review_queue(self, db_with_riot, monkeypatch):
+        """Quarterly report: passes keyword gate, LLM returns nothing → review_queue entries."""
+        from unittest.mock import MagicMock
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {}
+        mock_llm._last_transport_error = False
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_riot.insert_report({
+            'ticker': 'RIOT',
+            'report_date': '2025-01-01',
+            'published_date': None,
+            'source_type': 'edgar_10q',
+            'source_url': None,
+            'covering_period': '2025-Q1',
+            'raw_text': (
+                'RIOT bitcoin mined. During the quarter ended March 31, 2025, '
+                'total bitcoin production was significant. Hash rate was 40 EH/s.'
+            ),
+            'parsed_at': '2025-04-15T12:00:00',
+        })
+        report = db_with_riot.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        from miner_types import ExtractionSummary
+        summary = extract_report(report, db_with_riot)
+
+        assert isinstance(summary, ExtractionSummary)
+        assert summary.zero_extract_misses >= 1, "zero_extract_misses must be incremented"
+
+        review_items = db_with_riot.get_review_items(ticker='RIOT')
+        llm_empty_items = [i for i in review_items if i.get('agreement_status') == 'LLM_EMPTY']
+        assert len(llm_empty_items) >= 1, "At least one LLM_EMPTY review item expected"
+
+    def test_zero_extract_not_triggered_when_data_points_stored(self, db_with_riot, monkeypatch):
+        """When the LLM produces data_points, zero_extract routing must NOT fire."""
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=500.0, unit='BTC', confidence=0.95,
+                extraction_method='llm', source_snippet='RIOT mined 500 BTC',
+                pattern_id='llm',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_riot.insert_report({
+            'ticker': 'RIOT',
+            'report_date': '2025-03-01',
+            'published_date': None,
+            'source_type': 'archive_html',
+            'source_url': None,
+            'raw_text': 'RIOT bitcoin mined 500 BTC in March 2025.',
+            'parsed_at': '2025-03-03T12:00:00',
+        })
+        report = db_with_riot.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_riot)
+
+        assert summary.zero_extract_misses == 0, "zero_extract_misses must be 0 when data extracted"
+
+    def test_zero_extract_not_triggered_when_keyword_gated(self, db_with_riot, monkeypatch):
+        """Keyword-gated documents must NOT get LLM_EMPTY review items."""
+        from unittest.mock import MagicMock
+        import interpreters.interpret_pipeline as _ep
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_batch.return_value = {}
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_riot.insert_report({
+            'ticker': 'RIOT',
+            'report_date': '2025-03-01',
+            'published_date': None,
+            'source_type': 'archive_html',
+            'source_url': None,
+            # No mining keywords — should be gated
+            'raw_text': 'General corporate announcement. No mining related content here.',
+            'parsed_at': '2025-03-03T12:00:00',
+        })
+        report = db_with_riot.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_riot)
+
+        assert summary.zero_extract_misses == 0
+        assert summary.keyword_gated >= 1

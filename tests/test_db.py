@@ -828,3 +828,116 @@ class TestGetTrailingDataPoints:
         rows = db_with_company.get_trailing_data_points('MARA', 'production_btc', '2025-01-01', limit=10)
         assert all(r.get('source_period_type', 'monthly') == 'monthly' for r in rows)
         assert not any(r['period'] == '2024-Q3' for r in rows)
+
+
+class TestGetReportsMissingMetric:
+    """Tests for db.get_reports_missing_metric()."""
+
+    @pytest.fixture
+    def db_with_riot(self, db):
+        """db fixture with RIOT company pre-seeded (from companies.json sync)."""
+        # RIOT is pre-seeded by sync_companies_from_config on DB init
+        return db
+
+    def test_returns_done_reports_without_datapoints(self, db_with_riot):
+        """Reports with extraction_status='done' and no matching data_point are returned."""
+        report_id = db_with_riot.insert_report(make_report(
+            ticker='RIOT',
+            raw_text='RIOT mined 500 BTC in March 2025.',
+            report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(report_id)
+
+        results = db_with_riot.get_reports_missing_metric(['production_btc'], tickers=['RIOT'])
+        assert any(r['id'] == report_id for r in results)
+
+    def test_excludes_reports_with_existing_datapoint(self, db_with_riot):
+        """Reports that already have a data_point for the given metric are excluded."""
+        report_id = db_with_riot.insert_report(make_report(
+            ticker='RIOT',
+            raw_text='RIOT mined 500 BTC in March 2025.',
+            report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(report_id)
+        db_with_riot.insert_data_point({
+            'report_id': report_id, 'ticker': 'RIOT', 'period': '2025-03-01',
+            'metric': 'production_btc', 'value': 500.0, 'unit': 'BTC',
+            'confidence': 0.9, 'extraction_method': 'llm', 'source_snippet': 'mined 500 BTC',
+        })
+
+        results = db_with_riot.get_reports_missing_metric(['production_btc'], tickers=['RIOT'])
+        assert not any(r['id'] == report_id for r in results)
+
+    def test_excludes_pending_reports(self, db_with_riot):
+        """Reports with extraction_status != 'done' are excluded (not re-queued by default)."""
+        report_id = db_with_riot.insert_report(make_report(
+            ticker='RIOT',
+            raw_text='RIOT mined 500 BTC in March 2025.',
+            report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        # Leave as 'pending' — do NOT mark extracted
+
+        results = db_with_riot.get_reports_missing_metric(['production_btc'], tickers=['RIOT'])
+        assert not any(r['id'] == report_id for r in results)
+
+    def test_returns_report_missing_any_of_given_metrics(self, db_with_riot):
+        """Report with no data_point for ANY of the given metrics is returned once."""
+        report_id = db_with_riot.insert_report(make_report(
+            ticker='RIOT',
+            raw_text='RIOT mined 500 BTC in March 2025.',
+            report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(report_id)
+        # production_btc missing, holdings_btc missing → should be returned
+
+        results = db_with_riot.get_reports_missing_metric(
+            ['production_btc', 'holdings_btc'], tickers=['RIOT']
+        )
+        ids = [r['id'] for r in results]
+        assert ids.count(report_id) == 1, "Report should appear exactly once"
+
+    def test_includes_report_missing_one_of_two_metrics(self, db_with_riot):
+        """Report with only production_btc but no holdings_btc is still returned."""
+        report_id = db_with_riot.insert_report(make_report(
+            ticker='RIOT',
+            raw_text='RIOT mined 500 BTC in March 2025.',
+            report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(report_id)
+        # Only production_btc present; holdings_btc missing
+        db_with_riot.insert_data_point({
+            'report_id': report_id, 'ticker': 'RIOT', 'period': '2025-03-01',
+            'metric': 'production_btc', 'value': 500.0, 'unit': 'BTC',
+            'confidence': 0.9, 'extraction_method': 'llm', 'source_snippet': 'mined 500 BTC',
+        })
+
+        results = db_with_riot.get_reports_missing_metric(
+            ['production_btc', 'holdings_btc'], tickers=['RIOT']
+        )
+        assert any(r['id'] == report_id for r in results)
+
+    def test_period_filter_applied(self, db_with_riot):
+        """from_period / to_period filters scope results correctly."""
+        r1 = db_with_riot.insert_report(make_report(
+            ticker='RIOT', raw_text='RIOT mined 500 BTC', report_date='2025-01-01',
+            source_type='archive_html',
+        ))
+        r2 = db_with_riot.insert_report(make_report(
+            ticker='RIOT', raw_text='RIOT mined 600 BTC', report_date='2025-06-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(r1)
+        db_with_riot.mark_report_extracted(r2)
+
+        results = db_with_riot.get_reports_missing_metric(
+            ['production_btc'], tickers=['RIOT'],
+            from_period='2025-05', to_period='2025-12',
+        )
+        ids = [r['id'] for r in results]
+        assert r2 in ids
+        assert r1 not in ids

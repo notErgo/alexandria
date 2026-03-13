@@ -1605,6 +1605,28 @@ tr.is-reviewed td { opacity: 0.65; }
         <input id="pipeline-force-reextract" type="checkbox">
         Force re-extract (re-run LLM on all ingested reports, including already extracted)
       </label>
+      <div style="margin-top:0.5rem;padding:0.45rem 0.6rem;background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px">
+        <div style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.3rem">Re-extract gap months</div>
+        <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.35rem">
+          Re-queues done reports that are missing data for the checked metrics.
+          Uses the ticker selection above.
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.35rem">
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+            <input type="checkbox" id="gap-metric-production-btc" checked> production_btc
+          </label>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+            <input type="checkbox" id="gap-metric-holdings-btc" checked> holdings_btc
+          </label>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+            <input type="checkbox" id="gap-metric-sales-btc"> sales_btc
+          </label>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          <button class="btn btn-sm btn-secondary" onclick="runRequeueMissing()" style="font-size:0.75rem">Re-extract gap months</button>
+          <span id="gap-requeue-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
     </div>
     <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
@@ -7969,6 +7991,48 @@ async function cancelPipeline() {
     await fetch('/api/pipeline/overnight/' + _pipelineRunId + '/cancel', {method: 'POST'});
     document.getElementById('pipeline-msg').textContent = 'Cancellation requested.';
   } catch (_e) {}
+}
+
+async function runRequeueMissing() {
+  const msgEl = document.getElementById('gap-requeue-msg');
+  if (msgEl) msgEl.textContent = 'Working...';
+
+  const metrics = [];
+  if (document.getElementById('gap-metric-production-btc')?.checked) metrics.push('production_btc');
+  if (document.getElementById('gap-metric-holdings-btc')?.checked) metrics.push('holdings_btc');
+  if (document.getElementById('gap-metric-sales-btc')?.checked) metrics.push('sales_btc');
+
+  if (!metrics.length) {
+    if (msgEl) msgEl.textContent = 'Select at least one metric.';
+    return;
+  }
+
+  // Collect selected tickers from the pipeline ticker selector
+  const tickerEls = document.querySelectorAll('#pipeline-ticker-selector .ticker-pill.active');
+  const tickers = tickerEls.length ? Array.from(tickerEls).map(el => el.dataset.ticker) : [];
+
+  try {
+    const resp = await fetch('/api/operations/requeue-missing', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({metrics, tickers: tickers.length ? tickers : undefined}),
+    });
+    const body = await resp.json();
+    if (!resp.ok || !body.success) {
+      if (msgEl) msgEl.textContent = 'Error: ' + (body.error?.message || resp.status);
+      return;
+    }
+    const d = body.data;
+    if (d.requeued_count === 0) {
+      if (msgEl) msgEl.textContent = 'No gap months found for selected metrics.';
+      return;
+    }
+    if (msgEl) msgEl.textContent = d.requeued_count + ' reports re-queued (task ' + (d.task_id || '?').slice(0, 8) + '). Polling...';
+    // Poll progress using the existing extraction progress poller
+    if (d.task_id) _pollExtractionRun(d.task_id, d.scope_label || 'gap');
+  } catch (e) {
+    if (msgEl) msgEl.textContent = 'Request failed: ' + e.message;
+  }
 }
 
 function _startPipelinePoll() {

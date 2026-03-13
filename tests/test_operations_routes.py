@@ -645,3 +645,87 @@ def test_operations_uses_run_extraction_phase(monkeypatch):
 
         assert len(calls) == 1, f"Expected run_extraction_phase called once, got: {calls}"
         assert calls[0]['extract_workers'] == 4
+
+
+# ── Requeue Missing ────────────────────────────────────────────────────────────
+
+def test_requeue_missing_resets_reports_and_triggers_extraction(monkeypatch, tmp_path):
+    """
+    POST /api/operations/requeue-missing:
+    - Finds reports with extraction_status='done' and no data_point for given metrics
+    - Resets each to 'pending'
+    - Triggers extraction (run_extraction_phase)
+    - Returns task_id + requeued_count
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+    import app_globals
+    import routes.operations as ops_mod
+    import routes.pipeline as pipeline_mod
+    from infra.db import MinerDB
+    import importlib, run_web, tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = MinerDB(os.path.join(tmpdir, 'test.db'))
+        # MARA is pre-seeded via companies.json sync
+        app_globals._db = db
+        importlib.reload(run_web)
+        flask_app = run_web.create_app()
+        flask_app.config['TESTING'] = True
+        client = flask_app.test_client()
+
+        # Insert a done report with no data_points for production_btc
+        report_id = db.insert_report({
+            'ticker': 'MARA',
+            'report_date': '2025-03-01',
+            'published_date': None,
+            'source_type': 'archive_html',
+            'source_url': None,
+            'raw_text': 'MARA bitcoin mined 700 BTC in March 2025.',
+            'parsed_at': '2025-03-03T12:00:00',
+        })
+        db.mark_report_extracted(report_id)
+
+        calls = []
+
+        def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
+            calls.append({'tickers': list(tickers), 'prebuilt_batches': kwargs.get('prebuilt_batches')})
+            return {'processed': 0, 'data_points': 0, 'errors': 0}
+
+        monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
+
+        class _ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=False, name=None):
+                self._target = target
+            def start(self):
+                if self._target: self._target()
+
+        monkeypatch.setattr(ops_mod, '_active_tickers', set())
+        monkeypatch.setattr(ops_mod.threading, 'Thread', _ImmediateThread)
+
+        resp = client.post('/api/operations/requeue-missing', json={
+            'metrics': ['production_btc'],
+            'tickers': ['MARA'],
+        })
+        assert resp.status_code == 200, resp.data
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['data']['requeued_count'] >= 1
+        assert 'task_id' in body['data']
+
+        # The report should have been reset to pending before extraction
+        refreshed = db.get_report(report_id)
+        # After the fake extraction, status is still 'pending' (fake doesn't change it)
+        assert refreshed['extraction_status'] == 'pending'
+
+        # run_extraction_phase must have been called
+        assert len(calls) == 1
+
+
+def test_requeue_missing_no_metrics_returns_400(client):
+    """POST /api/operations/requeue-missing without metrics returns 400."""
+    resp = client.post('/api/operations/requeue-missing', json={})
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body['success'] is False

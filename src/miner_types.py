@@ -156,6 +156,7 @@ class ExtractionSummary:
     response_tokens: int = 0
     keyword_gated: int = 0
     temporal_rejects: int = 0
+    zero_extract_misses: int = 0
 
 
 class IngestState(str, Enum):

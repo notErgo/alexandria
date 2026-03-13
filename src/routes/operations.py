@@ -7,6 +7,7 @@ Operations panel API routes.
   GET  /api/operations/observer_swarm/<id>/status  — observer swarm run status
   POST /api/operations/interpret                     — trigger extraction for a ticker
   GET  /api/operations/interpret/<task_id>/progress  — extraction progress
+  POST /api/operations/requeue-missing               — re-extract done reports missing specified metrics
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
@@ -651,6 +652,141 @@ def operations_extract_progress(task_id: str):
         return jsonify({'success': True, 'data': progress})
     except Exception:
         log.error('Error in operations_extract_progress', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/requeue-missing', methods=['POST'])
+def operations_requeue_missing():
+    """Reset done reports that have no data_point for the given metrics and trigger extraction.
+
+    Body:
+      metrics   list[str]  required — e.g. ["production_btc", "holdings_btc"]
+      tickers   list[str]  optional — scope to specific tickers; empty = all
+      from_period  str     optional — YYYY-MM
+      to_period    str     optional — YYYY-MM
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        metrics = body.get('metrics') or []
+        tickers = body.get('tickers') or []
+        from_period = (body.get('from_period') or '').strip() or None
+        to_period = (body.get('to_period') or '').strip() or None
+
+        if not metrics:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT', 'message': "'metrics' is required and must be non-empty",
+            }}), 400
+
+        from app_globals import get_db
+        db = get_db()
+
+        missing_reports = db.get_reports_missing_metric(
+            metrics=metrics,
+            tickers=tickers or None,
+            from_period=from_period,
+            to_period=to_period,
+        )
+
+        if not missing_reports:
+            return jsonify({'success': True, 'data': {
+                'requeued_count': 0,
+                'task_id': None,
+                'message': 'No done reports found missing the specified metrics.',
+            }})
+
+        for report in missing_reports:
+            try:
+                db.reset_report_to_pending(report['id'])
+            except Exception:
+                log.warning(
+                    "requeue_missing: failed to reset report id=%s", report['id'], exc_info=True
+                )
+
+        requeued_count = len(missing_reports)
+        log.info(
+            "event=requeue_missing_start metrics=%s tickers=%s requeued=%d",
+            metrics, tickers or 'ALL', requeued_count,
+        )
+
+        # Group reports by ticker for the extraction run
+        from collections import OrderedDict as _OD
+        grouped: _OD = _OD()
+        if tickers:
+            for t in tickers:
+                grouped[t] = []
+        for report in missing_reports:
+            grouped.setdefault(report.get('ticker', '?'), []).append(report)
+
+        scope_label = ','.join(sorted(grouped.keys())) or '__ALL__'
+        run_key = f'requeue_missing_{scope_label}'
+
+        with _active_tickers_lock:
+            if run_key in _active_tickers:
+                return jsonify({'success': False, 'error': {
+                    'code': 'ALREADY_RUNNING',
+                    'message': f"Requeue-missing already running for {scope_label}",
+                }}), 409
+            _active_tickers.add(run_key)
+
+        task_id = str(uuid.uuid4())
+        with _progress_lock:
+            _extraction_progress[task_id] = {
+                'status': 'running',
+                'scope_label': scope_label,
+                'metrics': metrics,
+                'reports_processed': 0,
+                'reports_total': requeued_count,
+                'data_points': 0,
+                'errors': 0,
+                'logs': [],
+            }
+
+        from routes.pipeline import run_extraction_phase
+
+        _grouped = dict(grouped)
+        _run_key = run_key
+
+        def _run():
+            try:
+                def _progress_cb(c: dict) -> None:
+                    with _progress_lock:
+                        prog = _extraction_progress[task_id]
+                        prog['reports_processed'] = c['processed']
+                        prog['data_points'] = c['data_points']
+                        prog['errors'] = c['errors']
+
+                run_extraction_phase(
+                    db,
+                    0,
+                    tickers=list(_grouped.keys()),
+                    prebuilt_batches=_grouped,
+                    force_reextract=False,
+                    warm_model=False,
+                    extract_workers=4,
+                    progress_callback=_progress_cb,
+                )
+                with _progress_lock:
+                    _extraction_progress[task_id]['status'] = 'complete'
+                log.info("event=requeue_missing_complete task_id=%s scope=%s", task_id, _run_key)
+            except Exception as e:
+                log.error("event=requeue_missing_failed task_id=%s error=%s", task_id, e, exc_info=True)
+                with _progress_lock:
+                    _extraction_progress[task_id]['status'] = 'error'
+                    _extraction_progress[task_id]['error_message'] = 'Internal error'
+            finally:
+                with _active_tickers_lock:
+                    _active_tickers.discard(_run_key)
+
+        threading.Thread(target=_run, daemon=True, name=f"requeue-missing-{scope_label}").start()
+
+        return jsonify({'success': True, 'data': {
+            'task_id': task_id,
+            'requeued_count': requeued_count,
+            'metrics': metrics,
+            'scope_label': scope_label,
+        }})
+    except Exception:
+        log.error('Error in operations_requeue_missing', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
