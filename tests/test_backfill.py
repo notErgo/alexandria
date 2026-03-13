@@ -13,21 +13,26 @@ class TestDetectEdgarReportWindow:
         result = db.detect_edgar_report_window('NOMATCH')
         assert result == {'min_date': None, 'max_date': None}
 
+    def _r(self, ticker, date, source_type, url):
+        return {'ticker': ticker, 'report_date': date, 'published_date': date,
+                'source_type': source_type, 'source_url': url, 'raw_text': 'text',
+                'parsed_at': date}
+
     def test_returns_correct_min_max(self, db_with_company):
-        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2020-06-01', 'source_type': 'edgar_8k', 'source_url': 'http://a', 'raw_text': 'text a'})
-        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2021-03-01', 'source_type': 'edgar_8k', 'source_url': 'http://b', 'raw_text': 'text b'})
+        db_with_company.insert_report(self._r('MARA', '2020-06-01', 'edgar_8k', 'http://a'))
+        db_with_company.insert_report(self._r('MARA', '2021-03-01', 'edgar_8k', 'http://b'))
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result['min_date'] == '2020-06-01'
         assert result['max_date'] == '2021-03-01'
 
     def test_ignores_non_edgar_source_types(self, db_with_company):
-        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2019-01-01', 'source_type': 'archive_html', 'source_url': 'http://c', 'raw_text': 'text c'})
+        db_with_company.insert_report(self._r('MARA', '2019-01-01', 'archive_html', 'http://c'))
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result == {'min_date': None, 'max_date': None}
 
     def test_only_counts_edgar_source_types(self, db_with_company):
-        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2019-01-01', 'source_type': 'archive_html', 'source_url': 'http://c', 'raw_text': 'text c'})
-        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2021-01-01', 'source_type': 'edgar_10q', 'source_url': 'http://d', 'raw_text': 'text d'})
+        db_with_company.insert_report(self._r('MARA', '2019-01-01', 'archive_html', 'http://c'))
+        db_with_company.insert_report(self._r('MARA', '2021-01-01', 'edgar_10q', 'http://d'))
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result['min_date'] == '2021-01-01'
         assert result['max_date'] == '2021-01-01'
@@ -167,11 +172,10 @@ class TestBackfillRoute:
     def test_backfill_no_cik_returns_400(self, app):
         with app.app_context():
             from app_globals import get_db
-            get_db().upsert_company({
-                'ticker': 'NOCIK', 'name': 'No CIK Co', 'sector': 'BTC-miners',
-                'scraper_mode': 'skip',
-            })
-        resp = app.test_client().post('/api/backfill/NOCIK',
+            db = get_db()
+            with db._get_connection() as conn:
+                conn.execute("UPDATE companies SET cik=NULL WHERE ticker='FUFU'")
+        resp = app.test_client().post('/api/backfill/FUFU',
                                       json={'from_date': '2020-01-01', 'to_date': '2021-01-01'})
         assert resp.status_code == 400
 
@@ -201,10 +205,12 @@ class TestBackfillRoute:
         assert prog_resp.get_json()['success'] is True
 
     def test_backfill_auto_detects_gap_when_no_dates_given(self, app_with_mara):
+        import routes.scrape as scrape_mod
+        scrape_mod._running_backfills.discard('MARA')
         client = app_with_mara.test_client()
         with app_with_mara.app_context():
             from app_globals import get_db
-            get_db().insert_report('MARA', '2021-05-01', 'edgar_8k', 'http://e', 'text')
+            get_db().insert_report({'ticker': 'MARA', 'report_date': '2021-05-01', 'published_date': '2021-05-01', 'source_type': 'edgar_8k', 'source_url': 'http://e', 'raw_text': 'text', 'parsed_at': '2021-05-01'})
 
         with patch('routes.scrape._run_backfill'):
             resp = client.post('/api/backfill/MARA', json={})
