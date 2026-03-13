@@ -1217,3 +1217,75 @@ class TestBoilerplateStrippingBySourceType2:
         assert 'llm_text' in captured, "LLM must have been called"
         assert "hereunto duly caused" not in captured['llm_text']
         assert "700 BTC" in captured['llm_text']
+
+
+class TestFindQuarterlyTextWindow:
+    """Unit tests for _find_quarterly_text_window."""
+
+    def _call(self, text, budget=500):
+        from interpreters.interpret_pipeline import _find_quarterly_text_window
+        return _find_quarterly_text_window(text, budget)
+
+    def test_start_fallback_when_no_markers(self):
+        text = 'A' * 1000
+        window, strategy = self._call(text, budget=200)
+        assert strategy == 'start'
+        assert window == 'A' * 200
+
+    def test_mda_header_item7(self):
+        prefix = 'COVER PAGE\n' * 50            # ~550 chars of front matter
+        mda = 'Item 7. Management\'s Discussion\nWe mined 1,200 BTC this quarter.\n'
+        text = prefix + mda + 'EXTRA' * 200
+        window, strategy = self._call(text, budget=300)
+        assert strategy == 'mda_header'
+        assert 'Item 7' in window
+        assert 'mined 1,200 BTC' in window
+
+    def test_mda_header_item2_10q(self):
+        prefix = 'Table of Contents\n' * 30
+        mda = 'Item 2. Management\'s Discussion\nHashrate averaged 35 EH/s.\n'
+        text = prefix + mda + 'EXTRA' * 200
+        window, strategy = self._call(text, budget=300)
+        assert strategy == 'mda_header'
+        assert 'Item 2' in window
+
+    def test_mda_header_managements_discussion_phrase(self):
+        prefix = 'Risk Factors\n' * 40
+        mda = "Management\u2019s Discussion and Analysis\nWe produced 900 BTC.\n"
+        text = prefix + mda + 'X' * 500
+        window, strategy = self._call(text, budget=300)
+        assert strategy == 'mda_header'
+        assert 'produced 900 BTC' in window
+
+    def test_keyword_seek_when_no_mda_header(self):
+        # prefix is short enough that keyword falls within budget after lookback
+        prefix = 'General corporate information.\n' * 5   # ~155 chars, no Item 7/2
+        data = 'During the quarter we achieved bitcoin production of 1,500 BTC.\n'
+        text = prefix + data + 'Z' * 500
+        window, strategy = self._call(text, budget=400)
+        assert strategy == 'keyword_seek'
+        assert 'bitcoin production' in window
+
+    def test_mda_header_wins_over_earlier_keyword(self):
+        # keyword appears before MD&A header — MD&A should still win
+        prefix = 'hashrate was 10 EH/s in prior period.\n' * 5
+        mda = 'Item 7. Management\'s Discussion\nCurrent quarter: 1,100 BTC mined.\n'
+        text = prefix + mda + 'X' * 500
+        window, strategy = self._call(text, budget=300)
+        assert strategy == 'mda_header'
+        assert 'Item 7' in window
+
+    def test_window_does_not_exceed_budget(self):
+        text = 'Item 7. MD&A\n' + 'data ' * 2000
+        window, _ = self._call(text, budget=100)
+        assert len(window) <= 100
+
+    def test_lookback_included_in_window(self):
+        # 200-char lookback before MD&A header should be included
+        prefix = 'PRIOR CONTEXT ' * 20   # 280 chars
+        mda = 'Item 7. MD&A\nProduction 800 BTC.\n'
+        text = prefix + mda + 'X' * 500
+        window, strategy = self._call(text, budget=500)
+        assert strategy == 'mda_header'
+        # The 200-char lookback means some of the prefix is in the window
+        assert 'PRIOR CONTEXT' in window

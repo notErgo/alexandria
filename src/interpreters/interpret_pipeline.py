@@ -28,6 +28,58 @@ _PROTECTED_METHODS = frozenset({
     'analyst', 'analyst_approved', 'review_approved', 'review_edited'
 })
 
+# Regex patterns for MD&A section headers in EDGAR filings.
+# 10-K uses Item 7; 10-Q uses Item 2.  Both are followed by "MD&A" prose.
+_MDA_PATTERNS = [
+    re.compile(r'\bitem\s+7[\.\s]', re.IGNORECASE),   # 10-K MD&A
+    re.compile(r'\bitem\s+2[\.\s]', re.IGNORECASE),   # 10-Q MD&A
+    re.compile(r"management['\u2019]?s\s+discussion", re.IGNORECASE),
+]
+
+# Mining-specific phrases used to locate the first numeric data cluster when no
+# MD&A header is found.  These are intentionally more specific than the keyword
+# gate phrases to avoid matching TOC section titles.
+_MINING_DATA_PHRASES = (
+    'bitcoin mined', 'btc mined', 'bitcoin produced', 'btc produced',
+    'bitcoin we mined', 'bitcoin production', 'hash rate', 'hashrate',
+    'exahash', 'bitcoin holdings', 'btc holdings', 'total bitcoin',
+)
+
+
+def _find_quarterly_text_window(full_text: str, budget: int) -> tuple[str, str]:
+    """Return the best budget-char window of full_text for quarterly LLM extraction.
+
+    Returns (window_text, strategy) where strategy is one of:
+      'mda_header'    — anchored on the MD&A section header
+      'keyword_seek'  — anchored on the first mining data phrase
+      'start'         — fallback: first budget chars (original behaviour)
+
+    Strategy (first match wins):
+      1. Find Item 7 / Item 2 / "Management's Discussion" header; start 200 chars
+         before it to retain section title context.
+      2. Find the earliest occurrence of a mining-specific phrase; start 500 chars
+         before it to retain surrounding paragraph context.
+      3. Return full_text[:budget] unchanged.
+    """
+    text_lower = full_text.lower()
+
+    for pat in _MDA_PATTERNS:
+        m = pat.search(full_text)
+        if m:
+            start = max(0, m.start() - 200)
+            return full_text[start:start + budget], 'mda_header'
+
+    earliest = len(full_text)
+    for phrase in _MINING_DATA_PHRASES:
+        pos = text_lower.find(phrase)
+        if 0 <= pos < earliest:
+            earliest = pos
+    if earliest < len(full_text):
+        start = max(0, earliest - 500)
+        return full_text[start:start + budget], 'keyword_seek'
+
+    return full_text[:budget], 'start'
+
 # Module-level LLM extractor singleton (lazy init — avoids import at module load)
 _llm_interpreter_instance = None
 _llm_interpreter_lock = threading.Lock()
@@ -641,7 +693,12 @@ def _interpret_quarterly_report(
         full_text = report.get('raw_text') or ''
     from infra.text_utils import strip_edgar_boilerplate
     full_text = strip_edgar_boilerplate(full_text)
-    text = full_text[:_q_selector.char_budget]
+    text, _window_strategy = _find_quarterly_text_window(full_text, _q_selector.char_budget)
+    log.debug(
+        "event=quarterly_window_select ticker=%s period=%s strategy=%s "
+        "full_len=%d window_len=%d",
+        ticker, covering_period, _window_strategy, len(full_text), len(text),
+    )
 
     from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases_q
     kw_phrases = [p.lower() for p in _get_det_phrases_q(db) if p.strip()]

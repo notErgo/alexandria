@@ -172,6 +172,15 @@ MAX_SOURCE_SNIPPET_LEN: int = 1000
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 LLM_TIMEOUT_SECONDS: int = 300
+# How long Ollama keeps the model loaded between requests (per-request keep_alive field).
+# Set to -1 to keep loaded indefinitely; "0" to unload immediately after each call.
+OLLAMA_KEEP_ALIVE: str = _os.environ.get("OLLAMA_KEEP_ALIVE", "2h")
+# Application-side concurrency: max parallel extraction workers sent to Ollama.
+# Maps to extract_workers in the pipeline. Overridable at runtime via config_settings.
+OLLAMA_NUM_PARALLEL: int = int(_os.environ.get("OLLAMA_NUM_PARALLEL", "4"))
+# Informational: target value for the Ollama server OLLAMA_MAX_LOADED_MODELS env var.
+# Stored in config_settings for reference; applied by restarting Ollama with the shown command.
+OLLAMA_MAX_LOADED_MODELS: int = int(_os.environ.get("OLLAMA_MAX_LOADED_MODELS", "3"))
 
 # --- Crawl LLM (Ollama or Anthropic) — Stage 1 IR navigation ---
 # qwen3.5:9b is used for both extraction and crawling.

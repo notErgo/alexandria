@@ -1266,6 +1266,39 @@ tr.is-reviewed td { opacity: 0.65; }
     </p>
     <div id="settings-groups"></div>
 
+    <!-- Ollama Concurrency (1.4.O) -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.O" data-spec-id="1.4.O">
+      <div class="section-header-row" style="margin-bottom:0.75rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.O</span>Ollama Concurrency</h3>
+        <button class="btn btn-sm btn-secondary" onclick="saveOllamaSettings()" style="margin-left:auto">Save</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem">
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Extract Workers (default)</label>
+          <input id="ollama-num-parallel" type="number" min="1" max="16" step="1"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">Max parallel LLM workers per pipeline run. Takes effect immediately.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Keep Alive</label>
+          <input id="ollama-keep-alive" type="text" placeholder="2h"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">How long Ollama holds the model in VRAM between calls (e.g. 2h, 30m, -1). Takes effect immediately.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Max Loaded Models</label>
+          <input id="ollama-max-loaded-models" type="number" min="1" max="10" step="1"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">Max simultaneous models in VRAM. Requires Ollama restart.</p>
+          <div style="margin-top:0.4rem">
+            <label style="font-size:0.72rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Apply with:</label>
+            <code id="ollama-serve-cmd" style="font-size:0.72rem;background:var(--theme-bg-primary);padding:0.2rem 0.4rem;border-radius:3px;border:1px solid var(--theme-border);display:inline-block">OLLAMA_MAX_LOADED_MODELS=3 ollama serve</code>
+          </div>
+        </div>
+      </div>
+      <div id="ollama-settings-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.5rem;min-height:1.2em"></div>
+    </div>
+
     <!-- Metric Rules (1.4.R) — tune after first extraction cycle -->
     <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.R" data-spec-id="1.4.R" data-spec-id-alias="1.4.1"><span data-spec-id="1.4.1" style="display:none"></span>
       <div class="section-header-row" style="margin-bottom:0.5rem">
@@ -3087,7 +3120,7 @@ function activatePipelineSubTab(pane, name) {
   });
   // Lazy-load on sub-tab activation
   if (pane === 'config' && name === 'companies') { loadMetricSchemaTable(); }
-  if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); }
+  if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); loadOllamaSettings(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
   if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
   if (pane === 'interpret' && name === 'qc') _loadQCTable();
@@ -5968,6 +6001,72 @@ async function addMetricSchema() {
   } catch (e) {
     errEl.textContent = 'Error: ' + e.message;
     errEl.style.display = 'block';
+  }
+}
+
+// ── Ollama Concurrency (1.4.O) ────────────────────────────────────────────────
+
+async function loadOllamaSettings() {
+  try {
+    const resp = await fetch('/api/config');
+    const json = await resp.json();
+    if (!json.success) return;
+    const map = {};
+    (json.data || []).forEach(e => { map[e.key] = e.value; });
+
+    const numParallel = map['ollama_num_parallel'] || '4';
+    const keepAlive   = map['ollama_keep_alive']   || '2h';
+    const maxLoaded   = map['ollama_max_loaded_models'] || '3';
+
+    const npEl = document.getElementById('ollama-num-parallel');
+    const kaEl = document.getElementById('ollama-keep-alive');
+    const mlEl = document.getElementById('ollama-max-loaded-models');
+    if (npEl) npEl.value = numParallel;
+    if (kaEl) kaEl.value = keepAlive;
+    if (mlEl) mlEl.value = maxLoaded;
+
+    _updateOllamaServeCmd(maxLoaded);
+    _seedWorkerInputs(numParallel);
+  } catch(err) {
+    console.warn('loadOllamaSettings failed', err);
+  }
+}
+
+function _updateOllamaServeCmd(val) {
+  const el = document.getElementById('ollama-serve-cmd');
+  if (el) el.textContent = 'OLLAMA_MAX_LOADED_MODELS=' + val + ' ollama serve';
+}
+
+function _seedWorkerInputs(val) {
+  const n = Math.max(1, parseInt(val, 10) || 4);
+  const interpretEl = document.getElementById('interpret-extract-workers');
+  const pipelineEl  = document.getElementById('pipeline-extract-workers');
+  if (interpretEl) interpretEl.value = n;
+  if (pipelineEl)  pipelineEl.value  = n;
+}
+
+async function saveOllamaSettings() {
+  const msgEl = document.getElementById('ollama-settings-msg');
+  const np = (document.getElementById('ollama-num-parallel')?.value || '').trim();
+  const ka = (document.getElementById('ollama-keep-alive')?.value || '').trim();
+  const ml = (document.getElementById('ollama-max-loaded-models')?.value || '').trim();
+
+  if (!np || !ka || !ml) {
+    if (msgEl) { msgEl.textContent = 'All three fields are required.'; msgEl.style.color = 'var(--theme-danger, #ef4444)'; }
+    return;
+  }
+
+  try {
+    await Promise.all([
+      fetch('/api/config/ollama_num_parallel',    { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({value: np}) }),
+      fetch('/api/config/ollama_keep_alive',       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({value: ka}) }),
+      fetch('/api/config/ollama_max_loaded_models',{ method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({value: ml}) }),
+    ]);
+    _updateOllamaServeCmd(ml);
+    _seedWorkerInputs(np);
+    if (msgEl) { msgEl.textContent = 'Saved.'; msgEl.style.color = 'var(--theme-text-muted)'; }
+  } catch(err) {
+    if (msgEl) { msgEl.textContent = 'Save failed: ' + String(err); msgEl.style.color = 'var(--theme-danger, #ef4444)'; }
   }
 }
 

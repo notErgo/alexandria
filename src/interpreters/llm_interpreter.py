@@ -1146,6 +1146,22 @@ class LLMInterpreter:
         # Generic fallback for unknown metrics
         return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
 
+    def _extract_keep_alive(self) -> str:
+        """Return the keep_alive value to send with every Ollama call.
+
+        Configurable via 'ollama_keep_alive' in config_settings.
+        Fallback: OLLAMA_KEEP_ALIVE constant (default "2h").
+        """
+        if self._db is not None:
+            try:
+                v = self._db.get_config('ollama_keep_alive')
+                if v:
+                    return v
+            except Exception:
+                pass
+        from config import OLLAMA_KEEP_ALIVE
+        return OLLAMA_KEEP_ALIVE
+
     def _extract_num_ctx(self) -> int:
         """Return the num_ctx to use for extraction Ollama calls.
 
@@ -1175,7 +1191,7 @@ class LLMInterpreter:
             "model": _active_model(self._db),
             "prompt": prompt,
             "stream": False,
-            "keep_alive": "2h",  # Hold model in VRAM for 2 hours; avoids mid-run eviction
+            "keep_alive": self._extract_keep_alive(),
             "think": False,       # Disable chain-of-thought (Qwen3); skips <think> tokens
             "options": {
                 "temperature": 0.0,   # Deterministic output for structured JSON

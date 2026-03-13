@@ -1189,7 +1189,14 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         # The scrape_queue / ScrapeWorker is for manual per-company triggers only.
         registry = get_registry()
         force_reextract = bool(config.get('force_reextract', False))
-        extract_workers = max(1, int(config.get('extract_workers', 2)))
+        _default_workers = 2
+        try:
+            v = db.get_config('ollama_num_parallel')
+            if v:
+                _default_workers = max(1, int(v))
+        except Exception:
+            pass
+        extract_workers = max(1, int(config.get('extract_workers', _default_workers)))
         ir_workers = max(1, int(config.get('ir_workers', 2)))
         edgar_workers = max(1, int(config.get('edgar_workers', 1)))
         edgar_min_interval_ms = max(0, int(config.get('edgar_min_interval_ms', int(EDGAR_REQUEST_DELAY_SECONDS * 1000))))
@@ -1451,7 +1458,7 @@ def start_overnight_pipeline():
         'scout_as_of_date': body.get('scout_as_of_date'),
         'probe_skip_companies': bool(body.get('probe_skip_companies', False)),
         'force_reextract': bool(body.get('force_reextract', False)),
-        'extract_workers': max(1, int(body.get('extract_workers', 2))),
+        'extract_workers': max(1, int(body.get('extract_workers', max(1, int(db.get_config('ollama_num_parallel') or 2))))),
         'ir_workers': max(1, int(body.get('ir_workers', 2))),
         'edgar_workers': max(1, int(body.get('edgar_workers', 1))),
         'edgar_min_interval_ms': max(0, int(body.get('edgar_min_interval_ms', int(EDGAR_REQUEST_DELAY_SECONDS * 1000)))),

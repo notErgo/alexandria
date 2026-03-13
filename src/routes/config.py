@@ -36,6 +36,8 @@ _KNOWN_CONFIG_KEYS = {
     'bitcoin_mining_keywords',
     # Pipeline
     'pipeline_output_dir',
+    # Ollama concurrency
+    'ollama_keep_alive', 'ollama_num_parallel', 'ollama_max_loaded_models',
 }
 
 _DEFAULT_KEYWORD_DICTIONARY = {
@@ -107,6 +109,15 @@ def _get_default_for_key(key: str):
         return ','.join(MinerDB._DEFAULT_BITCOIN_MINING_KEYWORDS)
     if key == 'pipeline_output_dir':
         return '/private/tmp/claude-501/miners_progress'
+    if key == 'ollama_keep_alive':
+        from config import OLLAMA_KEEP_ALIVE
+        return OLLAMA_KEEP_ALIVE
+    if key == 'ollama_num_parallel':
+        from config import OLLAMA_NUM_PARALLEL
+        return str(OLLAMA_NUM_PARALLEL)
+    if key == 'ollama_max_loaded_models':
+        from config import OLLAMA_MAX_LOADED_MODELS
+        return str(OLLAMA_MAX_LOADED_MODELS)
     return None
 
 
