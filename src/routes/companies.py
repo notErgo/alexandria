@@ -443,6 +443,7 @@ def sync_companies():
         cleared = db.get_config('auto_sync_companies_on_startup') == '0'
         result = db.sync_companies_from_config(str(config_path), insert_new=not cleared)
         result['cleared_state'] = cleared
+        db.set_config('auto_sync_companies_on_startup', '1')
     except Exception:
         log.error("Failed to sync companies from config", exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

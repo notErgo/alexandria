@@ -693,7 +693,7 @@ class TestDiscoveryMode:
         with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
             "scrapers.ir_scraper._fetch_with_rate_limit",
             side_effect=_fake_fetch,
-        ):
+        ), patch("scrapers.ir_scraper._JS_RENDERED_DOMAINS", frozenset({"ir.mara.com"})):
             scraper._scrape_discovery(company)
 
         inserted_rows = [call.args[0] for call in db.insert_report.call_args_list]
@@ -753,7 +753,8 @@ class TestDiscoveryMode:
         with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
             "scrapers.ir_scraper._fetch_with_rate_limit",
             side_effect=_fake_fetch,
-        ), patch("scrapers.ir_scraper.requests.Session", side_effect=lambda: _FakeSession()):
+        ), patch("scrapers.ir_scraper.requests.Session", side_effect=lambda: _FakeSession()), \
+             patch("scrapers.ir_scraper._JS_RENDERED_DOMAINS", frozenset({"ir.mara.com"})):
             scraper._scrape_discovery(company)
 
         assert len(sessions_created) == 2

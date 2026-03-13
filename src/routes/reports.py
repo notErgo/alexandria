@@ -299,6 +299,7 @@ def _run_all_ingest(task_id: str) -> None:
     }
 
     # ── Phase 1: IR ───────────────────────────────────────────────────────────
+    log.warning("event=ir_ingest_deprecated EDGAR is the canonical ingest source")
     _update_progress(task_id, {'status': 'running', 'source': 'all', 'phase': 'ir (1/2)', **totals})
     try:
         db = get_db()

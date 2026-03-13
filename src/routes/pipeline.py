@@ -40,7 +40,7 @@ _EDGAR_SOURCE_TYPES = (
     'edgar_8k', 'edgar_10k', 'edgar_10q',
     'edgar_6k', 'edgar_20f', 'edgar_40f',
 )
-_NON_EDGAR_SOURCE_TYPES = MONTHLY_EXTRACTION_SOURCE_TYPES
+_NON_EDGAR_SOURCE_TYPES = MONTHLY_EXTRACTION_SOURCE_TYPES + ('archive_html', 'archive_pdf')
 
 
 def _report_chronology_key(report: dict) -> tuple:

@@ -175,7 +175,7 @@ class TestGetEarliestBitcoinReportPeriod:
     def test_matches_hashrate_keyword(self, tmp_path):
         from infra.db import MinerDB
         db = MinerDB(str(tmp_path / 'test.db'))
-        db.insert_report({'ticker': 'RIOT', 'source_url': 'http://x.com/4', 'raw_text': 'Deployed 1.5 EH/s of hash rate capacity.', 'source_type': 'edgar_10k', 'covering_period': '2020-12-01', 'report_date': '2020-12-01', 'published_date': None, 'parsed_at': None})
+        db.insert_report({'ticker': 'RIOT', 'source_url': 'http://x.com/4', 'raw_text': 'Deployed 1.5 exahash of hashrate capacity.', 'source_type': 'edgar_10k', 'covering_period': '2020-12-01', 'report_date': '2020-12-01', 'published_date': None, 'parsed_at': None})
         result = db.get_earliest_bitcoin_report_period('RIOT')
         assert result == '2020-12-01'
 

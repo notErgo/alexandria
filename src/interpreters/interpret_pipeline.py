@@ -680,6 +680,10 @@ def _interpret_quarterly_report(
         )
         # Transient failure: reset to 'pending' so this process can retry without waiting for next boot.
         db.reset_report_to_pending(report_id)
+        log.info(
+            "event=interpret_complete report_id=%s ticker=%s data_points=%s queued=%s errors=%s",
+            report_id, ticker, 0, 0, 0,
+        )
         return summary
 
     all_metrics = _active_metric_keys(db, registry) if registry.metrics else []
@@ -929,6 +933,10 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
                 report.get('id'), report.get('ticker'), report_date,
             )
             db.reset_report_to_pending(report['id'])
+            log.info(
+                "event=interpret_complete report_id=%s ticker=%s data_points=%s queued=%s errors=%s",
+                report.get('id'), report.get('ticker'), 0, 0, 0,
+            )
             return summary
 
         # Strip boilerplate (FORWARD-LOOKING STATEMENTS, SAFE HARBOR, About [Company],

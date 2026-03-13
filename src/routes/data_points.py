@@ -332,6 +332,7 @@ def export_csv():
         'ticker', 'period', 'metric', 'value', 'unit',
         'confidence', 'extraction_method', 'source_url',
         'source_snippet', 'created_at',
+        'llm_value', 'regex_value', 'agreement_status',
     ], extrasaction='ignore')
     writer.writeheader()
     for row in rows:

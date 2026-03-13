@@ -17,7 +17,7 @@ def _make_mock_db(source_type='ir_press_release'):
     ]
     db.get_metric_rules.return_value = []
     db.get_all_metric_keywords.return_value = [
-        {'phrase': 'bitcoin production', 'active': 1, 'metric_key': 'production_btc', 'id': 1, 'exclude_terms': '', 'hit_count': 0}
+        {'phrase': 'bitcoin mined', 'active': 1, 'metric_key': 'production_btc', 'id': 1, 'exclude_terms': '', 'hit_count': 0}
     ]
     db.mark_report_extraction_running.return_value = None
     db.mark_report_extracted.return_value = None

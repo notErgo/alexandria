@@ -302,8 +302,8 @@ def test_ops_batch_archive_not_gated_by_btc_first_filing(monkeypatch):
         })
 
         # Non-EDGAR call must NOT have from_period set to the btc_first_filing_date anchor
-        from config import MONTHLY_EXTRACTION_SOURCE_TYPES
-        non_edgar_calls = [c for c in call_args if set(c['source_types']) <= set(MONTHLY_EXTRACTION_SOURCE_TYPES)]
+        _EDGAR_TYPES = {'edgar_8k', 'edgar_10k', 'edgar_10q', 'edgar_6k', 'edgar_20f', 'edgar_40f'}
+        non_edgar_calls = [c for c in call_args if not set(c['source_types']) & _EDGAR_TYPES]
         assert non_edgar_calls, f"Expected non-EDGAR get_unextracted_reports call, got: {call_args}"
         for c in non_edgar_calls:
             assert c['from_period'] is None, (

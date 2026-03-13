@@ -123,7 +123,8 @@ def app_with_report(app, tmp_path, monkeypatch):
         'source_type': 'archive_html',
         'source_url': None,
         'raw_html': '<html><head><title>MARA January 2022 Results</title></head>'
-                    '<body><h1>MARA January 2022 Results</h1></body></html>',
+                    '<body><h1>MARA January 2022 Results</h1>'
+                    '<p>MARA mined 742 bitcoin during January 2022.</p></body></html>',
         'raw_text': 'MARA mined 742 bitcoin during January 2022. Holdings of 3215 bitcoin.',
         'parsed_at': '2024-01-01T00:00:00',
     })

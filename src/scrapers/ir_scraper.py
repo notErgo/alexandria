@@ -427,6 +427,10 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
         title = link.get_text(" ", strip=True)
         slug_text = full_url.replace("-", " ").replace("/", " ")
         check_text = f"{title} {slug_text}".strip()
+        lower_check = check_text.lower()
+        has_exclusion = any(kw in lower_check for kw in _EXCLUSION_KEYWORDS)
+        if has_exclusion:
+            continue
         if not (_is_official_ir_detail_link(full_url) or is_mining_activity_pr(check_text)):
             continue
 
