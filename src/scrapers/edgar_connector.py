@@ -704,7 +704,7 @@ class EdgarConnector:
         self.db.set_btc_first_filing_date(ticker, filed_date)
         return filed_date
 
-    def fetch_8k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_8k_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 8-K filings from the submissions API and store raw filing text.
 
         Uses the submissions API (same approach as fetch_10q_filings / fetch_10k_filings).
@@ -735,6 +735,8 @@ class EdgarConnector:
         for filing in filings:
             filing_date = filing.get('filing_date', '')
             if filing_date < since_date.isoformat():
+                continue
+            if until_date and filing_date > until_date.isoformat():
                 continue
 
             acc_no = filing.get('accession_number', '')
@@ -978,7 +980,7 @@ class EdgarConnector:
 
         return summary
 
-    def fetch_10q_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_10q_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 10-Q filings from the submissions API and store raw text.
 
         Returns IngestSummary with counts.
@@ -998,13 +1000,15 @@ class EdgarConnector:
             period = filing.get('period_of_report', '')
             if period < since_date.isoformat():
                 continue
+            if until_date and period > until_date.isoformat():
+                continue
             stored = self._ingest_periodic_filing('10-Q', filing, ticker, cik)
             if stored:
                 summary.reports_ingested += 1
 
         return summary
 
-    def fetch_10k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_10k_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 10-K filings from the submissions API and store raw text.
 
         Returns IngestSummary with counts.
@@ -1024,13 +1028,15 @@ class EdgarConnector:
             period = filing.get('period_of_report', '')
             if period < since_date.isoformat():
                 continue
+            if until_date and period > until_date.isoformat():
+                continue
             stored = self._ingest_periodic_filing('10-K', filing, ticker, cik)
             if stored:
                 summary.reports_ingested += 1
 
         return summary
 
-    def fetch_6k_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_6k_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 6-K filings from the submissions API (foreign companies — current reports).
 
         Returns IngestSummary with counts.
@@ -1050,13 +1056,15 @@ class EdgarConnector:
             period = filing.get('period_of_report', '')
             if period < since_date.isoformat():
                 continue
+            if until_date and period > until_date.isoformat():
+                continue
             stored = self._ingest_periodic_filing('6-K', filing, ticker, cik)
             if stored:
                 summary.reports_ingested += 1
 
         return summary
 
-    def fetch_20f_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_20f_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 20-F annual filings from the submissions API (foreign private issuers).
 
         Returns IngestSummary with counts.
@@ -1076,13 +1084,15 @@ class EdgarConnector:
             period = filing.get('period_of_report', '')
             if period < since_date.isoformat():
                 continue
+            if until_date and period > until_date.isoformat():
+                continue
             stored = self._ingest_periodic_filing('20-F', filing, ticker, cik)
             if stored:
                 summary.reports_ingested += 1
 
         return summary
 
-    def fetch_40f_filings(self, cik: str, ticker: str, since_date: date) -> 'IngestSummary':
+    def fetch_40f_filings(self, cik: str, ticker: str, since_date: date, until_date: Optional[date] = None) -> 'IngestSummary':
         """Fetch 40-F annual filings from the submissions API (Canadian companies).
 
         Returns IngestSummary with counts.
@@ -1102,6 +1112,8 @@ class EdgarConnector:
             period = filing.get('period_of_report', '')
             if period < since_date.isoformat():
                 continue
+            if until_date and period > until_date.isoformat():
+                continue
             stored = self._ingest_periodic_filing('40-F', filing, ticker, cik)
             if stored:
                 summary.reports_ingested += 1
@@ -1109,7 +1121,8 @@ class EdgarConnector:
         return summary
 
     def fetch_all_filings(
-        self, cik: str, ticker: str, since_date: date, filing_regime: str = 'domestic'
+        self, cik: str, ticker: str, since_date: date, filing_regime: str = 'domestic',
+        until_date: Optional[date] = None, skip_pivot_gate: bool = False,
     ) -> 'IngestSummary':
         """Fetch all filings for a ticker, routed by filing_regime.
 
@@ -1121,6 +1134,11 @@ class EdgarConnector:
         then uses max(since_date, btc_first_filing_date) as the effective floor so
         pre-mining-pivot filings are never ingested.
 
+        skip_pivot_gate: when True, skips the btc_first_filing_date advancement.
+        Use this for targeted backfill where the caller explicitly controls the window.
+
+        until_date: optional upper bound; when set, filings after this date are skipped.
+
         Updates last_edgar_at on the company row after completion.
         Returns a combined IngestSummary.
         """
@@ -1128,19 +1146,20 @@ class EdgarConnector:
         combined = IngestSummary()
 
         # Auto-populate btc_first_filing_date if not yet stored, then gate since_date.
-        try:
-            btc_pivot = self.detect_btc_first_filing_date(cik=cik, ticker=ticker)
-            if btc_pivot:
-                from datetime import date as _date_cls
-                pivot_date = _date_cls.fromisoformat(btc_pivot[:10])
-                if pivot_date > since_date:
-                    log.info(
-                        "event=edgar_since_gated ticker=%s since_date=%s btc_first_filing=%s",
-                        ticker, since_date, btc_pivot,
-                    )
-                    since_date = pivot_date
-        except Exception as _det_err:
-            log.warning("event=btc_first_filing_detect_error ticker=%s error=%s", ticker, _det_err)
+        if not skip_pivot_gate:
+            try:
+                btc_pivot = self.detect_btc_first_filing_date(cik=cik, ticker=ticker)
+                if btc_pivot:
+                    from datetime import date as _date_cls
+                    pivot_date = _date_cls.fromisoformat(btc_pivot[:10])
+                    if pivot_date > since_date:
+                        log.info(
+                            "event=edgar_since_gated ticker=%s since_date=%s btc_first_filing=%s",
+                            ticker, since_date, btc_pivot,
+                        )
+                        since_date = pivot_date
+            except Exception as _det_err:
+                log.warning("event=btc_first_filing_detect_error ticker=%s error=%s", ticker, _det_err)
 
         regime = (filing_regime or 'domestic').lower()
         if regime == 'domestic':
@@ -1155,7 +1174,7 @@ class EdgarConnector:
 
         for fetcher in fetchers:
             try:
-                result = fetcher(cik=cik, ticker=ticker, since_date=since_date)
+                result = fetcher(cik=cik, ticker=ticker, since_date=since_date, until_date=until_date)
                 combined.reports_ingested += result.reports_ingested
                 combined.data_points_extracted += result.data_points_extracted
                 combined.review_flagged += result.review_flagged

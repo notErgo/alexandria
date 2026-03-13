@@ -5,14 +5,16 @@ This module holds all hardcoded prompt strings and preamble templates used
 by LLMInterpreter. Separating them here keeps llm_interpreter.py focused on
 HTTP transport and response parsing.
 
-Prompt lookup priority:
+Prompt lookup priority (v46+):
   1. DB row in llm_prompts table (per-metric override, editable via UI)
-  2. _DEFAULT_PROMPTS[metric] (hardcoded baseline below)
-  3. _DEFAULT_FALLBACK_PROMPT (generic template for unknown metrics)
+  2. metric_schema.prompt_instructions (per-metric, seeded by _migrate_v46)
+  3. _DEFAULT_PROMPTS[metric] (hardcoded baseline below)
+  4. _DEFAULT_FALLBACK_PROMPT (generic template for unknown metrics)
 """
 
-# Hardcoded default prompts per metric.
-# Stored as DB overrides (llm_prompts table) take priority when available.
+# Migration seed only. Runtime lookup reads metric_schema.prompt_instructions first
+# (via LLMInterpreter._get_prompt_instructions). Do not delete until all deployments
+# are on v46+ and all rows are seeded.
 _DEFAULT_PROMPTS: dict = {
     "production_btc": (
         "You are a financial data extractor. Your task: find the TOTAL number of bitcoin this "
@@ -318,8 +320,9 @@ _ANNUAL_BATCH_PREAMBLE = (
     "Mining operations data appears in Item 1 (Business), Item 7 (MD&A), or exhibit tables.\n"
 )
 
-# Per-metric instructions for quarterly context (replaces 'REJECT: quarterly' with
-# 'REJECT: individual month' language for each metric).
+# Migration seed only. Runtime lookup reads metric_schema.quarterly_prompt first
+# (via LLMInterpreter._get_quarterly_prompt_instructions). Do not delete until all
+# deployments are on v46+ and all rows are seeded.
 _QUARTERLY_PROMPTS: dict = {
     "production_btc": (
         "Extract the TOTAL bitcoin MINED, PRODUCED, or EARNED for the QUARTER (or full year). "
@@ -399,7 +402,8 @@ _QUARTERLY_PROMPTS: dict = {
     ),
 }
 
-# Unit hint strings shown in the batch prompt for each metric
+# Migration seed only. Runtime lookup reads metric_schema.unit first in
+# _build_batch_prompt and extract_with_correction. Do not delete.
 _BATCH_UNIT_HINTS: dict = {
     "production_btc":          "BTC",
     "hodl_btc":                "BTC",

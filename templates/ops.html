@@ -1255,6 +1255,91 @@ tr.is-reviewed td { opacity: 0.65; }
       <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
     </div>
   </div>
+
+  <!-- ── Snippet Analysis & Examples card ────────────────────────────────── -->
+  <div class="ops-card" id="card-metric-examples" style="margin-top:1rem">
+    <div class="ops-card-header">
+      <span>Snippet Analysis &amp; Examples</span>
+    </div>
+    <div class="ops-card-body">
+      <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+        Mine historical source snippets to discover high-frequency extraction patterns,
+        then save them as few-shot examples injected into the LLM prompt.
+      </p>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div>
+          <label class="field-label">Metric</label>
+          <select id="ex-metric-select" style="font-size:0.82rem;padding:3px 6px">
+            <option value="">-- loading --</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Ticker (optional)</label>
+          <input id="ex-ticker-input" type="text" placeholder="MARA"
+                 style="font-size:0.82rem;padding:3px 6px;width:80px">
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="analyzeSnippets()">Analyze Snippets</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadExamplesForMetric()">Load Examples</button>
+      </div>
+
+      <!-- Analysis results -->
+      <div id="ex-analysis-results" style="display:none;margin-bottom:1rem">
+        <h4 style="font-size:0.82rem;margin:0 0 0.5rem">Analysis results</h4>
+        <div class="example-analysis-grid">
+          <div>
+            <strong style="font-size:0.78rem">Table patterns</strong>
+            <div id="ex-table-rows"></div>
+          </div>
+          <div>
+            <strong style="font-size:0.78rem">Prose patterns</strong>
+            <div id="ex-prose-ngrams"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stored examples -->
+      <div id="ex-stored-section" style="display:none">
+        <h4 style="font-size:0.82rem;margin:0 0 0.5rem">Stored examples
+          <span id="ex-count-badge" class="frequency-badge">0</span>
+        </h4>
+        <table id="ex-stored-table" style="width:100%;font-size:0.78rem;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--theme-border)">
+              <th style="text-align:left;padding:2px 6px">Ticker</th>
+              <th style="text-align:left;padding:2px 6px">Snippet</th>
+              <th style="text-align:left;padding:2px 6px">Label</th>
+              <th style="text-align:left;padding:2px 6px">Active</th>
+              <th style="padding:2px 6px">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ex-stored-tbody"></tbody>
+        </table>
+
+        <!-- Add example form -->
+        <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--theme-border)">
+          <h5 style="font-size:0.78rem;margin:0 0 0.4rem">Add example</h5>
+          <div style="display:flex;gap:0.5rem;align-items:flex-start;flex-wrap:wrap">
+            <textarea id="ex-add-snippet" rows="2" placeholder="Paste snippet text here"
+                      style="font-size:0.78rem;padding:3px 6px;width:280px;resize:vertical"></textarea>
+            <div style="display:flex;flex-direction:column;gap:0.3rem">
+              <input id="ex-add-label" type="text" placeholder="Label (optional)"
+                     style="font-size:0.78rem;padding:3px 6px;width:140px">
+              <select id="ex-add-source-type" style="font-size:0.78rem;padding:3px 6px">
+                <option value="">source_type</option>
+                <option value="table_row">table_row</option>
+                <option value="prose">prose</option>
+                <option value="manual">manual</option>
+              </select>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="addExampleManual()">Add Example</button>
+          </div>
+          <div id="ex-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
   </div><!-- /spane-config-metricskeywords -->
 
   <!-- Sub-pane: Settings (1.4) -->
@@ -1846,11 +1931,11 @@ tr.is-reviewed td { opacity: 0.65; }
         <span id="pe-save-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
       </div>
       <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.5rem;margin-bottom:0">
-        <strong>How prompts are resolved at runtime:</strong>
-        The LLM checks the DB table first (<code>llm_prompts</code>, <code>active=1</code>).
-        If a row exists for the metric, that text is used — your edit takes effect on the next extraction, no restart needed.
-        If no DB row is active, the hardcoded default in <code>llm_interpreter.py</code> is used.
-        "Reset to default" sets <code>active=0</code> on the DB row; the code fallback then applies.
+        <strong>How prompts are resolved at runtime (lookup order):</strong>
+        (1) <code>llm_prompts</code> override (this form, <code>active=1</code>) — highest priority, takes effect on next extraction without restart.
+        (2) <code>metric_schema.prompt_instructions</code> — edit inline via the Prompt button in the metric table above.
+        (3) Built-in hardcoded default in <code>llm_interpreter.py</code> — used when neither of the above is set.
+        "Reset to default" sets <code>active=0</code> on the DB row; tier 2 or 3 then applies.
       </p>
     </div>
 
@@ -2758,37 +2843,6 @@ tr.is-reviewed td { opacity: 0.65; }
   <div class="doc-panel-body">
     <div id="miner-review-panel"></div>
   </div>
-  <!-- Pattern generator — shown after text selection in source view -->
-  <div id="pattern-panel">
-    <div class="pattern-title">
-      Pattern Generator
-      <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
-        — select text in the document above
-      </span>
-    </div>
-    <div class="pattern-form-row">
-      <label>Selected</label>
-      <span id="selected-text-display"></span>
-    </div>
-    <div class="pattern-form-row">
-      <label>Metric</label>
-      <select id="pattern-metric">
-        <option value="">Loading metrics...</option>
-      </select>
-    </div>
-    <div class="pattern-form-row">
-      <label>Regex</label>
-      <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
-      <span class="pattern-match-count" id="match-count-display"></span>
-    </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
-      <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
-      <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
-      <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <div id="apply-result"></div>
-  </div>
 </div><!-- /#doc-panel -->
 
 <!-- ── Help overlay ──────────────────────────────────────────────────────── -->
@@ -3246,6 +3300,7 @@ function activatePipelineSubTab(pane, name) {
   });
   // Lazy-load on sub-tab activation
   if (pane === 'config' && name === 'companies') { loadMetricSchemaTable(); }
+  if (pane === 'config' && name === 'metricskeywords') { loadMetricSchemaTable(); _populateExMetricSelect(); }
   if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); loadOllamaSettings(); loadLlamaServerSettings(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
   if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
@@ -4213,6 +4268,21 @@ function renderCompanies() {
           + '<span id="btc-anchor-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>'
           + '</div>'
         );
+        detailParts.push(
+          '<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          + '<span style="color:var(--theme-text-muted);font-size:0.72rem">Backfill EDGAR:</span>'
+          + '<input id="backfill-from-' + escapeAttr(c.ticker) + '" type="text" maxlength="10" placeholder="from YYYY-MM-DD"'
+          +   ' style="width:128px;font-size:0.75rem;padding:1px 4px" title="Start date (leave blank to auto-detect gap)">'
+          + '<input id="backfill-to-' + escapeAttr(c.ticker) + '" type="text" maxlength="10" placeholder="to YYYY-MM-DD"'
+          +   ' style="width:128px;font-size:0.75rem;padding:1px 4px" title="End date (leave blank to auto-detect gap)">'
+          + '<label style="font-size:0.72rem;display:flex;align-items:center;gap:3px">'
+          +   '<input id="backfill-extract-' + escapeAttr(c.ticker) + '" type="checkbox"> auto-extract'
+          + '</label>'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerBackfill(this.getAttribute(\'data-ticker\'))">Backfill EDGAR</button>'
+          + '<span id="backfill-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>'
+          + '</div>'
+        );
       }
       rows.push(
         '<tr id="' + escapeHtml(detailId) + '" style="display:none"><td colspan="7" style="background:var(--theme-bg-tertiary);padding:8px 16px">'
@@ -4867,6 +4937,70 @@ async function detectBtcAnchor(ticker, force) {
   } catch (e) {
     msgEl.textContent = 'Request failed';
   }
+}
+
+async function triggerBackfill(ticker) {
+  const fromEl    = document.getElementById('backfill-from-' + ticker);
+  const toEl      = document.getElementById('backfill-to-' + ticker);
+  const extractEl = document.getElementById('backfill-extract-' + ticker);
+  const msgEl     = document.getElementById('backfill-msg-' + ticker);
+  if (!msgEl) return;
+
+  const body = { auto_extract: !!(extractEl && extractEl.checked) };
+  if (fromEl && fromEl.value.trim()) body.from_date = fromEl.value.trim();
+  if (toEl && toEl.value.trim())     body.to_date   = toEl.value.trim();
+
+  msgEl.textContent = 'Starting…';
+  msgEl.style.color = 'var(--theme-text-muted)';
+  try {
+    const resp = await fetch('/api/backfill/' + encodeURIComponent(ticker), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      msgEl.textContent = data.error?.message || ('HTTP ' + resp.status);
+      msgEl.style.color = 'var(--theme-danger,#dc2626)';
+      return;
+    }
+    const d = data.data || {};
+    if (d.detected) {
+      if (fromEl) fromEl.value = d.from_date || '';
+      if (toEl)   toEl.value   = d.to_date   || '';
+    }
+    msgEl.textContent = 'Running (' + (d.from_date || '?') + ' to ' + (d.to_date || '?') + ')…';
+    _pollBackfill(ticker, d.task_id, msgEl);
+  } catch (e) {
+    msgEl.textContent = 'Request failed';
+    msgEl.style.color = 'var(--theme-danger,#dc2626)';
+  }
+}
+
+function _pollBackfill(ticker, taskId, msgEl) {
+  const iv = setInterval(async function() {
+    try {
+      const resp = await fetch('/api/backfill/' + encodeURIComponent(taskId) + '/progress',
+                               { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.success) return;
+      const s = data.data || {};
+      if (s.status === 'complete') {
+        clearInterval(iv);
+        const n = s.reports_ingested || 0;
+        const dp = s.data_points_extracted != null ? ' / ' + s.data_points_extracted + ' data points' : '';
+        msgEl.textContent = 'Done — ' + n + ' report' + (n !== 1 ? 's' : '') + ' ingested' + dp;
+        msgEl.style.color = 'var(--theme-success,#16a34a)';
+      } else if (s.status === 'error') {
+        clearInterval(iv);
+        msgEl.textContent = 'Error: ' + (s.message || 'unknown');
+        msgEl.style.color = 'var(--theme-danger,#dc2626)';
+      } else {
+        msgEl.textContent = 'Running (' + (s.phase || s.status) + ')…';
+      }
+    } catch (_) { /* network blip — keep polling */ }
+  }, 2000);
 }
 
 async function enqueueAllScrapeJobs() {
@@ -5792,12 +5926,6 @@ function openReviewItemByIndex(idx) {
       + (item.metric ? ' · ' + item.metric : '')
       + (item.source_type ? ' · ' + item.source_type : '');
   }
-  const patternPanel = document.getElementById('pattern-panel');
-  if (patternPanel) patternPanel.style.display = 'none';
-  const patternStatus = document.getElementById('pattern-save-status');
-  if (patternStatus) patternStatus.textContent = '';
-  const applyResult = document.getElementById('apply-result');
-  if (applyResult) applyResult.style.display = 'none';
   ReviewPanel.openItem(item.id);
 }
 
@@ -6011,6 +6139,8 @@ async function loadMetricSchemaTable() {
         data-metric-key="${escapeHtml(m.key)}"
         onkeydown="if(event.key==='Enter'){addKwInline('${escapeHtml(m.key)}',this);event.preventDefault()}"
         style="font-size:0.75rem;padding:1px 5px;width:120px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text);vertical-align:middle">`;
+      const piVal = m.prompt_instructions || '';
+      const qpVal = m.quarterly_prompt || '';
       return `<tr data-ms-id="${m.id}" data-ms-key="${escapeHtml(m.key)}" style="border-bottom:1px solid var(--theme-border)">
         <td style="padding:3px 6px;font-family:monospace;font-size:0.79rem;white-space:nowrap;vertical-align:top">${escapeHtml(m.key)}${analystBadge}</td>
         <td style="padding:3px 6px;vertical-align:top">
@@ -6032,8 +6162,30 @@ async function loadMetricSchemaTable() {
           <input type="checkbox" ${activeChecked} onchange="toggleMetricSchemaActive(${m.id}, this.checked)">
         </td>
         <td style="padding:3px 4px;vertical-align:top">
+          <button class="btn btn-sm btn-secondary" onclick="togglePromptRow(${m.id})"
+            style="font-size:0.72rem;padding:1px 6px;margin-bottom:2px">Prompt</button>
           <button class="btn btn-sm btn-danger" onclick="deleteMetricSchema(${m.id},'${escapeHtml(m.key)}')"
             style="font-size:0.72rem;padding:1px 6px">Del</button>
+        </td>
+      </tr>
+      <tr id="prompt-row-${m.id}" class="prompt-detail-row">
+        <td colspan="6" style="padding:6px 10px;background:var(--theme-bg-secondary)">
+          <div style="display:flex;gap:1rem;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:0.75rem;color:var(--theme-text-muted);display:block;margin-bottom:2px">Monthly prompt instructions</label>
+              <textarea class="prompt-textarea" id="pi-${m.id}"
+                onblur="saveMetricPromptField(${m.id},'prompt_instructions',this.value)">${escapeHtml(piVal)}</textarea>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:0.75rem;color:var(--theme-text-muted);display:block;margin-bottom:2px">Quarterly/annual prompt instructions</label>
+              <textarea class="prompt-textarea" id="qp-${m.id}"
+                onblur="saveMetricPromptField(${m.id},'quarterly_prompt',this.value)">${escapeHtml(qpVal)}</textarea>
+            </div>
+          </div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:4px">
+            <span id="prompt-status-${m.id}"></span>
+            Leave blank to use the built-in hardcoded default.
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -6286,6 +6438,35 @@ function _splitCsvLine(line) {
   return tokens.map(t => t.trim());
 }
 
+function togglePromptRow(metricId) {
+  var row = document.getElementById('prompt-row-' + metricId);
+  if (!row) return;
+  row.classList.toggle('open');
+}
+
+async function saveMetricPromptField(metricId, field, value) {
+  var statusEl = document.getElementById('prompt-status-' + metricId);
+  try {
+    var resp = await fetch('/api/metric_schema/' + encodeURIComponent(metricId), {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({[field]: value || null}),
+    });
+    var json = await resp.json();
+    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
+    if (statusEl) {
+      statusEl.style.color = 'var(--theme-success,green)';
+      statusEl.textContent = 'Saved';
+      setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 2000);
+    }
+  } catch(err) {
+    if (statusEl) {
+      statusEl.style.color = 'var(--theme-danger)';
+      statusEl.textContent = String(err);
+    }
+  }
+}
+
 async function toggleMetricSchemaActive(id, active) {
   try {
     const resp = await fetch(`/api/metric_schema/${id}`, {
@@ -6296,9 +6477,8 @@ async function toggleMetricSchemaActive(id, active) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const body = await resp.json();
     if (!body.success) throw new Error(body.error?.message || 'Failed');
-    // Refresh table and all downstream metric selects
+    // Refresh table
     loadMetricSchemaTable();
-    loadPatternMetricSelects();
   } catch (e) {
     showToast('Failed to update metric: ' + e.message, 'error');
     loadMetricSchemaTable();  // revert checkbox to DB state
@@ -6315,7 +6495,6 @@ async function saveMetricSchemaField(id, field, value) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const body = await resp.json();
     if (!body.success) throw new Error(body.error?.message || 'Failed');
-    loadPatternMetricSelects();
   } catch (e) {
     showToast('Failed to save: ' + e.message, 'error');
     loadMetricSchemaTable();
@@ -6330,7 +6509,6 @@ async function deleteMetricSchema(id, key) {
     const body = await resp.json();
     if (!body.success) throw new Error(body.error?.message || 'Failed');
     loadMetricSchemaTable();
-    loadPatternMetricSelects();
   } catch (e) {
     showToast('Delete failed: ' + e.message, 'error');
   }
@@ -6364,6 +6542,164 @@ async function addMetricSchema() {
     document.getElementById('ms-add-unit').value = '';
     loadMetricSchemaTable();
     loadPatternMetricSelects();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+// ── Snippet Analysis & Examples ───────────────────────────────────────────────
+
+async function _populateExMetricSelect() {
+  const sel = document.getElementById('ex-metric-select');
+  if (!sel || sel.options.length > 1) return;
+  try {
+    const resp = await fetch('/api/metric_schema?sector=BTC-miners');
+    const body = await resp.json();
+    if (!body.success) return;
+    sel.innerHTML = '<option value="">-- select metric --</option>';
+    (body.data || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.key;
+      opt.textContent = `${m.key} (${m.label})`;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* silent */ }
+}
+
+async function analyzeSnippets() {
+  const metric = document.getElementById('ex-metric-select').value;
+  const ticker = (document.getElementById('ex-ticker-input').value || '').trim();
+  if (!metric) { alert('Select a metric first.'); return; }
+  const params = new URLSearchParams({limit: 500});
+  if (ticker) params.set('ticker', ticker);
+  try {
+    const resp = await fetch(`/api/metric_schema/${metric}/snippet_analysis?${params}`);
+    const body = await resp.json();
+    if (!body.success) { alert(body.error?.message || 'Analysis failed'); return; }
+    const d = body.data;
+    const tableEl = document.getElementById('ex-table-rows');
+    const proseEl = document.getElementById('ex-prose-ngrams');
+    tableEl.innerHTML = '';
+    proseEl.innerHTML = '';
+    (d.table_rows || []).forEach(row => {
+      tableEl.appendChild(_buildCandidateRow(metric, ticker, row));
+    });
+    (d.prose_ngrams || []).forEach(row => {
+      proseEl.appendChild(_buildCandidateRow(metric, ticker, row));
+    });
+    document.getElementById('ex-analysis-results').style.display = 'block';
+    loadExamplesForMetric();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+function _buildCandidateRow(metric, ticker, item) {
+  const div = document.createElement('div');
+  div.className = 'example-candidate-row';
+  const badge = document.createElement('span');
+  badge.className = 'frequency-badge';
+  badge.textContent = item.frequency;
+  const text = document.createElement('span');
+  text.textContent = item.template;
+  text.style.cssText = 'font-family:monospace;font-size:0.75rem;flex:1;word-break:break-all';
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-sm btn-secondary';
+  btn.textContent = 'Save';
+  btn.onclick = () => saveExampleFromAnalysis(metric, ticker || null, item.template, btn);
+  div.appendChild(badge);
+  div.appendChild(text);
+  div.appendChild(btn);
+  return div;
+}
+
+async function saveExampleFromAnalysis(metric, ticker, snippet, btn) {
+  btn.disabled = true;
+  try {
+    const body = {snippet};
+    if (ticker) body.ticker = ticker;
+    const resp = await fetch(`/api/metric_schema/${metric}/examples`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json();
+    if (json.success) {
+      btn.textContent = 'Saved';
+      loadExamplesForMetric();
+    } else {
+      btn.textContent = 'Error';
+      btn.disabled = false;
+    }
+  } catch (e) { btn.textContent = 'Error'; btn.disabled = false; }
+}
+
+async function loadExamplesForMetric() {
+  const metric = document.getElementById('ex-metric-select').value;
+  const ticker = (document.getElementById('ex-ticker-input').value || '').trim();
+  if (!metric) return;
+  const params = new URLSearchParams({all: 1});
+  if (ticker) params.set('ticker', ticker);
+  try {
+    const resp = await fetch(`/api/metric_schema/${metric}/examples?${params}`);
+    const body = await resp.json();
+    if (!body.success) return;
+    const rows = body.data || [];
+    const tbody = document.getElementById('ex-stored-tbody');
+    tbody.innerHTML = '';
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--theme-border)';
+      tr.innerHTML = `
+        <td style="padding:2px 6px">${row.ticker || '<em style="color:var(--theme-text-muted)">all</em>'}</td>
+        <td style="padding:2px 6px;font-family:monospace;font-size:0.73rem;max-width:300px;word-break:break-all">${_esc(row.snippet)}</td>
+        <td style="padding:2px 6px">${row.label || ''}</td>
+        <td style="padding:2px 6px;text-align:center">${row.active ? 'Y' : 'N'}</td>
+        <td style="padding:2px 6px;text-align:center">
+          <button class="btn btn-sm btn-danger" onclick="deleteExample(${row.id}, '${metric}')">Del</button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('ex-count-badge').textContent = rows.length;
+    document.getElementById('ex-stored-section').style.display = 'block';
+  } catch (e) { /* silent */ }
+}
+
+async function deleteExample(id, metric) {
+  if (!confirm('Delete this example?')) return;
+  try {
+    const resp = await fetch(`/api/metric_schema/${metric}/examples/${id}`, {method: 'DELETE'});
+    const body = await resp.json();
+    if (body.success) loadExamplesForMetric();
+    else alert(body.error?.message || 'Delete failed');
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function addExampleManual() {
+  const metric = document.getElementById('ex-metric-select').value;
+  const ticker = (document.getElementById('ex-ticker-input').value || '').trim() || null;
+  const snippet = document.getElementById('ex-add-snippet').value.trim();
+  const label = document.getElementById('ex-add-label').value.trim() || null;
+  const sourceType = document.getElementById('ex-add-source-type').value || null;
+  const errEl = document.getElementById('ex-add-error');
+  errEl.style.display = 'none';
+  if (!metric) { errEl.textContent = 'Select a metric first.'; errEl.style.display = 'block'; return; }
+  if (!snippet) { errEl.textContent = 'Snippet is required.'; errEl.style.display = 'block'; return; }
+  try {
+    const resp = await fetch(`/api/metric_schema/${metric}/examples`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({snippet, ticker, label, source_type: sourceType}),
+    });
+    const body = await resp.json();
+    if (!body.success) {
+      errEl.textContent = body.error?.message || 'Failed';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('ex-add-snippet').value = '';
+    document.getElementById('ex-add-label').value = '';
+    document.getElementById('ex-add-source-type').value = '';
+    loadExamplesForMetric();
   } catch (e) {
     errEl.textContent = 'Error: ' + e.message;
     errEl.style.display = 'block';
@@ -6674,308 +7010,6 @@ async function deleteMetricRule(metric) {
     loadMetricRules();
   } catch(err) {
     showToast('Delete failed: ' + String(err), true);
-  }
-}
-
-// ── Regex Patterns (1.2.1) ────────────────────────────────────────────────────
-
-let _patternsData = null;
-
-async function loadPatternMetricSelects() {
-  // Populate all metric <select> elements in the Pattern editor from /api/metric_schema
-  // (single source of truth). Passing active_only=false so analyst-defined and
-  // deprecated metrics are still accessible for pattern maintenance.
-  const selectIds = ['gen-pattern-metric', 'add-pattern-metric', 'test-pattern-metric'];
-  try {
-    const resp = await fetch('/api/metric_schema?active_only=false');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const metrics = data.data || [];
-    selectIds.forEach(function(id) {
-      const sel = document.getElementById(id);
-      if (!sel) return;
-      sel.innerHTML = metrics.map(function(m) {
-        return '<option value="' + escapeAttr(m.key) + '">' + escapeHtml(m.label || m.key) + '</option>';
-      }).join('');
-    });
-  } catch (_e) {}
-}
-
-async function loadPatterns() {
-  const container = document.getElementById('patterns-list');
-  if (!container) return;
-  container.innerHTML = '<p style="color:var(--theme-text-muted);font-size:0.85rem">Loading...</p>';
-  try {
-    const resp = await fetch('/api/patterns');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const json = await resp.json();
-    if (!json.success) throw new Error(json.error && json.error.message || 'Load failed');
-    _patternsData = json.data;
-    container.innerHTML = _renderPatternsHTML(json.data);
-    _renderKeywordGaps(json.data.keyword_gaps || []);
-  } catch(err) {
-    container.innerHTML = '<p style="color:var(--theme-danger)">Error: ' + escapeHtml(String(err)) + '</p>';
-  }
-}
-
-function _renderPatternsHTML(data) {
-  var metrics = data.metrics || [];
-  if (!metrics.length) return '<p style="color:var(--theme-text-muted)">No pattern files found.</p>';
-  var html = '';
-  metrics.forEach(function(m) {
-    html += '<div style="margin-bottom:1.5rem">';
-    html += '<div style="display:flex;gap:0.5rem;align-items:baseline;margin-bottom:0.4rem">';
-    html += '<strong style="font-size:0.9rem">' + escapeHtml(m.label) + '</strong>';
-    html += '<span style="font-size:0.75rem;color:var(--theme-text-muted);font-family:monospace">' + escapeHtml(m.metric) + '</span>';
-    if (m.unit) html += '<span style="font-size:0.75rem;color:var(--theme-text-muted)">' + escapeHtml(m.unit) + '</span>';
-    html += '<span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:auto">' + m.patterns.length + ' pattern' + (m.patterns.length !== 1 ? 's' : '') + '</span>';
-    html += '</div>';
-    if (!m.patterns.length) {
-      html += '<p style="color:var(--theme-warning,#b45309);font-size:0.82rem;margin:0.2rem 0">No patterns defined — extraction engine will always produce LLM-only results for this metric.</p>';
-    } else {
-      html += '<table style="width:100%;font-size:0.79rem;border-collapse:collapse">';
-      html += '<thead><tr style="border-bottom:1px solid var(--theme-border)">';
-      html += '<th style="text-align:left;padding:0.25rem 0.4rem;width:13%">ID</th>';
-      html += '<th style="text-align:left;padding:0.25rem 0.4rem">Regex</th>';
-      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:6%">Weight</th>';
-      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:5%">Fires</th>';
-      html += '<th style="text-align:right;padding:0.25rem 0.4rem;width:6%">Avg Conf</th>';
-      html += '<th style="padding:0.25rem 0.4rem;width:14%"></th>';
-      html += '</tr></thead><tbody>';
-      m.patterns.forEach(function(p) {
-        var pid = escapeHtml(p.id);
-        var metric = escapeHtml(m.metric);
-        var fires = p.fires || 0;
-        var avgConf = p.avg_conf != null ? (p.avg_conf * 100).toFixed(0) + '%' : '—';
-        var firesColor = fires > 0 ? 'var(--theme-text-primary)' : 'var(--theme-text-muted)';
-        html += '<tr style="border-bottom:1px solid var(--theme-border-subtle,#eee)">';
-        html += '<td style="padding:0.3rem 0.4rem;font-family:monospace;font-size:0.7rem;color:var(--theme-text-muted)">' + pid + '</td>';
-        html += '<td style="padding:0.3rem 0.4rem"><input type="text" class="pattern-regex-input"'
-          + ' style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem"'
-          + ' data-metric="' + metric + '" data-pid="' + pid + '"'
-          + ' value="' + escapeHtml(p.regex) + '"></td>';
-        html += '<td style="padding:0.3rem 0.4rem;text-align:right">'
-          + '<input type="number" class="pattern-weight-input" style="width:52px"'
-          + ' min="0.01" max="1" step="0.01"'
-          + ' data-metric="' + metric + '" data-pid="' + pid + '"'
-          + ' value="' + p.confidence_weight + '"></td>';
-        html += '<td style="padding:0.3rem 0.4rem;text-align:right;color:' + firesColor + '">' + fires + '</td>';
-        html += '<td style="padding:0.3rem 0.4rem;text-align:right;color:var(--theme-text-muted)">' + avgConf + '</td>';
-        html += '<td style="padding:0.3rem 0.4rem">'
-          + '<button class="btn btn-xs btn-primary" onclick="savePatternEdit(\'' + metric + '\',\'' + pid + '\')">Save</button> '
-          + '<button class="btn btn-xs btn-danger" onclick="deletePattern(\'' + metric + '\',\'' + pid + '\')">Del</button>'
-          + '<span id="pat-msg-' + metric + '-' + pid + '" style="font-size:0.7rem;color:var(--theme-text-muted);margin-left:0.3rem"></span>'
-          + '</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-    }
-    html += '</div>';
-  });
-  return html;
-}
-
-function _renderKeywordGaps(gaps) {
-  var el = document.getElementById('pattern-keyword-gaps');
-  if (!el || !gaps.length) return;
-  var uncovered = gaps.filter(function(g) { return !g.covered; });
-  if (!uncovered.length) {
-    el.textContent = 'All top keywords from review snippets are covered by existing patterns.';
-    return;
-  }
-  el.innerHTML = '<strong style="font-size:0.8rem">Top uncovered keywords (from review snippets):</strong> '
-    + uncovered.slice(0, 20).map(function(g) {
-        return '<span style="background:var(--theme-warning-bg,#fff3cd);border-radius:3px;padding:1px 5px;'
-          + 'font-size:0.75rem;margin:0 2px">' + escapeHtml(g.word) + ' (' + g.count + ')</span>';
-      }).join('');
-}
-
-async function savePatternEdit(metric, patternId) {
-  var msgEl = document.getElementById('pat-msg-' + metric + '-' + patternId);
-  var regexInput = document.querySelector('input.pattern-regex-input[data-metric="' + metric + '"][data-pid="' + patternId + '"]');
-  var weightInput = document.querySelector('input.pattern-weight-input[data-metric="' + metric + '"][data-pid="' + patternId + '"]');
-  if (!regexInput || !weightInput) return;
-  try {
-    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric) + '/' + encodeURIComponent(patternId), {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({regex: regexInput.value, confidence_weight: parseFloat(weightInput.value)}),
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
-    if (msgEl) {
-      msgEl.style.color = 'var(--theme-success,green)';
-      msgEl.textContent = 'Saved';
-      setTimeout(function() { if (msgEl) { msgEl.textContent = ''; } }, 2000);
-    }
-  } catch(err) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
-  }
-}
-
-async function deletePattern(metric, patternId) {
-  if (!confirm('Delete pattern "' + patternId + '" from ' + metric + '?')) return;
-  try {
-    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric) + '/' + encodeURIComponent(patternId), {
-      method: 'DELETE',
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Delete failed');
-    showToast('Deleted pattern ' + patternId);
-    loadPatterns();
-  } catch(err) {
-    showToast('Delete failed: ' + String(err), true);
-  }
-}
-
-async function addPatternFromForm() {
-  var metric = document.getElementById('add-pattern-metric') && document.getElementById('add-pattern-metric').value;
-  var regexEl = document.getElementById('add-pattern-regex');
-  var regex = regexEl ? regexEl.value.trim() : '';
-  var weightEl = document.getElementById('add-pattern-weight');
-  var weight = weightEl ? parseFloat(weightEl.value) : 0.85;
-  var msgEl = document.getElementById('add-pattern-msg');
-  if (!metric || !regex) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'Metric and regex are required.'; }
-    return;
-  }
-  try {
-    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric), {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({regex: regex, confidence_weight: weight}),
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Add failed');
-    if (msgEl) {
-      msgEl.style.color = 'var(--theme-success,green)';
-      msgEl.textContent = 'Added: ' + (json.data && json.data.id || '');
-      setTimeout(function() { if (msgEl) msgEl.textContent = ''; }, 3000);
-    }
-    if (regexEl) regexEl.value = '';
-    loadPatterns();
-  } catch(err) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
-  }
-}
-
-async function patternTabGenerate() {
-  var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
-  var text = document.getElementById('gen-pattern-text') && document.getElementById('gen-pattern-text').value.trim();
-  var resultEl = document.getElementById('gen-pattern-result');
-  var matchesEl = document.getElementById('gen-pattern-matches');
-  var msgEl = document.getElementById('gen-pattern-msg');
-  if (!text) { if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'Paste a snippet first.'; } return; }
-  if (resultEl) resultEl.style.display = 'none';
-  try {
-    var resp = await fetch('/api/patterns/generate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({selected_text: text, metric: metric}),
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Generate failed');
-    var d = json.data;
-    var regexEl = document.getElementById('gen-pattern-regex');
-    var weightEl = document.getElementById('gen-pattern-weight');
-    if (regexEl) regexEl.value = d.regex;
-    if (weightEl) weightEl.value = d.confidence_weight;
-    if (matchesEl) {
-      if (d.match_count > 0) {
-        matchesEl.innerHTML = '<span style="color:var(--theme-success,green)">' + d.match_count
-          + ' match' + (d.match_count !== 1 ? 'es' : '') + ' against the excerpt</span>';
-      } else {
-        matchesEl.innerHTML = '<span style="color:var(--theme-warning,#b45309)">No matches — the excerpt may be too short. Paste a longer passage from the document below in Test Regex to verify.</span>';
-      }
-    }
-    if (resultEl) resultEl.style.display = '';
-    if (msgEl) msgEl.textContent = '';
-  } catch(err) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
-  }
-}
-
-async function patternTabSave() {
-  var metric = document.getElementById('gen-pattern-metric') && document.getElementById('gen-pattern-metric').value;
-  var regex = document.getElementById('gen-pattern-regex') && document.getElementById('gen-pattern-regex').value.trim();
-  var weight = parseFloat(document.getElementById('gen-pattern-weight') && document.getElementById('gen-pattern-weight').value || '0.87');
-  var msgEl = document.getElementById('gen-pattern-msg');
-  if (!metric || !regex) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = 'No regex to save.'; }
-    return;
-  }
-  try {
-    var resp = await fetch('/api/patterns/' + encodeURIComponent(metric), {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({regex: regex, confidence_weight: weight}),
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Save failed');
-    if (msgEl) {
-      msgEl.style.color = 'var(--theme-success,green)';
-      msgEl.textContent = 'Saved as ' + (json.data && json.data.id || 'pattern');
-      setTimeout(function() { if (msgEl) msgEl.textContent = ''; }, 3000);
-    }
-    document.getElementById('gen-pattern-result').style.display = 'none';
-    document.getElementById('gen-pattern-text').value = '';
-    loadPatterns();
-  } catch(err) {
-    if (msgEl) { msgEl.style.color = 'var(--theme-danger)'; msgEl.textContent = String(err); }
-  }
-}
-
-function prefillPatternGenerator(metric, snippet) {
-  // Switch to Review > Patterns sub-tab
-  activateTab('review');
-  activatePipelineSubTab('review', 'patterns');
-  // Pre-fill the generator
-  var metricEl = document.getElementById('gen-pattern-metric');
-  var textEl = document.getElementById('gen-pattern-text');
-  if (metricEl && metric) metricEl.value = metric;
-  if (textEl && snippet) textEl.value = snippet;
-  // Auto-trigger generate after a brief render delay
-  setTimeout(generatePattern, 100);
-  // Scroll the generator into view
-  setTimeout(function() {
-    var el = document.getElementById('gen-pattern-text');
-    if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-  }, 200);
-}
-
-async function runPatternTest() {
-  var regex = document.getElementById('test-pattern-regex') && document.getElementById('test-pattern-regex').value.trim();
-  var text = document.getElementById('test-pattern-text') && document.getElementById('test-pattern-text').value.trim();
-  var metric = document.getElementById('test-pattern-metric') && document.getElementById('test-pattern-metric').value;
-  var resultsEl = document.getElementById('test-pattern-results');
-  if (!resultsEl) return;
-  if (!regex || !text) {
-    resultsEl.innerHTML = '<span style="color:var(--theme-danger)">Regex and text are both required.</span>';
-    return;
-  }
-  try {
-    var resp = await fetch('/api/patterns/test', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({regex: regex, text: text, metric: metric}),
-    });
-    var json = await resp.json();
-    if (!resp.ok || !json.success) throw new Error(json.error && json.error.message || 'Test failed');
-    var matches = json.data.matches || [];
-    if (!matches.length) {
-      resultsEl.innerHTML = '<span style="color:var(--theme-text-muted)">No matches found.</span>';
-      return;
-    }
-    resultsEl.innerHTML = '<strong>' + matches.length + ' match' + (matches.length !== 1 ? 'es' : '') + '</strong>'
-      + matches.map(function(mx) {
-          return '<div style="margin-top:0.4rem;padding:0.4rem;background:var(--theme-bg-secondary);border-radius:4px">'
-            + '<span style="font-family:monospace">value=' + (mx.value != null ? mx.value : 'null')
-            + (mx.unit ? ' unit=' + escapeHtml(mx.unit) : '') + '</span><br>'
-            + '<span style="font-size:0.74rem;color:var(--theme-text-muted)">' + escapeHtml(mx.context) + '</span>'
-            + '</div>';
-        }).join('');
-  } catch(err) {
-    resultsEl.innerHTML = '<span style="color:var(--theme-danger)">Error: ' + escapeHtml(String(err)) + '</span>';
   }
 }
 

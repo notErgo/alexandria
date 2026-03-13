@@ -423,6 +423,16 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 45")
                     version = 45
 
+                if version < 46:
+                    self._migrate_v46(conn)
+                    conn.execute("PRAGMA user_version = 46")
+                    version = 46
+
+                if version < 47:
+                    self._migrate_v47(conn)
+                    conn.execute("PRAGMA user_version = 47")
+                    version = 47
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -1748,6 +1758,338 @@ class MinerDB:
             CREATE INDEX IF NOT EXISTS idx_rmv_report_id
                 ON report_metric_verdict(report_id)
         """)
+
+    def _migrate_v46(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v45 -> v46: prompt_instructions and quarterly_prompt on metric_schema."""
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(metric_schema)").fetchall()}
+        if 'prompt_instructions' not in existing_cols:
+            conn.execute("ALTER TABLE metric_schema ADD COLUMN prompt_instructions TEXT")
+        if 'quarterly_prompt' not in existing_cols:
+            conn.execute("ALTER TABLE metric_schema ADD COLUMN quarterly_prompt TEXT")
+
+        # Seed compressed instructions (metric-specific content only, boilerplate stripped)
+        _COMPRESSED_INSTRUCTIONS = {
+            "production_btc": (
+                "Find the TOTAL number of bitcoin this company MINED, PRODUCED, EARNED, "
+                "or SELF-MINED during THIS reporting month.\n\n"
+                "Common phrasings:\n"
+                "- 'mined X bitcoin', 'produced X BTC', 'earned X BTC', 'X BTC produced'\n"
+                "- Table rows like: 'BTC Produced | 713', 'Total BTC earned | 269'\n"
+                "- 'X bitcoin were mined during the month', 'approximately X BTC produced'\n\n"
+                "CRITICAL RULES:\n"
+                "1. Monthly vs YTD: 'Produced 1,242 BTC in September and 8,610 BTC Year-To-Date' "
+                "   -> extract 1,242. Monthly figure always appears BEFORE 'Year-To-Date'.\n"
+                "2. Pipe tables: 'Bitcoin Produced | 463 | 533 ...' - FIRST number is current period.\n"
+                "3. 'Bitcoin Produced - U.S. Only' is PARTIAL - look for the total including all ops.\n"
+                "4. REJECT: quarterly, annual, YTD, cumulative, or network-wide stats.\n"
+                "5. REJECT values preceded by YTD, Q1-Q4, 'fiscal year', 'full year'.\n"
+                "6. Numbers may contain commas (1,242 = 1242)."
+            ),
+            "holdings_btc": (
+                "Find the company's TOTAL bitcoin BALANCE or HOLDINGS at the END of this "
+                "reporting period (absolute count, not a change).\n\n"
+                "MARA/Marathon table (highest priority): row 'Total BTC Holdings (in whole numbers)' "
+                "- extract the FIRST (current-period) value.\n"
+                "Pipe tables: 'Total BTC Holdings | 47,531 | 44,893 ...' - FIRST number is current.\n"
+                "If 'Unrestricted' and 'Restricted' rows exist, use the 'Total BTC Holdings' row.\n\n"
+                "Prose phrasings: 'held X bitcoin', 'holds X BTC', 'X BTC in treasury', "
+                "'total bitcoin holdings to approximately X', 'bitcoin balance of X'.\n\n"
+                "CRITICAL RULES:\n"
+                "1. Absolute total at period-end - not a delta.\n"
+                "2. 'holdings to approximately X' -> X is the NEW total.\n"
+                "3. REJECT 'holdings as of [date]' when that date is a prior month.\n"
+                "4. REJECT YTD, Q1/Q2/Q3/Q4, or fiscal year values.\n"
+                "5. Numbers may contain commas."
+            ),
+            "sales_btc": (
+                "Find the number of bitcoin SOLD or LIQUIDATED during THIS reporting month only.\n\n"
+                "MARA table: row 'BTC Sold' or 'Bitcoin Sold' - FIRST number is current month.\n"
+                "Zero or absent row -> return null. Marathon 100% HODL since mid-2024.\n\n"
+                "Prose: 'sold X BTC', 'liquidated X BTC', 'sold X of the Y BTC earned', "
+                "'divested X BTC', 'Bitcoin sold: X'.\n\n"
+                "REJECT: purchases/buys, network fee outflows, quarterly/annual/YTD values, "
+                "zero-sale disclosures ('did not sell any bitcoin') -> null not 0."
+            ),
+            "unrestricted_holdings": (
+                "Find the company's UNRESTRICTED bitcoin holdings at period-end - "
+                "bitcoin freely available, not pledged or encumbered.\n\n"
+                "MARA table: row 'Unrestricted BTC Holdings' - extract FIRST (current-period) value.\n"
+                "Prose: 'unrestricted bitcoin holdings of X', 'X BTC unrestricted', "
+                "'unencumbered BTC of X'.\n\n"
+                "REJECT beginning-of-period or prior-month values. "
+                "Return null if document does not distinguish restricted vs unrestricted."
+            ),
+            "restricted_holdings_btc": (
+                "Find the company's RESTRICTED or PLEDGED bitcoin holdings at period-end - "
+                "bitcoin that is encumbered, pledged as collateral, or otherwise restricted.\n\n"
+                "MARA table: rows 'Restricted BTC Holdings' or 'Pledged BTC Holdings' - "
+                "extract FIRST (current-period) value. If BOTH rows exist, sum them.\n"
+                "Prose: 'restricted bitcoin holdings of X', 'X BTC pledged as collateral'.\n\n"
+                "RULES: 0 is valid (means no BTC restricted). "
+                "Return null only if not mentioned at all. Numbers may contain commas."
+            ),
+            "hashrate_eh": (
+                "Find the company's OPERATIONAL hash rate at end of this reporting period, in EH/s.\n\n"
+                "Phrasings: 'operational hashrate of X EH/s', 'energized hashrate X EH/s', "
+                "'X EH/s deployed', 'hash rate of X EH/s', 'X exahash', 'X PH/s operational'.\n"
+                "Table rows: 'Energized Hashrate (EH/s) | 57.4'.\n\n"
+                "CRITICAL:\n"
+                "1. REJECT network/industry hashrate ('Bitcoin network hashrate: 850 EH/s').\n"
+                "2. Company hashrate is always smaller than Bitcoin network hashrate. "
+                "   Values >100 EH/s are suspect - verify it describes THIS company.\n"
+                "3. REJECT contracted, planned, or not-yet-energized capacity.\n"
+                "4. Convert PH/s to EH/s (divide by 1000). Extract CURRENT column."
+            ),
+            "realization_rate": (
+                "Extract the bitcoin realization rate or mining revenue per BTC as a ratio (0.0-1.0). "
+                "Convert percentage to ratio (e.g. 95% -> 0.95). "
+                "If not found, return null."
+            ),
+            "net_btc_balance_change": (
+                "Extract the net change in bitcoin holdings this period "
+                "(positive = accumulation, negative = reduction). Include sign. "
+                "If not found, return null."
+            ),
+            "encumbered_btc": (
+                "Extract total bitcoin pledged as collateral or encumbered under loan facilities. "
+                "Sum all collateral positions if multiple. If not found, return null."
+            ),
+            "mining_mw": (
+                "Extract total operational power capacity for bitcoin mining in MW. "
+                "Operational MW only, not contracted or planned. If not found, return null."
+            ),
+            "ai_hpc_mw": (
+                "Extract total operational power capacity dedicated to AI or HPC workloads in MW. "
+                "AI/HPC MW only, not bitcoin mining. If not found, return null."
+            ),
+            "hpc_revenue_usd": (
+                "Extract revenue from AI/HPC hosting contracts in USD. "
+                "Convert millions to full dollars (e.g. $5.2M -> 5200000). "
+                "If not found, return null."
+            ),
+            "gpu_count": (
+                "Extract total GPU units deployed (H100s, A100s, or equivalent). "
+                "Total deployed count only. If not found, return null."
+            ),
+        }
+
+        _COMPRESSED_QUARTERLY = {
+            "production_btc": (
+                "Extract TOTAL bitcoin MINED, PRODUCED, or EARNED for the QUARTER (or full year). "
+                "Phrasings: 'mined X bitcoin during Q1', 'produced X BTC in fiscal 2024', "
+                "'total BTC produced: X', 'bitcoin production for the quarter was X'. "
+                "REJECT: individual month figures, YTD cumulative spanning multiple quarters."
+            ),
+            "holdings_btc": (
+                "Extract the company's TOTAL bitcoin BALANCE or HOLDINGS at quarter/year-end "
+                "(point-in-time). Use 'Total BTC Holdings (in whole numbers)' row for MARA. "
+                "REJECT beginning-of-period balances or averages."
+            ),
+            "sales_btc": (
+                "Extract bitcoin SOLD or LIQUIDATED during the quarter or fiscal year (cumulative). "
+                "Look for 'BTC Sold' rows or prose 'sold X bitcoin'. "
+                "Return null if no sales occurred. REJECT individual month figures."
+            ),
+            "unrestricted_holdings": (
+                "Extract UNRESTRICTED bitcoin holdings at quarter-end or year-end. "
+                "REJECT beginning-of-period values."
+            ),
+            "restricted_holdings_btc": (
+                "Extract RESTRICTED or PLEDGED bitcoin at quarter-end or year-end. "
+                "Return null if the document makes no mention of restricted/pledged BTC."
+            ),
+            "hashrate_eh": (
+                "Extract OPERATIONAL hash rate in EH/s at END of reported quarter or fiscal year. "
+                "REJECT planned or contracted capacity not yet operational."
+            ),
+            "realization_rate": (
+                "Extract bitcoin realization rate as ratio (0.0-1.0) for reported quarter or year. "
+                "Convert percentages to ratios (95% -> 0.95). Return null if not found."
+            ),
+            "net_btc_balance_change": (
+                "Extract net change in bitcoin holdings over quarter or fiscal year "
+                "(positive = accumulation, negative = reduction). "
+                "REJECT month-by-month breakdowns."
+            ),
+            "encumbered_btc": (
+                "Extract total bitcoin pledged or encumbered at quarter-end or year-end. "
+                "Sum all collateral positions if multiple facilities listed."
+            ),
+            "mining_mw": (
+                "Extract total operational bitcoin mining power in MW at quarter-end or year-end. "
+                "REJECT contracted, planned, or not-yet-operational capacity."
+            ),
+            "ai_hpc_mw": (
+                "Extract total operational AI/HPC power capacity in MW at quarter-end or year-end. "
+                "REJECT contracted or planned capacity."
+            ),
+            "hpc_revenue_usd": (
+                "Extract AI/HPC hosting revenue in USD for quarter or fiscal year. "
+                "Convert millions to full dollars ($5.2M -> 5200000). "
+                "REJECT individual month figures."
+            ),
+            "gpu_count": (
+                "Extract total GPU units deployed at quarter-end or year-end. "
+                "REJECT planned or ordered units not yet deployed."
+            ),
+        }
+
+        for key, instr in _COMPRESSED_INSTRUCTIONS.items():
+            quarterly = _COMPRESSED_QUARTERLY.get(key)
+            conn.execute(
+                """UPDATE metric_schema SET prompt_instructions = ?, quarterly_prompt = ?
+                   WHERE key = ? AND prompt_instructions IS NULL""",
+                (instr, quarterly, key),
+            )
+
+    def _migrate_v47(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v46 -> v47: metric_examples table."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS metric_examples (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                metric_key  TEXT NOT NULL,
+                ticker      TEXT,
+                snippet     TEXT NOT NULL,
+                label       TEXT,
+                source_type TEXT,
+                active      INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metric_examples_metric_key
+                ON metric_examples(metric_key)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_metric_examples_metric_ticker
+                ON metric_examples(metric_key, ticker)
+        """)
+
+    # ── Metric examples CRUD ────────────────────────────────────────────────────
+
+    def _metric_key_exists_in_schema(self, metric_key: str) -> bool:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM metric_schema WHERE key = ? LIMIT 1", (metric_key,)
+            ).fetchone()
+        return row is not None
+
+    def add_metric_example(self, metric_key: str, snippet: str, ticker: str = None,
+                            label: str = None, source_type: str = None) -> int:
+        """Insert a metric example. Raises ValueError if metric_key is not in metric_schema."""
+        if not self._metric_key_exists_in_schema(metric_key):
+            raise ValueError(f"Unknown metric key: {metric_key}")
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                """INSERT INTO metric_examples (metric_key, ticker, snippet, label, source_type)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (metric_key, ticker, snippet, label, source_type),
+            )
+            return cur.lastrowid
+
+    def get_metric_examples(self, metric_key: str, ticker: str = None,
+                             active_only: bool = True) -> list:
+        """Return metric examples for a metric, optionally filtered by ticker.
+
+        When ticker is supplied, returns rows where ticker matches OR ticker IS NULL.
+        When ticker is None, returns ALL rows for the metric regardless of ticker.
+        """
+        params = [metric_key]
+        if ticker is not None:
+            where = "metric_key = ? AND (ticker = ? OR ticker IS NULL)"
+            params.append(ticker)
+        else:
+            where = "metric_key = ?"
+        if active_only:
+            where += " AND active = 1"
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT id, metric_key, ticker, snippet, label, source_type, active, created_at "
+                f"FROM metric_examples WHERE {where} ORDER BY id",
+                params,
+            ).fetchall()
+        return [
+            {
+                'id': r[0], 'metric_key': r[1], 'ticker': r[2], 'snippet': r[3],
+                'label': r[4], 'source_type': r[5], 'active': r[6], 'created_at': r[7],
+            }
+            for r in rows
+        ]
+
+    def update_metric_example(self, example_id: int, snippet: str = None, label: str = None,
+                               active: int = None, source_type: str = None) -> bool:
+        """Update fields on a metric_example row. Returns True if a row was updated."""
+        updates = {}
+        if snippet is not None:
+            updates['snippet'] = snippet
+        if label is not None:
+            updates['label'] = label
+        if active is not None:
+            updates['active'] = active
+        if source_type is not None:
+            updates['source_type'] = source_type
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [example_id]
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                f"UPDATE metric_examples SET {set_clause} WHERE id = ?", values
+            )
+            return cur.rowcount > 0
+
+    def delete_metric_example(self, example_id: int) -> bool:
+        """Delete a metric_example row. Returns True if deleted."""
+        with self._get_connection() as conn:
+            cur = conn.execute("DELETE FROM metric_examples WHERE id = ?", (example_id,))
+            return cur.rowcount > 0
+
+    def get_snippets_for_metric(self, metric_key: str, ticker: str = None,
+                                 limit: int = 500) -> list:
+        """Return distinct source_snippets from data_points (and review_queue) for a metric.
+
+        Used to populate the snippet analyzer with real historical extraction samples.
+        """
+        params_dp = [metric_key]
+        ticker_filter = ""
+        if ticker is not None:
+            ticker_filter = " AND ticker = ?"
+            params_dp.append(ticker)
+
+        with self._get_connection() as conn:
+            dp_rows = conn.execute(
+                f"SELECT source_snippet FROM data_points "
+                f"WHERE metric = ? AND source_snippet IS NOT NULL AND source_snippet != ''"
+                f"{ticker_filter} LIMIT ?",
+                params_dp + [limit],
+            ).fetchall()
+
+            params_rq = [metric_key]
+            if ticker is not None:
+                params_rq.append(ticker)
+            rq_rows = conn.execute(
+                f"SELECT source_snippet FROM review_queue "
+                f"WHERE metric = ? AND source_snippet IS NOT NULL AND source_snippet != ''"
+                f"{ticker_filter} LIMIT ?",
+                params_rq + [limit],
+            ).fetchall()
+
+        seen = set()
+        result = []
+        for (snip,) in dp_rows + rq_rows:
+            if snip and snip not in seen:
+                seen.add(snip)
+                result.append(snip)
+        return result
+
+    def get_active_examples_for_prompt(self, metric_key: str, ticker: str = None) -> list:
+        """Return at most 5 active snippet strings for LLM prompt injection.
+
+        Merges ticker-scoped + metric-wide (ticker IS NULL) examples, active only.
+        """
+        rows = self.get_metric_examples(metric_key, ticker=ticker, active_only=True)
+        snippets = [r['snippet'] for r in rows]
+        return snippets[:5]
 
     # ── Report metric verdict CRUD ──────────────────────────────────────────────
 
@@ -5531,14 +5873,27 @@ class MinerDB:
 
     # ── Phase III: scrape_queue CRUD ──────────────────────────────────────────
 
+    def detect_edgar_report_window(self, ticker: str) -> dict:
+        """Return the earliest and latest report_date for EDGAR source types for a ticker.
+
+        Used by the backfill endpoint to auto-detect the gap window.
+        Returns {'min_date': str_or_none, 'max_date': str_or_none}.
+        """
+        edgar_types = ('edgar_8k', 'edgar_10q', 'edgar_10k', 'edgar_6k', 'edgar_20f', 'edgar_40f')
+        placeholders = ','.join('?' * len(edgar_types))
+        with self._get_connection() as conn:
+            row = conn.execute(
+                f"SELECT MIN(report_date), MAX(report_date) FROM reports "
+                f"WHERE ticker = ? AND source_type IN ({placeholders})",
+                (ticker.upper(), *edgar_types),
+            ).fetchone()
+        if row is None:
+            return {'min_date': None, 'max_date': None}
+        return {'min_date': row[0], 'max_date': row[1]}
+
     def enqueue_scrape_job(self, ticker: str, mode: str) -> dict:
-        """Enqueue a scrape job. Raises ValueError if company scraper_mode is 'skip'."""
+        """Enqueue a scrape job for a ticker."""
         company = self.get_company(ticker)
-        if company and company.get('scraper_mode', 'skip') == 'skip':
-            raise ValueError(
-                f"Scrape skipped — scraper_mode is 'skip' for {ticker}. "
-                f"Update scraper_mode before triggering a scrape."
-            )
         with self._get_connection() as conn:
             cursor = conn.execute(
                 "INSERT INTO scrape_queue (ticker, mode) VALUES (?, ?)",
@@ -5897,10 +6252,13 @@ class MinerDB:
         active: int = None,
         label: str = None,
         unit: str = None,
+        prompt_instructions: str = None,
+        quarterly_prompt: str = None,
     ) -> bool:
-        """Update active flag, label, and/or unit for a metric_schema row.
+        """Update active flag, label, unit, and/or prompt fields for a metric_schema row.
 
         Returns True if a row was updated, False if row_id not found.
+        Pass an empty string for prompt_instructions or quarterly_prompt to clear (set to NULL).
         """
         sets = []
         params = []
@@ -5913,6 +6271,12 @@ class MinerDB:
         if unit is not None:
             sets.append("unit = ?")
             params.append(unit)
+        if prompt_instructions is not None:
+            sets.append("prompt_instructions = ?")
+            params.append(prompt_instructions if prompt_instructions else None)
+        if quarterly_prompt is not None:
+            sets.append("quarterly_prompt = ?")
+            params.append(quarterly_prompt if quarterly_prompt else None)
         if not sets:
             return False
         params.append(row_id)

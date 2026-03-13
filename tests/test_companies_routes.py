@@ -319,3 +319,52 @@ def test_sync_companies_reenables_startup_auto_sync(client):
     resp = client.post('/api/companies/sync')
     if resp.status_code == 200:
         assert db.get_config('auto_sync_companies_on_startup') == '1'
+
+
+def test_patch_metric_schema_prompt_instructions(client):
+    import app_globals
+    db = app_globals.get_db()
+    rows = db.get_metric_schema('BTC-miners', active_only=False)
+    row_id = rows[0]['id']
+    resp = client.patch(f'/api/metric_schema/{row_id}',
+                        json={'prompt_instructions': 'Test prompt'})
+    assert resp.status_code == 200
+    updated = db.get_metric_schema('BTC-miners', active_only=False)
+    updated_row = next(r for r in updated if r['id'] == row_id)
+    assert updated_row['prompt_instructions'] == 'Test prompt'
+
+
+def test_patch_metric_schema_quarterly_prompt(client):
+    import app_globals
+    db = app_globals.get_db()
+    rows = db.get_metric_schema('BTC-miners', active_only=False)
+    row_id = rows[0]['id']
+    resp = client.patch(f'/api/metric_schema/{row_id}',
+                        json={'quarterly_prompt': 'Quarterly override'})
+    assert resp.status_code == 200
+    updated = db.get_metric_schema('BTC-miners', active_only=False)
+    updated_row = next(r for r in updated if r['id'] == row_id)
+    assert updated_row['quarterly_prompt'] == 'Quarterly override'
+
+
+def test_patch_metric_schema_prompt_instructions_null(client):
+    import app_globals
+    db = app_globals.get_db()
+    rows = db.get_metric_schema('BTC-miners', active_only=False)
+    row_id = rows[0]['id']
+    client.patch(f'/api/metric_schema/{row_id}', json={'prompt_instructions': 'Something'})
+    resp = client.patch(f'/api/metric_schema/{row_id}', json={'prompt_instructions': None})
+    assert resp.status_code == 200
+    updated = db.get_metric_schema('BTC-miners', active_only=False)
+    updated_row = next(r for r in updated if r['id'] == row_id)
+    assert updated_row['prompt_instructions'] is None
+
+
+def test_get_metric_schema_response_includes_prompt_fields(client):
+    resp = client.get('/api/metric_schema?sector=BTC-miners')
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['success']
+    row = data['data'][0]
+    assert 'prompt_instructions' in row
+    assert 'quarterly_prompt' in row

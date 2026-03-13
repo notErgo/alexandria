@@ -764,3 +764,46 @@ body.dev-no-tips .info-bubble { display: none !important; }
 .pipeline-trace td { padding: 3px 8px; }
 .pipeline-trace td:first-child { color: var(--theme-text-muted, #888); white-space: nowrap; width: 140px; }
 .pipeline-trace .go-to-review { font-size: 0.8rem; padding: 2px 8px; margin-left: 8px; }
+
+/* Per-metric prompt expand rows */
+.prompt-detail-row {
+  display: none;
+}
+.prompt-detail-row.open {
+  display: table-row;
+}
+.prompt-textarea {
+  width: 100%;
+  min-height: 80px;
+  font-size: 0.78rem;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+
+/* Snippet Analysis & Examples */
+.example-analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+.example-candidate-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--theme-border);
+    font-size: 0.78rem;
+}
+.frequency-badge {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    padding: 1px 5px;
+    min-width: 24px;
+    text-align: center;
+    white-space: nowrap;
+    color: var(--theme-text-secondary);
+}

@@ -259,7 +259,17 @@ class LLMInterpreter:
         """
         try:
             base_instructions = self._get_prompt_instructions(metric)
-            unit = _BATCH_UNIT_HINTS.get(metric, '')
+            unit = ''
+            if self._db is not None:
+                try:
+                    rows = self._db.get_metric_schema('BTC-miners', active_only=False)
+                    schema_row = next((r for r in rows if r['key'] == metric), None)
+                    if schema_row and schema_row.get('unit'):
+                        unit = schema_row['unit']
+                except Exception:
+                    pass
+            if not unit:
+                unit = _BATCH_UNIT_HINTS.get(metric, '')
             preamble = (
                 f"Your first extraction returned {metric} = {first_value} {unit}.\n"
                 f"A cross-check raised a concern: {concern_context}\n\n"
@@ -305,26 +315,81 @@ class LLMInterpreter:
             )
             return None
 
+    def _strip_output_format(self, full_prompt: str) -> str:
+        """Strip output-format boilerplate from a full prompt string."""
+        for sentinel in ("Return ONLY this JSON", "Return ONLY valid JSON", "Document:\n"):
+            idx = full_prompt.find(sentinel)
+            if idx != -1:
+                return full_prompt[:idx].rstrip()
+        return full_prompt.rstrip()
+
     def _get_prompt_instructions(self, metric: str) -> str:
-        """
-        Return the task-description block of a metric's prompt — everything
-        before the 'Return ONLY this JSON' output-format sentinel (or before
-        'Document:' as fallback). DB overrides are checked first.
+        """Return the task-description block of a metric's prompt.
+
+        Lookup order:
+        1. llm_prompts table (active=1 DB override)
+        2. metric_schema.prompt_instructions
+        3. _DEFAULT_PROMPTS[metric] (hardcoded baseline, boilerplate stripped)
+        4. _DEFAULT_FALLBACK_PROMPT (generic template)
 
         Used by _build_batch_prompt to embed per-metric instructions without
         duplicating the output-format boilerplate for each metric.
         """
-        full_prompt = self._get_prompt(metric)
+        # Tier 1: Check llm_prompts DB override
+        if self._db is not None:
+            try:
+                with self._db._get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT prompt_text FROM llm_prompts WHERE metric=? AND active=1 "
+                        "ORDER BY id DESC LIMIT 1",
+                        (metric,)
+                    ).fetchone()
+                    if row and row[0]:
+                        return self._strip_output_format(row[0])
+            except Exception as e:
+                log.warning("Could not fetch LLM prompt from DB for %s: %s", metric, e)
 
-        # Strip from the output-format sentinel onward
-        for sentinel in ("Return ONLY this JSON", "Return ONLY valid JSON",
-                         "Document:\n"):
-            idx = full_prompt.find(sentinel)
-            if idx != -1:
-                return full_prompt[:idx].rstrip()
+        # Tier 2: metric_schema.prompt_instructions (already stripped of boilerplate)
+        if self._db is not None:
+            try:
+                rows = self._db.get_metric_schema('BTC-miners', active_only=False)
+                schema_row = next((r for r in rows if r['key'] == metric), None)
+                if schema_row and schema_row.get('prompt_instructions'):
+                    return schema_row['prompt_instructions']
+            except Exception as e:
+                log.warning("Could not fetch metric_schema.prompt_instructions for %s: %s", metric, e)
 
-        # No sentinel found — return whole prompt minus trailing whitespace
-        return full_prompt.rstrip()
+        # Tier 3: hardcoded _DEFAULT_PROMPTS
+        if metric in _DEFAULT_PROMPTS:
+            return self._strip_output_format(_DEFAULT_PROMPTS[metric])
+
+        # Tier 4: generic fallback
+        return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
+
+    def _get_quarterly_prompt_instructions(self, metric: str) -> str:
+        """Return quarterly extraction instructions for a metric.
+
+        Lookup order:
+        1. metric_schema.quarterly_prompt
+        2. _QUARTERLY_PROMPTS[metric] (hardcoded)
+        3. _get_prompt_instructions(metric) (monthly instructions as fallback)
+        """
+        # Tier 1: metric_schema.quarterly_prompt
+        if self._db is not None:
+            try:
+                rows = self._db.get_metric_schema('BTC-miners', active_only=False)
+                schema_row = next((r for r in rows if r['key'] == metric), None)
+                if schema_row and schema_row.get('quarterly_prompt'):
+                    return schema_row['quarterly_prompt']
+            except Exception as e:
+                log.warning("Could not fetch metric_schema.quarterly_prompt for %s: %s", metric, e)
+
+        # Tier 2: hardcoded _QUARTERLY_PROMPTS
+        if metric in _QUARTERLY_PROMPTS:
+            return _QUARTERLY_PROMPTS[metric]
+
+        # Tier 3: fall back to monthly instructions
+        return self._get_prompt_instructions(metric)
 
     def _build_batch_prompt(self, text: str, metrics: list, ticker: str = None,
                             config=None, period: str = None) -> str:
@@ -402,6 +467,27 @@ class LLMInterpreter:
                     lines.append("===\n")
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
+
+        # Example patterns from historical successful extractions
+        if self._db is not None:
+            try:
+                all_examples = []
+                for metric in metrics:
+                    for snippet in self._db.get_active_examples_for_prompt(metric, ticker=ticker):
+                        entry = f"  [{metric}] {snippet}"
+                        if entry not in all_examples:
+                            all_examples.append(entry)
+                if all_examples:
+                    lines.append("=== EXAMPLE PATTERNS ===")
+                    lines.append(
+                        "These are real snippets from past successful extractions. "
+                        "Use them as recognition templates only — do not copy these values. "
+                        "Extract only from the document below."
+                    )
+                    lines.extend(all_examples)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("metric_examples fetch failed, skipping: %s", e)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
         if self._db is not None:
@@ -946,6 +1032,27 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
 
+        # Example patterns from historical successful extractions
+        if self._db is not None:
+            try:
+                all_examples = []
+                for metric in metrics:
+                    for snippet in self._db.get_active_examples_for_prompt(metric, ticker=ticker):
+                        entry = f"  [{metric}] {snippet}"
+                        if entry not in all_examples:
+                            all_examples.append(entry)
+                if all_examples:
+                    lines.append("=== EXAMPLE PATTERNS ===")
+                    lines.append(
+                        "These are real snippets from past successful extractions. "
+                        "Use them as recognition templates only — do not copy these values. "
+                        "Extract only from the document below."
+                    )
+                    lines.extend(all_examples)
+                    lines.append("===\n")
+            except Exception as e:
+                log.warning("metric_examples fetch failed, skipping: %s", e)
+
         # Target metrics from metric_schema (SSOT — never hardcoded)
         if self._db is not None:
             try:
@@ -961,11 +1068,7 @@ class LLMInterpreter:
 
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")
-            instructions = _QUARTERLY_PROMPTS.get(metric)
-            if instructions is None:
-                # Fall back to standard per-metric instructions but strip monthly rejections
-                instructions = self._get_prompt_instructions(metric)
-            lines.append(instructions)
+            lines.append(self._get_quarterly_prompt_instructions(metric))
             lines.append("")
 
         lines.append("=== OUTPUT FORMAT ===")

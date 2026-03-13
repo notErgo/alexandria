@@ -1133,37 +1133,6 @@ tr.is-reviewed td { opacity: 0.65; }
     <div class="doc-panel-body" style="display:block;height:auto;overflow:visible">
       <div id="miner-review-panel"></div>
     </div>
-    <!-- Pattern generator — shown after text selection in source view -->
-    <div id="pattern-panel">
-      <div class="pattern-title">
-        Pattern Generator
-        <span style="font-weight:normal;color:var(--theme-text-muted);text-transform:none;letter-spacing:0">
-          — select text in the document above
-        </span>
-      </div>
-      <div class="pattern-form-row">
-        <label>Selected</label>
-        <span id="selected-text-display"></span>
-      </div>
-      <div class="pattern-form-row">
-        <label>Metric</label>
-        <select id="pattern-metric">
-          <option value="">Loading metrics...</option>
-        </select>
-      </div>
-      <div class="pattern-form-row">
-        <label>Regex</label>
-        <input type="text" id="pattern-regex-input" placeholder="Generated regex…">
-        <span class="pattern-match-count" id="match-count-display"></span>
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="testGeneratedPattern()">Test</button>
-        <button class="btn btn-primary btn-sm" onclick="saveGeneratedPattern()">Save Pattern</button>
-        <button class="btn btn-secondary btn-sm" id="apply-archive-btn" onclick="applyPatternToArchive()">Apply to Archive</button>
-        <span id="pattern-save-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-      <div id="apply-result"></div>
-    </div>
   </div><!-- /#doc-panel -->
 
 </div><!-- /.md-page -->
@@ -1795,13 +1764,7 @@ function buildTableHeaders(metricKeys, metricLabels, metricUnits) {
     th.setAttribute('data-sort', key);
     th.setAttribute('data-sort-type', 'num');
     th.setAttribute('data-col', key);
-    // ⚙ link to prompt editor — stopPropagation prevents sort trigger
-    const gearLink = `<a href="/patterns?metric=${encodeURIComponent(key)}" ` +
-      `title="Edit extraction prompt" ` +
-      `style="color:var(--theme-text-muted);font-size:0.7em;text-decoration:none;` +
-      `opacity:0.55;margin-left:3px;vertical-align:middle" ` +
-      `onclick="event.stopPropagation()">⚙</a>`;
-    th.innerHTML = escapeHtml(label) + gearLink;
+    th.innerHTML = escapeHtml(label);
     theadRow.insertBefore(th, typeTh);
   });
 
@@ -1911,11 +1874,6 @@ function selectPeriod(period) {
   document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${periodLabel}${row && row.source_type ? ' · ' + row.source_type : ''}`;
 
-  // Reset pattern panel state (pattern generator is separate from ReviewPanel)
-  document.getElementById('pattern-panel').style.display = 'none';
-  document.getElementById('pattern-save-status').textContent = '';
-  document.getElementById('apply-result').style.display = 'none';
-
   // Open ReviewPanel for this cell (no specific metric — shows all analysis)
   ReviewPanel.openCell(_ticker, period, null, {nullMetrics: nullMetrics});
 
@@ -1930,7 +1888,6 @@ function closeDocPanel() {
   _selectedPeriod = null;
   const panel = document.getElementById('doc-panel');
   panel.classList.remove('visible');
-  document.getElementById('pattern-panel').style.display = 'none';
   ReviewPanel.close();
   // Clear row selection
   document.querySelectorAll('#timeline-tbody tr.selected').forEach(function(r) {
@@ -1942,89 +1899,6 @@ function closeDocPanel() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape' && _selectedPeriod) closeDocPanel();
 });
-
-// ── Text selection → pattern generation (wired in DOMContentLoaded) ───────
-
-function showPatternPanel(selectedText) {
-  // Pattern generator disabled in LLM-only mode (no-op).
-}
-
-async function generatePattern(selectedText) {
-  if (!selectedText) return;
-  const metric = document.getElementById('pattern-metric').value;
-  try {
-    const resp = await fetch('/api/patterns/generate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        selected_text: selectedText,
-        metric: metric,
-        doc_text: _currentDocText.slice(0, 50000),
-      }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      showToast(err.error?.message || 'Pattern generation failed', true);
-      return;
-    }
-    const data = await resp.json();
-    if (!data.success) { showToast(data.error?.message || 'Failed', true); return; }
-    document.getElementById('pattern-regex-input').value = data.data.regex;
-    updateMatchCount(data.data.match_count);
-  } catch (err) {
-    showToast(`Pattern error: ${err.message}`, true);
-  }
-}
-
-function updateMatchCount(count) {
-  const el = document.getElementById('match-count-display');
-  if (count === 0) {
-    el.textContent = '0 matches';
-    el.className = 'pattern-match-count zero';
-  } else {
-    el.textContent = `${count} match${count === 1 ? '' : 'es'} ✓`;
-    el.className = 'pattern-match-count good';
-  }
-}
-
-async function testGeneratedPattern() {
-  const regex = document.getElementById('pattern-regex-input').value.trim();
-  if (!regex) return;
-  const metric = document.getElementById('pattern-metric').value;
-  if (!_currentDocText) { showToast('No document loaded', true); return; }
-  try {
-    const resp = await fetch('/api/patterns/test', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ regex, text: _currentDocText.slice(0, 50000), metric }),
-    });
-    const data = await resp.json();
-    if (!data.success) { showToast(data.error?.message || 'Test failed', true); return; }
-    updateMatchCount(data.data.matches.length);
-  } catch (err) {
-    showToast(`Test error: ${err.message}`, true);
-  }
-}
-
-async function saveGeneratedPattern() {
-  const regex = document.getElementById('pattern-regex-input').value.trim();
-  if (!regex) { showToast('No regex to save', true); return; }
-  const metric = document.getElementById('pattern-metric').value;
-  try {
-    const resp = await fetch(`/api/patterns/${encodeURIComponent(metric)}`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ regex, confidence_weight: 0.87 }),
-    });
-    const data = await resp.json();
-    if (!data.success) { showToast(data.error?.message || 'Save failed', true); return; }
-    const newId = data.data?.id || '';
-    document.getElementById('pattern-save-status').textContent = `Saved as ${newId}`;
-    showToast(`Pattern saved as ${newId}`);
-  } catch (err) {
-    showToast(`Save error: ${err.message}`, true);
-  }
-}
 
 // ── Open raw source in new tab ─────────────────────────────────────────────
 function openInNewTab() {
@@ -2548,55 +2422,6 @@ async function purgeAllFinal() {
   }
 }
 
-async function applyPatternToArchive() {
-  const regex = document.getElementById('pattern-regex-input').value.trim();
-  if (!regex) { showToast('No regex to apply', true); return; }
-  const metric = document.getElementById('pattern-metric').value;
-  const btn = document.getElementById('apply-archive-btn');
-  const resultEl = document.getElementById('apply-result');
-  btn.disabled = true;
-  btn.textContent = 'Applying…';
-  resultEl.style.display = 'none';
-
-  try {
-    const resp = await fetch('/api/patterns/apply', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ regex, metric, confidence_weight: 0.87 }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
-    }
-    const data = await resp.json();
-    if (!data.success) throw new Error(data.error?.message || 'Apply failed');
-
-    const d = data.data;
-    const parts = [];
-    if (d.created > 0) parts.push(`<span style="color:var(--theme-success)">${d.created} created</span>`);
-    if (d.skipped_existing > 0) parts.push(`${d.skipped_existing} skipped`);
-    if (d.low_confidence > 0) parts.push(`${d.low_confidence} → review queue`);
-    if (d.no_match > 0) parts.push(`${d.no_match} no match`);
-    resultEl.innerHTML = `Applied to ${d.applied_to} reports — ${parts.join(', ') || 'no changes'}.`;
-    resultEl.style.display = '';
-
-    if (d.created > 0) {
-      showToast(`Applied: ${d.created} new data point${d.created !== 1 ? 's' : ''} created`);
-      // Refresh table for current company
-      selectCompany(_ticker);
-    } else {
-      showToast('Pattern applied — no new data points created');
-    }
-  } catch (err) {
-    resultEl.innerHTML = `<span style="color:var(--theme-danger)">Apply error: ${escapeHtml(err.message)}</span>`;
-    resultEl.style.display = '';
-    showToast(`Apply error: ${err.message}`, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Apply to Archive';
-  }
-}
-
 // ── Pipeline trace — shown when an empty or no-document cell is clicked ────
 function openPipelineTrace(ticker, period, metric) {
   const params = new URLSearchParams({ticker: ticker, period: period});
@@ -2643,11 +2468,6 @@ function openPipelineTrace(ticker, period, metric) {
       panel.classList.add('visible');
       document.getElementById('doc-panel-title-text').textContent =
         ticker + ' \u00b7 ' + period.slice(0, 7) + (metric ? ' \u00b7 ' + metric : '') + ' \u2014 pipeline trace';
-
-      // Hide pattern panel state
-      document.getElementById('pattern-panel').style.display = 'none';
-      document.getElementById('pattern-save-status').textContent = '';
-      document.getElementById('apply-result').style.display = 'none';
 
       // Render trace into the review panel container
       const reviewContainer = document.getElementById('miner-review-panel');

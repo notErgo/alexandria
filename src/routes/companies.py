@@ -627,9 +627,10 @@ def delete_metric_schema(row_id):
 
 @bp.route('/api/metric_schema/<int:row_id>', methods=['PATCH'])
 def update_metric_schema(row_id):
-    """Update active flag, label, or unit for a metric_schema row.
+    """Update active flag, label, unit, and/or prompt fields for a metric_schema row.
 
-    Body: {active?: 0|1, label?: str, unit?: str}
+    Body: {active?: 0|1, label?: str, unit?: str,
+           prompt_instructions?: str|null, quarterly_prompt?: str|null}
     Returns 200 on success, 404 if row not found.
     """
     try:
@@ -651,7 +652,37 @@ def update_metric_schema(row_id):
         if unit is not None:
             unit = str(unit).strip()
 
-        updated = db.update_metric_schema(row_id, active=active, label=label, unit=unit)
+        # New prompt fields (None means no update, empty string means clear to NULL)
+        prompt_instructions = None
+        quarterly_prompt = None
+        if 'prompt_instructions' in body:
+            val = body['prompt_instructions']
+            if val is not None and not isinstance(val, str):
+                return jsonify({'success': False, 'error': {
+                    'message': 'prompt_instructions must be a string or null'
+                }}), 400
+            if val is not None and len(val) > 8000:
+                return jsonify({'success': False, 'error': {
+                    'message': 'prompt_instructions must be <= 8000 chars'
+                }}), 400
+            prompt_instructions = val if val is not None else ''
+        if 'quarterly_prompt' in body:
+            val = body['quarterly_prompt']
+            if val is not None and not isinstance(val, str):
+                return jsonify({'success': False, 'error': {
+                    'message': 'quarterly_prompt must be a string or null'
+                }}), 400
+            if val is not None and len(val) > 8000:
+                return jsonify({'success': False, 'error': {
+                    'message': 'quarterly_prompt must be <= 8000 chars'
+                }}), 400
+            quarterly_prompt = val if val is not None else ''
+
+        updated = db.update_metric_schema(
+            row_id, active=active, label=label, unit=unit,
+            prompt_instructions=prompt_instructions,
+            quarterly_prompt=quarterly_prompt,
+        )
         if not updated:
             return jsonify({'success': False, 'error': {
                 'code': 'NOT_FOUND',
@@ -867,4 +898,139 @@ def delete_metric_keyword(metric_key, kw_id):
         return jsonify({'success': True})
     except Exception:
         log.error('Error deleting metric keyword %s', kw_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+# ── Metric examples routes ─────────────────────────────────────────────────────
+
+def _metric_key_exists(db, metric_key: str) -> bool:
+    rows = db.get_metric_schema('BTC-miners', active_only=False)
+    return any(r['key'] == metric_key for r in rows)
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/snippet_analysis', methods=['GET'])
+def snippet_analysis(metric_key):
+    """Analyze source_snippets from historical data_points for a metric.
+
+    Query params:
+      ticker (optional) — scope to a single company
+      limit  (optional, default 500) — max snippets to fetch from DB
+    Returns: {success, data: {table_rows, prose_ngrams, total_snippets, unique_snippets}}
+    """
+    try:
+        from app_globals import get_db
+        from interpreters.snippet_analyzer import analyze_snippets
+        db = get_db()
+        if not _metric_key_exists(db, metric_key):
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Unknown metric key: {metric_key}',
+            }}), 404
+        ticker = request.args.get('ticker') or None
+        limit = int(request.args.get('limit', 500))
+        snippets = db.get_snippets_for_metric(metric_key, ticker=ticker, limit=limit)
+        result = analyze_snippets(snippets)
+        return jsonify({'success': True, 'data': result})
+    except Exception:
+        log.error('Error analyzing snippets for %s', metric_key, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/examples', methods=['GET'])
+def list_metric_examples(metric_key):
+    """List stored metric examples.
+
+    Query params:
+      ticker (optional) — filter to ticker + metric-wide rows
+      all    (optional, 1) — include inactive rows
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        if not _metric_key_exists(db, metric_key):
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Unknown metric key: {metric_key}',
+            }}), 404
+        ticker = request.args.get('ticker') or None
+        active_only = request.args.get('all') != '1'
+        rows = db.get_metric_examples(metric_key, ticker=ticker, active_only=active_only)
+        return jsonify({'success': True, 'data': rows})
+    except Exception:
+        log.error('Error listing metric examples for %s', metric_key, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/examples', methods=['POST'])
+def add_metric_example_route(metric_key):
+    """Add a metric example.
+
+    Body: {snippet (required), ticker?, label?, source_type?}
+    Returns 201 on success with {success, data: {id}}.
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        if not _metric_key_exists(db, metric_key):
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Unknown metric key: {metric_key}',
+            }}), 404
+        body = request.get_json(silent=True) or {}
+        snippet = (body.get('snippet') or '').strip()
+        if not snippet:
+            return jsonify({'success': False, 'error': {
+                'code': 'MISSING_FIELD', 'message': 'snippet is required',
+            }}), 400
+        ticker = body.get('ticker') or None
+        label = body.get('label') or None
+        source_type = body.get('source_type') or None
+        try:
+            eid = db.add_metric_example(metric_key, snippet, ticker=ticker,
+                                         label=label, source_type=source_type)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': str(e),
+            }}), 404
+        return jsonify({'success': True, 'data': {'id': eid}}), 201
+    except Exception:
+        log.error('Error adding metric example for %s', metric_key, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/examples/<int:example_id>', methods=['PATCH'])
+def update_metric_example_route(metric_key, example_id):
+    """Update a metric example (snippet, label, active, source_type)."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+        body = request.get_json(silent=True) or {}
+        updated = db.update_metric_example(
+            example_id,
+            snippet=body.get('snippet') or None,
+            label=body.get('label') or None,
+            active=body.get('active'),
+            source_type=body.get('source_type') or None,
+        )
+        if not updated:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Example {example_id} not found',
+            }}), 404
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error updating metric example %s', example_id, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/metric_schema/<string:metric_key>/examples/<int:example_id>', methods=['DELETE'])
+def delete_metric_example_route(metric_key, example_id):
+    """Delete a metric example."""
+    try:
+        from app_globals import get_db
+        db = get_db()
+        deleted = db.delete_metric_example(example_id)
+        if not deleted:
+            return jsonify({'success': False, 'error': {
+                'code': 'NOT_FOUND', 'message': f'Example {example_id} not found',
+            }}), 404
+        return jsonify({'success': True})
+    except Exception:
+        log.error('Error deleting metric example %s', example_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
