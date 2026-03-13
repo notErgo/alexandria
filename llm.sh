@@ -21,7 +21,7 @@ _cfg() {
 
 MODEL=$(_cfg llama_model_path "$DEFAULT_MODEL")
 PARALLEL=$(_cfg llama_parallel "8")
-CTX_SIZE=$(_cfg llama_ctx_size "8192")
+CTX_SIZE=$(_cfg llama_ctx_size "65536")
 N_PREDICT=$(_cfg llama_n_predict "768")
 BATCH_SIZE=$(_cfg llama_batch_size "4096")
 CACHE_TYPE_K=$(_cfg llama_cache_type_k "q8_0")

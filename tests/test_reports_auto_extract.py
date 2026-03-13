@@ -126,7 +126,7 @@ def test_run_auto_extract_uses_run_extraction_phase_with_monthly_types(tmp_path,
 
     extraction_calls = []
 
-    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+    def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
         extraction_calls.append({
             'tickers': list(tickers),
             'source_types': kwargs.get('source_types'),
@@ -136,7 +136,6 @@ def test_run_auto_extract_uses_run_extraction_phase_with_monthly_types(tmp_path,
                 'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
     monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
-    monkeypatch.setattr(app_globals, 'get_registry', lambda: object())
 
     reports_mod._run_auto_extract(
         db,
@@ -173,7 +172,7 @@ def test_run_auto_extract_uses_run_extraction_phase_with_edgar_types(tmp_path, m
 
     extraction_calls = []
 
-    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+    def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
         extraction_calls.append({
             'source_types': kwargs.get('source_types'),
             'extract_workers': kwargs.get('extract_workers'),
@@ -182,7 +181,6 @@ def test_run_auto_extract_uses_run_extraction_phase_with_edgar_types(tmp_path, m
                 'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
     monkeypatch.setattr(pipeline_mod, 'run_extraction_phase', _fake_run_extraction_phase)
-    monkeypatch.setattr(app_globals, 'get_registry', lambda: object())
 
     reports_mod._run_auto_extract(
         db,

@@ -1324,7 +1324,7 @@ tr.is-reviewed td { opacity: 0.65; }
           <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Context size (--ctx-size)</label>
           <input id="llama-ctx-size" type="number" min="512" max="131072" step="512"
             style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
-          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">KV cache tokens per slot. 8192 covers all extraction prompts.</p>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Total KV cache divided across all slots. With 8 parallel slots, 65536 gives 8192 tokens/slot — enough for all extraction prompts.</p>
         </div>
         <div>
           <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Max tokens (--n-predict)</label>
@@ -1678,8 +1678,9 @@ tr.is-reviewed td { opacity: 0.65; }
       Monthly press releases often carry the most precise per-month production figures.
     </p>
     <div class="acq-actions" data-spec-id="2.1.4">
-      <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
+      <button class="btn btn-sm btn-secondary" onclick="scanManifest()">Scan Archive Files</button>
       <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Ingest Local Archive</button>
+      <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
       <span data-spec-id="2.1.5"><button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button></span>
       <button class="btn btn-sm btn-secondary" onclick="loadIngest()">Refresh</button>
     </div>
@@ -1933,27 +1934,29 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
       </div>
 
-      <!-- Force re-extract explanation -->
-      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.4rem;line-height:1.5">
-        <strong style="color:var(--theme-text-secondary)">Without force:</strong> processes only reports not yet extracted (new documents only).
-        <strong style="color:var(--theme-text-secondary)">With force:</strong> re-runs all matched reports and overwrites existing data points via
-        <code>INSERT OR REPLACE</code> — old values are silently replaced, no conflict shown.
-        Exception: rows with <code>extraction_method IN (analyst, analyst_approved, review_approved, review_edited)</code> are skipped by the pipeline regardless.
-        To start completely fresh, use the CLI <code>purge</code> command first.
+      <!-- Run mode -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Run mode</label>
+        <select id="extract-mode" style="font-size:0.82rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)" onchange="onExtractModeChange()">
+          <option value="resume">Resume — new docs only (skip already-extracted)</option>
+          <option value="force">Force re-extract — re-run all, keep existing data</option>
+          <option value="reset">Full Reset — purge data + review queue, then re-extract</option>
+        </select>
       </div>
-
-      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
-        Delete controls live in <strong>Track Config → Purge Stages</strong> so extraction scope and data deletion stay separate.
+      <div id="extract-mode-hint" style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem;line-height:1.5">
+        Processes only reports not yet extracted. Analyst-approved rows are never overwritten.
+      </div>
+      <div id="extract-reset-warning" style="display:none;font-size:0.72rem;color:var(--theme-danger);margin-bottom:0.5rem;line-height:1.5;padding:0.35rem 0.5rem;border:1px solid var(--theme-danger);border-radius:4px">
+        Full Reset will delete all data_points and review_queue entries for the selected ticker(s) before re-extracting. A ticker must be selected — global reset is blocked here. Use Purge Stages for global resets.
       </div>
 
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
         LLM extraction requires active metric keywords. If <code>metric_schema.keywords</code> is empty or fully inactive, the run is blocked until keywords are added.
       </div>
 
-      <!-- Force + model + run -->
+      <!-- Model + run -->
       <div class="acq-actions">
-        <span style="font-size:0.78rem;color:var(--theme-text-muted)">No ticker selection = all tickers; extraction runs on stored reports only</span>
-        <label style="font-size:0.78rem;color:var(--theme-text-muted)"><input id="extract-force" type="checkbox"> force re-extract</label>
+        <input id="extract-force" type="hidden" value="0">
         <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
           <option value="">Loading models…</option>
         </select>
@@ -3189,7 +3192,7 @@ function activateTab(name) {
 
   if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
-  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); if (_companiesLoaded) _renderInterpretTickerBar(); else loadCompanies().then(function() { _renderInterpretTickerBar(); }); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -3396,6 +3399,31 @@ async function _pollAcquireTask(taskId, source) {
   }, 1000);
 }
 
+async function scanManifest() {
+  if (_acqTaskId) return;
+  _setAcquireButtonsEnabled(false);
+  _setAcqStatus('Scanning archive directory for files…', false);
+  _appendAcqLog(new Date().toISOString().slice(11, 19) + ' manifest scan started');
+  try {
+    const resp = await fetch('/api/manifest/scan', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const s = data.data || {};
+    const msg = 'Manifest scan complete — ' + (s.total_found || 0) + ' files found, ' + (s.newly_discovered || 0) + ' new, ' + (s.already_ingested || 0) + ' already ingested';
+    _setAcqStatus(msg, false);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' ' + msg);
+    const counts = s.ticker_counts || {};
+    const tickerLines = Object.keys(counts).sort().map(function(t) { return t + ': ' + counts[t]; });
+    if (tickerLines.length) _appendAcqLog('  ' + tickerLines.join('  |  '));
+    loadIngest();
+  } catch (err) {
+    _setAcqStatus('Manifest scan failed: ' + String(err), true);
+    _appendAcqLog(new Date().toISOString().slice(11, 19) + ' manifest scan failed (' + String(err) + ')');
+  } finally {
+    _setAcquireButtonsEnabled(true);
+  }
+}
+
 async function triggerAcquire(source, tickers) {
   if (!source || _acqTaskId) return;
   const autoExtractEnabled = !!document.getElementById('acq-auto-extract')?.checked;
@@ -3597,12 +3625,59 @@ function onSourceDocsChange() {
   }
 }
 
+function onExtractModeChange() {
+  const mode = document.getElementById('extract-mode')?.value || 'resume';
+  const hint = document.getElementById('extract-mode-hint');
+  const warning = document.getElementById('extract-reset-warning');
+  if (hint) {
+    if (mode === 'resume') hint.textContent = 'Processes only reports not yet extracted. Analyst-approved rows are never overwritten.';
+    else if (mode === 'force') hint.textContent = 'Re-runs all matched reports and overwrites existing data_points. Analyst-approved rows are never overwritten. Review queue entries are appended (not cleared).';
+    else hint.textContent = '';
+  }
+  if (warning) warning.style.display = mode === 'reset' ? '' : 'none';
+}
+
 async function startExtractionRun() {
   if (_extractTaskId) return;
   const tickers = _getSharedSelectedTickers();
   const ticker = tickers.length === 1 ? tickers[0] : '';
   const scopeLabel = tickers.length ? tickers.join(',') : 'ALL';
-  const force = !!document.getElementById('extract-force').checked;
+  const mode = document.getElementById('extract-mode')?.value || 'resume';
+  const force = mode === 'force' || mode === 'reset';
+
+  if (mode === 'reset') {
+    if (!tickers.length) {
+      _setExtractStatus('Full Reset requires a ticker selection — select at least one ticker first.', true);
+      return;
+    }
+    // Purge data_points and review_queue for each selected ticker before extracting
+    _setExtractEnabled(false);
+    _extractTaskId = 'starting';
+    _setExtractStatus('Full Reset: purging ' + scopeLabel + '…', false);
+    try {
+      for (const t of tickers) {
+        const pr = await fetch('/api/data/purge', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({confirm: true, ticker: t, purge_mode: 'reset'}),
+        });
+        if (!pr.ok) { const pd = await pr.json(); throw new Error('data purge: ' + (pd.error?.message || pr.status)); }
+        const rr = await fetch('/api/review/purge', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({confirm: true, ticker: t, targets: ['queue']}),
+        });
+        if (!rr.ok) { const rd = await rr.json(); throw new Error('review purge: ' + (rd.error?.message || rr.status)); }
+      }
+      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' purged data+review for ' + scopeLabel);
+    } catch (err) {
+      _extractTaskId = null;
+      _setExtractEnabled(true);
+      _setExtractStatus('Purge failed: ' + String(err), true);
+      return;
+    }
+    _extractTaskId = null;
+  }
   const cadence = document.getElementById('extract-cadence')?.value || 'all';
   const fromPeriod = (document.getElementById('extract-from')?.value || '').trim() || null;
   const toPeriod = (document.getElementById('extract-to')?.value || '').trim() || null;
@@ -3793,6 +3868,7 @@ async function loadCompanies() {
     await loadScraperGovernance();
     _companiesLoaded = true;
     renderCompanies();
+    _renderInterpretTickerBar();
     loadScrapeQueue();
     loadPipelineObservability();
   } catch (_err) {

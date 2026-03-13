@@ -289,18 +289,17 @@ class TestCLIIRDeprecationWarning:
         )
 
         with patch.object(cli, 'get_db', return_value=fake_db):
-            with patch.object(cli, 'get_registry', return_value=MagicMock()):
-                with patch('scrapers.ir_scraper.IRScraper', return_value=mock_scraper_inst):
-                    with patch('json.load', return_value=[]):
-                        with patch('builtins.open', MagicMock(
-                            return_value=MagicMock(
-                                __enter__=MagicMock(return_value=MagicMock()),
-                                __exit__=MagicMock(return_value=False),
-                            )
-                        )):
-                            with warnings.catch_warnings(record=True) as caught:
-                                warnings.simplefilter('always')
-                                cli.cmd_ingest(self._make_args(source='ir'))
+            with patch('scrapers.ir_scraper.IRScraper', return_value=mock_scraper_inst):
+                with patch('json.load', return_value=[]):
+                    with patch('builtins.open', MagicMock(
+                        return_value=MagicMock(
+                            __enter__=MagicMock(return_value=MagicMock()),
+                            __exit__=MagicMock(return_value=False),
+                        )
+                    )):
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter('always')
+                            cli.cmd_ingest(self._make_args(source='ir'))
 
         dep_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert dep_warnings, "Expected DeprecationWarning from cli --source ir"
@@ -321,19 +320,18 @@ class TestCLIIRDeprecationWarning:
         company = {'ticker': 'MARA', 'active': True, 'scrape_mode': 'skip'}
 
         with patch.object(cli, 'get_db', return_value=fake_db):
-            with patch.object(cli, 'get_registry', return_value=MagicMock()):
-                with patch.object(cli, 'IRScraper', return_value=mock_scraper_inst):
-                    with patch.object(cli, 'MinerDB'):
-                        with patch('json.load', return_value=[company]):
-                            with patch('builtins.open', MagicMock(
-                                return_value=MagicMock(
-                                    __enter__=MagicMock(return_value=MagicMock()),
-                                    __exit__=MagicMock(return_value=False),
-                                )
-                            )):
-                                with warnings.catch_warnings(record=True):
-                                    warnings.simplefilter('always')
-                                    cli.cmd_ingest(self._make_args(source='ir'))
+            with patch.object(cli, 'IRScraper', return_value=mock_scraper_inst):
+                with patch.object(cli, 'MinerDB'):
+                    with patch('json.load', return_value=[company]):
+                        with patch('builtins.open', MagicMock(
+                            return_value=MagicMock(
+                                __enter__=MagicMock(return_value=MagicMock()),
+                                __exit__=MagicMock(return_value=False),
+                            )
+                        )):
+                            with warnings.catch_warnings(record=True):
+                                warnings.simplefilter('always')
+                                cli.cmd_ingest(self._make_args(source='ir'))
 
         mock_scraper_inst.scrape_company.assert_called_once()
 

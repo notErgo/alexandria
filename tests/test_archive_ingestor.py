@@ -33,28 +33,6 @@ class _MockLLM:
         return {}
 
 
-def _make_test_config_dir(tmp_dir: str) -> str:
-    """Write a minimal production_btc pattern file into tmp_dir/patterns/ and return tmp_dir.
-
-    Used by integration tests that need PatternRegistry.load() to return at least one
-    pattern so the extraction pipeline can produce data points from test HTML content.
-    The single pattern matches 'mined X BTC' or 'mined X bitcoin' (case-insensitive).
-    """
-    patterns_dir = Path(tmp_dir) / 'patterns'
-    patterns_dir.mkdir(parents=True, exist_ok=True)
-    (patterns_dir / 'production_btc.json').write_text(json.dumps({
-        "metric": "production_btc",
-        "valid_range": [0, 5000],
-        "unit": "BTC",
-        "conflict_resolution": "highest_confidence",
-        "patterns": [{
-            "id": "prod_btc_0",
-            "regex": r"(?i)mined\s+([\d,]+(?:\.\d+)?)\s*(?:bitcoin|btc)",
-            "confidence_weight": 0.95,
-            "priority": 0,
-        }],
-    }))
-    return tmp_dir
 
 
 class TestInferPeriod:
@@ -150,9 +128,7 @@ class TestHTMLPriorityOverPDF:
         """
         from pathlib import Path
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
         from interpreters.llm_interpreter import LLMInterpreter
-        import os
 
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
 
@@ -176,12 +152,7 @@ class TestHTMLPriorityOverPDF:
         )
         pdf_file.write_bytes(b"%PDF-1.4 stub")  # invalid PDF — parse would fail
 
-        config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
-        registry = PatternRegistry.load(config_dir)
-
-        ingestor = ArchiveIngestor(
-            archive_dir=str(tmp_path), db=db, registry=registry
-        )
+        ingestor = ArchiveIngestor(archive_dir=str(tmp_path), db=db)
         ingestor.ingest_all()
 
         # Only the HTML report row must exist — no archive_pdf row
@@ -193,9 +164,7 @@ class TestHTMLPriorityOverPDF:
     def test_ticker_filtered_ingest_only_processes_selected_ticker(self, tmp_path, db, monkeypatch):
         """Ticker filter must prevent unrelated archive directories from being ingested."""
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
         from interpreters.llm_interpreter import LLMInterpreter
-        import os
 
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
 
@@ -224,10 +193,7 @@ class TestHTMLPriorityOverPDF:
             encoding="utf-8",
         )
 
-        config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
-        registry = PatternRegistry.load(config_dir)
-
-        ingestor = ArchiveIngestor(archive_dir=str(tmp_path), db=db, registry=registry)
+        ingestor = ArchiveIngestor(archive_dir=str(tmp_path), db=db)
         ingestor.ingest_all(tickers=['MARA'])
 
         assert db.report_exists('MARA', '2024-09-01', 'archive_html')
@@ -277,7 +243,6 @@ class TestBestResultPerMetric:
         monkeypatch.setattr(_ep_mod, '_get_llm_interpreter', lambda db: _MockLLM())
 
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -286,14 +251,6 @@ class TestBestResultPerMetric:
         })
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Write two patterns: high-confidence prod_btc_0 ("mined X BTC") and
-            # lower-confidence prod_btc_broad (bare number near "production").
-            # Text has "mined 806 BTC" (high confidence) and "production...2024" would
-            # be matched by prod_btc_broad at lower confidence — but since the year 2024
-            # would be out of valid_range [0, 5000] it scores 0. Only 806 survives.
-            config_dir = _make_test_config_dir(tempfile.mkdtemp())
-            registry = PatternRegistry.load(config_dir)
-
             mara_dir = Path(tmpdir) / "MARA MONTHLY"
             mara_dir.mkdir()
             html_file = mara_dir / "Riot Announces March 2024 Production and Operations Update.html"
@@ -305,17 +262,13 @@ class TestBestResultPerMetric:
                 encoding="utf-8",
             )
 
-            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
+            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db)
             summary = ingestor.ingest_all()
 
-        # Regex is gate-only; LLM mock returns empty. Verify the document was
-        # ingested and processed (not skipped by the keyword gate).
+        # LLM mock returns empty. Verify the document was ingested without errors.
         assert summary.reports_ingested == 1, (
             f"Expected 1 report ingested, got {summary.reports_ingested}"
         )
-        # With gate-only LLM mock, extraction routes via LLM returning empty — no
-        # data_points written. The important assertion is that the pipeline didn't
-        # error out and that the regex candidate ranking logic ran without crashing.
         assert summary.errors == 0, f"Pipeline errors: {summary.errors}"
 
 
@@ -433,7 +386,6 @@ class TestQuarterlyIngestorIntegration:
         """
         import sqlite3
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -457,9 +409,7 @@ class TestQuarterlyIngestorIntegration:
                 encoding="utf-8",
             )
 
-            config_dir = _make_test_config_dir(tempfile.mkdtemp())
-            registry = PatternRegistry.load(config_dir)
-            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
+            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db)
             ingestor.ingest_all()
 
         conn = sqlite3.connect(db.db_path)
@@ -473,10 +423,9 @@ class TestQuarterlyIngestorIntegration:
             f"report_date should be filename date 2025-11-01, got {rows[0]['report_date']}"
         )
 
-    def test_quarterly_filing_produces_multiple_data_points(self, db):
-        """A 10-Q file mentioning 3 months should produce data_points for each month."""
+    def test_quarterly_filing_stored_as_pending_for_llm_pipeline(self, db):
+        """A 10-Q file must be stored as a pending report (extraction deferred to LLM pipeline)."""
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
@@ -498,15 +447,14 @@ class TestQuarterlyIngestorIntegration:
                 encoding="utf-8",
             )
 
-            config_dir = _make_test_config_dir(tempfile.mkdtemp())
-            registry = PatternRegistry.load(config_dir)
-            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
-            ingestor.ingest_all()
+            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db)
+            summary = ingestor.ingest_all()
 
-        rows = db.query_data_points(ticker='MARA', metric='production_btc')
-        assert len(rows) >= 1, "Quarterly filing should produce at least one data_point"
-        for r in rows:
-            assert r['value'] < 5000, f"Suspicious value {r['value']} looks like a year"
+        # Quarterly files are stored and left pending for the LLM pipeline stage
+        assert summary.reports_ingested == 1, (
+            f"Expected 1 report ingested, got {summary.reports_ingested}"
+        )
+        assert db.report_exists('MARA', '2025-11-01', 'archive_quarterly')
 
 
 class TestForceReingest:
@@ -523,16 +471,12 @@ class TestForceReingest:
         monkeypatch.setattr(_ep_mod, '_get_llm_interpreter', lambda db: _MockLLM())
 
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
             'ir_url': 'https://example.com', 'pr_base_url': None,
             'cik': '0001437491', 'active': 1,
         })
-
-        config_dir = _make_test_config_dir(tempfile.mkdtemp())
-        registry = PatternRegistry.load(config_dir)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mara_dir = Path(tmpdir) / "MARA MONTHLY"
@@ -543,7 +487,7 @@ class TestForceReingest:
                 encoding="utf-8",
             )
 
-            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
+            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db)
             s1 = ingestor.ingest_all()
             assert s1.reports_ingested == 1
 
@@ -556,16 +500,12 @@ class TestForceReingest:
     def test_force_false_is_default(self, db):
         """ingest_all() with no arguments must not force-reingest."""
         from scrapers.archive_ingestor import ArchiveIngestor
-        from interpreters.pattern_registry import PatternRegistry
 
         db.insert_company({
             'ticker': 'MARA', 'name': 'MARA Holdings', 'tier': 1,
             'ir_url': 'https://example.com', 'pr_base_url': None,
             'cik': '0001437491', 'active': 1,
         })
-
-        config_dir = _make_test_config_dir(tempfile.mkdtemp())
-        registry = PatternRegistry.load(config_dir)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mara_dir = Path(tmpdir) / "MARA MONTHLY"
@@ -576,7 +516,7 @@ class TestForceReingest:
                 encoding="utf-8",
             )
 
-            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db, registry=registry)
+            ingestor = ArchiveIngestor(archive_dir=tmpdir, db=db)
             ingestor.ingest_all()
             s2 = ingestor.ingest_all()
             assert s2.reports_ingested == 0, "Default must skip already-ingested reports"

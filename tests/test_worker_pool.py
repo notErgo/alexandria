@@ -125,7 +125,7 @@ class TestWorkerPool:
         extracted = []
         lock = threading.Lock()
 
-        def fake_extract(report, db, registry, **kw):
+        def fake_extract(report, db, **kw):
             with lock:
                 extracted.append(report['id'])
             db.mark_report_extracted(report['id'])
@@ -137,14 +137,10 @@ class TestWorkerPool:
         monkeypatch.setattr(_ep, 'extract_report', fake_extract)
 
         from cli import _run_worker_pool
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        registry = PatternRegistry.load(CONFIG_DIR)
 
         _run_worker_pool(
             db_path=db_with_company.db_path,
             report_ids=report_ids,
-            registry=registry,
             num_workers=2,
         )
 
@@ -161,7 +157,7 @@ class TestWorkerPool:
         extracted = []
         lock = threading.Lock()
 
-        def fake_extract(report, db, registry, **kw):
+        def fake_extract(report, db, **kw):
             with lock:
                 extracted.append(report['id'])
             db.mark_report_extracted(report['id'])
@@ -173,14 +169,10 @@ class TestWorkerPool:
         monkeypatch.setattr(_ep, 'extract_report', fake_extract)
 
         from cli import _run_worker_pool
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        registry = PatternRegistry.load(CONFIG_DIR)
 
         _run_worker_pool(
             db_path=db_with_company.db_path,
             report_ids=report_ids,
-            registry=registry,
             num_workers=4,
         )
 
@@ -194,7 +186,7 @@ class TestWorkerPool:
         report_ids = self._make_reports(db_with_company, 4)
         extracted = []
 
-        def fake_extract(report, db, registry, **kw):
+        def fake_extract(report, db, **kw):
             extracted.append(report['id'])
             db.mark_report_extracted(report['id'])
             from miner_types import ExtractionSummary
@@ -205,14 +197,10 @@ class TestWorkerPool:
         monkeypatch.setattr(_ep, 'extract_report', fake_extract)
 
         from cli import _run_worker_pool
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        registry = PatternRegistry.load(CONFIG_DIR)
 
         _run_worker_pool(
             db_path=db_with_company.db_path,
             report_ids=report_ids,
-            registry=registry,
             num_workers=1,
         )
 
@@ -228,7 +216,7 @@ class TestWorkerPool:
 
         extracted = []
 
-        def fake_extract(report, db, registry, **kw):
+        def fake_extract(report, db, **kw):
             extracted.append(report['id'])
             db.mark_report_extracted(report['id'])
             from miner_types import ExtractionSummary
@@ -239,14 +227,10 @@ class TestWorkerPool:
         monkeypatch.setattr(_ep, 'extract_report', fake_extract)
 
         from cli import _run_worker_pool
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        registry = PatternRegistry.load(CONFIG_DIR)
 
         _run_worker_pool(
             db_path=db_with_company.db_path,
             report_ids=report_ids,
-            registry=registry,
             num_workers=2,
         )
 

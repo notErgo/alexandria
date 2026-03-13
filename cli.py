@@ -29,7 +29,6 @@ from infra.logging_config import setup_logging
 setup_logging()
 
 from infra.db import MinerDB
-from interpreters.pattern_registry import PatternRegistry
 from config import DATA_DIR, CONFIG_DIR
 from pathlib import Path
 
@@ -43,10 +42,6 @@ def get_db() -> MinerDB:
     return db
 
 
-def get_registry() -> PatternRegistry:
-    return PatternRegistry.load(CONFIG_DIR)
-
-
 def _period_to_full(period_str: str) -> str:
     """Convert YYYY-MM to YYYY-MM-01 for DB comparison."""
     return period_str + '-01' if period_str else None
@@ -54,7 +49,6 @@ def _period_to_full(period_str: str) -> str:
 
 def cmd_ingest(args):
     db = get_db()
-    registry = get_registry()
 
     if args.source == 'ir':
         import warnings
@@ -242,7 +236,7 @@ def _run_ir_ingest_pool(
     return total
 
 
-def _run_worker_pool(db_path: str, report_ids: list, registry, num_workers: int = 1, attribution: str = None) -> 'ExtractionSummary':
+def _run_worker_pool(db_path: str, report_ids: list, num_workers: int = 1, attribution: str = None) -> 'ExtractionSummary':
     """Process report_ids with a pool of num_workers threads.
 
     Each worker owns its own MinerDB connection. Reports are claimed atomically
@@ -275,7 +269,7 @@ def _run_worker_pool(db_path: str, report_ids: list, registry, num_workers: int 
             report = local_db.get_report(report_id)
             if not report:
                 continue
-            s = extract_report(report, local_db, registry, attribution=attribution)
+            s = extract_report(report, local_db, attribution=attribution)
             with total_lock:
                 total.reports_processed += s.reports_processed
                 total.data_points_extracted += s.data_points_extracted
@@ -296,7 +290,6 @@ def cmd_extract(args):
     from interpreters.interpret_pipeline import extract_report
 
     db = get_db()
-    registry = get_registry()
     ticker_filter = args.ticker.upper() if args.ticker else None
     attribution = getattr(args, 'attribution', None) or None
     num_workers = getattr(args, 'workers', 1) or 1
@@ -320,14 +313,13 @@ def cmd_extract(args):
         total = _run_worker_pool(
             db_path=db.db_path,
             report_ids=report_ids,
-            registry=registry,
             num_workers=num_workers,
             attribution=attribution,
         )
     else:
         total = ExtractionSummary()
         for i, report in enumerate(reports, 1):
-            s = extract_report(report, db, registry, attribution=attribution)
+            s = extract_report(report, db, attribution=attribution)
             total.reports_processed += s.reports_processed
             total.data_points_extracted += s.data_points_extracted
             total.review_flagged += s.review_flagged

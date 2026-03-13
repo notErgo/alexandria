@@ -29,10 +29,8 @@ def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) 
     Creates a pipeline_runs row for audit trail. Uses extract_workers=4 for parallelism.
     Returns a dict with keys: reports_processed, data_points_extracted, review_flagged, errors.
     """
-    from app_globals import get_registry
     from routes.pipeline import run_extraction_phase
 
-    registry = get_registry()
     run_id: Optional[int] = None
     try:
         run = db.create_pipeline_run(
@@ -51,7 +49,6 @@ def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) 
         db,
         run_id,
         tickers=tickers,
-        registry=registry,
         source_types=source_types,
         warm_model=False,
         extract_workers=max(1, int(db.get_config('ollama_num_parallel') or 4)),
@@ -70,6 +67,33 @@ def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) 
         'review_flagged': counters.get('review_flagged', 0),
         'errors': counters.get('errors', 0),
     }
+
+
+def _run_archive_ingest(task_id: str, force: bool = False, tickers: Optional[list] = None) -> None:
+    from app_globals import get_db
+    from scrapers.archive_ingestor import ArchiveIngestor
+    from config import ARCHIVE_DIR
+
+    _update_progress(task_id, {'status': 'running', 'source': 'archive'})
+    try:
+        ingestor = ArchiveIngestor(
+            archive_dir=ARCHIVE_DIR, db=get_db()
+        )
+        summary = ingestor.ingest_all(force=force, tickers=tickers or None, auto_extract_monthly=False)
+        _update_progress(task_id, {
+            'status': 'complete',
+            'source': 'archive',
+            'reports_ingested': summary.reports_ingested,
+            'data_points_extracted': summary.data_points_extracted,
+            'review_flagged': summary.review_flagged,
+            'errors': summary.errors,
+        })
+    except Exception:
+        log.error("Archive ingest failed", exc_info=True)
+        _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
+    finally:
+        with _tasks_lock:
+            _running_tasks.discard('archive')
 
 
 def _run_ir_ingest(
@@ -365,10 +389,25 @@ def ingest_all_sources():
 
 @bp.route('/api/ingest/archive', methods=['POST'])
 def ingest_archive():
-    return jsonify({'success': False, 'error': {
-        'code': 'ARCHIVE_DISABLED',
-        'message': 'Archive ingest has been removed from the active workflow. Use scraped IR or EDGAR sources.',
-    }}), 410
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get('force', False))
+    tickers = body.get('tickers') or []
+    if not isinstance(tickers, list):
+        return jsonify({'success': False, 'error': {
+            'code': 'INVALID_INPUT', 'message': "'tickers' must be a list"
+        }}), 400
+    tickers = [str(t).strip().upper() for t in tickers if t]
+    with _tasks_lock:
+        if 'archive' in _running_tasks:
+            return jsonify({'success': False, 'error': {
+                'code': 'ALREADY_RUNNING', 'message': 'Archive ingest already in progress'
+            }}), 409
+        _running_tasks.add('archive')
+    task_id = str(uuid.uuid4())
+    _update_progress(task_id, {'status': 'queued', 'source': 'archive'})
+    t = threading.Thread(target=_run_archive_ingest, args=(task_id, force, tickers), daemon=True)
+    t.start()
+    return jsonify({'success': True, 'data': {'task_id': task_id}}), 202
 
 
 @bp.route('/api/ingest/ir', methods=['POST'])
@@ -656,7 +695,7 @@ def ingest_html_download():
 
 def _run_reaudit(task_id: str, ticker: Optional[str] = None) -> None:
     """Re-run ingest_all(force=True) on the archive to re-audit all data points."""
-    from app_globals import get_db, get_registry
+    from app_globals import get_db
     from scrapers.archive_ingestor import ArchiveIngestor
     from config import ARCHIVE_DIR
 
@@ -683,7 +722,7 @@ def _run_reaudit(task_id: str, ticker: Optional[str] = None) -> None:
 
     try:
         ingestor = ArchiveIngestor(
-            archive_dir=ARCHIVE_DIR, db=get_db(), registry=get_registry()
+            archive_dir=ARCHIVE_DIR, db=get_db()
         )
         summary = ingestor.ingest_all(force=True, progress_callback=_progress_cb)
         _update_progress(task_id, {

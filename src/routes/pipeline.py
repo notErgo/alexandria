@@ -471,7 +471,6 @@ def _extract_reports_for_ticker(
     run_id: int,
     ticker: str,
     reports: list,
-    registry,
     counters: dict,
     failures: list,
     num_workers: int,
@@ -554,7 +553,7 @@ def _extract_reports_for_ticker(
     def _run_buffered_extraction(claimed_report: dict, worker_id: int) -> dict:
         local_db = MinerDB(db.db_path)
         buffered_db = _BufferedExtractionDB(local_db)
-        summary = extract_report(claimed_report, buffered_db, registry, config=run_config)
+        summary = extract_report(claimed_report, buffered_db, config=run_config)
         payload = buffered_db.staged_payload()
         return {
             'report': claimed_report,
@@ -694,7 +693,6 @@ def run_extraction_phase(
     db,
     run_id: int,
     tickers: list,
-    registry,
     *,
     source_types=None,
     force_reextract: bool = False,
@@ -784,7 +782,6 @@ def run_extraction_phase(
             run_id=run_id,
             ticker=ticker,
             reports=reports,
-            registry=registry,
             counters=counters,
             failures=failures,
             num_workers=max(1, int(extract_workers)),
@@ -817,9 +814,8 @@ def _scrape_ticker_for_pipeline(
 ) -> dict:
     import requests
     from datetime import date
-    from config import ARCHIVE_DIR, CONFIG_DIR
+    from config import ARCHIVE_DIR
     from infra.db import MinerDB
-    from interpreters.pattern_registry import PatternRegistry
     from scrapers.archive_ingestor import ArchiveIngestor
     from scrapers.ir_scraper import IRScraper
     from scrapers.edgar_connector import EdgarConnector
@@ -837,7 +833,6 @@ def _scrape_ticker_for_pipeline(
         archive_ingestor = ArchiveIngestor(
             archive_dir=ARCHIVE_DIR,
             db=local_db,
-            registry=PatternRegistry.load(CONFIG_DIR),
         )
         archive_result = archive_ingestor.ingest_all(
             tickers=[ticker],
@@ -930,7 +925,7 @@ def _scrape_ticker_for_pipeline(
 
 
 def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[str]) -> None:
-    from app_globals import get_db, get_registry
+    from app_globals import get_db
     from orchestration import run_bootstrap_probe_for_ticker as _run_bootstrap_probe_for_ticker
 
     db = get_db()
@@ -1187,7 +1182,6 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         # Stage: ingest (IR + EDGAR, or EDGAR-only when include_ir=False)
         # Uses the same _run_ir_ingest / _run_edgar_ingest functions as individual UI buttons.
         # The scrape_queue / ScrapeWorker is for manual per-company triggers only.
-        registry = get_registry()
         force_reextract = bool(config.get('force_reextract', False))
         _default_workers = 2
         try:
@@ -1261,7 +1255,6 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
             db,
             run_id,
             tickers=extraction_tickers,
-            registry=registry,
             prebuilt_batches=prebuilt,
             force_reextract=force_reextract,
             warm_model=bool(config.get('warm_model', True)),

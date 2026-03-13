@@ -27,6 +27,13 @@ class TestMetricRulesLoadedInPipeline:
         db.get_metric_rules.return_value = rules or []
         db.mark_report_extraction_running.return_value = None
         db.data_point_exists.return_value = False
+        db.get_metric_schema.return_value = [
+            {'key': 'production_btc', 'active': 1},
+            {'key': 'hashrate_eh', 'active': 1},
+        ]
+        db.get_all_metric_keywords.return_value = [
+            {'phrase': 'btc produced', 'metric_key': 'production_btc'},
+        ]
         return db
 
     def test_get_metric_rules_called_once_per_extract_report(self):
@@ -34,9 +41,6 @@ class TestMetricRulesLoadedInPipeline:
         from interpreters.interpret_pipeline import extract_report
 
         db = self._make_mock_db()
-        registry = MagicMock()
-        registry.metrics = {'production_btc': []}
-
         with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
              patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=MagicMock(
                  extract_batch=lambda *a, **kw: {},
@@ -46,7 +50,7 @@ class TestMetricRulesLoadedInPipeline:
              )), \
              patch('interpreters.interpret_pipeline._run_llm_batch', return_value=({}, {})), \
              patch('infra.keyword_service.get_mining_detection_phrases', return_value=['bitcoin', 'btc produced']):
-            extract_report(_make_report(), db, registry)
+            extract_report(_make_report(), db)
 
         db.get_metric_rules.assert_called()
 
@@ -62,8 +66,6 @@ class TestMetricRulesLoadedInPipeline:
             'enabled': 1,
         }
         db = self._make_mock_db(rules=[rule])
-        registry = MagicMock()
-        registry.metrics = {'production_btc': []}
 
         with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
              patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=MagicMock(
@@ -72,19 +74,22 @@ class TestMetricRulesLoadedInPipeline:
              patch('interpreters.interpret_pipeline._run_llm_batch', return_value=({}, {})), \
              patch('infra.keyword_service.get_mining_detection_phrases', return_value=['bitcoin', 'btc produced']), \
              patch('interpreters.interpret_pipeline._apply_llm_result') as mock_apply:
-            extract_report(_make_report(), db, registry)
+            extract_report(_make_report(), db)
 
         assert mock_apply.called
-        _, call_kwargs = mock_apply.call_args
-        assert call_kwargs.get('metric_rule') == rule
+        # Check the call for production_btc specifically (not just the last call)
+        prod_calls = [
+            kw for _, kw in mock_apply.call_args_list
+            if kw.get('metric') == 'production_btc'
+        ]
+        assert prod_calls, "Expected _apply_llm_result called for production_btc"
+        assert prod_calls[0].get('metric_rule') == rule
 
     def test_no_rule_passes_none(self):
         """When no rule for a metric, _apply_llm_result receives metric_rule=None."""
         from interpreters.interpret_pipeline import extract_report
 
         db = self._make_mock_db(rules=[])
-        registry = MagicMock()
-        registry.metrics = {'production_btc': []}
 
         with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
              patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=MagicMock(
@@ -93,7 +98,7 @@ class TestMetricRulesLoadedInPipeline:
              patch('interpreters.interpret_pipeline._run_llm_batch', return_value=({}, {})), \
              patch('infra.keyword_service.get_mining_detection_phrases', return_value=['bitcoin', 'btc produced']), \
              patch('interpreters.interpret_pipeline._apply_llm_result') as mock_apply:
-            extract_report(_make_report(), db, registry)
+            extract_report(_make_report(), db)
 
         assert mock_apply.called
         _, call_kwargs = mock_apply.call_args
@@ -108,8 +113,6 @@ class TestMetricRulesLoadedInPipeline:
             {'metric': 'hashrate_eh', 'agreement_threshold': 0.10, 'enabled': 1},
         ]
         db = self._make_mock_db(rules=rules)
-        registry = MagicMock()
-        registry.metrics = {'production_btc': [], 'hashrate_eh': []}
 
         with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True), \
              patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=MagicMock(
@@ -118,7 +121,7 @@ class TestMetricRulesLoadedInPipeline:
              patch('interpreters.interpret_pipeline._run_llm_batch', return_value=({}, {})), \
              patch('infra.keyword_service.get_mining_detection_phrases', return_value=['bitcoin', 'btc produced']), \
              patch('interpreters.interpret_pipeline._apply_llm_result') as mock_apply:
-            extract_report(_make_report(), db, registry)
+            extract_report(_make_report(), db)
 
         calls_by_metric = {}
         for c in mock_apply.call_args_list:

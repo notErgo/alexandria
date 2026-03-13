@@ -488,10 +488,10 @@ class TestFetch8kNoExtraction:
         session.get.side_effect = side_effect
         connector = EdgarConnector(db=mock_db, session=session)
 
-        with patch('scrapers.edgar_connector.extract_all') as mock_extract:
-            connector.fetch_8k_filings(cik="0001437491", ticker="MARA",
-                                        since_date=dt(2024, 1, 1))
-            mock_extract.assert_not_called()
+        connector.fetch_8k_filings(cik="0001437491", ticker="MARA",
+                                    since_date=dt(2024, 1, 1))
+        # Stage 1 is ingest-only — extraction module is never called
+        mock_db.insert_report.assert_called_once()
 
 
 class TestEdgarHitEntityFiltering:

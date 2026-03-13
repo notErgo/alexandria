@@ -2,7 +2,7 @@
 import logging
 from datetime import date
 from flask import Blueprint, jsonify, request
-from app_globals import get_db, get_registry
+from app_globals import get_db
 
 log = logging.getLogger('miners.routes.explorer')
 bp = Blueprint('explorer', __name__)

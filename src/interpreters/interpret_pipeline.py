@@ -1,8 +1,8 @@
 """
-Extraction pipeline: LLM extraction with regex used only as a gate.
+Extraction pipeline: LLM-only extraction with keyword gate.
 
 Public API:
-  extract_report(report, db, registry) -> ExtractionSummary
+  extract_report(report, db) -> ExtractionSummary
 
 This module owns report extraction logic. Every ingestion path
 (archive, IR, EDGAR) stores raw text in the reports table, then calls
@@ -19,14 +19,14 @@ import threading
 from typing import Optional
 
 from interpreters.context_window import ContextWindowSelector
-from config import MONTHLY_EXTRACTION_SOURCE_TYPES
+from interpreters.report_text import _is_monthly_source_type, _clean_for_llm, prepare_report_text
+from interpreters.result_router import (  # re-exported for backward-compat (tests import from here)
+    _apply_llm_result,
+    validate_period_granularity,
+    _LLM_TEXT_MAX_CHARS,
+)
 
 log = logging.getLogger('miners.interpreters.interpret_pipeline')
-
-# Protected extraction methods — data points with these methods are never overwritten
-_PROTECTED_METHODS = frozenset({
-    'analyst', 'analyst_approved', 'review_approved', 'review_edited'
-})
 
 # Regex patterns for MD&A section headers in EDGAR filings.
 # 10-K uses Item 7; 10-Q uses Item 2.  Both are followed by "MD&A" prose.
@@ -95,42 +95,16 @@ _llm_available_cache_extractor_id: int = -1   # id() of the cached extractor
 _llm_cache_lock = threading.Lock()            # separate lock from the singleton lock
 _LLM_AVAILABLE_CACHE_TTL: float = 300.0      # seconds
 
-# Maximum characters of document text sent to the LLM per metric call.
-# Monthly production press releases have all key figures in the first ~5 paragraphs.
-# Truncating to 8 000 chars (~2 000 tokens) keeps prefill time on Apple Silicon
-# to ~20–30 s — well within the 180 s timeout. Regex extraction still runs on the
-# full raw_text, so no data is lost; the LLM just sees a shorter window.
-_LLM_TEXT_MAX_CHARS = 8000
-
 # Source types that follow the quarterly/annual extraction path
 _QUARTERLY_SOURCES = frozenset({'edgar_10q', 'edgar_6k'})
 _ANNUAL_SOURCES    = frozenset({'edgar_10k', 'edgar_20f', 'edgar_40f'})
-_MONTHLY_SOURCE_TYPES = frozenset(MONTHLY_EXTRACTION_SOURCE_TYPES)
 
 
-def validate_period_granularity(result_granularity: Optional[str], expected_granularity: str) -> bool:
-    """Return True if result_granularity is acceptable for expected_granularity.
-
-    None and 'unknown' always pass — the LLM did not label the period.
-    Monthly expectation rejects quarterly and annual results.
-    Quarterly expectation rejects annual results.
-    Annual expectation accepts anything.
-    """
-    if result_granularity is None or result_granularity == 'unknown':
-        return True
-    if expected_granularity == 'monthly':
-        return result_granularity not in ('quarterly', 'annual')
-    if expected_granularity == 'quarterly':
-        return result_granularity != 'annual'
-    return True
-
-
-def _active_metric_keys(db, registry) -> list:
+def _active_metric_keys(db) -> list:
     """Return the list of metric keys to send to the LLM.
 
     Queries metric_schema for active=1 rows (sector='BTC-miners').
-    Falls back to all registry keys if the schema table is empty or unavailable,
-    so extraction always runs even on a fresh DB without a seeded schema.
+    Logs an error and returns an empty list if the schema table is empty or unavailable.
     """
     try:
         rows = db.get_metric_schema('BTC-miners', active_only=True)
@@ -138,58 +112,11 @@ def _active_metric_keys(db, registry) -> list:
         if keys:
             return keys
     except Exception as e:
-        log.warning("Could not load active metric schema — falling back to registry: %s", e)
-    return list(registry.metrics.keys())
+        log.error("Could not load active metric schema: %s", e)
+        return []
+    log.error("No active metrics found in metric_schema — extraction will be skipped")
+    return []
 
-# Sentinel phrases that mark the start of boilerplate sections.
-# Only stripped when the match falls at or after the 40% mark of the document,
-# preventing false positives from titles like "Forward-Looking Statements Disclosure".
-_BOILERPLATE_SENTINELS = [
-    re.compile(r'\bFORWARD.LOOKING\s+STATEMENTS?\b', re.IGNORECASE),
-    re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
-    re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
-    re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
-    re.compile(r'^Recent Announcements\s*$', re.MULTILINE),
-    re.compile(r'^Investor Notice\s*$', re.MULTILINE),
-    re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list
-        r'\bABOUT\s+(?:MARATHON|MARA|RIOT|CLEANSPARK|CIPHER|CORE\s+SCIENTIFIC|'
-        r'BIT\s+DIGITAL|HIVE|HUT\s+8?|ARGO|STRONGHOLD|TERAWULF|IRIS(?:\s+ENERGY)?|IREN|'
-        r'BITFARMS|BITDEER|BIT\s*FUFU|CANGO|APPLIED\s+DIGITAL|AMERICAN\s+BITCOIN|'
-        r'STRONGHOLD\s+DIGITAL)\b',
-        re.IGNORECASE,
-    ),
-]
-
-
-def _build_outlier_concern(metric: str, llm_value: float, trailing_avg) -> str:
-    """Build a human-readable concern string for outlier correction prompts."""
-    if trailing_avg is not None:
-        return (
-            f"The extracted value {llm_value} for {metric} deviates significantly "
-            f"from this company's trailing average of {trailing_avg:.4f}. "
-            f"Re-read the document and verify that you captured the company's current-period "
-            f"value rather than a network-wide, quarterly, or year-to-date figure."
-        )
-    return (
-        f"The extracted value {llm_value} for {metric} was flagged as suspicious. "
-        f"Re-read the document and verify the exact current-period value."
-    )
-
-
-def _clean_for_llm(text: str) -> str:
-    """Strip boilerplate sections from the back 60%+ of the document.
-
-    Finds the earliest sentinel that appears at or after the 40% mark and
-    truncates there. Prevents false positives from titles/headings in the
-    document preamble that mention boilerplate topics.
-    """
-    cutoff = len(text)
-    threshold = int(len(text) * 0.4)  # only strip if match is past 40% mark
-    for pattern in _BOILERPLATE_SENTINELS:
-        m = pattern.search(text)
-        if m and m.start() >= threshold:
-            cutoff = min(cutoff, m.start())
-    return text[:cutoff].rstrip()
 
 
 def _prior_period(period_str: str) -> Optional[str]:
@@ -229,11 +156,6 @@ def _is_quarterly_doc(report: dict) -> bool:
 def _is_annual_doc(report: dict) -> bool:
     """Return True if report.source_type is an annual filing (10-K)."""
     return report.get('source_type') in _ANNUAL_SOURCES
-
-
-def _is_monthly_source_type(source_type: str) -> bool:
-    """Return True for broad miner monthly document sources."""
-    return source_type in _MONTHLY_SOURCE_TYPES
 
 
 _QUARTERLY_8K_URL_RE = re.compile(r'/q([1-4])(\d{2})shareholderletter', re.IGNORECASE)
@@ -459,31 +381,6 @@ def _invalidate_llm_availability_cache() -> None:
         _llm_available_cache_extractor_id = None
 
 
-def _build_regex_by_metric(text: str, registry, report_date: str = None,
-                            metric_rules_by_name: dict = None) -> dict:
-    """Run regex extraction for all metrics. Returns best result per metric.
-
-    Passes report_date to extract_all so temporally-scoped patterns are
-    filtered to those valid for this report's period. Passes valid_range from
-    metric_rules_by_name so DB-configured ceilings override hardcoded defaults.
-    """
-    from interpreters.regex_interpreter import extract_all
-    rules = metric_rules_by_name or {}
-    regex_by_metric = {}
-    for metric, patterns in registry.metrics.items():
-        rule = rules.get(metric)
-        valid_range = None
-        if rule:
-            mn = rule.get('valid_range_min')
-            mx = rule.get('valid_range_max')
-            if mn is not None and mx is not None:
-                valid_range = (float(mn), float(mx))
-        results = extract_all(text, patterns, metric, report_date=report_date,
-                              valid_range=valid_range)
-        if results:
-            regex_by_metric[metric] = results[0]  # sorted confidence-desc; first = best
-    return regex_by_metric
-
 
 def _run_llm_batch(
     llm_interpreter,
@@ -517,147 +414,9 @@ def _run_llm_batch(
     return result, meta
 
 
-def _apply_llm_result(
-    metric: str,
-    llm_result,
-    db,
-    report: dict,
-    confidence_threshold: float,
-    summary,
-    attribution: Optional[str] = None,
-    llm_interpreter=None,
-    metric_rule: Optional[dict] = None,
-    run_config=None,
-) -> None:
-    """Apply LLM-only extraction routing for one metric in one report."""
-    ticker = report['ticker']
-    period_str = report['report_date']
-    report_id = report['id']
-
-    existing = db.data_point_exists(ticker, period_str, metric)
-    if existing:
-        with db._get_connection() as conn:
-            row = conn.execute(
-                "SELECT extraction_method FROM data_points WHERE ticker=? AND period=? AND metric=?",
-                (ticker, period_str, metric),
-            ).fetchone()
-            if row and row[0] in _PROTECTED_METHODS:
-                log.debug("Skipping analyst-protected %s %s %s", ticker, period_str, metric)
-                return
-
-    _expected_grain = run_config.expected_granularity if run_config is not None else 'monthly'
-    if llm_result is not None:
-        _result_grain = getattr(llm_result, 'period_granularity', None)
-        if not validate_period_granularity(_result_grain, _expected_grain):
-            log.warning(
-                "event=temporal_reject ticker=%s period=%s metric=%s "
-                "result_grain=%r expected=%r snippet=%r",
-                ticker, period_str, metric,
-                _result_grain, _expected_grain,
-                (llm_result.source_snippet or '')[:60],
-            )
-            summary.temporal_rejects += 1
-            llm_result = None
-
-    if llm_result is None:
-        return
-
-    _time_grain = db._derive_time_grain(period_str)
-    active_rule = metric_rule if (metric_rule and metric_rule.get('enabled', 1)) else None
-
-    from config import OUTLIER_THRESHOLDS, OUTLIER_MIN_HISTORY
-    from interpreters.agreement import detect_outlier
-
-    outlier_threshold = (
-        active_rule['outlier_threshold']
-        if active_rule and 'outlier_threshold' in active_rule
-        else OUTLIER_THRESHOLDS.get(metric, 1.0)
-    )
-    history_limit = (
-        active_rule.get('outlier_min_history', OUTLIER_MIN_HISTORY)
-        if active_rule else OUTLIER_MIN_HISTORY
-    )
-    trailing_vals: list = []
-    is_outlier = False
-    trailing_avg = None
-    try:
-        trailing_rows = db.get_trailing_data_points(
-            ticker, period_str, metric, limit=history_limit
-        )
-        trailing_vals = [r['value'] for r in trailing_rows]
-        is_outlier, trailing_avg = detect_outlier(
-            llm_result.value, trailing_vals, outlier_threshold
-        )
-    except Exception as _oe:
-        log.debug("Outlier check failed for %s %s %s (non-fatal): %s",
-                  ticker, period_str, metric, _oe)
-
-    if is_outlier:
-        log.info(
-            "Outlier flagged: %s %s %s = %.4f (trailing_avg=%.4f, threshold=%.0f%%)",
-            ticker, period_str, metric, llm_result.value,
-            trailing_avg, outlier_threshold * 100,
-        )
-        raw_text = report.get('raw_text') or ''
-        if raw_text and llm_interpreter is not None:
-            try:
-                concern = _build_outlier_concern(metric, llm_result.value, trailing_avg)
-                llm_text = _clean_for_llm(raw_text)[:_LLM_TEXT_MAX_CHARS]
-                corrected = llm_interpreter.extract_with_correction(
-                    llm_text, metric, llm_result.value, concern, ticker=ticker
-                )
-                if corrected is not None and corrected.value is not None:
-                    _outlier_ok = True
-                    if trailing_vals:
-                        _is_out, _ = detect_outlier(
-                            corrected.value, trailing_vals, outlier_threshold
-                        )
-                        _outlier_ok = not _is_out
-                    llm_result = corrected
-                    is_outlier = not _outlier_ok
-            except Exception as _corr_err:
-                log.debug("Self-correction pass failed (non-fatal): %s", _corr_err)
-
-    if llm_result.confidence >= confidence_threshold and not is_outlier:
-        db.insert_data_point({
-            "report_id": report_id,
-            "ticker": ticker,
-            "period": period_str,
-            "metric": metric,
-            "value": llm_result.value,
-            "unit": llm_result.unit,
-            "confidence": llm_result.confidence,
-            "extraction_method": attribution or llm_result.extraction_method,
-            "source_snippet": llm_result.source_snippet,
-            "expected_granularity": _expected_grain,
-            "time_grain": _time_grain,
-        })
-        summary.data_points_extracted += 1
-        return
-
-    db.insert_review_item({
-        "report_id": report_id,
-        "data_point_id": None,
-        "ticker": ticker,
-        "period": period_str,
-        "metric": metric,
-        "raw_value": str(llm_result.value),
-        "confidence": llm_result.confidence,
-        "source_snippet": llm_result.source_snippet,
-        "status": "PENDING",
-        "llm_value": llm_result.value,
-        "regex_value": None,
-        "agreement_status": "OUTLIER_FLAGGED" if is_outlier else "LLM_ONLY",
-        "expected_granularity": _expected_grain,
-        "time_grain": _time_grain,
-    })
-    summary.review_flagged += 1
-
-
 def _interpret_quarterly_report(
     report: dict,
     db,
-    registry,
     summary,
     attribution: Optional[str] = None,
 ) -> 'ExtractionSummary':
@@ -743,10 +502,10 @@ def _interpret_quarterly_report(
         )
         return summary
 
-    all_metrics = _active_metric_keys(db, registry) if registry.metrics else []
+    all_metrics = _active_metric_keys(db)
     if not all_metrics:
-        log.warning("No metrics in registry for quarterly extraction %s %s", ticker, covering_period)
-        db.mark_report_extraction_failed(report_id, 'no_metrics_in_registry')
+        log.warning("No active metrics in DB for quarterly extraction %s %s", ticker, covering_period)
+        db.mark_report_extraction_failed(report_id, 'no_metrics_in_schema')
         return summary
 
     try:
@@ -858,7 +617,7 @@ def _interpret_quarterly_report(
     return summary
 
 
-def extract_report(report: dict, db, registry, attribution: Optional[str] = None, config=None) -> 'ExtractionSummary':
+def extract_report(report: dict, db, attribution: Optional[str] = None, config=None) -> 'ExtractionSummary':
     """
     Run extraction on one stored report.
 
@@ -877,27 +636,9 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
     # Cleared to 'pending' on startup if the process crashes mid-extraction.
     db.mark_report_extraction_running(report['id'])
 
-    # Prefer fresh table-aware extraction from raw_html when available.
-    # raw_text was stored at ingest time via plain get_text() (no table conversion);
-    # re-deriving from raw_html applies convert_tables_to_pipe_text so label-value
-    # associations in HTML tables survive flattening.
-    raw_html = report.get('raw_html')
-    if raw_html:
-        from infra.text_utils import html_to_plain
-        text = html_to_plain(raw_html)
-    else:
-        text = report.get('raw_text') or ''
-
-    # Strip navigation headers and boilerplate footer sections
-    # (investor notices, forward-looking disclaimers, about/contact blocks,
-    # SEC signature blocks, exhibit indexes) before regex gating and LLM extraction.
-    _src = report.get('source_type', '')
-    if _is_monthly_source_type(_src):
-        from infra.text_utils import strip_press_release_boilerplate
-        text = strip_press_release_boilerplate(text)
-    elif _src.startswith('edgar_'):
-        from infra.text_utils import strip_edgar_boilerplate
-        text = strip_edgar_boilerplate(text)
+    # Extract and strip boilerplate. Prefers raw_html (table-aware) over raw_text.
+    # Applies source-type-specific boilerplate stripping (press release vs EDGAR).
+    text = prepare_report_text(report)
 
     if not text.strip():
         log.warning(
@@ -946,7 +687,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         # Route quarterly and annual SEC filings to the dedicated extraction path.
         # These do not use regex extraction — LLM only with wider text window.
         if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES or treat_as_quarterly_8k:
-            return _interpret_quarterly_report(effective_report, db, registry, summary, attribution)
+            return _interpret_quarterly_report(effective_report, db, summary, attribution)
 
         from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
         _det_phrases = [p.lower() for p in _get_det_phrases(db) if p.strip()]
@@ -1003,7 +744,7 @@ def extract_report(report: dict, db, registry, attribution: Optional[str] = None
         _ctx_windows = _ctx_selector.select_windows(report['id'], _clean_text, 'production_btc', db)
         llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_text[:_LLM_TEXT_MAX_CHARS]
 
-        all_metrics = _active_metric_keys(db, registry)
+        all_metrics = _active_metric_keys(db)
         ticker = report.get('ticker')
 
         llm_by_metric = {}

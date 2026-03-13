@@ -19,7 +19,7 @@ Project-local default remains single-folder `OffChain/miners` unless parallel ag
 
 ## Purpose
 
-Bitcoin miner intelligence platform. LLM-first extraction (Qwen3.5-35B-A3B via Ollama) + regex validation for 13 public mining companies. Ingests archived PDFs/HTMLs, live IR press releases, and SEC EDGAR 8-K filings. Agreement engine routes to data_points (auto-accept) or review_queue (disagreement/LLM-only).
+Bitcoin miner intelligence platform. LLM-only extraction (Qwen3.5-35B-A3B via Ollama) for 13 public mining companies. Ingests archived PDFs/HTMLs, live IR press releases, and SEC EDGAR 8-K/10-Q/10-K filings. Keyword gate filters non-production documents; LLM confidence + outlier detection routes to data_points (auto-accept) or review_queue (low confidence/outlier).
 
 ## Build & Run
 
@@ -50,20 +50,19 @@ OffChain/miners/
 ├── run_web.py          Flask entry point (port 5004, threaded=True)
 ├── cli.py              CLI: ingest / query / export
 ├── src/
-│   ├── app_globals.py  MinerDB + PatternRegistry singletons
+│   ├── app_globals.py  MinerDB singleton
 │   ├── config.py       Constants (CONFIDENCE_REVIEW_THRESHOLD=0.75, etc.)
 │   ├── miner_types.py  Shared dataclasses and enums (renamed from types.py)
 │   ├── infra/
 │   │   ├── db.py               MinerDB — all SQLite CRUD
 │   │   └── logging_config.py   setup_logging() — call before create_app()
-│   ├── extractors/
-│   │   ├── pattern_registry.py  PatternRegistry.load(config_dir)
-│   │   ├── extractor.py         extract_all(text, patterns, metric) → [ExtractionResult]
-│   │   ├── unit_normalizer.py   normalize_hashrate/btc/percent/value
-│   │   ├── confidence.py        score_extraction(weight, distance, value, metric) → float
-│   │   ├── llm_extractor.py     LLMExtractor(session, db) — Ollama Qwen3.5-35B-A3B
-│   │   ├── agreement.py         evaluate_agreement(regex, llm) → AgreementDecision
-│   │   └── extraction_pipeline.py  extract_report(report, db, registry) → ExtractionSummary
+│   ├── interpreters/
+│   │   ├── interpret_pipeline.py  extract_report(report, db) → ExtractionSummary
+│   │   ├── llm_interpreter.py     LLMInterpreter(session, db) — Ollama Qwen3.5-35B-A3B
+│   │   ├── outlier.py             detect_outlier(candidate, trailing, threshold_pct) → (bool, float|None)
+│   │   ├── table_interpreter.py   TableInterpreter — table extraction
+│   │   ├── unit_normalizer.py     normalize_hashrate/btc/percent/value
+│   │   └── confidence.py          score_extraction(weight, distance, value, metric) → float
 │   ├── scrapers/
 │   │   ├── archive_ingestor.py ArchiveIngestor.ingest_all(force?) — walks OffChain/Miner/
 │   │   ├── manifest_scanner.py scan_archive_directory() — upserts asset_manifest entries
@@ -116,19 +115,22 @@ Reference map: `docs/general_data_ui_llm_interaction_documentation.md`
 ```
 Stage 1 — Ingest (fetch + store raw text):
   Archive PDFs/HTMLs → ArchiveIngestor.ingest_all()  → reports table
-                     ↳ for monthly files, extraction runs inline in ingest_all()
+                     ↳ monthly files: extraction runs inline via LLM pipeline
+                     ↳ quarterly files: stored as pending (deferred to Stage 2)
   IR press releases  → IRScraper.scrape_company()    → reports table (fetch+store)
   EDGAR filings      → EdgarConnector.fetch_all_filings()
                      → reports table (8-K + 10-Q + 10-K; fetch+store)
 
-Stage 2 — Extract (LLM+regex+agreement on stored reports):
+Stage 2 — Extract (LLM-only on stored reports):
   db.get_unextracted_reports()  OR  cli.py extract
-  → extraction_pipeline.extract_report(report, db, registry)
-      → regex (PatternExtractor) + LLM (Ollama Qwen3.5-35B)
-      → AgreementEngine per metric:
-            Both agree (≤2%)      → data_points  (regex value stored)
-            Disagree / LLM-only   → review_queue (both candidates)
-            Neither found         → period gap
+  → interpret_pipeline.extract_report(report, db)
+      → Keyword gate: any mining phrase in text? → NO → skip (keyword_gated)
+                                                 → YES → continue
+      → LLM batch extract (Ollama Qwen3.5-35B, all metrics in one call)
+      → Per-metric routing (confidence + outlier detection):
+            confidence ≥ 0.75 AND not outlier → data_points (LLM value)
+            confidence < 0.75 OR outlier      → review_queue
+            LLM returned nothing              → period gap
       → db.mark_report_extracted(report_id)
   Analyst protection: extraction_method IN ('analyst','analyst_approved',
       'review_approved','review_edited') → never overwritten by pipeline
@@ -174,8 +176,8 @@ because navigation markup pushes actual content past the raw byte sampling windo
 - `"index"` / `"template"` → `_scrape_index()` / `_scrape_template()` — parses HTML listing, stores raw text
 - `"skip"` → no-op (logs skip_reason)
 
-`IRScraper` no longer takes a `registry` argument — extraction goes through
-`extraction_pipeline.extract_report()`. Use either:
+`IRScraper` does not do extraction — it is Stage 1 (fetch+store) only. Extraction goes through
+`interpret_pipeline.extract_report(report, db)`. Use either:
 - explicit stage 2 (`POST /api/operations/extract` or `cli.py extract`), or
 - ingest auto-chain (`POST /api/ingest/ir|edgar` with `auto_extract=true`).
 

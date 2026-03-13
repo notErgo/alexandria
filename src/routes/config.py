@@ -126,7 +126,7 @@ def _get_default_for_key(key: str):
     _llama_defaults = {
         'llama_model_path': str(Path.home() / '.ollama/models/blobs/sha256-2bada8a7450677000f678be90653b85d364de7db25eb5ea54136ada5f3933730'),
         'llama_parallel':     '8',
-        'llama_ctx_size':     '8192',
+        'llama_ctx_size':     '65536',
         'llama_n_predict':    '768',
         'llama_batch_size':   '4096',
         'llama_cache_type_k': 'q8_0',

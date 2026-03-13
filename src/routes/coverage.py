@@ -142,6 +142,7 @@ def manifest_scan():
             'legacy_undated': result.legacy_undated,
             'failed': result.failed,
             'tickers_scanned': result.tickers_scanned,
+            'ticker_counts': result.ticker_counts,
         }})
     except Exception:
         log.error('Error in manifest_scan', exc_info=True)

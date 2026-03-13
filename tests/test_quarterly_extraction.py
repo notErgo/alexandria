@@ -60,9 +60,6 @@ class TestExtractionPipelineQuarterlyPath:
         mock_db.data_point_exists.return_value = False
         mock_db.get_quarterly_data_point.return_value = None
 
-        mock_registry = MagicMock()
-        mock_registry.metrics = {}
-
         report = {
             'id': 1,
             'ticker': 'WULF',
@@ -72,11 +69,10 @@ class TestExtractionPipelineQuarterlyPath:
             'covering_period': '2025-Q1',
         }
 
-        with patch('interpreters.interpret_pipeline._build_regex_by_metric') as mock_regex:
-            mock_regex.return_value = {}
-            extract_report(report, mock_db, mock_registry)
-            # For quarterly docs, regex should NOT be called
-            mock_regex.assert_not_called()
+        # For quarterly docs, extraction goes through LLM-only path (no regex)
+        with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
+            extract_report(report, mock_db)
+        # No regex-related assertion needed — regex extraction is removed entirely
 
     def test_extract_report_10q_stores_source_period_type(self):
         """data_point inserted from 10-Q must have source_period_type='quarterly'."""
@@ -93,9 +89,9 @@ class TestExtractionPipelineQuarterlyPath:
         mock_db.get_all_metric_keywords.return_value = [
             {'phrase': 'bitcoin mined', 'metric_key': 'production_btc'},
         ]
-
-        mock_registry = MagicMock()
-        mock_registry.metrics = {'production_btc': []}
+        mock_db.get_metric_schema.return_value = [
+            {'key': 'production_btc', 'active': 1},
+        ]
 
         report = {
             'id': 1,
@@ -118,7 +114,7 @@ class TestExtractionPipelineQuarterlyPath:
             mock_extractor.extract_quarterly_batch.return_value = {'production_btc': mock_llm_result}
             mock_get_llm.return_value = mock_extractor
 
-            extract_report(report, mock_db, mock_registry)
+            extract_report(report, mock_db)
 
         # At least one data_point should have source_period_type='quarterly'
         quarterly_dps = [dp for dp in inserted_dps if dp.get('source_period_type') == 'quarterly']

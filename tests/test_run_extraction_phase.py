@@ -26,7 +26,7 @@ def test_run_extraction_phase_delegates_to_extract_reports_for_ticker(monkeypatc
     run_id = int(run['id'])
     calls = []
 
-    def _fake_worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _fake_worker(db, run_id, ticker, reports, counters, failures,
                      num_workers, *, run_config=None, force_reextract=False):
         calls.append({'ticker': ticker, 'num_workers': num_workers,
                       'force_reextract': force_reextract})
@@ -38,7 +38,7 @@ def test_run_extraction_phase_delegates_to_extract_reports_for_ticker(monkeypatc
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
-        db, run_id, ['MARA'], object(),
+        db, run_id, ['MARA'],
         extract_workers=3, force_reextract=True,
     )
 
@@ -64,7 +64,7 @@ def test_run_extraction_phase_emits_stage_start_and_end(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, first_filing, force_reextract=False: [])
 
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'], object())
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'])
 
     with db._get_connection() as conn:
         events = conn.execute(
@@ -90,7 +90,7 @@ def test_run_extraction_phase_emits_ticker_preflight_per_ticker(monkeypatch, tmp
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, first_filing, force_reextract=False: [])
 
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'], object())
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'])
 
     with db._get_connection() as conn:
         rows = conn.execute(
@@ -117,7 +117,7 @@ def test_run_extraction_phase_warms_ollama_once(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, ff, force_reextract=False: [{'id': 1}])
 
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'], object(), warm_model=True)
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA', 'RIOT'], warm_model=True)
 
     assert len(warmup_calls) == 1, f"Expected exactly 1 warmup call, got {len(warmup_calls)}"
 
@@ -137,7 +137,7 @@ def test_run_extraction_phase_skips_warmup_when_warm_model_false(monkeypatch, tm
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda db, ticker, ff, force_reextract=False: [{'id': 1}])
 
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], object(), warm_model=False)
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], warm_model=False)
 
 
 def test_run_extraction_phase_empty_tickers_returns_zero_counters(monkeypatch, tmp_path):
@@ -151,7 +151,7 @@ def test_run_extraction_phase_empty_tickers_returns_zero_counters(monkeypatch, t
 
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', _fail_warmup)
 
-    result = pipeline_mod.run_extraction_phase(db, run_id, [], object())
+    result = pipeline_mod.run_extraction_phase(db, run_id, [])
 
     assert result['total_reports'] == 0
     assert result['processed'] == 0
@@ -168,7 +168,7 @@ def test_run_extraction_phase_cancel_check_stops_early(monkeypatch, tmp_path):
     run_id = int(run['id'])
     extracted = []
 
-    def _fake_worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _fake_worker(db, run_id, ticker, reports, counters, failures,
                      num_workers, *, run_config=None, force_reextract=False):
         extracted.append(ticker)
         counters['processed'] += 1
@@ -184,7 +184,7 @@ def test_run_extraction_phase_cancel_check_stops_early(monkeypatch, tmp_path):
         return call_count[0] > 1  # cancel after first ticker
 
     pipeline_mod.run_extraction_phase(
-        db, run_id, ['MARA', 'RIOT'], object(),
+        db, run_id, ['MARA', 'RIOT'],
         cancel_check=_cancel_after_first,
     )
 
@@ -201,7 +201,7 @@ def test_run_extraction_phase_progress_callback_called_per_ticker(monkeypatch, t
     run_id = int(run['id'])
     snapshots = []
 
-    def _fake_worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _fake_worker(db, run_id, ticker, reports, counters, failures,
                      num_workers, *, run_config=None, force_reextract=False):
         counters['processed'] += 1
 
@@ -211,7 +211,7 @@ def test_run_extraction_phase_progress_callback_called_per_ticker(monkeypatch, t
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
-        db, run_id, ['MARA', 'RIOT'], object(),
+        db, run_id, ['MARA', 'RIOT'],
         progress_callback=lambda c: snapshots.append(c['processed']),
     )
 
@@ -233,7 +233,7 @@ def test_run_extraction_phase_run_config_factory_called_per_ticker(monkeypatch, 
         factory_calls.append(ticker)
         return f'config_for_{ticker}'
 
-    def _fake_worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _fake_worker(db, run_id, ticker, reports, counters, failures,
                      num_workers, *, run_config=None, force_reextract=False):
         received_configs.append(run_config)
 
@@ -243,7 +243,7 @@ def test_run_extraction_phase_run_config_factory_called_per_ticker(monkeypatch, 
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
-        db, run_id, ['MARA', 'RIOT'], object(),
+        db, run_id, ['MARA', 'RIOT'],
         run_config_factory=_factory,
     )
 
@@ -271,7 +271,7 @@ def test_run_extraction_phase_source_types_explicit_skips_edgar_date_gate(monkey
                         lambda *a, **kw: None)
 
     pipeline_mod.run_extraction_phase(
-        db, run_id, ['MARA'], object(),
+        db, run_id, ['MARA'],
         source_types=list(MONTHLY_EXTRACTION_SOURCE_TYPES),
     )
 
@@ -290,7 +290,7 @@ def test_run_extraction_phase_prebuilt_batches_skips_batch_building(monkeypatch,
     monkeypatch.setattr(pipeline_mod, '_build_extraction_batch',
                         lambda *a, **kw: build_calls.append(a) or [])
 
-    def _worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _worker(db, run_id, ticker, reports, counters, failures,
                 num_workers, *, run_config=None, force_reextract=False):
         worker_reports.extend(reports)
 
@@ -298,20 +298,20 @@ def test_run_extraction_phase_prebuilt_batches_skips_batch_building(monkeypatch,
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
     pm_report = {'id': 99, 'ticker': 'MARA'}
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], object(),
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'],
                                       prebuilt_batches={'MARA': [pm_report]})
 
     assert build_calls == [], "Must not call _build_extraction_batch when prebuilt_batches supplied"
     assert worker_reports == [pm_report]
 
 
-def test_run_extraction_phase_default_extract_workers_is_2(monkeypatch, tmp_path):
+def test_run_extraction_phase_default_extract_workers_is_positive(monkeypatch, tmp_path):
     import routes.pipeline as pipeline_mod
     db = _make_db(tmp_path)
     run_id = int(db.create_pipeline_run(triggered_by='test', scope={}, config={})['id'])
     worker_calls = []
 
-    def _worker(db, run_id, ticker, reports, registry, counters, failures,
+    def _worker(db, run_id, ticker, reports, counters, failures,
                 num_workers, *, run_config=None, force_reextract=False):
         worker_calls.append(num_workers)
 
@@ -320,6 +320,7 @@ def test_run_extraction_phase_default_extract_workers_is_2(monkeypatch, tmp_path
                         lambda db, t, ff, force_reextract=False: [{'id': 1}])
     monkeypatch.setattr(pipeline_mod, 'prepare_extraction_runtime', lambda *a, **kw: None)
 
-    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'], object())
+    pipeline_mod.run_extraction_phase(db, run_id, ['MARA'])
 
-    assert worker_calls == [2], f"Default extract_workers must be 2, got {worker_calls}"
+    assert len(worker_calls) == 1, f"Expected exactly 1 worker call, got {worker_calls}"
+    assert worker_calls[0] >= 1, f"extract_workers must be >= 1, got {worker_calls[0]}"

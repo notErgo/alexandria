@@ -468,13 +468,11 @@ def operations_extract():
         _sample_n = sample_n
         _expected_granularity = expected_granularity
 
-        from app_globals import get_registry
         from routes.pipeline import (
             _EDGAR_SOURCE_TYPES,
             _NON_EDGAR_SOURCE_TYPES,
             run_extraction_phase,
         )
-        registry = get_registry()
 
         def _run():
             ops_run_id: int | None = None
@@ -592,7 +590,6 @@ def operations_extract():
                     db,
                     ops_run_id if ops_run_id is not None else 0,
                     tickers=list(grouped_reports.keys()),
-                    registry=registry,
                     prebuilt_batches=dict(grouped_reports),
                     force_reextract=force,
                     warm_model=warm_model,

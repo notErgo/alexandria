@@ -524,7 +524,7 @@ def test_manual_extract_run_completes_with_status_complete(monkeypatch):
         flask_app.config['TESTING'] = True
         client = flask_app.test_client()
 
-        def _noop_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        def _noop_run_extraction_phase(db, run_id, tickers, **kwargs):
             return {'total_reports': 0, 'processed': 0, 'data_points': 0,
                     'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
@@ -571,7 +571,7 @@ def test_manual_extract_progress_includes_run_id(monkeypatch):
         flask_app.config['TESTING'] = True
         client = flask_app.test_client()
 
-        def _noop_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        def _noop_run_extraction_phase(db, run_id, tickers, **kwargs):
             return {'total_reports': 0, 'processed': 0, 'data_points': 0,
                     'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}
 
@@ -621,7 +621,7 @@ def test_operations_uses_run_extraction_phase(monkeypatch):
 
         calls = []
 
-        def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+        def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
             calls.append({'tickers': list(tickers), 'extract_workers': kwargs.get('extract_workers'),
                           'force_reextract': kwargs.get('force_reextract')})
             return {'total_reports': 0, 'processed': 0, 'data_points': 0,

@@ -189,29 +189,6 @@ def extract_quarterly_months(text: str) -> list:
     return sorted(found)
 
 
-def _extract_quarterly_data_points(text: str, registry, report_id: int, ticker: str, periods: list) -> dict:
-    """
-    For each period in a quarterly filing, find a text window around that month's
-    header and run extraction within that window.
-
-    Returns dict mapping period (date) → list of ExtractionResult.
-    """
-    from interpreters.regex_interpreter import extract_all
-
-    results_by_period: dict = {}
-    for period_date in periods:
-        month_name = period_date.strftime("%B %Y")  # e.g., "September 2025"
-        idx = text.lower().find(month_name.lower())
-        if idx == -1:
-            continue
-        # 200 chars before + 1300 chars after the month header
-        window = text[max(0, idx - 200): idx + 1300]
-        period_results = []
-        for metric, patterns in registry.metrics.items():
-            period_results.extend(extract_all(window, patterns, metric))
-        results_by_period[period_date] = period_results
-    return results_by_period
-
 
 def _parse_pdf(path: str) -> str:
     """Extract all text from a PDF using pdfplumber. Returns '' on failure."""
@@ -268,7 +245,6 @@ class ArchiveIngestor:
     """Ingests historical PDFs and HTMLs from the archive directory."""
     archive_dir: str
     db: object  # MinerDB
-    registry: object  # PatternRegistry
 
     def ingest_all(
         self,
@@ -297,7 +273,6 @@ class ArchiveIngestor:
         a February press release covers January production).
         """
         from miner_types import IngestSummary
-        from config import CONFIDENCE_REVIEW_THRESHOLD
         from interpreters.interpret_pipeline import extract_report
         from scrapers.manifest_scanner import scan_archive_directory
 
@@ -467,58 +442,13 @@ class ArchiveIngestor:
                 continue
 
             if quarterly:
-                # Phase 2: extract data per month in the quarterly filing
-                results_by_period = _extract_quarterly_data_points(
-                    text, self.registry, report_id, ticker, periods
+                # Quarterly archive files are stored for LLM extraction via
+                # the shared pipeline. Mark as pending so get_unextracted_reports()
+                # picks them up in the next extraction phase.
+                log.info(
+                    "Quarterly archive file stored as pending for LLM extraction: %s %s",
+                    ticker, report_id,
                 )
-                for period_date, all_results in results_by_period.items():
-                    q_period_str = period_date.strftime("%Y-%m-%d")
-                    seen_metrics: set = set()
-                    for result in all_results:
-                        dp = {
-                            "report_id": report_id,
-                            "ticker": ticker,
-                            "period": q_period_str,
-                            "metric": result.metric,
-                            "value": result.value,
-                            "unit": result.unit,
-                            "confidence": result.confidence,
-                            "extraction_method": result.extraction_method,
-                            "source_snippet": result.source_snippet,
-                        }
-                        if result.confidence >= CONFIDENCE_REVIEW_THRESHOLD:
-                            if result.metric not in seen_metrics:
-                                self.db.insert_data_point(dp)
-                                summary.data_points_extracted += 1
-                                seen_metrics.add(result.metric)
-                            else:
-                                review_item = {
-                                    "data_point_id": None,
-                                    "ticker": ticker,
-                                    "period": q_period_str,
-                                    "metric": result.metric,
-                                    "raw_value": str(result.value),
-                                    "confidence": result.confidence,
-                                    "source_snippet": result.source_snippet,
-                                    "status": "PENDING",
-                                }
-                                self.db.insert_review_item(review_item)
-                                summary.review_flagged += 1
-                        else:
-                            review_item = {
-                                "data_point_id": None,
-                                "ticker": ticker,
-                                "period": q_period_str,
-                                "metric": result.metric,
-                                "raw_value": str(result.value),
-                                "confidence": result.confidence,
-                                "source_snippet": result.source_snippet,
-                                "status": "PENDING",
-                            }
-                            self.db.insert_review_item(review_item)
-                            summary.review_flagged += 1
-                # Mark as done so get_unextracted_reports() doesn't pick it up again
-                self.db.mark_report_extracted(report_id)
             else:
                 if auto_extract_monthly:
                     # Monthly press release — delegate to shared extraction pipeline.
@@ -526,7 +456,7 @@ class ArchiveIngestor:
                     # then run the warmed shared extraction stage separately.
                     stored_report = self.db.get_report(report_id)
                     if stored_report:
-                        ext_summary = extract_report(stored_report, self.db, self.registry)
+                        ext_summary = extract_report(stored_report, self.db)
                         summary.data_points_extracted += ext_summary.data_points_extracted
                         summary.review_flagged += ext_summary.review_flagged
                         summary.errors += ext_summary.errors

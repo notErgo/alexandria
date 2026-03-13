@@ -36,16 +36,13 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
 
         db = MagicMock()
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
 
         report = _make_report()
 
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
-                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
-                    mock_llm_fn.return_value = None
-                    extract_report(report, db, registry)
+                mock_llm_fn.return_value = None
+                extract_report(report, db)
 
         db.mark_report_extraction_running.assert_called_once_with(report['id'])
 
@@ -59,16 +56,12 @@ class TestRunningStatusSetBeforeExtraction(unittest.TestCase):
         db.mark_report_extracted.side_effect = lambda rid: call_order.append('extracted')
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
 
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
-
         report = _make_report()
 
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
-                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
-                    mock_llm_fn.return_value = None
-                    extract_report(report, db, registry)
+                mock_llm_fn.return_value = None
+                extract_report(report, db)
 
         self.assertIn('running', call_order)
         if 'extracted' in call_order:
@@ -85,8 +78,6 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         db = MagicMock()
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
 
         report = _make_quarterly_report()
@@ -94,7 +85,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _interpret_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, summary)
 
         db.mark_report_extracted.assert_not_called()
 
@@ -105,8 +96,6 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         db = MagicMock()
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
 
         report = _make_quarterly_report()
@@ -114,7 +103,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _interpret_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, summary)
 
         db.mark_report_extraction_failed.assert_not_called()
 
@@ -125,8 +114,6 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
 
         db = MagicMock()
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
 
         report = _make_quarterly_report()
@@ -134,7 +121,7 @@ class TestLLMUnavailableLeavesStatusPending(unittest.TestCase):
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
                 mock_llm_fn.return_value = None
-                _interpret_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, summary)
 
         db.reset_report_to_pending.assert_called_once_with(report['id'])
 
@@ -147,17 +134,15 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
 
         db = MagicMock()
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
 
         report = _make_report()
 
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
-                with patch('interpreters.interpret_pipeline._build_regex_by_metric',
+                with patch('interpreters.interpret_pipeline._run_llm_batch',
                            side_effect=RuntimeError('simulated error')):
                     mock_llm_fn.return_value = MagicMock()
-                    extract_report(report, db, registry)
+                    extract_report(report, db)
 
         db.mark_report_extraction_failed.assert_called_once()
         args = db.mark_report_extraction_failed.call_args[0]
@@ -168,8 +153,6 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
         from miner_types import ExtractionSummary
 
         db = MagicMock()
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
         summary = ExtractionSummary()
 
         report = _make_quarterly_report()
@@ -178,7 +161,7 @@ class TestExtractionExceptionMarksFailed(unittest.TestCase):
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
                 mock_llm_fn.return_value = MagicMock()
                 mock_llm_fn.return_value.extract_quarterly_batch.side_effect = RuntimeError('llm crashed')
-                _interpret_quarterly_report(report, db, registry, summary)
+                _interpret_quarterly_report(report, db, summary)
 
         db.mark_report_extraction_failed.assert_called_once()
 
@@ -192,16 +175,13 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
         db = MagicMock()
         db.get_metric_rules.return_value = []
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
 
         report = _make_report()
 
         with patch('interpreters.interpret_pipeline._get_llm_interpreter') as mock_llm_fn:
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=False):
-                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
-                    mock_llm_fn.return_value = None
-                    extract_report(report, db, registry)
+                mock_llm_fn.return_value = None
+                extract_report(report, db)
 
         db.reset_report_to_pending.assert_called_once_with(report['id'])
         db.mark_report_extracted.assert_not_called()
@@ -212,8 +192,6 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
         db = MagicMock()
         db.get_metric_rules.return_value = []
         db.get_all_metric_keywords.return_value = [{'phrase': 'bitcoin mined', 'metric_key': 'production_btc'}]
-        registry = MagicMock()
-        registry.metrics = {'production_btc': MagicMock()}
 
         report = _make_report()
 
@@ -229,8 +207,7 @@ class TestSuccessfulExtractionMarksDone(unittest.TestCase):
 
         with patch('interpreters.interpret_pipeline._get_llm_interpreter', return_value=_TransportFailLLM()):
             with patch('interpreters.interpret_pipeline._check_llm_available', return_value=True):
-                with patch('interpreters.interpret_pipeline._build_regex_by_metric', return_value={}):
-                    extract_report(report, db, registry)
+                extract_report(report, db)
 
         db.reset_report_to_pending.assert_called_once_with(report['id'])
         db.mark_report_extracted.assert_not_called()

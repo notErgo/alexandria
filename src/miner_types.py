@@ -200,10 +200,13 @@ class ScanResult:
     failed: int = 0
     drift_count: int = 0
     tickers_scanned: list = None
+    ticker_counts: dict = None
 
     def __post_init__(self):
         if self.tickers_scanned is None:
             self.tickers_scanned = []
+        if self.ticker_counts is None:
+            self.ticker_counts = {}
 
 
 @dataclass

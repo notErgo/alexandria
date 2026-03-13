@@ -41,13 +41,7 @@ class TestUnifiedProductionGate:
         })
         return db
 
-    @pytest.fixture
-    def registry(self):
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        return PatternRegistry.load(CONFIG_DIR)
-
-    def test_riot_blockchain_corporate_8k_gated(self, db_with_company, registry, monkeypatch):
+    def test_riot_blockchain_corporate_8k_gated(self, db_with_company, monkeypatch):
         """8-K mentioning 'bitcoin' in a corporate/investment context must be gated out.
 
         This simulates a RIOT Blockchain 2018 8-K: 'bitcoin' appears but there
@@ -85,7 +79,7 @@ class TestUnifiedProductionGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert len(llm_calls) == 0, (
             f"LLM must not be called on a corporate 8-K that contains only 'bitcoin' "
@@ -93,7 +87,7 @@ class TestUnifiedProductionGate:
         )
         assert summary.keyword_gated == 1
 
-    def test_production_report_passes_gate(self, db_with_company, registry, monkeypatch):
+    def test_production_report_passes_gate(self, db_with_company, monkeypatch):
         """8-K with actual production figures must pass the gate and reach LLM."""
         import interpreters.interpret_pipeline as _ep
 
@@ -124,13 +118,13 @@ class TestUnifiedProductionGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         assert len(llm_calls) > 0, (
             "LLM must be called for a genuine production report with hash rate and BTC produced."
         )
 
-    def test_quarterly_corporate_filing_gated(self, db_with_company, registry, monkeypatch):
+    def test_quarterly_corporate_filing_gated(self, db_with_company, monkeypatch):
         """10-Q mentioning bitcoin in investment context only must be gated."""
         import interpreters.interpret_pipeline as _ep
 
@@ -166,7 +160,7 @@ class TestUnifiedProductionGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert len(llm_calls) == 0, (
             f"Quarterly LLM must not fire on a 10-Q with only generic bitcoin mentions. "
@@ -187,7 +181,7 @@ class TestUnifiedProductionGate:
         result2 = get_mining_detection_phrases(_Db())
         assert result1 == result2
 
-    def test_monthly_ir_without_metric_keywords_is_keyword_gated(self, db_with_company, registry, monkeypatch):
+    def test_monthly_ir_without_metric_keywords_is_keyword_gated(self, db_with_company, monkeypatch):
         """Monthly miner docs without mining metric keywords must be filtered by the keyword gate."""
         import interpreters.interpret_pipeline as _ep
 
@@ -217,7 +211,7 @@ class TestUnifiedProductionGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert len(llm_calls) == 0
         assert summary.keyword_gated == 1

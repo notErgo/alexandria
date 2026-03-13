@@ -588,7 +588,7 @@ def test_execute_overnight_run_separates_scrape_and_extract_phases(monkeypatch, 
         return {'ticker': kwargs['ticker'], 'before_reports': 0,
                 'after_reports': 0, 'ingested_delta': 0, 'failures': []}
 
-    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+    def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
         for t in tickers:
             call_order.append(('extract', t))
         return {'total_reports': 0, 'processed': 0, 'data_points': 0,
@@ -636,10 +636,9 @@ def test_scrape_ticker_for_pipeline_runs_archive_ingest_first(monkeypatch, tmp_p
     call_order = []
 
     class _FakeArchiveIngestor:
-        def __init__(self, archive_dir, db, registry):
+        def __init__(self, archive_dir, db):
             self.archive_dir = archive_dir
             self.db = db
-            self.registry = registry
 
         def ingest_all(self, force=False, progress_callback=None, tickers=None, auto_extract_monthly=True):
             call_order.append(('archive', tuple(tickers or []), auto_extract_monthly))
@@ -671,7 +670,6 @@ def test_scrape_ticker_for_pipeline_runs_archive_ingest_first(monkeypatch, tmp_p
     monkeypatch.setattr('scrapers.archive_ingestor.ArchiveIngestor', _FakeArchiveIngestor)
     monkeypatch.setattr('scrapers.ir_scraper.IRScraper', _FakeIRScraper)
     monkeypatch.setattr('scrapers.edgar_connector.EdgarConnector', _FakeEdgarConnector)
-    monkeypatch.setattr('interpreters.pattern_registry.PatternRegistry.load', lambda config_dir: object())
 
     result = pipeline_mod._scrape_ticker_for_pipeline(
         db_path=db.db_path,
@@ -727,7 +725,7 @@ def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(mo
     run_id = int(run['id'])
     extracted = []
 
-    def _fake_extract(report, local_db, registry, **kwargs):
+    def _fake_extract(report, local_db, **kwargs):
         delays = {
             report_ids[0]: 0.05,
             report_ids[1]: 0.01,
@@ -758,7 +756,6 @@ def test_extract_reports_for_ticker_parallelizes_compute_but_commits_in_order(mo
         run_id=run_id,
         ticker='MARA',
         reports=reports,
-        registry=object(),
         counters=counters,
         failures=failures,
         num_workers=3,
@@ -829,7 +826,7 @@ def test_extract_reports_for_ticker_limits_claimed_running_rows_to_worker_count(
     all_workers_started = threading.Event()
     release_workers = threading.Event()
 
-    def _fake_extract(report, local_db, registry, **kwargs):
+    def _fake_extract(report, local_db, **kwargs):
         nonlocal started
         with started_lock:
             started += 1
@@ -859,7 +856,6 @@ def test_extract_reports_for_ticker_limits_claimed_running_rows_to_worker_count(
             'run_id': run_id,
             'ticker': 'MARA',
             'reports': reports,
-            'registry': object(),
             'counters': counters,
             'failures': failures,
             'num_workers': 2,
@@ -901,7 +897,7 @@ def test_extract_reports_for_ticker_forwards_run_config(monkeypatch, tmp_path):
 
     captured_configs = []
 
-    def _fake_extract(report, local_db, registry, config=None, **kwargs):
+    def _fake_extract(report, local_db, config=None, **kwargs):
         captured_configs.append(config)
         local_db.mark_report_extracted(report['id'])
         s = ExtractionSummary()
@@ -915,7 +911,7 @@ def test_extract_reports_for_ticker_forwards_run_config(monkeypatch, tmp_path):
                 'data_points': 0, 'errors': 0, 'keyword_gated': 0}
     pipeline_mod._extract_reports_for_ticker(
         db=db, run_id=run_id, ticker='MARA', reports=reports,
-        registry=object(), counters=counters, failures=[], num_workers=1,
+        counters=counters, failures=[], num_workers=1,
         run_config=run_config,
     )
 
@@ -946,7 +942,7 @@ def test_extract_reports_for_ticker_force_uses_mark_running_not_claim(monkeypatc
 
     extracted_ids = []
 
-    def _fake_extract(report, local_db, registry, **kwargs):
+    def _fake_extract(report, local_db, **kwargs):
         extracted_ids.append(report['id'])
         local_db.mark_report_extracted(report['id'])
         s = ExtractionSummary()
@@ -959,7 +955,7 @@ def test_extract_reports_for_ticker_force_uses_mark_running_not_claim(monkeypatc
                 'data_points': 0, 'errors': 0, 'keyword_gated': 0}
     pipeline_mod._extract_reports_for_ticker(
         db=db, run_id=run_id, ticker='MARA', reports=reports,
-        registry=object(), counters=counters, failures=[], num_workers=2,
+        counters=counters, failures=[], num_workers=2,
         force_reextract=True,
     )
 
@@ -993,7 +989,7 @@ def test_operations_extract_delegates_to_shared_worker(monkeypatch, tmp_path):
 
     delegate_calls = []
 
-    def _fake_extract_for_ticker(db, run_id, ticker, reports, registry, counters,
+    def _fake_extract_for_ticker(db, run_id, ticker, reports, counters,
                                   failures, num_workers, *, run_config=None, force_reextract=False):
         delegate_calls.append({'ticker': ticker, 'reports': reports,
                                 'force_reextract': force_reextract})

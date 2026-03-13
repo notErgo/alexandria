@@ -23,15 +23,10 @@ def db_with_company(db):
     return db
 
 
-@pytest.fixture
-def registry():
-    from interpreters.pattern_registry import PatternRegistry
-    from config import CONFIG_DIR
-    return PatternRegistry.load(CONFIG_DIR)
 
 
 class TestExtractReport:
-    def test_extract_report_stores_data_point(self, db_with_company, registry, monkeypatch):
+    def test_extract_report_stores_data_point(self, db_with_company, monkeypatch):
         """LLM batch path: connectivity=True, LLM returns known value → data_point stored."""
         from unittest.mock import MagicMock
         from miner_types import ExtractionResult
@@ -56,13 +51,13 @@ class TestExtractReport:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         assert len(rows) >= 1
         assert any(abs(r['value'] - 700.0) < 0.01 for r in rows)
 
-    def test_extract_report_analyst_protected(self, db_with_company, registry, monkeypatch):
+    def test_extract_report_analyst_protected(self, db_with_company, monkeypatch):
         """Analyst-protected data point must not be overwritten by the pipeline."""
         from interpreters.llm_interpreter import LLMInterpreter
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
@@ -82,13 +77,13 @@ class TestExtractReport:
 
         report = db_with_company.get_report(report_id)
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         assert len(rows) == 1
         assert abs(rows[0]['value'] - 999.0) < 0.01, "Analyst value must not be overwritten"
 
-    def test_extract_report_marks_extracted_at(self, db_with_company, registry, monkeypatch):
+    def test_extract_report_marks_extracted_at(self, db_with_company, monkeypatch):
         """After extract_report(), the report must no longer appear in get_unextracted_reports()."""
         from interpreters.llm_interpreter import LLMInterpreter
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
@@ -105,14 +100,14 @@ class TestExtractReport:
 
         report = db_with_company.get_report(report_id)
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         # Must no longer appear in unextracted list
         unextracted_after = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted_after), \
             "Report should be marked as extracted after extract_report() runs"
 
-    def test_extract_report_returns_summary(self, db_with_company, registry, monkeypatch):
+    def test_extract_report_returns_summary(self, db_with_company, monkeypatch):
         """extract_report must return an ExtractionSummary with reports_processed=1."""
         from interpreters.llm_interpreter import LLMInterpreter
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
@@ -126,12 +121,12 @@ class TestExtractReport:
 
         from interpreters.interpret_pipeline import extract_report
         from miner_types import ExtractionSummary
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert isinstance(summary, ExtractionSummary)
         assert summary.reports_processed == 1
 
-    def test_extract_report_empty_text_increments_errors(self, db_with_company, registry, monkeypatch):
+    def test_extract_report_empty_text_increments_errors(self, db_with_company, monkeypatch):
         """A report with empty raw_text must increment errors and still mark extracted."""
         from interpreters.llm_interpreter import LLMInterpreter
         monkeypatch.setattr(LLMInterpreter, 'check_connectivity', lambda self: False)
@@ -144,7 +139,7 @@ class TestExtractReport:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.errors == 1
         # Should still be marked extracted (to avoid infinite re-processing)
@@ -166,7 +161,7 @@ class TestExtractReportBatchPath:
         return db
 
     def test_pipeline_calls_extract_batch_not_per_metric(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """When LLM available, extract_batch called once; per-metric extract() not called."""
         import interpreters.interpret_pipeline as _ep
@@ -205,13 +200,13 @@ class TestExtractReportBatchPath:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         assert len(batch_called) == 1, "extract_batch must be called exactly once"
         assert len(extract_called) == 0, "per-metric extract() must not be called"
 
     def test_pipeline_batch_marks_report_extracted(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """mark_report_extracted fires even when LLM batch is used."""
         import interpreters.interpret_pipeline as _ep
@@ -229,7 +224,7 @@ class TestExtractReportBatchPath:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         unextracted = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted)
@@ -268,19 +263,15 @@ class TestLLMOnlyRouting:
         return mock
 
     def test_llm_only_high_confidence_auto_accepts(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """LLM_ONLY with confidence >= threshold → stored directly in data_points."""
         import interpreters.interpret_pipeline as _ep
         from config import CONFIDENCE_REVIEW_THRESHOLD
 
-        # Empty registry so regex always returns nothing
-        from interpreters.pattern_registry import PatternRegistry
-        empty_registry = PatternRegistry(metrics={m: [] for m in registry.metrics})
 
         mock = self._make_llm_only_batch(value=700.0, confidence=CONFIDENCE_REVIEW_THRESHOLD)
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
             raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
@@ -289,7 +280,7 @@ class TestLLMOnlyRouting:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, empty_registry)
+        summary = extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         assert any(abs(r['value'] - 700.0) < 0.01 for r in rows), \
@@ -297,19 +288,16 @@ class TestLLMOnlyRouting:
         assert summary.data_points_extracted >= 1
 
     def test_llm_only_low_confidence_goes_to_review(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """LLM_ONLY with confidence < threshold → review_queue, not data_points."""
         import interpreters.interpret_pipeline as _ep
         from config import CONFIDENCE_REVIEW_THRESHOLD
 
-        from interpreters.pattern_registry import PatternRegistry
-        empty_registry = PatternRegistry(metrics={m: [] for m in registry.metrics})
 
         low_conf = max(0.0, CONFIDENCE_REVIEW_THRESHOLD - 0.1)
         mock = self._make_llm_only_batch(value=700.0, confidence=low_conf)
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
             raw_text='MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
@@ -318,7 +306,7 @@ class TestLLMOnlyRouting:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, empty_registry)
+        summary = extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         assert len(rows) == 0, "Low-confidence LLM_ONLY must NOT land in data_points"
@@ -400,7 +388,7 @@ class TestGapFill:
         })
         return db
 
-    def test_gap_fill_disabled_when_llm_unavailable(self, db_with_company, registry, monkeypatch):
+    def test_gap_fill_disabled_when_llm_unavailable(self, db_with_company, monkeypatch):
         """Gap fill must not be attempted when LLM is unavailable."""
         import interpreters.interpret_pipeline as _ep
 
@@ -416,11 +404,11 @@ class TestGapFill:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
         assert len(gap_fill_called) == 0
 
     def test_gap_fill_skipped_when_main_pass_yields_zero_data_points(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """Gap fill must not fire when the main extraction pass found no data points.
 
@@ -469,7 +457,7 @@ class TestGapFill:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.data_points_extracted == 0
         assert len(gap_fill_called) == 0, (
@@ -477,7 +465,7 @@ class TestGapFill:
         )
 
     def test_gap_fill_skips_when_prior_period_fully_populated(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """Gap fill returns early if all metrics already have data for prior period."""
         import interpreters.interpret_pipeline as _ep
@@ -487,7 +475,8 @@ class TestGapFill:
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
 
         # Pre-populate all metrics for prior period (2024-08-01)
-        for metric in registry.metrics:
+        _all_metrics = [r['key'] for r in db_with_company.get_metric_schema('BTC-miners', active_only=True)]
+        for metric in _all_metrics:
             db_with_company.insert_data_point({
                 'report_id': None, 'ticker': 'MARA', 'period': '2024-08-01',
                 'metric': metric, 'value': 1.0, 'unit': 'BTC',
@@ -505,11 +494,11 @@ class TestGapFill:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
         # extract_for_period must not be called — all prior-period slots already filled
         assert len(extract_for_period_calls) == 0
 
-    def test_gap_fill_stores_data_at_prior_period(self, db_with_company, registry, monkeypatch):
+    def test_gap_fill_stores_data_at_prior_period(self, db_with_company, monkeypatch):
         """Gap fill stores LLM result at prior period when slot is empty."""
         import interpreters.interpret_pipeline as _ep
         from miner_types import ExtractionResult
@@ -532,7 +521,6 @@ class TestGapFill:
             '2024-08-01': {'production_btc': prior_result}
         }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report(make_report(
             raw_text='MARA bitcoin produced 700 BTC in September 2024. In August we produced 650 BTC.',
@@ -541,7 +529,7 @@ class TestGapFill:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         assert any(
@@ -550,7 +538,7 @@ class TestGapFill:
         ), "Gap fill must store the prior-period value at period=2024-08-01"
 
     def test_gap_fill_does_not_overwrite_existing_data(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """Gap fill must not overwrite existing data at prior period."""
         import interpreters.interpret_pipeline as _ep
@@ -568,7 +556,6 @@ class TestGapFill:
             '2024-08-01': {'production_btc': prior_result}
         }
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         # Pre-insert prior-period data at a different sentinel value
         db_with_company.insert_data_point({
@@ -585,7 +572,7 @@ class TestGapFill:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         rows = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
         aug_rows = [r for r in rows if r['period'] == '2024-08-01']
@@ -621,22 +608,10 @@ class TestActiveMetricFilter:
     def test_monthly_llm_receives_only_active_metrics(
         self, db_with_company, monkeypatch
     ):
-        """LLM extract_batch receives only active metrics; inactive ones are excluded.
-
-        Uses a registry that includes hashrate_eh so the test verifies DB-driven
-        filtering, not just the absence of a pattern file.
-        """
+        """LLM extract_batch receives only active metrics; inactive ones are excluded."""
         import interpreters.interpret_pipeline as _ep
-        from interpreters.pattern_registry import PatternRegistry
         from miner_types import ExtractionResult
 
-        # Build a registry that explicitly includes hashrate_eh so it would reach
-        # the LLM if DB filtering is not applied.
-        fat_registry = PatternRegistry(metrics={
-            'production_btc': [],
-            'hodl_btc': [],
-            'hashrate_eh': [],  # must be filtered out by active=0 in metric_schema
-        })
 
         # v22 migration already marks hashrate_eh active=0 in fresh DBs; confirm.
         rows = db_with_company.get_metric_schema('BTC-miners', active_only=False)
@@ -669,7 +644,6 @@ class TestActiveMetricFilter:
 
         mock_llm = _MockLLM()
         monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-        monkeypatch.setattr(_ep, '_build_regex_by_metric', lambda *a, **kw: {'production_btc': object()})
 
         report_id = db_with_company.insert_report({
             'ticker': 'MARA', 'report_date': '2024-09-01',
@@ -681,7 +655,7 @@ class TestActiveMetricFilter:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, fat_registry)
+        extract_report(report, db_with_company)
 
         assert 'metrics' in captured, "extract_batch was not called"
         assert 'hashrate_eh' not in captured['metrics'], (
@@ -691,68 +665,6 @@ class TestActiveMetricFilter:
             "Active metric production_btc must be present"
         )
 
-    def test_active_metrics_fallback_to_registry_when_schema_empty(
-        self, db_with_company, monkeypatch
-    ):
-        """When metric_schema is empty, _active_metric_keys falls back to registry keys."""
-        import interpreters.interpret_pipeline as _ep
-        from interpreters.pattern_registry import PatternRegistry
-
-        fat_registry = PatternRegistry(metrics={
-            'production_btc': [],
-            'hodl_btc': [],
-            'hashrate_eh': [],
-        })
-
-        # Remove all metric_schema rows to simulate an empty schema
-        with db_with_company._get_connection() as conn:
-            conn.execute("DELETE FROM metric_schema")
-
-        captured = {}
-
-        class _MockLLM2:
-            _last_batch_summary = ''
-            _last_call_meta = {}
-
-            def check_connectivity(self):
-                return True
-
-            def extract_batch(self, text, metrics, ticker=None, **kwargs):
-                captured['metrics'] = list(metrics)
-                return {}
-
-            def extract(self, text, metric):
-                return None
-
-            def extract_for_period(self, text, metrics, period, prior_period):
-                return {}
-
-        mock_llm = _MockLLM2()
-        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
-        import infra.keyword_service
-        monkeypatch.setattr(infra.keyword_service, 'get_mining_detection_phrases',
-                            lambda db: ['bitcoin', 'btc produced'])
-
-        report_id = db_with_company.insert_report({
-            'ticker': 'MARA', 'report_date': '2024-09-01',
-            'published_date': '2024-09-01', 'source_type': 'archive_html',
-            'source_url': 'https://example.com/mara-sep-2024.html',
-            'raw_text': 'MARA bitcoin mined 700 BTC in September 2024. Hash rate 20 EH/s.',
-            'parsed_at': '2024-09-01T10:00:00',
-        })
-        report = db_with_company.get_report(report_id)
-
-        from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, fat_registry)
-
-        assert 'metrics' in captured, "extract_batch was not called"
-        assert len(captured['metrics']) > 0, (
-            "Fallback must provide a non-empty metrics list from registry"
-        )
-        # With empty schema, all registry keys should be in the fallback
-        assert 'hashrate_eh' in captured['metrics'], (
-            "Fallback must include all registry metrics when schema is empty"
-        )
 
 
 class TestKeywordGate:
@@ -768,13 +680,7 @@ class TestKeywordGate:
         })
         return db
 
-    @pytest.fixture
-    def registry(self):
-        from interpreters.pattern_registry import PatternRegistry
-        from config import CONFIG_DIR
-        return PatternRegistry.load(CONFIG_DIR)
-
-    def test_8k_keyword_gate_skip_when_keywords_active(self, db_with_company, registry, monkeypatch):
+    def test_8k_keyword_gate_skip_when_keywords_active(self, db_with_company, monkeypatch):
         """8-K with no matching keywords is skipped and keyword_gated=1 in summary."""
         import interpreters.interpret_pipeline as _ep
 
@@ -799,7 +705,7 @@ class TestKeywordGate:
 
         from interpreters.interpret_pipeline import extract_report
         from miner_types import ExtractionSummary
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert isinstance(summary, ExtractionSummary)
         assert summary.keyword_gated == 1, "keyword_gated must be 1 when gate fires"
@@ -808,7 +714,7 @@ class TestKeywordGate:
         unextracted = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted)
 
-    def test_8k_keyword_gate_fails_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+    def test_8k_keyword_gate_fails_when_no_db_keywords(self, db_with_company, monkeypatch):
         """Extraction fails when no active metric keywords are configured."""
         import interpreters.interpret_pipeline as _ep
 
@@ -829,7 +735,7 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.keyword_gated == 0
         assert summary.errors == 1
@@ -863,7 +769,7 @@ class TestKeywordGate:
             "reset_report_extraction_status must make the report eligible for extraction again"
         )
 
-    def test_quarterly_keyword_gate_fires_when_no_match(self, db_with_company, registry, monkeypatch):
+    def test_quarterly_keyword_gate_fires_when_no_match(self, db_with_company, monkeypatch):
         """Quarterly 10-Q with no matching keywords is skipped; keyword_gated=1."""
         import interpreters.interpret_pipeline as _ep
         from unittest.mock import MagicMock
@@ -886,7 +792,7 @@ class TestKeywordGate:
 
         from interpreters.interpret_pipeline import extract_report
         from miner_types import ExtractionSummary
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert isinstance(summary, ExtractionSummary)
         assert summary.keyword_gated == 1, "keyword_gated must be 1 when quarterly gate fires"
@@ -894,7 +800,7 @@ class TestKeywordGate:
         unextracted = db_with_company.get_unextracted_reports()
         assert not any(r['id'] == report_id for r in unextracted)
 
-    def test_quarterly_keyword_gate_passes_when_match(self, db_with_company, registry, monkeypatch):
+    def test_quarterly_keyword_gate_passes_when_match(self, db_with_company, monkeypatch):
         """Quarterly 10-Q with matching keyword passes gate; LLM is called."""
         import interpreters.interpret_pipeline as _ep
         from unittest.mock import MagicMock
@@ -924,12 +830,12 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.keyword_gated == 0, "gate must not fire when keyword matches"
         mock_llm.extract_quarterly_batch.assert_called_once()
 
-    def test_quarterly_gate_fails_when_no_db_keywords(self, db_with_company, registry, monkeypatch):
+    def test_quarterly_gate_fails_when_no_db_keywords(self, db_with_company, monkeypatch):
         """Quarterly extraction fails when no active metric keywords are configured."""
         import interpreters.interpret_pipeline as _ep
         from unittest.mock import MagicMock
@@ -951,14 +857,14 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.keyword_gated == 0
         assert summary.errors == 1
         mock_llm.extract_quarterly_batch.assert_not_called()
 
     def test_quarterly_review_is_deferred_while_monthly_reports_are_pending(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """Low-confidence quarterly review stays out of the active queue until monthly docs catch up."""
         import interpreters.interpret_pipeline as _ep
@@ -996,7 +902,7 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.review_flagged == 1
         assert db_with_company.get_review_items(status='PENDING') == []
@@ -1005,7 +911,7 @@ class TestKeywordGate:
         assert deferred[0]['precedence_state'] == 'deferred'
 
     def test_quarterly_8k_shareholder_letter_uses_quarterly_path(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """Quarter-style 8-K shareholder letters should not enter the monthly queue."""
         import interpreters.interpret_pipeline as _ep
@@ -1046,7 +952,7 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.review_flagged == 1
         mock_llm.extract_quarterly_batch.assert_called_once()
@@ -1059,7 +965,7 @@ class TestKeywordGate:
         assert deferred[0]['precedence_state'] == 'deferred'
 
     def test_quarterly_8k_results_press_release_uses_quarterly_path(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """8-K earnings releases with quarter results should bypass the monthly path."""
         import interpreters.interpret_pipeline as _ep
@@ -1096,7 +1002,7 @@ class TestKeywordGate:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        summary = extract_report(report, db_with_company, registry)
+        summary = extract_report(report, db_with_company)
 
         assert summary.errors == 0
         mock_llm.extract_quarterly_batch.assert_called_once()
@@ -1129,7 +1035,7 @@ class TestBoilerplateStrippingBySourceType:
         return mock_llm
 
     def test_archive_html_boilerplate_stripped_before_llm(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """archive_html source type must have PR boilerplate stripped before LLM sees text."""
         captured = {}
@@ -1150,7 +1056,7 @@ class TestBoilerplateStrippingBySourceType:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         assert 'llm_text' in captured, "LLM must have been called"
         assert "About MARA Holdings" not in captured['llm_text']
@@ -1191,7 +1097,7 @@ class TestBoilerplateStrippingBySourceType2:
         return mock_llm
 
     def test_edgar_8k_signatures_stripped_before_llm(
-        self, db_with_company, registry, monkeypatch
+        self, db_with_company, monkeypatch
     ):
         """edgar_8k source type must have SIGNATURES block stripped before LLM sees text."""
         captured = {}
@@ -1212,7 +1118,7 @@ class TestBoilerplateStrippingBySourceType2:
         report = db_with_company.get_report(report_id)
 
         from interpreters.interpret_pipeline import extract_report
-        extract_report(report, db_with_company, registry)
+        extract_report(report, db_with_company)
 
         assert 'llm_text' in captured, "LLM must have been called"
         assert "hereunto duly caused" not in captured['llm_text']

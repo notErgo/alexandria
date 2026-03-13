@@ -19,7 +19,7 @@ def test_auto_extract_ir_uses_run_extraction_phase(monkeypatch, tmp_path):
     app_globals._db = db
 
     calls = []
-    def _fake_run_extraction_phase(db, run_id, tickers, registry, **kwargs):
+    def _fake_run_extraction_phase(db, run_id, tickers, **kwargs):
         calls.append({'tickers': list(tickers), 'source_types': kwargs.get('source_types')})
         return {'total_reports': 0, 'processed': 0, 'data_points': 0,
                 'errors': 0, 'keyword_gated': 0, 'review_flagged': 0, 'report_done_count': 0}

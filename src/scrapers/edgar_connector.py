@@ -1236,10 +1236,3 @@ def _fetch_production_filings_compat(self, cik, ticker, since_date, **_kwargs):
 
 
 EdgarConnector.fetch_production_filings = _fetch_production_filings_compat
-
-
-# Expose extract_all at module level so tests can patch it
-try:
-    from interpreters.regex_interpreter import extract_all
-except ImportError:
-    extract_all = None  # type: ignore

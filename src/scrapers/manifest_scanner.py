@@ -127,6 +127,7 @@ def scan_archive_directory(archive_root: Path, db, tickers: Optional[list[str] |
             continue
 
         tickers_seen.add(ticker)
+        result.ticker_counts[ticker] = result.ticker_counts.get(ticker, 0) + 1
 
         # Lazy-load existing report dates for this ticker.
         # Store as YYYY-MM prefixes (first 7 chars of report_date) so that the
