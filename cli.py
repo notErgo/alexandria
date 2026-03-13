@@ -369,7 +369,8 @@ def cmd_gap_fill(args):
         sys.exit(1)
 
     dry_run = getattr(args, 'dry_run', False)
-    result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run)
+    fill_mode = getattr(args, 'fill_mode', 'endpoint')
+    result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run, fill_mode=fill_mode)
 
     if dry_run:
         print(f"DRY RUN — no rows written")
@@ -394,6 +395,45 @@ def cmd_gap_fill(args):
         f"\nSummary: {result['filled']} filled, "
         f"{result['skipped']} skipped, "
         f"{result['errors']} errors"
+    )
+
+
+def cmd_derive_balance_change(args):
+    """Compute net_btc_balance_change as MoM delta of holdings_btc from final_data_points."""
+    from interpreters.gap_fill import derive_net_balance_change
+
+    db = get_db()
+    ticker = args.ticker.upper() if args.ticker else None
+    if not ticker:
+        print("ERROR: --ticker is required for derive-balance-change")
+        sys.exit(1)
+
+    dry_run = getattr(args, 'dry_run', False)
+    overwrite = not getattr(args, 'no_overwrite', False)
+    result = derive_net_balance_change(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
+
+    if dry_run:
+        print("DRY RUN — no rows written")
+
+    if not result['rows']:
+        print("No deltas computed (need >= 2 consecutive finalized holdings_btc values).")
+        return
+
+    header = f"{'Period':<12}  {'Delta (BTC)':>12}  {'Status'}"
+    print(header)
+    print('-' * len(header))
+    for r in result['rows']:
+        period = r.get('period', '')[:10]
+        value = r.get('value')
+        status = r.get('status', '')
+        reason = r.get('reason', '')
+        val_str = f"{value:+.4f}" if value is not None else '—'
+        suffix = f" ({reason})" if reason else ''
+        print(f"{period:<12}  {val_str:>12}  {status}{suffix}")
+
+    print(
+        f"\nSummary: {result['derived']} derived, "
+        f"{result['skipped']} skipped"
     )
 
 
@@ -620,6 +660,27 @@ def main():
         '--dry-run', action='store_true', default=False,
         help='Preview inferences without writing to DB',
     )
+    p_gap.add_argument(
+        '--fill-mode', default='endpoint',
+        choices=['endpoint', 'stepwise', 'linear'],
+        help='How to fill snapshot metric gaps: endpoint (last month only, default), '
+             'stepwise (all months = quarter value), linear (interpolate from prev quarter)',
+    )
+
+    # derive-balance-change
+    p_derive = sub.add_parser(
+        'derive-balance-change',
+        help='Compute net_btc_balance_change as MoM delta of holdings_btc in final_data_points',
+    )
+    p_derive.add_argument('--ticker', required=True, help='Company ticker (required)')
+    p_derive.add_argument(
+        '--dry-run', action='store_true', default=False,
+        help='Preview computed deltas without writing to DB',
+    )
+    p_derive.add_argument(
+        '--no-overwrite', action='store_true', default=False,
+        help='Skip periods that already have a net_btc_balance_change value',
+    )
 
     # purge
     p_purge = sub.add_parser(
@@ -646,6 +707,8 @@ def main():
         cmd_broad_extract(args)
     elif args.command == 'gap-fill':
         cmd_gap_fill(args)
+    elif args.command == 'derive-balance-change':
+        cmd_derive_balance_change(args)
     elif args.command == 'purge':
         cmd_purge(args)
 

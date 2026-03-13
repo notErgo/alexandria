@@ -28,12 +28,43 @@ else
     export MINERS_DATA_DIR="$DATA_DIR"
 fi
 
-# Check Ollama is reachable (managed externally by Ollama.app — not started here)
-if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
-    echo "Ollama ready."
+# LLM backend — set LLM_BACKEND=ollama to revert to Ollama
+export LLM_BACKEND="${LLM_BACKEND:-llamacpp}"
+export OLLAMA_BASE_URL="${OLLAMA_BASE_URL:-http://localhost:8080}"
+
+# Check / auto-start LLM backend
+if [ "$LLM_BACKEND" = "llamacpp" ]; then
+    if curl -sf "${OLLAMA_BASE_URL}/health" > /dev/null 2>&1; then
+        echo "llama-server already running at ${OLLAMA_BASE_URL}."
+    else
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+        if [ -x "$SCRIPT_DIR/llm.sh" ]; then
+            echo "Starting llama-server in background..."
+            "$SCRIPT_DIR/llm.sh" >> "$SCRIPT_DIR/llm.log" 2>&1 &
+            LLM_PID=$!
+            echo "  llama-server PID $LLM_PID — logs: $SCRIPT_DIR/llm.log"
+            # Wait up to 30s for server to become healthy
+            for i in $(seq 1 30); do
+                sleep 1
+                if curl -sf "${OLLAMA_BASE_URL}/health" > /dev/null 2>&1; then
+                    echo "  llama-server ready (${i}s)."
+                    break
+                fi
+                if [ $i -eq 30 ]; then
+                    echo "WARNING: llama-server did not become healthy after 30s — LLM extraction may fail."
+                fi
+            done
+        else
+            echo "WARNING: llm.sh not found — llama-server not started. LLM extraction will fail."
+        fi
+    fi
 else
-    echo "WARNING: Ollama not reachable at localhost:11434 — LLM extraction will fail."
-    echo "         Start Ollama.app before running ingest."
+    if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+        echo "Ollama ready."
+    else
+        echo "WARNING: Ollama not reachable at localhost:11434 — LLM extraction will fail."
+        echo "         Start Ollama.app before running ingest."
+    fi
 fi
 
 echo ""

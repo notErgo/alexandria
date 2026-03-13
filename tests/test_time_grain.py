@@ -274,13 +274,13 @@ class TestTemporalAnchor:
         from interpreters.llm_interpreter import LLMInterpreter
         import requests
         session = MagicMock(spec=requests.Session)
-        # Mock _call_ollama to capture the prompt
+        # Mock _call_llm to capture the prompt
         captured = {}
         def fake_call(prompt):
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)
-        interp._call_ollama = fake_call
+        interp._call_llm = fake_call
         cfg = ExtractionRunConfig(expected_granularity='monthly', ticker='MARA')
         interp.extract('doc text', 'production_btc', config=cfg, period='2024-09-01')
         assert 'prompt' in captured
@@ -296,7 +296,7 @@ class TestTemporalAnchor:
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)
-        interp._call_ollama = fake_call
+        interp._call_llm = fake_call
         cfg = ExtractionRunConfig(expected_granularity='monthly', ticker='MARA')
         interp.extract_batch('some text', ['production_btc'], ticker='MARA', config=cfg)
         assert 'TEMPORAL SCOPE' in captured.get('prompt', '')
@@ -312,7 +312,7 @@ class TestTemporalAnchor:
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)
-        interp._call_ollama = fake_call
+        interp._call_llm = fake_call
         # Supply config with quarterly; legacy param says monthly — config wins
         cfg = ExtractionRunConfig(expected_granularity='quarterly', ticker='MARA')
         interp.extract_batch(

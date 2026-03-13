@@ -449,6 +449,58 @@ def scorecard():
     return jsonify({'success': True, 'data': {'companies': result, 'metrics': SCORECARD_METRICS}})
 
 
+@bp.route('/api/export/final.csv')
+def export_final_csv():
+    """Export final_data_points (analyst-accepted values) as CSV.
+
+    Query params:
+        ticker        — filter by ticker (optional)
+        from_period   — YYYY-MM lower bound (optional)
+        to_period     — YYYY-MM upper bound (optional)
+        metric        — filter by metric key (optional)
+
+    Returns CSV with columns:
+        ticker, period, metric, value, unit, confidence,
+        analyst_note, source_ref, time_grain, updated_at
+    """
+    from app_globals import get_db
+    db = get_db()
+
+    ticker = request.args.get('ticker', '').strip().upper() or None
+    from_period = request.args.get('from_period', '').strip() or None
+    to_period = request.args.get('to_period', '').strip() or None
+    metric = request.args.get('metric', '').strip() or None
+
+    # Normalise YYYY-MM → YYYY-MM-01 for period comparison
+    if from_period and len(from_period) == 7:
+        from_period = from_period + '-01'
+    if to_period and len(to_period) == 7:
+        to_period = to_period + '-01'
+
+    rows = db.query_final_data_points(
+        ticker=ticker,
+        from_period=from_period,
+        to_period=to_period,
+        metric=metric,
+    )
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        'ticker', 'period', 'metric', 'value', 'unit',
+        'confidence', 'analyst_note', 'source_ref', 'time_grain', 'updated_at',
+    ], extrasaction='ignore')
+    writer.writeheader()
+    for row in rows:
+        cleaned = {k: ('' if v is None else v) for k, v in row.items()}
+        writer.writerow(cleaned)
+
+    fname = f"final_{ticker or 'all'}.csv"
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={fname}'
+    return response
+
+
 @bp.route('/api/export_llm_csv')
 def export_llm_csv():
     """LLM-direct CSV export — bypasses the agreement engine.

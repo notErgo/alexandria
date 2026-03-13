@@ -699,7 +699,7 @@ def run_extraction_phase(
     source_types=None,
     force_reextract: bool = False,
     warm_model: bool = True,
-    extract_workers: int = 2,
+    extract_workers: int = 4,
     run_config_factory=None,
     cancel_check=None,
     progress_callback=None,
@@ -716,7 +716,7 @@ def run_extraction_phase(
     source_types=<list>: use _build_extraction_batch_for_source_types (no date-gating).
     prebuilt_batches: if provided, skip batch-building entirely and use caller-supplied map.
 
-    extract_workers: parallel LLM workers per ticker (default 2).
+    extract_workers: parallel LLM workers per ticker (default 4).
     cancel_check: callable() -> bool; called before each ticker; if True, stops.
     progress_callback: callable(counters_copy) -> None; called after each ticker.
     run_config_factory: callable(ticker) -> ExtractionRunConfig | None; called per ticker.
@@ -1402,10 +1402,12 @@ def pipeline_preflight():
     llm_available = bool(warmup.get('warmed'))
     ollama_model = warmup.get('model', '')
 
+    from config import LLM_BACKEND
     return jsonify({'success': True, 'data': {
         'pending_report_count': int(pending_count),
         'already_extracted_count': int(extracted_count),
         'llm_available': llm_available,
+        'llm_backend': LLM_BACKEND,
         'ollama_model': ollama_model,
         'keyword_count': keyword_count,
         'companies_targeted': companies_targeted,
@@ -1458,7 +1460,7 @@ def start_overnight_pipeline():
         'scout_as_of_date': body.get('scout_as_of_date'),
         'probe_skip_companies': bool(body.get('probe_skip_companies', False)),
         'force_reextract': bool(body.get('force_reextract', False)),
-        'extract_workers': max(1, int(body.get('extract_workers', max(1, int(db.get_config('ollama_num_parallel') or 2))))),
+        'extract_workers': max(1, int(body.get('extract_workers', max(1, int(db.get_config('ollama_num_parallel') or 4))))),
         'ir_workers': max(1, int(body.get('ir_workers', 2))),
         'edgar_workers': max(1, int(body.get('edgar_workers', 1))),
         'edgar_min_interval_ms': max(0, int(body.get('edgar_min_interval_ms', int(EDGAR_REQUEST_DELAY_SECONDS * 1000)))),

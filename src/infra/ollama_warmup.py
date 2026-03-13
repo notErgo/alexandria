@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 import requests
 
-from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
+from config import LLM_BACKEND, LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
 
 log = logging.getLogger('miners.infra.ollama_warmup')
 
@@ -23,7 +23,11 @@ def ensure_ollama_running(
     log_fn: Optional[Callable[[str], None]] = None,
     start_timeout: int = 30,
 ) -> bool:
-    """Ensure the Ollama server is running, starting it if necessary.
+    """Ensure the LLM server is running.
+
+    For llama.cpp (LLM_BACKEND=llamacpp), just checks /health — llama-server
+    must be started manually; this function does not launch it.
+    For Ollama, starts the daemon automatically if not running.
 
     Args:
         base_url: Ollama API base URL.
@@ -37,6 +41,18 @@ def ensure_ollama_running(
         log.info(msg)
         if log_fn:
             log_fn(msg)
+
+    if LLM_BACKEND == 'llamacpp':
+        health_url = f'{base_url}/health'
+        try:
+            up = requests.get(health_url, timeout=3).ok
+        except Exception:
+            up = False
+        if up:
+            _emit('event=llm_check status=already_running backend=llamacpp')
+        else:
+            _emit('event=llm_check status=unreachable backend=llamacpp url=' + health_url)
+        return up
 
     def _is_up() -> bool:
         try:
@@ -146,6 +162,13 @@ def warm_ollama_for_extraction(
             'model': model,
             'reason': 'server_start_failed',
         }
+
+    # llama.cpp doesn't need a model-load warmup ping — it loads on first request.
+    if LLM_BACKEND == 'llamacpp':
+        with _warm_lock:
+            _last_warm_at_by_model[model] = time.time()
+        log.info("event=ollama_warmup_end model=%s warmed=1 reason=llamacpp_no_warmup_needed", model)
+        return {'attempted': True, 'warmed': True, 'skipped': False, 'model': model, 'reason': 'ok'}
 
     try:
         log.info(

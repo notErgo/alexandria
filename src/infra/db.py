@@ -491,7 +491,7 @@ class MinerDB:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 metric      TEXT NOT NULL UNIQUE,
                 prompt_text TEXT NOT NULL,
-                model       TEXT NOT NULL DEFAULT 'qwen3.5:9b',
+                model       TEXT NOT NULL DEFAULT 'qwen2.5:7b',
                 active      INTEGER NOT NULL DEFAULT 1,
                 created_at  TEXT DEFAULT (datetime('now')),
                 updated_at  TEXT DEFAULT (datetime('now'))

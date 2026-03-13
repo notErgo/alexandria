@@ -23,7 +23,7 @@ except ImportError:
 
 import requests
 
-from config import LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
+from config import LLM_BACKEND, LLM_BASE_URL, LLM_MODEL_ID, LLM_TIMEOUT_SECONDS
 from interpreters.confidence import METRIC_VALID_RANGES
 from miner_types import ExtractionResult
 
@@ -500,15 +500,18 @@ class LLMInterpreter:
         return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
 
     def check_connectivity(self) -> bool:
-        """Return True if Ollama is reachable AND the configured model exists."""
+        """Return True if the configured LLM backend is reachable and ready."""
         try:
+            if LLM_BACKEND == "llamacpp":
+                resp = self._session.get(f"{LLM_BASE_URL}/health", timeout=5)
+                return resp.status_code == 200
+            # Ollama: check server version then verify the model is installed.
+            # Without the model check, llm_available stays True even when every
+            # /api/generate call gets a 404, routing all regex matches to
+            # REGEX_ONLY / review_queue instead of being auto-accepted.
             resp = self._session.get(f"{LLM_BASE_URL}/api/version", timeout=5)
             if resp.status_code != 200:
                 return False
-            # Verify the model is installed — Ollama returns 404 if not found.
-            # Without this check, llm_available stays True even when every
-            # /api/generate call gets a 404, causing all regex matches to route
-            # to REGEX_ONLY / review_queue instead of being auto-accepted.
             model_id = _active_model(self._db)
             model_resp = self._session.post(
                 f"{LLM_BASE_URL}/api/show",
@@ -569,7 +572,7 @@ class LLMInterpreter:
             if config is not None:
                 anchor = self._build_temporal_anchor(config.expected_granularity, period)
                 prompt = anchor + prompt
-            raw_response = self._call_ollama(prompt)
+            raw_response = self._call_llm(prompt)
             if raw_response is None:
                 return None
             return self._parse_response(raw_response, metric)
@@ -608,7 +611,7 @@ class LLMInterpreter:
         _eg = config.expected_granularity if config is not None else expected_granularity
         try:
             prompt = self._build_batch_prompt(text, metrics, ticker=ticker, config=config, period=period)
-            raw = self._call_ollama(prompt)
+            raw = self._call_llm(prompt)
             if raw is None:
                 return {}
             return self._parse_batch_response(raw, metrics)
@@ -631,7 +634,7 @@ class LLMInterpreter:
         """
         try:
             prompt = self._build_gap_fill_prompt(text, metrics, current_period, target_period)
-            raw = self._call_ollama(prompt)
+            raw = self._call_llm(prompt)
             if raw is None:
                 return {}
             return self._parse_batch_response(raw, metrics)
@@ -693,7 +696,7 @@ class LLMInterpreter:
             )
             prompt = preamble + output_fmt + "Document:\n" + text
 
-            raw = self._call_ollama(prompt)
+            raw = self._call_llm(prompt)
             if raw is None:
                 return None
             result = self._parse_response(raw, metric)
@@ -985,7 +988,7 @@ class LLMInterpreter:
         """
         try:
             prompt = self._build_multi_period_prompt(text, metrics, current_period, target_periods)
-            raw = self._call_ollama(prompt)
+            raw = self._call_llm(prompt)
             if raw is None:
                 return {}
             return self._parse_multi_period_response(raw, metrics, target_periods)
@@ -1179,63 +1182,88 @@ class LLMInterpreter:
                 pass
         return default
 
-    def _call_ollama(self, prompt: str) -> Optional[str]:
+    def _call_llm(self, prompt: str) -> Optional[str]:
         """
-        POST to Ollama /api/generate. Returns the response text or None on failure.
+        POST to the configured LLM backend. Returns the response text or None on failure.
 
-        Uses blocking (stream=false) mode for simplicity.
-        Timeout: LLM_TIMEOUT_SECONDS (default 60s).
+        Supports two backends (controlled by LLM_BACKEND env var):
+          "ollama"   — POST /api/generate  (default)
+          "llamacpp" — POST /completion    (llama-server)
         """
-        url = f"{LLM_BASE_URL}/api/generate"
-        payload = {
-            "model": _active_model(self._db),
-            "prompt": prompt,
-            "stream": False,
-            "keep_alive": self._extract_keep_alive(),
-            "think": False,       # Disable chain-of-thought (Qwen3); skips <think> tokens
-            "options": {
-                "temperature": 0.0,   # Deterministic output for structured JSON
-                "num_predict": 768,   # Batch JSON response is ~200-400 tokens; extra headroom for any thinking preamble
-                "num_ctx": self._extract_num_ctx(),  # KV cache size; extraction prompts are ~3-4k tokens
-            },
-        }
+        import re as _re
         self._last_transport_error = False
+
+        if LLM_BACKEND == "llamacpp":
+            url = f"{LLM_BASE_URL}/v1/chat/completions"
+            payload = {
+                "model": _active_model(self._db),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.0,
+                "max_tokens": 768,
+                "stream": False,
+            }
+            error_label = "llama.cpp /v1/chat/completions"
+            def _extract_text(data: dict) -> str:
+                choices = data.get("choices") or []
+                return choices[0].get("message", {}).get("content", "") if choices else ""
+            def _extract_meta(data: dict, text: str) -> dict:
+                usage = data.get("usage") or {}
+                return {
+                    'prompt_tokens': usage.get('prompt_tokens', 0) or 0,
+                    'response_tokens': usage.get('completion_tokens', 0) or 0,
+                    'eval_duration_ms': 0,
+                    'total_duration_ms': 0,
+                    'response_chars': len(text),
+                }
+        else:
+            url = f"{LLM_BASE_URL}/api/generate"
+            payload = {
+                "model": _active_model(self._db),
+                "prompt": prompt,
+                "stream": False,
+                "keep_alive": self._extract_keep_alive(),
+                "think": False,
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": 768,
+                    "num_ctx": self._extract_num_ctx(),
+                },
+            }
+            error_label = "Ollama /api/generate"
+            def _extract_text(data: dict) -> str:
+                text = data.get("response", "")
+                # Strip <think>...</think> blocks emitted by Qwen3 when the Ollama
+                # version does not honour the "think": False API parameter.
+                if not data.get("thinking", ""):
+                    text = _re.sub(r'<think>.*?</think>', '', text, flags=_re.DOTALL).strip()
+                return text
+            def _extract_meta(data: dict, text: str) -> dict:
+                return {
+                    'prompt_tokens': data.get('prompt_eval_count', 0) or 0,
+                    'response_tokens': data.get('eval_count', 0) or 0,
+                    'eval_duration_ms': (data.get('eval_duration', 0) or 0) / 1e6,
+                    'total_duration_ms': (data.get('total_duration', 0) or 0) / 1e6,
+                    'response_chars': len(text),
+                }
+
         try:
             resp = self._session.post(url, json=payload, timeout=LLM_TIMEOUT_SECONDS)
             if resp.status_code >= 400:
-                log.warning(
-                    "Ollama returned HTTP %d for /api/generate", resp.status_code
-                )
+                log.warning("%s returned HTTP %d", error_label, resp.status_code)
                 self._last_transport_error = True
                 self._last_call_meta = {}
                 return None
             data = resp.json()
-            response_text = data.get("response", "")
-            # Strip <think>...</think> blocks emitted by Qwen3 when the Ollama
-            # version does not honour the "think": False API parameter.  The
-            # thinking block is captured in a separate "thinking" key by newer
-            # Ollama builds, but older builds include it verbatim in "response".
-            thinking_prefix = data.get("thinking", "")
-            if not thinking_prefix:
-                import re as _re
-                response_text = _re.sub(
-                    r'<think>.*?</think>', '', response_text, flags=_re.DOTALL
-                ).strip()
-            self._last_call_meta = {
-                'prompt_tokens': data.get('prompt_eval_count', 0) or 0,
-                'response_tokens': data.get('eval_count', 0) or 0,
-                'eval_duration_ms': (data.get('eval_duration', 0) or 0) / 1e6,
-                'total_duration_ms': (data.get('total_duration', 0) or 0) / 1e6,
-                'response_chars': len(response_text),
-            }
+            response_text = _extract_text(data)
+            self._last_call_meta = _extract_meta(data, response_text)
             return response_text
         except requests.Timeout:
-            log.warning("Ollama /api/generate timed out after %ds", LLM_TIMEOUT_SECONDS)
+            log.warning("%s timed out after %ds", error_label, LLM_TIMEOUT_SECONDS)
             self._last_transport_error = True
             self._last_call_meta = {}
             return None
         except requests.RequestException as e:
-            log.error("Ollama request failed: %s", e)
+            log.error("%s request failed: %s", error_label, e)
             self._last_transport_error = True
             self._last_call_meta = {}
             return None
@@ -1264,7 +1292,7 @@ class LLMInterpreter:
             prompt = self._build_quarterly_batch_prompt(
                 text, metrics, ticker=ticker, period_type=period_type
             )
-            raw = self._call_ollama(prompt)
+            raw = self._call_llm(prompt)
             if raw is None:
                 return {}
             return self._parse_quarterly_batch_response(raw, metrics, period_type=period_type)

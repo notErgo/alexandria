@@ -1299,6 +1299,90 @@ tr.is-reviewed td { opacity: 0.65; }
       <div id="ollama-settings-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.5rem;min-height:1.2em"></div>
     </div>
 
+    <!-- llama-server Config (1.4.L) -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.L">
+      <div class="section-header-row" style="margin-bottom:0.75rem">
+        <h3 style="margin:0;font-size:0.9rem">llama-server Config</h3>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.75rem">Changes take effect on next server restart</span>
+        <button class="btn btn-sm btn-secondary" onclick="saveLlamaServerSettings()" style="margin-left:auto">Save</button>
+        <button class="btn btn-sm btn-secondary" onclick="copyLlamaCommand()" style="margin-left:0.5rem">Copy start command</button>
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Model path</label>
+        <input id="llama-model-path" type="text" placeholder="~/.ollama/models/blobs/sha256-..."
+          style="width:100%;font-size:0.78rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary);box-sizing:border-box">
+        <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Full path to the GGUF model file passed to --model.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:0.75rem">
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Parallel slots (--parallel)</label>
+          <input id="llama-parallel" type="number" min="1" max="32" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Also updates Extract Workers. Sweet spot: 8 for 7B on M4 Pro (50GB unified memory).</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Context size (--ctx-size)</label>
+          <input id="llama-ctx-size" type="number" min="512" max="131072" step="512"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">KV cache tokens per slot. 8192 covers all extraction prompts.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Max tokens (--n-predict)</label>
+          <input id="llama-n-predict" type="number" min="64" max="4096" step="64"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Max generated tokens per response. 768 is enough for batch JSON.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Batch size (--batch-size)</label>
+          <input id="llama-batch-size" type="number" min="128" max="16384" step="128"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Prompt eval batch size. Larger = faster prefill. 4096 is optimal.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">CPU threads (--threads)</label>
+          <input id="llama-threads" type="number" min="1" max="32" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">CPU threads for tokenization. With full GPU offload (-ngl 99), 4 is optimal.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Port (--port)</label>
+          <input id="llama-port" type="number" min="1024" max="65535" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Also update OLLAMA_BASE_URL in launch.sh if changed.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">KV cache type K (--cache-type-k)</label>
+          <select id="llama-cache-type-k"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+            <option value="f16">f16 (full)</option>
+            <option value="q8_0">q8_0 (half RAM)</option>
+            <option value="q4_0">q4_0 (quarter RAM)</option>
+          </select>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">q8_0 halves KV cache memory with near-zero quality loss.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">KV cache type V (--cache-type-v)</label>
+          <select id="llama-cache-type-v"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+            <option value="f16">f16 (full)</option>
+            <option value="q8_0">q8_0 (half RAM)</option>
+            <option value="q4_0">q4_0 (quarter RAM)</option>
+          </select>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Match cache-type-k for consistency.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Flash attention (--flash-attn)</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input id="llama-flash-attn" type="checkbox" style="width:1rem;height:1rem">
+            <span style="font-size:0.82rem;color:var(--theme-text-primary)">Enabled</span>
+          </label>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.4rem 0 0">Metal fused attention kernel. ~20% speedup on M-series. Recommended on.</p>
+        </div>
+      </div>
+      <div id="llama-cmd-preview" style="font-size:0.72rem;background:var(--theme-bg-primary);padding:0.4rem 0.6rem;border-radius:4px;border:1px solid var(--theme-border);font-family:monospace;white-space:pre-wrap;word-break:break-all;margin-bottom:0.5rem;display:none"></div>
+      <div id="llama-settings-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.25rem;min-height:1.2em"></div>
+    </div>
+
     <!-- Metric Rules (1.4.R) — tune after first extraction cycle -->
     <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.R" data-spec-id="1.4.R" data-spec-id-alias="1.4.1"><span data-spec-id="1.4.1" style="display:none"></span>
       <div class="section-header-row" style="margin-bottom:0.5rem">
@@ -1529,7 +1613,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </label>
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
         <span>Extract workers</span>
-        <input id="pipeline-extract-workers" type="number" min="1" max="12" step="1" value="3" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+        <input id="pipeline-extract-workers" type="number" min="1" max="16" step="1" value="8" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
       </label>
       <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
         Tune IR scrape concurrency and per-ticker LLM extraction. Results still commit oldest-to-newest.
@@ -1842,7 +1926,7 @@ tr.is-reviewed td { opacity: 0.65; }
       <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
         <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
           <span>Extract workers</span>
-          <input id="interpret-extract-workers" type="number" min="1" max="12" step="1" value="3" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+          <input id="interpret-extract-workers" type="number" min="1" max="16" step="1" value="8" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
         </label>
         <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
           Same LLM worker control as the full pipeline. Use <code>1</code> for stable prompt iteration, or raise it for faster multi-doc runs.
@@ -3120,7 +3204,7 @@ function activatePipelineSubTab(pane, name) {
   });
   // Lazy-load on sub-tab activation
   if (pane === 'config' && name === 'companies') { loadMetricSchemaTable(); }
-  if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); loadOllamaSettings(); }
+  if (pane === 'config' && name === 'settings') { loadSettings(); loadMetricRules(); loadOllamaSettings(); loadLlamaServerSettings(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
   if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
   if (pane === 'interpret' && name === 'qc') _loadQCTable();
@@ -3438,16 +3522,10 @@ async function populateOllamaModelSelect(selId) {
   try {
     let models = [];
     try {
-      const direct = await fetch('http://localhost:11434/api/tags', { cache: 'no-store' });
-      if (direct.ok) {
-        const d = await direct.json();
-        models = (d.models || []).map(function(m) { return m.name; });
-      }
-    } catch (_) {
-      const fallback = await fetch('/api/ollama/models', { cache: 'no-store' });
-      const d = await fallback.json();
+      const resp = await fetch('/api/ollama/models', { cache: 'no-store' });
+      const d = await resp.json();
       models = (d.data?.models || []).map(function(m) { return m.name; });
-    }
+    } catch (_) {}
     let active = '';
     try {
       const cfgResp = await fetch('/api/config', { cache: 'no-store' });
@@ -3459,7 +3537,7 @@ async function populateOllamaModelSelect(selId) {
       sel.innerHTML = '<option value="">No models found</option>';
       return;
     }
-    const preferred = ['qwen3.5:9b', 'qwen3.5:27b'];
+    const preferred = ['qwen2.5:7b'];
     models.sort(function(a, b) {
       if (a === active) return -1;
       if (b === active) return 1;
@@ -3530,7 +3608,7 @@ async function startExtractionRun() {
   const toPeriod = (document.getElementById('extract-to')?.value || '').trim() || null;
   const sampleEnabled = !!document.getElementById('extract-sample-enabled')?.checked;
   const sampleN = sampleEnabled ? parseInt(document.getElementById('extract-sample-n')?.value || '5', 10) : 0;
-  const extractWorkers = Math.max(1, parseInt(document.getElementById('interpret-extract-workers')?.value || '3', 10) || 3);
+  const extractWorkers = Math.max(1, parseInt(document.getElementById('interpret-extract-workers')?.value || '8', 10) || 8);
   const autoGapFill = !!(document.getElementById('extract-auto-gapfill')?.checked) && cadence !== 'monthly';
 
   if (fromPeriod && toPeriod && fromPeriod > toPeriod) {
@@ -6070,6 +6148,132 @@ async function saveOllamaSettings() {
   }
 }
 
+// ── llama-server Config (1.4.L) ───────────────────────────────────────────────
+
+async function loadLlamaServerSettings() {
+  try {
+    const resp = await fetch('/api/config', { cache: 'no-store' });
+    const data = await resp.json();
+    const map = {};
+    (data.data?.config || []).forEach(function(r) { map[r.key] = r.value; });
+
+    const defaultsResp = await Promise.all([
+      'llama_model_path','llama_parallel','llama_ctx_size','llama_n_predict',
+      'llama_batch_size','llama_cache_type_k','llama_cache_type_v',
+      'llama_flash_attn','llama_threads','llama_port',
+    ].map(function(k) {
+      return fetch('/api/config/' + k + '/default', { cache: 'no-store' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { return [k, d.data?.default ?? '']; })
+        .catch(function() { return [k, '']; });
+    }));
+    const defaults = {};
+    defaultsResp.forEach(function(pair) { defaults[pair[0]] = pair[1]; });
+
+    function _val(k) { return map[k] !== undefined ? map[k] : defaults[k]; }
+
+    const el = function(id) { return document.getElementById(id); };
+    if (el('llama-model-path'))  el('llama-model-path').value  = _val('llama_model_path');
+    if (el('llama-parallel'))    el('llama-parallel').value    = _val('llama_parallel');
+    if (el('llama-ctx-size'))    el('llama-ctx-size').value    = _val('llama_ctx_size');
+    if (el('llama-n-predict'))   el('llama-n-predict').value   = _val('llama_n_predict');
+    if (el('llama-batch-size'))  el('llama-batch-size').value  = _val('llama_batch_size');
+    if (el('llama-threads'))     el('llama-threads').value     = _val('llama_threads');
+    if (el('llama-port'))        el('llama-port').value        = _val('llama_port');
+    if (el('llama-cache-type-k')) el('llama-cache-type-k').value = _val('llama_cache_type_k');
+    if (el('llama-cache-type-v')) el('llama-cache-type-v').value = _val('llama_cache_type_v');
+    if (el('llama-flash-attn'))  el('llama-flash-attn').checked = (_val('llama_flash_attn') === '1');
+    _updateLlamaCmdPreview();
+  } catch(err) {
+    console.warn('loadLlamaServerSettings failed', err);
+  }
+}
+
+function _buildLlamaCommand() {
+  const el = function(id) { return document.getElementById(id); };
+  const model    = (el('llama-model-path')?.value  || '').trim();
+  const parallel = (el('llama-parallel')?.value    || '4').trim();
+  const ctx      = (el('llama-ctx-size')?.value    || '8192').trim();
+  const npredict = (el('llama-n-predict')?.value   || '768').trim();
+  const batch    = (el('llama-batch-size')?.value  || '4096').trim();
+  const cacheK   = (el('llama-cache-type-k')?.value || 'q8_0').trim();
+  const cacheV   = (el('llama-cache-type-v')?.value || 'q8_0').trim();
+  const threads  = (el('llama-threads')?.value     || '4').trim();
+  const port     = (el('llama-port')?.value        || '8080').trim();
+  const flash    = el('llama-flash-attn')?.checked;
+  let cmd = 'llama-server'
+    + ' --model ' + model
+    + ' --ctx-size ' + ctx
+    + ' --n-predict ' + npredict
+    + ' --parallel ' + parallel
+    + ' --batch-size ' + batch
+    + ' --cache-type-k ' + cacheK
+    + ' --cache-type-v ' + cacheV
+    + ' --threads ' + threads
+    + ' --port ' + port
+    + ' -ngl 99';
+  if (flash) cmd += ' --flash-attn';
+  return cmd;
+}
+
+function _updateLlamaCmdPreview() {
+  const preview = document.getElementById('llama-cmd-preview');
+  if (!preview) return;
+  preview.textContent = _buildLlamaCommand();
+  preview.style.display = 'block';
+}
+
+async function saveLlamaServerSettings() {
+  const msgEl = document.getElementById('llama-settings-msg');
+  const el = function(id) { return document.getElementById(id); };
+  const parallel = (el('llama-parallel')?.value || '').trim();
+  const entries = [
+    ['llama_model_path',  (el('llama-model-path')?.value  || '').trim()],
+    ['llama_parallel',    parallel],
+    ['llama_ctx_size',    (el('llama-ctx-size')?.value    || '').trim()],
+    ['llama_n_predict',   (el('llama-n-predict')?.value   || '').trim()],
+    ['llama_batch_size',  (el('llama-batch-size')?.value  || '').trim()],
+    ['llama_cache_type_k',(el('llama-cache-type-k')?.value || '').trim()],
+    ['llama_cache_type_v',(el('llama-cache-type-v')?.value || '').trim()],
+    ['llama_flash_attn',   el('llama-flash-attn')?.checked ? '1' : '0'],
+    ['llama_threads',     (el('llama-threads')?.value     || '').trim()],
+    ['llama_port',        (el('llama-port')?.value        || '').trim()],
+  ];
+  try {
+    await Promise.all(entries.map(function(pair) {
+      return fetch('/api/config/' + pair[0], {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: pair[1]}),
+      });
+    }));
+    // Keep Extract Workers in sync with parallel slot count
+    if (parallel) {
+      await fetch('/api/config/ollama_num_parallel', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: parallel}),
+      });
+      _seedWorkerInputs(parallel);
+    }
+    _updateLlamaCmdPreview();
+    if (msgEl) { msgEl.textContent = 'Saved. Restart llama-server (./llm.sh) to apply.'; msgEl.style.color = 'var(--theme-text-muted)'; }
+  } catch(err) {
+    if (msgEl) { msgEl.textContent = 'Save failed: ' + String(err); msgEl.style.color = 'var(--theme-danger, #ef4444)'; }
+  }
+}
+
+async function copyLlamaCommand() {
+  const cmd = _buildLlamaCommand();
+  const msgEl = document.getElementById('llama-settings-msg');
+  try {
+    await navigator.clipboard.writeText(cmd);
+    if (msgEl) { msgEl.textContent = 'Command copied to clipboard.'; msgEl.style.color = 'var(--theme-text-muted)'; }
+  } catch(_) {
+    if (msgEl) { msgEl.textContent = cmd; msgEl.style.color = 'var(--theme-text-muted)'; }
+  }
+}
+
 // ── Metric Rules tab ─────────────────────────────────────────────────────────
 
 async function loadMetricRules() {
@@ -7640,7 +7844,9 @@ async function loadPipelinePreflight() {
     if (extractedEl) extractedEl.innerHTML = d.already_extracted_count + ' already extracted &nbsp;';
     if (llmEl) {
       var llmStyle = d.llm_available ? 'color:#4caf50' : 'color:#f44336';
-      var llmText = d.llm_available ? 'Ollama ready (' + (d.ollama_model || 'unknown') + ')' : 'Ollama unreachable';
+      var llmBackend = d.llm_backend || 'ollama';
+      var llmLabel = llmBackend === 'llamacpp' ? 'llama-server' : 'Ollama';
+      var llmText = d.llm_available ? (llmLabel + ' ready (' + (d.ollama_model || 'unknown') + ')') : (llmLabel + ' unreachable');
       llmEl.innerHTML = '<span style="' + llmStyle + '">' + llmText + '</span> &nbsp;';
     }
     if (kwEl) kwEl.innerHTML = d.keyword_count + ' keywords configured';
@@ -7662,7 +7868,7 @@ async function runFullPipeline() {
   var probeSkip = document.getElementById('pipeline-probe-skip')?.checked === true;
   var forceReextract = document.getElementById('pipeline-force-reextract')?.checked === true;
   var irWorkers = Math.max(1, parseInt(document.getElementById('pipeline-ir-workers')?.value || '2', 10) || 2);
-  var extractWorkers = Math.max(1, parseInt(document.getElementById('pipeline-extract-workers')?.value || '3', 10) || 3);
+  var extractWorkers = Math.max(1, parseInt(document.getElementById('pipeline-extract-workers')?.value || '8', 10) || 8);
   var tickers = _getSharedSelectedTickers();
   try {
     const resp = await fetch('/api/pipeline/overnight/start', {

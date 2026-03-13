@@ -26,7 +26,7 @@ def _update_progress(task_id: str, state: dict) -> None:
 def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) -> dict:
     """Run extraction via run_extraction_phase for ingest auto-extract chaining.
 
-    Creates a pipeline_runs row for audit trail. Uses extract_workers=2 for parallelism.
+    Creates a pipeline_runs row for audit trail. Uses extract_workers=4 for parallelism.
     Returns a dict with keys: reports_processed, data_points_extracted, review_flagged, errors.
     """
     from app_globals import get_registry
@@ -54,7 +54,7 @@ def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) 
         registry=registry,
         source_types=source_types,
         warm_model=False,
-        extract_workers=2,
+        extract_workers=max(1, int(db.get_config('ollama_num_parallel') or 4)),
     )
     try:
         db.update_pipeline_run(run_id, status='complete', summary={

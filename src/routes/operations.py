@@ -383,7 +383,7 @@ def operations_extract():
             prompt for this run. Overrides DB and hardcoded defaults.
         from_period (str): Inclusive earliest report_date (YYYY-MM or YYYY-MM-DD).
         to_period (str): Inclusive latest report_date.
-        extract_workers (int): Parallel LLM workers (default 2, max 12).
+        extract_workers (int): Parallel LLM workers (default 4, max 12).
         sample (int): Random report sample for prompt debugging (max 10).
     """
     try:
@@ -401,7 +401,7 @@ def operations_extract():
         custom_prompt = (body.get('custom_prompt') or '').strip() or None
         from_period = (body.get('from_period') or '').strip() or None
         to_period = (body.get('to_period') or '').strip() or None
-        extract_workers = max(1, min(int(body.get('extract_workers') or 2), 12))
+        extract_workers = max(1, min(int(body.get('extract_workers') or 4), 12))
         sample_n = max(0, min(int(body.get('sample') or 0), 10))
 
         # expected_granularity: explicit override, or derived from cadence.
@@ -902,7 +902,14 @@ def purge_ticker():
 def gap_fill():
     """POST /api/operations/gap-fill — infer missing monthly data_points from quarterly.
 
-    Body: { "ticker": "MARA", "dry_run": false }
+    Body:
+      { "ticker": "MARA", "dry_run": false, "fill_mode": "endpoint" }
+
+    fill_mode values:
+      "endpoint"  — quarter-end propagation, last month only (default)
+      "stepwise"  — all missing months get the quarter-end value
+      "linear"    — interpolate from prev quarter end to current quarter end
+
     Returns: { "filled": N, "skipped": N, "errors": N, "rows": [...] }
     """
     from app_globals import get_db as _get_db
@@ -911,16 +918,52 @@ def gap_fill():
     body = request.get_json(silent=True) or {}
     ticker = (body.get('ticker') or '').strip().upper()
     dry_run = bool(body.get('dry_run', False))
+    fill_mode = (body.get('fill_mode') or 'endpoint').strip()
 
     if not ticker:
         return jsonify({'error': 'ticker is required'}), 400
 
     try:
         db = _get_db()
-        result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run)
+        result = fill_quarterly_gaps(ticker=ticker, db=db, dry_run=dry_run, fill_mode=fill_mode)
         return jsonify(result)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
     except Exception:
         log.error('gap_fill_error ticker=%s', ticker, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@bp.route('/api/operations/derive-balance-change', methods=['POST'])
+def derive_balance_change():
+    """POST /api/operations/derive-balance-change — compute net_btc_balance_change from holdings_btc.
+
+    Reads analyst-finalized holdings_btc values from final_data_points and
+    writes MoM deltas back into final_data_points as net_btc_balance_change.
+    Only consecutive monthly periods (1-month gap) are processed.
+
+    Body:
+      { "ticker": "MARA", "dry_run": false, "overwrite": true }
+
+    Returns: { "derived": N, "skipped": N, "rows": [...] }
+    """
+    from app_globals import get_db as _get_db
+    from interpreters.gap_fill import derive_net_balance_change
+
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper()
+    dry_run = bool(body.get('dry_run', False))
+    overwrite = bool(body.get('overwrite', True))
+
+    if not ticker:
+        return jsonify({'error': 'ticker is required'}), 400
+
+    try:
+        db = _get_db()
+        result = derive_net_balance_change(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
+        return jsonify(result)
+    except Exception:
+        log.error('derive_balance_change_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 

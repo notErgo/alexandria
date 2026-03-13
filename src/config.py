@@ -167,26 +167,32 @@ EXTRACTION_CONTEXT_WINDOW: int = 500
 # Maximum source_snippet length stored in DB
 MAX_SOURCE_SNIPPET_LEN: int = 1000
 
-# --- LLM Interpreter (Ollama) — Stage 2 metric extraction ---
+# --- LLM backend selection ---
+# "ollama"   — Ollama server (default, port 11434)
+# "llamacpp" — llama.cpp server via llama-server (port 8080 by default)
+# Set LLM_BACKEND=llamacpp and OLLAMA_BASE_URL=http://localhost:8080 to switch.
+LLM_BACKEND: str = _os.environ.get("LLM_BACKEND", "ollama")
+
+# --- LLM Interpreter — Stage 2 metric extraction ---
 # Used by interpreters/llm_interpreter.py for metric extraction from stored documents.
 LLM_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+LLM_MODEL_ID: str = _os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 LLM_TIMEOUT_SECONDS: int = 300
 # How long Ollama keeps the model loaded between requests (per-request keep_alive field).
 # Set to -1 to keep loaded indefinitely; "0" to unload immediately after each call.
 OLLAMA_KEEP_ALIVE: str = _os.environ.get("OLLAMA_KEEP_ALIVE", "2h")
 # Application-side concurrency: max parallel extraction workers sent to Ollama.
 # Maps to extract_workers in the pipeline. Overridable at runtime via config_settings.
-OLLAMA_NUM_PARALLEL: int = int(_os.environ.get("OLLAMA_NUM_PARALLEL", "4"))
+OLLAMA_NUM_PARALLEL: int = int(_os.environ.get("OLLAMA_NUM_PARALLEL", "8"))
 # Informational: target value for the Ollama server OLLAMA_MAX_LOADED_MODELS env var.
 # Stored in config_settings for reference; applied by restarting Ollama with the shown command.
 OLLAMA_MAX_LOADED_MODELS: int = int(_os.environ.get("OLLAMA_MAX_LOADED_MODELS", "3"))
 
 # --- Crawl LLM (Ollama or Anthropic) — Stage 1 IR navigation ---
-# qwen3.5:9b is used for both extraction and crawling.
+# qwen2.5:7b is used for both extraction and crawling.
 ANTHROPIC_API_KEY: str = _os.environ.get("ANTHROPIC_API_KEY", "")
 CRAWL_MODEL: str = _os.environ.get("CRAWL_MODEL", "claude-haiku-4-5-20251001")
-CRAWL_OLLAMA_MODEL: str = _os.environ.get("CRAWL_OLLAMA_MODEL", "qwen3.5:9b")
+CRAWL_OLLAMA_MODEL: str = _os.environ.get("CRAWL_OLLAMA_MODEL", "qwen2.5:7b")
 CRAWL_PROVIDER: str = _os.environ.get("CRAWL_PROVIDER", "ollama")
 
 # Context window budgets for ContextWindowSelector

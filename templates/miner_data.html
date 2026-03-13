@@ -1043,6 +1043,12 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
+    <!-- Final data CSV export -->
+    <div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
+      <button class="btn btn-primary btn-sm" onclick="exportFinalCsv()">Export Final CSV</button>
+      <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.5rem">Analyst-accepted values from final_data_points.</span>
+    </div>
+
     <!-- LLM CSV export (unreviewed direct output) -->
     <div data-spec-id="MD5.4" style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
       <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
@@ -2385,6 +2391,11 @@ async function doGeneratePrompt() {
   } finally {
     btn.disabled = false;
   }
+}
+
+function exportFinalCsv() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  window.location = `/api/export/final.csv?ticker=${encodeURIComponent(_ticker)}`;
 }
 
 function exportLLMCsv() {

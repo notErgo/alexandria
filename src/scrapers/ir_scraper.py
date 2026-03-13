@@ -1148,7 +1148,7 @@ class IRScraper:
             log.info("%s: JS-rendered listing — using Playwright pagination for %s", ticker, ir_url)
             page_htmls_js = _playwright_collect_all_pages(
                 ir_url,
-                min_year=start_year if ticker.upper() == "CLSK" else None,
+                min_year=start_year,
             )
             page_sources: list[tuple[str, str]] = [
                 (html, ir_url) for html in page_htmls_js

@@ -30,7 +30,7 @@ from bs4 import BeautifulSoup
 
 log = logging.getLogger('miners.crawl')
 
-_PREFERRED_MODELS = ['qwen3.5:9b', 'qwen3.5:27b']
+_PREFERRED_MODELS = ['qwen2.5:7b']
 
 # ---------------------------------------------------------------------------
 # Paths & constants
@@ -324,7 +324,15 @@ _GET_OBSERVATIONS_TOOL_OAI = {
 # ---------------------------------------------------------------------------
 
 def _ensure_ollama(base_url: str, model: str, progress: 'CrawlProgress') -> None:
-    """Restart Ollama with OLLAMA_NUM_PARALLEL set, then warm the target model."""
+    """Restart Ollama with OLLAMA_NUM_PARALLEL set, then warm the target model.
+
+    No-op when LLM_BACKEND=llamacpp — llama-server is managed externally.
+    """
+    from config import LLM_BACKEND
+    if LLM_BACKEND == 'llamacpp':
+        progress.add_log('Skipping Ollama lifecycle management (LLM_BACKEND=llamacpp)')
+        return
+
     import os
     import subprocess
     import time
@@ -987,14 +995,17 @@ class LLMCrawler:
             self._progress.finished_at = datetime.now(timezone.utc).isoformat()
 
     def _run_ollama(self, ticker: str, system_prompt: str) -> None:
-        """Run the agentic loop using Ollama's native /api/chat endpoint via requests."""
+        """Run the agentic loop using Ollama /api/chat or llama.cpp /v1/chat/completions."""
         import requests as _requests
 
-        from config import LLM_BASE_URL
+        from config import LLM_BACKEND, LLM_BASE_URL
 
         _ensure_ollama(LLM_BASE_URL, self._model, self._progress)
 
-        chat_url = f'{LLM_BASE_URL}/api/chat'
+        if LLM_BACKEND == 'llamacpp':
+            chat_url = f'{LLM_BASE_URL}/v1/chat/completions'
+        else:
+            chat_url = f'{LLM_BASE_URL}/api/chat'
         tools = [
             _FETCH_TOOL_OAI, _STORE_TOOL_OAI, _WEB_SEARCH_TOOL_OAI,
             _GET_INDEXED_DOCS_TOOL_OAI, _STORE_OBSERVATION_TOOL_OAI, _GET_OBSERVATIONS_TOOL_OAI,
@@ -1057,25 +1068,35 @@ class LLMCrawler:
                         f'({self._num_ctx - ctx_tokens:,} tokens remaining) — '
                         'model may start losing earlier conversation'
                     )
-                resp = _requests.post(
-                    chat_url,
-                    json={
+                if LLM_BACKEND == 'llamacpp':
+                    req_payload = {
+                        'model': self._model,
+                        'messages': messages,
+                        'tools': tools,
+                        'stream': False,
+                    }
+                else:
+                    req_payload = {
                         'model': self._model,
                         'messages': messages,
                         'tools': tools,
                         'stream': False,
                         'think': False,
                         'options': {'num_ctx': self._num_ctx},
-                    },
-                    timeout=300,
-                )
+                    }
+                resp = _requests.post(chat_url, json=req_payload, timeout=300)
                 resp.raise_for_status()
                 body = resp.json()
-                msg = body.get('message', {})
+                if LLM_BACKEND == 'llamacpp':
+                    choices = body.get('choices') or []
+                    msg = choices[0].get('message', {}) if choices else {}
+                    done_reason = choices[0].get('finish_reason', '') if choices else ''
+                else:
+                    msg = body.get('message', {})
+                    done_reason = body.get('done_reason', '')
                 messages.append(msg)
 
                 tool_calls = msg.get('tool_calls') or []
-                done_reason = body.get('done_reason', '')
 
                 if not tool_calls:
                     if done_reason == 'stop' and any_tools_called:
@@ -1102,9 +1123,12 @@ class LLMCrawler:
 
                 base_msg_idx = len(messages)
 
-                # Parse tool call arguments upfront before dispatching in parallel
+                # Parse tool call arguments upfront before dispatching in parallel.
+                # Also capture IDs for OpenAI-compatible tool result messages (llama.cpp).
                 parsed_calls = []
+                tc_ids = []
                 for tc in tool_calls:
+                    tc_ids.append(tc.get('id', ''))
                     fn = tc.get('function', {})
                     name = fn.get('name', '')
                     inp = fn.get('arguments') or {}
@@ -1128,9 +1152,15 @@ class LLMCrawler:
                 for local_idx, url in fetch_info:
                     fetch_indices[base_msg_idx + local_idx] = url
 
-                tool_results = [
-                    {'role': 'tool', 'content': r} for r in ordered_results
-                ]
+                if LLM_BACKEND == 'llamacpp':
+                    tool_results = [
+                        {'role': 'tool', 'tool_call_id': tc_id, 'content': r}
+                        for tc_id, r in zip(tc_ids, ordered_results)
+                    ]
+                else:
+                    tool_results = [
+                        {'role': 'tool', 'content': r} for r in ordered_results
+                    ]
                 messages.extend(tool_results)
 
                 if cur_tool_sigs & self._prev_tool_sigs:

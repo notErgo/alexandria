@@ -38,6 +38,10 @@ _KNOWN_CONFIG_KEYS = {
     'pipeline_output_dir',
     # Ollama concurrency
     'ollama_keep_alive', 'ollama_num_parallel', 'ollama_max_loaded_models',
+    # llama-server startup params (read by llm.sh at launch)
+    'llama_model_path', 'llama_parallel', 'llama_ctx_size', 'llama_n_predict',
+    'llama_batch_size', 'llama_cache_type_k', 'llama_cache_type_v',
+    'llama_flash_attn', 'llama_threads', 'llama_port',
 }
 
 _DEFAULT_KEYWORD_DICTIONARY = {
@@ -118,6 +122,21 @@ def _get_default_for_key(key: str):
     if key == 'ollama_max_loaded_models':
         from config import OLLAMA_MAX_LOADED_MODELS
         return str(OLLAMA_MAX_LOADED_MODELS)
+    # llama-server startup params
+    _llama_defaults = {
+        'llama_model_path': str(Path.home() / '.ollama/models/blobs/sha256-2bada8a7450677000f678be90653b85d364de7db25eb5ea54136ada5f3933730'),
+        'llama_parallel':     '8',
+        'llama_ctx_size':     '8192',
+        'llama_n_predict':    '768',
+        'llama_batch_size':   '4096',
+        'llama_cache_type_k': 'q8_0',
+        'llama_cache_type_v': 'q8_0',
+        'llama_flash_attn':   '1',
+        'llama_threads':      '4',
+        'llama_port':         '8080',
+    }
+    if key in _llama_defaults:
+        return _llama_defaults[key]
     return None
 
 
@@ -223,16 +242,18 @@ def list_ollama_models():
     is not running.
     """
     try:
-        import requests as _requests
-        from config import LLM_BASE_URL
-        try:
-            resp = _requests.get(f"{LLM_BASE_URL}/api/tags", timeout=3)
-            if resp.ok:
-                data = resp.json()
-                models = [{"name": m["name"]} for m in data.get("models", [])]
-                return jsonify({'success': True, 'data': {'models': models, 'source': 'daemon'}})
-        except Exception:
-            pass  # Daemon not reachable — fall through to disk scan
+        from config import LLM_BACKEND
+        if LLM_BACKEND != 'llamacpp':
+            import requests as _requests
+            from config import LLM_BASE_URL
+            try:
+                resp = _requests.get(f"{LLM_BASE_URL}/api/tags", timeout=3)
+                if resp.ok:
+                    data = resp.json()
+                    models = [{"name": m["name"]} for m in data.get("models", [])]
+                    return jsonify({'success': True, 'data': {'models': models, 'source': 'daemon'}})
+            except Exception:
+                pass  # Daemon not reachable — fall through to disk scan
 
         models = _list_models_from_disk()
         return jsonify({'success': True, 'data': {'models': models, 'source': 'disk'}})
