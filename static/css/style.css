@@ -807,3 +807,9 @@ body.dev-no-tips .info-bubble { display: none !important; }
     white-space: nowrap;
     color: var(--theme-text-secondary);
 }
+.example-snippet-text {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    flex: 1;
+    word-break: break-all;
+}

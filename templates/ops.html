@@ -6601,7 +6601,7 @@ function _buildCandidateRow(metric, ticker, item) {
   badge.textContent = item.frequency;
   const text = document.createElement('span');
   text.textContent = item.template;
-  text.style.cssText = 'font-family:monospace;font-size:0.75rem;flex:1;word-break:break-all';
+  text.className = 'example-snippet-text';
   const btn = document.createElement('button');
   btn.className = 'btn btn-sm btn-secondary';
   btn.textContent = 'Save';
@@ -6651,7 +6651,7 @@ async function loadExamplesForMetric() {
       tr.style.borderBottom = '1px solid var(--theme-border)';
       tr.innerHTML = `
         <td style="padding:2px 6px">${row.ticker || '<em style="color:var(--theme-text-muted)">all</em>'}</td>
-        <td style="padding:2px 6px;font-family:monospace;font-size:0.73rem;max-width:300px;word-break:break-all">${_esc(row.snippet)}</td>
+        <td class="example-snippet-text" style="padding:2px 6px;max-width:300px">${escapeHtml(row.snippet)}</td>
         <td style="padding:2px 6px">${row.label || ''}</td>
         <td style="padding:2px 6px;text-align:center">${row.active ? 'Y' : 'N'}</td>
         <td style="padding:2px 6px;text-align:center">

@@ -699,8 +699,7 @@ def update_metric_schema(row_id):
 
 def _metric_key_exists(db, key: str) -> bool:
     """Return True if the given key exists in metric_schema."""
-    rows = db.get_metric_schema(sector='BTC-miners', active_only=False)
-    return any(r['key'] == key for r in rows)
+    return db._metric_key_exists_in_schema(key)
 
 
 def _normalize_phrase(phrase: str) -> str:
@@ -902,11 +901,6 @@ def delete_metric_keyword(metric_key, kw_id):
 
 
 # ── Metric examples routes ─────────────────────────────────────────────────────
-
-def _metric_key_exists(db, metric_key: str) -> bool:
-    rows = db.get_metric_schema('BTC-miners', active_only=False)
-    return any(r['key'] == metric_key for r in rows)
-
 
 @bp.route('/api/metric_schema/<string:metric_key>/snippet_analysis', methods=['GET'])
 def snippet_analysis(metric_key):

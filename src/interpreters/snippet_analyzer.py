@@ -33,9 +33,7 @@ def _is_table_line(text: str) -> bool:
 def _normalize(text: str) -> str:
     """Strip outer whitespace/pipes, replace bare numbers with X, collapse spaces."""
     text = text.strip().strip('|').strip()
-    # Replace standalone numbers (with optional commas) with X
     text = re.sub(r'\b[\d,]+\b', 'X', text)
-    # Collapse multiple spaces
     text = re.sub(r' {2,}', ' ', text)
     return text.strip()
 
@@ -74,7 +72,9 @@ def analyze_snippets(snippets: list) -> dict:
     table_counter: Counter = Counter()
     prose_counter: Counter = Counter()
 
-    for snip in unique:
+    for snip in snippets:
+        if not snip:
+            continue
         for line in snip.splitlines():
             line = line.strip()
             if not line:
@@ -87,37 +87,15 @@ def analyze_snippets(snippets: list) -> dict:
                     for gram in _ngrams(tokens, n):
                         prose_counter[gram] += 1
 
-    # Also count across all (non-unique) snippets for table rows to capture true frequency
-    full_table_counter: Counter = Counter()
-    for snip in snippets:
-        if not snip:
-            continue
-        for line in snip.splitlines():
-            line = line.strip()
-            if line and _is_table_line(line):
-                full_table_counter[_normalize(line)] += 1
-
-    full_prose_counter: Counter = Counter()
-    for snip in snippets:
-        if not snip:
-            continue
-        for line in snip.splitlines():
-            line = line.strip()
-            if line and not _is_table_line(line):
-                tokens = _tokenize(line)
-                for n in (3, 4):
-                    for gram in _ngrams(tokens, n):
-                        full_prose_counter[gram] += 1
-
     table_rows = [
         {'template': tmpl, 'frequency': freq}
-        for tmpl, freq in full_table_counter.most_common()
+        for tmpl, freq in table_counter.most_common()
         if freq >= _MIN_FREQUENCY
     ][:_MAX_TABLE_ROWS]
 
     prose_ngrams = [
         {'template': tmpl, 'frequency': freq}
-        for tmpl, freq in full_prose_counter.most_common()
+        for tmpl, freq in prose_counter.most_common()
         if freq >= _MIN_FREQUENCY
     ][:_MAX_PROSE_NGRAMS]
 

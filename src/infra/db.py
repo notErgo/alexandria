@@ -1967,6 +1967,8 @@ class MinerDB:
 
     # ── Metric examples CRUD ────────────────────────────────────────────────────
 
+    _VALID_EXAMPLE_SOURCE_TYPES: frozenset = frozenset({'table_row', 'prose', 'manual'})
+
     def _metric_key_exists_in_schema(self, metric_key: str) -> bool:
         with self._get_connection() as conn:
             row = conn.execute(
@@ -1976,9 +1978,11 @@ class MinerDB:
 
     def add_metric_example(self, metric_key: str, snippet: str, ticker: str = None,
                             label: str = None, source_type: str = None) -> int:
-        """Insert a metric example. Raises ValueError if metric_key is not in metric_schema."""
+        """Insert a metric example. Raises ValueError if metric_key is unknown or source_type invalid."""
         if not self._metric_key_exists_in_schema(metric_key):
             raise ValueError(f"Unknown metric key: {metric_key}")
+        if source_type is not None and source_type not in self._VALID_EXAMPLE_SOURCE_TYPES:
+            raise ValueError(f"source_type must be one of {sorted(self._VALID_EXAMPLE_SOURCE_TYPES)}")
         with self._get_connection() as conn:
             cur = conn.execute(
                 """INSERT INTO metric_examples (metric_key, ticker, snippet, label, source_type)
@@ -2017,7 +2021,8 @@ class MinerDB:
         ]
 
     def update_metric_example(self, example_id: int, snippet: str = None, label: str = None,
-                               active: int = None, source_type: str = None) -> bool:
+                               active: 'int | bool | None' = None,
+                               source_type: str = None) -> bool:
         """Update fields on a metric_example row. Returns True if a row was updated."""
         updates = {}
         if snippet is not None:
@@ -2025,7 +2030,7 @@ class MinerDB:
         if label is not None:
             updates['label'] = label
         if active is not None:
-            updates['active'] = active
+            updates['active'] = int(active)
         if source_type is not None:
             updates['source_type'] = source_type
         if not updates:
@@ -2050,33 +2055,25 @@ class MinerDB:
 
         Used to populate the snippet analyzer with real historical extraction samples.
         """
-        params_dp = [metric_key]
-        ticker_filter = ""
+        clauses = ["metric = ?", "source_snippet IS NOT NULL", "source_snippet != ''"]
+        params = [metric_key]
         if ticker is not None:
-            ticker_filter = " AND ticker = ?"
-            params_dp.append(ticker)
+            clauses.append("ticker = ?")
+            params.append(ticker)
+        where = " AND ".join(clauses)
 
         with self._get_connection() as conn:
-            dp_rows = conn.execute(
-                f"SELECT source_snippet FROM data_points "
-                f"WHERE metric = ? AND source_snippet IS NOT NULL AND source_snippet != ''"
-                f"{ticker_filter} LIMIT ?",
-                params_dp + [limit],
+            rows = conn.execute(
+                f"SELECT source_snippet FROM data_points WHERE {where} "
+                f"UNION ALL "
+                f"SELECT source_snippet FROM review_queue WHERE {where} "
+                f"LIMIT ?",
+                params + params + [limit],
             ).fetchall()
 
-            params_rq = [metric_key]
-            if ticker is not None:
-                params_rq.append(ticker)
-            rq_rows = conn.execute(
-                f"SELECT source_snippet FROM review_queue "
-                f"WHERE metric = ? AND source_snippet IS NOT NULL AND source_snippet != ''"
-                f"{ticker_filter} LIMIT ?",
-                params_rq + [limit],
-            ).fetchall()
-
-        seen = set()
+        seen: set = set()
         result = []
-        for (snip,) in dp_rows + rq_rows:
+        for (snip,) in rows:
             if snip and snip not in seen:
                 seen.add(snip)
                 result.append(snip)
@@ -2086,10 +2083,47 @@ class MinerDB:
         """Return at most 5 active snippet strings for LLM prompt injection.
 
         Merges ticker-scoped + metric-wide (ticker IS NULL) examples, active only.
+        Uses LIMIT at query level to avoid fetching excess rows.
         """
-        rows = self.get_metric_examples(metric_key, ticker=ticker, active_only=True)
-        snippets = [r['snippet'] for r in rows]
-        return snippets[:5]
+        params: list = [metric_key]
+        if ticker is not None:
+            where = "metric_key = ? AND (ticker = ? OR ticker IS NULL) AND active = 1"
+            params.append(ticker)
+        else:
+            where = "metric_key = ? AND active = 1"
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT snippet FROM metric_examples WHERE {where} ORDER BY id LIMIT 5",
+                params,
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def get_bulk_active_examples_for_prompt(self, metric_keys: list,
+                                             ticker: str = None) -> dict:
+        """Return active snippets for multiple metrics in one DB round-trip.
+
+        Returns dict keyed by metric_key, each value a list of snippet strings (max 5).
+        Used by LLM prompt builders to avoid N connections for N metrics.
+        """
+        if not metric_keys:
+            return {}
+        placeholders = ','.join('?' * len(metric_keys))
+        params: list = list(metric_keys)
+        if ticker is not None:
+            where = f"metric_key IN ({placeholders}) AND (ticker = ? OR ticker IS NULL) AND active = 1"
+            params.append(ticker)
+        else:
+            where = f"metric_key IN ({placeholders}) AND active = 1"
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT metric_key, snippet FROM metric_examples WHERE {where} ORDER BY metric_key, id",
+                params,
+            ).fetchall()
+        result: dict = {k: [] for k in metric_keys}
+        for metric_key, snippet in rows:
+            if metric_key in result and len(result[metric_key]) < 5:
+                result[metric_key].append(snippet)
+        return result
 
     # ── Report metric verdict CRUD ──────────────────────────────────────────────
 

@@ -391,6 +391,34 @@ class LLMInterpreter:
         # Tier 3: fall back to monthly instructions
         return self._get_prompt_instructions(metric)
 
+    def _append_examples_block(self, lines: list, metrics: list, ticker: str = None) -> None:
+        """Inject === EXAMPLE PATTERNS === block into a prompt lines list.
+
+        Uses a single bulk DB query for all metrics to avoid N connections.
+        Exceptions are swallowed so a DB failure never crashes prompt building.
+        """
+        if self._db is None:
+            return
+        try:
+            examples_by_metric = self._db.get_bulk_active_examples_for_prompt(metrics, ticker=ticker)
+            all_examples = []
+            for metric in metrics:
+                for snippet in examples_by_metric.get(metric, []):
+                    entry = f"  [{metric}] {snippet}"
+                    if entry not in all_examples:
+                        all_examples.append(entry)
+            if all_examples:
+                lines.append("=== EXAMPLE PATTERNS ===")
+                lines.append(
+                    "These are real snippets from past successful extractions. "
+                    "Use them as recognition templates only — do not copy these values. "
+                    "Extract only from the document below."
+                )
+                lines.extend(all_examples)
+                lines.append("===\n")
+        except Exception as e:
+            log.warning("metric_examples fetch failed, skipping: %s", e)
+
     def _build_batch_prompt(self, text: str, metrics: list, ticker: str = None,
                             config=None, period: str = None) -> str:
         """
@@ -468,26 +496,7 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
 
-        # Example patterns from historical successful extractions
-        if self._db is not None:
-            try:
-                all_examples = []
-                for metric in metrics:
-                    for snippet in self._db.get_active_examples_for_prompt(metric, ticker=ticker):
-                        entry = f"  [{metric}] {snippet}"
-                        if entry not in all_examples:
-                            all_examples.append(entry)
-                if all_examples:
-                    lines.append("=== EXAMPLE PATTERNS ===")
-                    lines.append(
-                        "These are real snippets from past successful extractions. "
-                        "Use them as recognition templates only — do not copy these values. "
-                        "Extract only from the document below."
-                    )
-                    lines.extend(all_examples)
-                    lines.append("===\n")
-            except Exception as e:
-                log.warning("metric_examples fetch failed, skipping: %s", e)
+        self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
         if self._db is not None:
@@ -1032,26 +1041,7 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
 
-        # Example patterns from historical successful extractions
-        if self._db is not None:
-            try:
-                all_examples = []
-                for metric in metrics:
-                    for snippet in self._db.get_active_examples_for_prompt(metric, ticker=ticker):
-                        entry = f"  [{metric}] {snippet}"
-                        if entry not in all_examples:
-                            all_examples.append(entry)
-                if all_examples:
-                    lines.append("=== EXAMPLE PATTERNS ===")
-                    lines.append(
-                        "These are real snippets from past successful extractions. "
-                        "Use them as recognition templates only — do not copy these values. "
-                        "Extract only from the document below."
-                    )
-                    lines.extend(all_examples)
-                    lines.append("===\n")
-            except Exception as e:
-                log.warning("metric_examples fetch failed, skipping: %s", e)
+        self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
         if self._db is not None:
