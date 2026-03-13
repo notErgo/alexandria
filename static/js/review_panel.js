@@ -33,7 +33,7 @@ const ReviewPanel = (function () {
 
   const _HTML = `
 <div class="rp-layout">
-  <details class="rp-controls-details" open>
+  <details class="rp-controls-details">
     <summary class="rp-controls-summary">Controls</summary>
     <div class="rp-controls-top">
       <div class="rp-value-cards" style="display:none"></div>
@@ -334,23 +334,30 @@ const ReviewPanel = (function () {
       wrap.style.display = 'none';
       return;
     }
-    list.innerHTML = items.map(function (entry) {
+    let html = '<table class="rp-evidence-table"><thead><tr>'
+      + '<th>Metric</th><th>Amount</th><th>Extracted text</th>'
+      + '</tr></thead><tbody>';
+    items.forEach(function (entry) {
       const match = entry.match;
       const rank = Number(match.keyword_rank);
-      const rankLabel = rank ? ('key ' + rank) : null;
       const badgeColor = rank && _KEYWORD_RANK_COLORS[rank]
         ? _KEYWORD_RANK_COLORS[rank]
         : (match.keyword_color_key === 'yellow' ? _EXTRACTED_DEFAULT : '#64748b');
-      return `<button type="button" class="rp-evidence-item" data-evidence-index="${_esc(String(entry.index))}">
-        <span class="rp-evidence-top">
-          <span class="rp-evidence-metric">${_esc(match.metric_label || match.metric || 'Match')}</span>
-          ${rankLabel ? `<span class="rp-evidence-rank" style="border-color:${badgeColor};color:${badgeColor}">${_esc(rankLabel)}</span>` : ''}
-          ${match.matched_keyword ? `<span class="rp-evidence-keyword">${_esc(match.matched_keyword)}</span>` : ''}
-          ${match.value != null ? `<span class="rp-evidence-value">${_fmtNum(match.value)} ${_esc(match.unit || '')}</span>` : ''}
-        </span>
-        <span class="rp-evidence-snippet">${_esc(match.source_snippet)}</span>
-      </button>`;
-    }).join('');
+      const keyLabel = match.matched_keyword || match.pattern_id || '';
+      const metricCell = _esc(match.metric_label || match.metric || 'Match')
+        + (keyLabel ? '<br><span class="rp-evidence-key">' + _esc(keyLabel) + '</span>' : '');
+      const amountCell = match.value != null
+        ? '<span class="rp-evidence-value" style="color:' + badgeColor + '">'
+            + _fmtNum(match.value) + (match.unit ? ' ' + _esc(match.unit) : '') + '</span>'
+        : '<span class="rp-evidence-value-empty">\u2014</span>';
+      html += '<tr class="rp-evidence-row" data-evidence-index="' + _esc(String(entry.index)) + '">'
+        + '<td class="rp-ev-metric">' + metricCell + '</td>'
+        + '<td class="rp-ev-amount">' + amountCell + '</td>'
+        + '<td class="rp-ev-snippet">' + _esc(match.source_snippet) + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+    list.innerHTML = html;
     wrap.style.display = 'block';
   }
 
@@ -635,7 +642,7 @@ const ReviewPanel = (function () {
     const evidenceList = _el('rp-evidence-list');
     if (evidenceList) {
       evidenceList.addEventListener('click', function (event) {
-        const item = event.target.closest('.rp-evidence-item');
+        const item = event.target.closest('.rp-evidence-row');
         if (!item) return;
         _scrollToEvidence(item.getAttribute('data-evidence-index'));
       });

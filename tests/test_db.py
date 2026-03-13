@@ -941,3 +941,29 @@ class TestGetReportsMissingMetric:
         ids = [r['id'] for r in results]
         assert r2 in ids
         assert r1 not in ids
+
+    def test_excludes_report_when_period_data_exists_in_different_report(self, db_with_riot):
+        """If a data_point exists for (ticker, period, metric) from ANY report,
+        this report is excluded even if it has no report_id linkage to that data_point."""
+        # Report A — produced the data_point
+        report_a = db_with_riot.insert_report(make_report(
+            ticker='RIOT', raw_text='RIOT mined 500 BTC', report_date='2025-03-01',
+            source_type='archive_html',
+        ))
+        db_with_riot.mark_report_extracted(report_a)
+        db_with_riot.insert_data_point({
+            'report_id': report_a, 'ticker': 'RIOT', 'period': '2025-03-01',
+            'metric': 'production_btc', 'value': 500.0, 'unit': 'BTC',
+            'confidence': 0.9, 'extraction_method': 'llm', 'source_snippet': 'mined 500 BTC',
+        })
+        # Report B — different report, same ticker/period, no data_point linked to it
+        report_b = db_with_riot.insert_report(make_report(
+            ticker='RIOT', raw_text='RIOT mined 500 BTC', report_date='2025-03-01',
+            source_type='edgar_8k',
+        ))
+        db_with_riot.mark_report_extracted(report_b)
+
+        results = db_with_riot.get_reports_missing_metric(['production_btc'], tickers=['RIOT'])
+        # Both reports are excluded — the period already has production_btc data
+        assert not any(r['id'] == report_a for r in results)
+        assert not any(r['id'] == report_b for r in results)

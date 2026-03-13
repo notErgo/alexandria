@@ -1605,38 +1605,6 @@ tr.is-reviewed td { opacity: 0.65; }
         <input id="pipeline-force-reextract" type="checkbox">
         Force re-extract (re-run LLM on all ingested reports, including already extracted)
       </label>
-      <div style="margin-top:0.5rem;padding:0.45rem 0.6rem;background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px">
-        <div style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.3rem">Re-extract gap months</div>
-        <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.35rem">
-          Re-queues done reports that are missing data for the checked metrics.
-          Uses the ticker selection above.
-        </div>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.35rem">
-          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
-            <input type="checkbox" id="gap-metric-production-btc" checked> production_btc
-          </label>
-          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
-            <input type="checkbox" id="gap-metric-holdings-btc" checked> holdings_btc
-          </label>
-          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.3rem;cursor:pointer">
-            <input type="checkbox" id="gap-metric-sales-btc"> sales_btc
-          </label>
-        </div>
-        <div style="display:flex;gap:0.5rem;align-items:center">
-          <button class="btn btn-sm btn-secondary" onclick="runRequeueMissing()" style="font-size:0.75rem">Re-extract gap months</button>
-          <span id="gap-requeue-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-        </div>
-        <div style="margin-top:0.5rem;border-top:1px solid var(--theme-border,#333);padding-top:0.4rem">
-          <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.3rem">All metrics (SSOT):</div>
-          <div style="display:flex;gap:0.5rem;align-items:flex-start">
-            <div id="requeue-metric-select" style="display:inline-block"></div>
-            <div style="display:flex;flex-direction:column;gap:0.3rem">
-              <button id="btn-requeue-missing" class="btn btn-sm btn-primary">Re-extract gaps</button>
-              <span id="requeue-status" class="status-text" style="font-size:0.75rem;color:var(--theme-text-muted)"></span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
       <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
@@ -1886,7 +1854,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </p>
     </div>
 
-    <div class="acq-section-label">LLM Extraction</div>
+    <div class="acq-section-label"><span class="spec-id">3.1.1</span>LLM Extraction</div>
     <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
       <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.3rem"></div>
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.75rem">
@@ -1996,6 +1964,43 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
       <div id="extract-status" class="acq-status">Idle</div>
       <div id="extract-log" class="acq-log" style="display:none"></div>
+    </div>
+
+    <!-- Re-extract gap months (3.1.2) -->
+    <div class="acq-section-label" style="margin-top:1.25rem"><span class="spec-id">3.1.2</span>Re-extract Gap Months</div>
+    <div class="acq-panel" data-ui-id="3.1.2" data-spec-id="3.1.2">
+      <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.55">
+        Finds already-ingested documents that completed extraction but are missing data for the
+        selected metrics, then re-sends only those documents to the LLM.
+        Does not trigger a new scrape — source documents must already be present in the
+        <code>reports</code> table.
+        Analyst-protected rows (<code>analyst</code>, <code>review_approved</code>,
+        <code>review_edited</code>) are never overwritten.
+        Use <span class="spec-id-inline">3.1.1</span> when you want to re-run extraction over a
+        date window; use this panel when targeted metric-level gaps need backfilling.
+      </p>
+
+      <div style="display:flex;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:0.6rem">
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.3rem">Tickers</label>
+          <div id="gap-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;max-width:520px"></div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.25rem">Leave empty to run all active companies.</div>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.3rem">Metrics to backfill (select one or more):</label>
+          <select id="gap-metric-list" multiple size="5"
+            style="font-size:0.8rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);border-radius:4px;padding:2px 4px;min-width:14rem">
+          </select>
+        </div>
+      </div>
+
+      <div class="acq-actions">
+        <button id="gap-reextract-btn" class="btn btn-sm btn-secondary" onclick="runRequeueMissing()">Re-extract gaps</button>
+        <button class="btn btn-sm btn-secondary" onclick="runGapDiagnosis()" style="margin-left:0.5rem">Diagnose</button>
+      </div>
+      <div id="gap-reextract-status" class="acq-status">Idle</div>
+      <div id="gap-reextract-log" class="acq-log" style="display:none"></div>
+      <div id="gap-diagnosis-out" style="display:none;margin-top:0.75rem;font-size:0.78rem;background:var(--theme-surface-alt,rgba(0,0,0,0.15));padding:0.6rem 0.75rem;border-radius:4px;white-space:pre-wrap;font-family:ui-monospace,monospace;line-height:1.45"></div>
     </div>
   </div><!-- /spane-interpret-extract -->
 
@@ -2210,13 +2215,13 @@ tr.is-reviewed td { opacity: 0.65; }
 <!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Review <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Queue <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Miner Timeline <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
-  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+  <div class="pipeline-sub-pane" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
 
 <!-- Chart panel (collapsed by default; opens after finalize) -->
 <div id="chart-panel" style="display:none; margin-bottom:1rem">
@@ -2560,11 +2565,10 @@ tr.is-reviewed td { opacity: 0.65; }
 
   </div><!-- /spane-review-miner -->
 
-  <!-- Sub-pane: Queue (4.1) -->
-  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
+  <!-- Sub-pane: Review Queue (4.1) -->
+  <div class="pipeline-sub-pane active" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
     <div class="section-header-row" style="margin-bottom:0.75rem">
       <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
-      <a href="/review" class="btn btn-sm btn-secondary" style="margin-left:auto" target="_blank">Open Full Review</a>
     </div>
 
     <!-- Filter bar -->
@@ -3227,7 +3231,7 @@ function activateTab(name) {
 
   if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
-  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); if (_companiesLoaded) _renderInterpretTickerBar(); else loadCompanies().then(function() { _renderInterpretTickerBar(); }); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); _loadGapMetrics(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -3772,6 +3776,129 @@ async function startExtractionRun() {
     _setExtractStatus('Extraction failed: ' + String(err), true);
     _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed to start (' + String(err) + ')');
     showToast('Failed to start extraction', true);
+  }
+}
+
+// ── 3.1.2  Re-extract gap months ────────────────────────────────────────────
+
+const _selectedGapTickers = new Set();
+
+function _renderGapTickerBar() {
+  const bar = document.getElementById('gap-ticker-bar');
+  if (!bar) return;
+  const actives = _companies.filter(function(c) { return c.active !== false; });
+  bar.innerHTML = '';
+  if (!actives.length) { bar.textContent = 'No companies configured.'; return; }
+  actives.forEach(function(c) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-secondary crawl-ticker-btn' + (_selectedGapTickers.has(c.ticker) ? ' active' : '');
+    btn.textContent = c.ticker;
+    btn.dataset.ticker = c.ticker;
+    btn.onclick = function() {
+      if (_selectedGapTickers.has(c.ticker)) { _selectedGapTickers.delete(c.ticker); }
+      else { _selectedGapTickers.add(c.ticker); }
+      _renderGapTickerBar();
+    };
+    bar.appendChild(btn);
+  });
+}
+
+function _loadGapMetrics() {
+  const sel = document.getElementById('gap-metric-list');
+  if (!sel || sel.options.length > 0) return;
+  fetch('/api/metric_schema')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) return;
+      (data.data || []).forEach(function(m) {
+        const opt = document.createElement('option');
+        opt.value = m.key;
+        opt.textContent = m.label || m.key;
+        sel.appendChild(opt);
+      });
+    })
+    .catch(function() {});
+}
+
+async function runRequeueMissing() {
+  const sel = document.getElementById('gap-metric-list');
+  const metrics = sel ? Array.from(sel.selectedOptions).map(function(o) { return o.value; }) : [];
+  if (!metrics.length) { showToast('Select at least one metric', true); return; }
+  const tickers = Array.from(_selectedGapTickers);
+  const btn = document.getElementById('gap-reextract-btn');
+  const statusEl = document.getElementById('gap-reextract-status');
+  const logEl = document.getElementById('gap-reextract-log');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Queuing...';
+  if (logEl) { logEl.style.display = ''; logEl.textContent = ''; }
+  try {
+    const resp = await fetch('/api/operations/requeue-missing', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({metrics: metrics, tickers: tickers.length ? tickers : undefined}),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Request failed');
+    const d = body.data || {};
+    if (d.requeued_count === 0) {
+      if (statusEl) statusEl.textContent = 'No gap months found — all selected metrics already have data.';
+      if (btn) btn.disabled = false;
+      return;
+    }
+    const scopeLabel = tickers.length ? tickers.join(',') : 'ALL';
+    if (statusEl) statusEl.textContent = d.requeued_count + ' reports queued (' + scopeLabel + '). Running...';
+    if (logEl) logEl.textContent = new Date().toISOString().slice(11, 19) + ' task ' + (d.task_id || '?');
+    if (d.task_id) _pollExtractionRun(d.task_id, scopeLabel);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Error: ' + String(err);
+    showToast('Re-extract failed: ' + err.message, true);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function runGapDiagnosis() {
+  const sel = document.getElementById('gap-metric-list');
+  const metrics = sel ? Array.from(sel.selectedOptions).map(function(o) { return o.value; }) : [];
+  if (!metrics.length) { showToast('Select at least one metric first', true); return; }
+  const tickers = Array.from(_selectedGapTickers);
+  const out = document.getElementById('gap-diagnosis-out');
+  if (out) { out.style.display = ''; out.textContent = 'Running diagnosis...'; }
+  try {
+    const qs = 'metrics=' + encodeURIComponent(metrics.join(','))
+      + (tickers.length ? '&tickers=' + encodeURIComponent(tickers.join(',')) : '');
+    const resp = await fetch('/api/operations/gap-diagnosis?' + qs);
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Request failed');
+    const d = body.data || {};
+    let txt = '=== Gap Diagnosis ===\n';
+    txt += 'Metrics:   ' + (Array.isArray(d.metrics) ? d.metrics.join(', ') : d.metrics) + '\n';
+    txt += 'Tickers:   ' + d.tickers + '\n\n';
+    txt += 'Total reports in scope:         ' + d.total_reports + '\n';
+    txt += '  have raw_text:                ' + d.has_raw_text + '\n';
+    txt += '  extraction_status = done:     ' + d.is_done + '\n';
+    txt += '  done AND have raw_text:       ' + d.done_with_text + '\n';
+    txt += '  missing data by report_id:    ' + d.missing_by_report_id + '\n';
+    txt += '  excluded by no_data verdict:  ' + d.excluded_by_no_data_verdict + '\n';
+    txt += '  => final gap count:           ' + d.final_gap_count + '\n\n';
+    txt += 'Pending review items for metric: ' + d.pending_review_items + '\n';
+    txt += 'Existing data_points for metric: ' + d.data_points_for_metric + '\n';
+    if (d.pending_sample && d.pending_sample.length) {
+      txt += '\nSample pending review items (up to 20):\n';
+      txt += 'ticker  period   metric            agreement_status  extract_status  dp_for_report\n';
+      d.pending_sample.forEach(function(r) {
+        txt += (r.ticker||'').padEnd(8)
+          + (r.period||'').padEnd(9)
+          + (r.metric||'').padEnd(18)
+          + (r.agreement_status||'').padEnd(18)
+          + (r.extraction_status||'').padEnd(16)
+          + r.dp_for_this_report + '\n';
+      });
+    }
+    if (out) out.textContent = txt;
+  } catch (err) {
+    if (out) out.textContent = 'Diagnosis error: ' + String(err);
+    showToast('Diagnosis failed: ' + err.message, true);
   }
 }
 
@@ -6914,6 +7041,7 @@ function _renderAllTickerBars() {
   _renderCrawlTickerSelector('crawl-ticker-selector', false);
   _renderCrawlTickerSelector('pipeline-ticker-selector', false);
   _renderInterpretTickerBar();
+  _renderGapTickerBar();
 }
 
 function _renderResearchInputBar() {
@@ -8055,105 +8183,6 @@ async function cancelPipeline() {
     document.getElementById('pipeline-msg').textContent = 'Cancellation requested.';
   } catch (_e) {}
 }
-
-async function runRequeueMissing() {
-  const msgEl = document.getElementById('gap-requeue-msg');
-  if (msgEl) msgEl.textContent = 'Working...';
-
-  const metrics = [];
-  if (document.getElementById('gap-metric-production-btc')?.checked) metrics.push('production_btc');
-  if (document.getElementById('gap-metric-holdings-btc')?.checked) metrics.push('holdings_btc');
-  if (document.getElementById('gap-metric-sales-btc')?.checked) metrics.push('sales_btc');
-
-  if (!metrics.length) {
-    if (msgEl) msgEl.textContent = 'Select at least one metric.';
-    return;
-  }
-
-  // Collect selected tickers from the pipeline ticker selector
-  const tickerEls = document.querySelectorAll('#pipeline-ticker-selector .ticker-pill.active');
-  const tickers = tickerEls.length ? Array.from(tickerEls).map(el => el.dataset.ticker) : [];
-
-  try {
-    const resp = await fetch('/api/operations/requeue-missing', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({metrics, tickers: tickers.length ? tickers : undefined}),
-    });
-    const body = await resp.json();
-    if (!resp.ok || !body.success) {
-      if (msgEl) msgEl.textContent = 'Error: ' + (body.error?.message || resp.status);
-      return;
-    }
-    const d = body.data;
-    if (d.requeued_count === 0) {
-      if (msgEl) msgEl.textContent = 'No gap months found for selected metrics.';
-      return;
-    }
-    if (msgEl) msgEl.textContent = d.requeued_count + ' reports re-queued (task ' + (d.task_id || '?').slice(0, 8) + '). Polling...';
-    // Poll progress using the existing extraction progress poller
-    if (d.task_id) _pollExtractionRun(d.task_id, d.scope_label || 'gap');
-  } catch (e) {
-    if (msgEl) msgEl.textContent = 'Request failed: ' + e.message;
-  }
-}
-
-function loadRequeueMetrics() {
-  const container = document.getElementById('requeue-metric-select');
-  if (!container) return;
-  fetch('/api/metric_schema')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (!data.success) return;
-      const metrics = data.data || [];
-      const sel = document.createElement('select');
-      sel.id = 'requeue-metric-list';
-      sel.multiple = true;
-      sel.size = Math.min(metrics.length, 5);
-      sel.style.cssText = 'font-size:0.78rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);border-radius:3px;padding:2px 4px;';
-      metrics.forEach(function(m) {
-        const opt = document.createElement('option');
-        opt.value = m.key;
-        opt.textContent = m.label || m.key;
-        sel.appendChild(opt);
-      });
-      container.appendChild(sel);
-    })
-    .catch(function() {});
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  loadRequeueMetrics();
-  const requeueBtn = document.getElementById('btn-requeue-missing');
-  if (requeueBtn) {
-    requeueBtn.addEventListener('click', function() {
-      const sel = document.getElementById('requeue-metric-list');
-      if (!sel) return;
-      const metrics = Array.from(sel.selectedOptions).map(function(o) { return o.value; });
-      if (!metrics.length) { showToast('Select at least one metric', true); return; }
-      const statusEl = document.getElementById('requeue-status');
-      if (statusEl) statusEl.textContent = 'Queuing...';
-      fetch('/api/operations/requeue-missing', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({metrics: metrics}),
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!statusEl) return;
-        if (data.success) {
-          const d = data.data || {};
-          statusEl.textContent = 'Queued ' + (d.requeued_count !== undefined ? d.requeued_count : '') + ' reports';
-        } else {
-          statusEl.textContent = 'Error: ' + ((data.error && data.error.message) ? data.error.message : 'unknown');
-        }
-      })
-      .catch(function(err) {
-        if (statusEl) statusEl.textContent = 'Request failed: ' + err.message;
-      });
-    });
-  }
-});
 
 function _startPipelinePoll() {
   if (_pipelinePollTimer) clearInterval(_pipelinePollTimer);

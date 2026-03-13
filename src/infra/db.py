@@ -2934,11 +2934,16 @@ class MinerDB:
         to_period: Optional[str] = None,
         exclude_no_data_acked: bool = True,
     ) -> list:
-        """Return reports where extraction_status='done' AND no data_point exists for ANY
-        of the given metrics.
+        """Return reports where extraction_status='done' AND no data_point exists at the
+        period level (ticker+period) for ANY of the given metrics.
+
+        Uses period-level gap detection: checks whether any data_point exists for
+        (ticker, period, metric) globally, not just from this specific report. This
+        means a report is only returned if the entire period is missing data for that
+        metric — not merely if this report's report_id wasn't the source.
 
         Used by the gap-targeted re-extract flow to identify reports that were previously
-        processed but produced no data for the specified metrics.
+        processed but the period still has no data for the specified metrics.
 
         Args:
             metrics: list of metric keys (e.g. ['production_btc', 'holdings_btc'])
@@ -2956,11 +2961,12 @@ class MinerDB:
             "r.raw_text IS NOT NULL",
             "r.raw_text != ''",
             "r.extraction_status = 'done'",
-            # Return reports missing at least one of the given metrics:
-            # count of distinct covered metrics < total requested
+            # Period-level gap check: does any data_point exist for (ticker, period, metric)?
+            # Not scoped to this report's report_id — checks the whole period globally.
             f"""(
                 SELECT COUNT(DISTINCT dp.metric) FROM data_points dp
-                WHERE dp.report_id = r.id
+                WHERE dp.ticker = r.ticker
+                  AND dp.period = r.report_date
                   AND dp.metric IN ({metric_placeholders})
             ) < {len(metrics)}""",
         ]

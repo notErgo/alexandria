@@ -8,6 +8,7 @@ Operations panel API routes.
   POST /api/operations/interpret                     — trigger extraction for a ticker
   GET  /api/operations/interpret/<task_id>/progress  — extraction progress
   POST /api/operations/requeue-missing               — re-extract done reports missing specified metrics
+  GET  /api/operations/gap-diagnosis                 — diagnose why gap query returns empty (debug)
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
@@ -787,6 +788,134 @@ def operations_requeue_missing():
         }})
     except Exception:
         log.error('Error in operations_requeue_missing', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/gap-diagnosis', methods=['GET'])
+def operations_gap_diagnosis():
+    """Diagnose why get_reports_missing_metric returns no results.
+
+    Query params:
+      metrics   comma-separated metric keys (required)
+      tickers   comma-separated ticker symbols (optional)
+
+    Returns per-filter counts so the caller can see exactly which condition
+    is excluding their reports.
+    """
+    try:
+        metrics_raw = (request.args.get('metrics') or '').strip()
+        tickers_raw = (request.args.get('tickers') or '').strip()
+        if not metrics_raw:
+            return jsonify({'success': False, 'error': {
+                'code': 'INVALID_INPUT', 'message': "'metrics' query param required",
+            }}), 400
+        metrics = [m.strip() for m in metrics_raw.split(',') if m.strip()]
+        tickers = [t.strip() for t in tickers_raw.split(',') if t.strip()] if tickers_raw else []
+
+        from app_globals import get_db
+        db = get_db()
+        metric_ph = ','.join('?' * len(metrics))
+
+        with db._get_connection() as conn:
+            def q(sql, params=()):
+                return conn.execute(sql, params).fetchone()[0]
+
+            ticker_clause = ''
+            ticker_params = []
+            if tickers:
+                ticker_clause = f" AND r.ticker IN ({','.join('?' * len(tickers))})"
+                ticker_params = list(tickers)
+
+            base_params = ticker_params
+
+            total_reports = q(
+                f"SELECT COUNT(*) FROM reports r WHERE 1=1{ticker_clause}",
+                base_params,
+            )
+            has_raw_text = q(
+                f"SELECT COUNT(*) FROM reports r WHERE r.raw_text IS NOT NULL AND r.raw_text != ''{ticker_clause}",
+                base_params,
+            )
+            is_done = q(
+                f"SELECT COUNT(*) FROM reports r WHERE r.extraction_status = 'done'{ticker_clause}",
+                base_params,
+            )
+            done_with_text = q(
+                f"SELECT COUNT(*) FROM reports r WHERE r.raw_text IS NOT NULL AND r.raw_text != '' AND r.extraction_status = 'done'{ticker_clause}",
+                base_params,
+            )
+            # Reports that pass the first three filters AND are missing a data_point
+            # at the period level (ticker+period, not scoped to report_id)
+            missing_by_report_id = q(
+                f"""SELECT COUNT(*) FROM reports r
+                    WHERE r.raw_text IS NOT NULL AND r.raw_text != ''
+                      AND r.extraction_status = 'done'
+                      AND (
+                          SELECT COUNT(DISTINCT dp.metric) FROM data_points dp
+                          WHERE dp.ticker = r.ticker AND dp.period = r.report_date
+                            AND dp.metric IN ({metric_ph})
+                      ) < {len(metrics)}{ticker_clause}""",
+                list(metrics) + base_params,
+            )
+            # How many of those are then excluded by no_data verdict
+            no_data_acked = q(
+                f"""SELECT COUNT(*) FROM reports r
+                    WHERE r.raw_text IS NOT NULL AND r.raw_text != ''
+                      AND r.extraction_status = 'done'
+                      AND (
+                          SELECT COUNT(DISTINCT dp.metric) FROM data_points dp
+                          WHERE dp.ticker = r.ticker AND dp.period = r.report_date
+                            AND dp.metric IN ({metric_ph})
+                      ) < {len(metrics)}
+                      AND (
+                          SELECT COUNT(*) FROM report_metric_verdict rmv
+                          WHERE rmv.report_id = r.id AND rmv.verdict = 'no_data'
+                            AND rmv.metric IN ({metric_ph})
+                      ) >= {len(metrics)}{ticker_clause}""",
+                list(metrics) + list(metrics) + base_params,
+            )
+            # Pending review items (any status)
+            pending_review = q(
+                f"""SELECT COUNT(*) FROM review_queue rq
+                    JOIN reports r ON r.id = rq.report_id
+                    WHERE rq.status = 'PENDING' AND rq.metric IN ({metric_ph}){ticker_clause.replace('r.ticker', 'rq.ticker')}""",
+                list(metrics) + ticker_params,
+            )
+            # Data points that exist for these metrics (any report_id)
+            dp_any = q(
+                f"""SELECT COUNT(DISTINCT ticker || '|' || period || '|' || metric)
+                    FROM data_points WHERE metric IN ({metric_ph})""",
+                metrics,
+            )
+            # Unique (ticker, period) combos with pending review items
+            pending_ticker_periods = conn.execute(
+                f"""SELECT DISTINCT rq.ticker, substr(rq.period, 1, 7) as period, rq.metric,
+                           rq.agreement_status, r.extraction_status,
+                           (SELECT COUNT(*) FROM data_points dp WHERE dp.report_id = r.id AND dp.metric = rq.metric) as dp_for_this_report
+                    FROM review_queue rq
+                    JOIN reports r ON r.id = rq.report_id
+                    WHERE rq.status = 'PENDING' AND rq.metric IN ({metric_ph}){ticker_clause.replace('r.ticker', 'rq.ticker')}
+                    ORDER BY rq.ticker, rq.period
+                    LIMIT 20""",
+                list(metrics) + ticker_params,
+            ).fetchall()
+
+        return jsonify({'success': True, 'data': {
+            'metrics': metrics,
+            'tickers': tickers or 'ALL',
+            'total_reports': total_reports,
+            'has_raw_text': has_raw_text,
+            'is_done': is_done,
+            'done_with_text': done_with_text,
+            'missing_by_report_id': missing_by_report_id,
+            'excluded_by_no_data_verdict': no_data_acked,
+            'final_gap_count': missing_by_report_id - no_data_acked,
+            'pending_review_items': pending_review,
+            'data_points_for_metric': dp_any,
+            'pending_sample': [dict(r) for r in pending_ticker_periods],
+        }})
+    except Exception:
+        log.error('Error in operations_gap_diagnosis', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 

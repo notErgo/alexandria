@@ -1,6 +1,6 @@
 # Miners Platform — UI/API Component Spec
 
-Version: 1.5
+Version: 1.6
 Port: 5004
 
 ## Convention
@@ -121,126 +121,121 @@ Template: `ops.html`
 |-------|-----------|--------|-----------------|-----------|
 | 1.6   | Purge Stages sub-tab | n/a | `POST /api/delete/all` · `POST /api/delete/scrape` · `POST /api/delete/review` · `POST /api/delete/final` | Stage model: `ALL -> SCRAPE -> REVIEW -> FINAL`. Deleting a stage deletes that stage and all downstream layers. |
 
-**Note:** 2.1.7–2.1.9 (Data Acquisition, Extraction Monitor, Pipeline Observability) moved to Research tab (2.7) in v1.2.
+### 2.2  Ingest tab  (`/ops?tab=ingest`)
 
-### 2.2  Registry tab  (`/ops?tab=registry`)
+Sub-tabs: **IR** → **EDGAR** → **Archive** → **Crawl**.
 
-| ID    | Component       | Source | API endpoint(s) | Script(s) |
-|-------|-----------------|--------|-----------------|-----------|
-| 2.2.1 | Filter bar      | n/a    | — | — |
-| 2.2.2 | Registry table  | DATA   | `GET /api/registry` | `ManifestScanner` (`scrapers/manifest_scanner.py`); `POST /api/manifest/scan` to trigger |
-
-### 2.3  Explorer tab  (`/ops?tab=explorer`)
-
-| ID    | Component           | Source | API endpoint(s) | Script(s) |
-|-------|---------------------|--------|-----------------|-----------|
-| 2.3.1 | Filter bar          | n/a    | — | — |
-| 2.3.2 | Coverage heatmap    | DATA   | `GET /api/explorer/grid` | `coverage_logic.py` (pure functions) |
-| 2.3.3 | Cell detail panel   | DATA   | `GET /api/explorer/cell/<ticker>/<period>/<metric>` | — |
-| 2.3.4 | Cell save action    | n/a    | `POST /api/explorer/cell/.../save` | `db.save_analyst_edit()` |
-| 2.3.5 | Cell gap action     | n/a    | `POST /api/explorer/cell/.../gap` | `db.mark_analyst_gap()` |
-| 2.3.6 | Re-extract action   | n/a    | `POST /api/explorer/reextract` | `extraction_pipeline.extract_report()` |
-
-### 2.4  Metric Rules tab  (`/ops?tab=rules`)
-
-| ID    | Component     | Source | API endpoint(s) | Script(s) |
-|-------|---------------|--------|-----------------|-----------|
-| 2.4.1 | Rules table   | CONFIG | `GET /api/metric_schema` | Seeded from `config.py` via `db._seed_metric_rules()` |
-| 2.4.2 | Keyword dictionary editor | CONFIG | `GET /api/config/keyword_dictionary` · `POST /api/config/keyword_dictionary` | Global highlight packs used by Explorer and Review source views |
-
-### 2.5  Review Queue tab
-
-Redirects to 3.0.
-Queue operations may also purge review artifacts only via `POST /api/delete/review`; this preserves scraped `reports`.
-
-### 2.6  Pipeline Guide tab  (`/ops?tab=guide`)
-
-Static reference panel — no API calls, no data source.
-
-| ID    | Component           | Source | API endpoint(s) | Script(s) |
-|-------|---------------------|--------|-----------------|-----------|
-| 2.6.1 | Pipeline flow diagram | n/a  | — | — |
-| 2.6.2 | Source-type reference table | n/a | — | — |
-
-### 2.7  Research tab  (`/ops?tab=research`)
-
-Three sub-tabs: **Input** (configure) → **Crawl** (acquire) → **Interpret** (extract + observe).
-
-#### 2.7.1  Input sub-pane
-
-| ID      | Component          | Source | API endpoint(s) | Script(s) |
-|---------|--------------------|--------|-----------------|-----------|
-| 2.7.1.1 | Ticker selector bar | n/a   | — | Reads `_companies` in-memory; populated by `loadCompanies()` |
-| 2.7.1.2 | Model provider selector | n/a | — | Sets `crawl-provider` value used by `startCrawlAll()` |
-| 2.7.1.3 | Crawl prompt editor | CONFIG | `GET /api/crawl/prompt/<ticker>` | Loads per-ticker `scripts/crawl_prompts/{TICKER}_crawl.md`; falls back to master template |
-
-#### 2.7.2  Crawl sub-pane
-
-| ID      | Component              | Source | API endpoint(s) | Script(s) |
-|---------|------------------------|--------|-----------------|-----------|
-| 2.7.2.1 | Outside acquisition panel | n/a | `POST /api/crawl/start` · `POST /api/ingest/ir` · `POST /api/ingest/archive` · `GET /api/ingest/<id>/progress` | LLM Crawl All + Acquire IR + Acquire Archive; shared `acq-status`/`acq-log` for deterministic acquires |
-| 2.7.2.2 | LLM crawl status grid  | DATA   | `GET /api/crawl/status` | Per-ticker cards polled every 2 s while running |
-| 2.7.2.3 | LLM crawl log panel    | DATA   | `GET /api/crawl/<task_id>/progress` | Shown on ticker card click; closed by Close button |
-| 2.7.2.4 | SEC EDGAR panel        | n/a    | `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | Acquire EDGAR button + auto-extract checkbox |
-
-#### 2.7.3  Interpret sub-pane
-
-| ID      | Component                  | Source | API endpoint(s) | Script(s) |
-|---------|----------------------------|--------|-----------------|-----------|
-| 2.7.3.1 | LLM extraction run monitor | DATA   | `POST /api/operations/extract` · `GET /api/operations/extract/<id>/progress` | Live extraction progress; includes interpretation-only date window on stored docs (`report_date >= from`, `report_date <= to`); model selector calls `saveOllamaModel()` |
-| 2.7.3.2 | Pipeline observability card | DATA  | `GET /api/operations/pipeline_observability` | Auto-loaded on Interpret sub-tab activate |
-| 2.7.3.3 | Pipeline table             | DATA   | `GET /api/operations/pipeline_observability` | Per-ticker discovered/ingested/parsed/extracted counts + scraper config health |
-
-### 2.8  Settings tab  (`/ops?tab=settings`)
-
-| ID    | Component             | Source | API endpoint(s) | Script(s) |
-|-------|-----------------------|--------|-----------------|-----------|
-| 2.8.1 | Config settings form  | CONFIG | `GET /api/config/settings` · `POST /api/config/settings` | Grouped editable config: extraction thresholds, LLM params, crawl limits, pipeline paths |
-
-### 2.9  QC / Pipeline tab  (`/ops?tab=qc`)
-
-| ID    | Component           | Source | API endpoint(s) | Script(s) |
-|-------|---------------------|--------|-----------------|-----------|
-| 2.9.1 | QC snapshot table   | DATA   | `GET /api/qc/summary` | `src/routes/qc.py`; snapshots written by `POST /api/qc/snapshot` |
-| 2.9.2 | Pipeline run controls | n/a  | `POST /api/pipeline/run` | Trigger full pipeline run with ticker/date-range scope |
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 2.1   | IR acquire panel | n/a | `POST /api/ingest/ir` · `GET /api/ingest/<id>/progress` | `IRScraper` (`scrapers/ir_scraper.py`); optional `auto_extract` body param chains to extraction immediately after |
+| 2.2   | EDGAR acquire panel | n/a | `POST /api/ingest/edgar` · `GET /api/ingest/<id>/progress` | `EdgarConnector` (`scrapers/edgar_connector.py`); uses `btc_first_filing_date` as floor date; optional `auto_extract` |
+| 2.3   | Archive acquire panel | n/a | `POST /api/ingest/archive` · `GET /api/ingest/<id>/progress` | `ArchiveIngestor` (`scrapers/archive_ingestor.py`); walks `OffChain/Miner/Miner Monthly/` |
+| 2.4   | Pipeline observability table | DATA | `GET /api/operations/pipeline_observability` | Per-ticker discovered/ingested/parsed/extracted counts + scraper config health |
+| 2.5   | Crawl setup panel | CONFIG | `POST /api/crawl/start` · `GET /api/crawl/status` · `GET /api/crawl/<task_id>/progress` · `GET /api/crawl/prompt/<ticker>` | `LLMCrawler` (`scrapers/llm_crawler.py`); per-ticker crawl prompt editor; provider/model selector |
 
 ---
 
-## 3.0  `/review`  — Review Queue Page
+## 3.0  Interpret tab  (`/ops?tab=interpret`)
 
-Template: `review.html`
+**Template:** `ops.html` — pane `id="pane-interpret"`.
+
+Sub-tabs: **Extract** (3.1, Critical) → **QC** (3.2, Optional).
+
+> Interpret runs LLM extraction on documents that are **already stored** in `reports`.
+> It does **not** scrape or ingest new source documents.
+> Run an Ingest path first (tab 2.x) if the document is not yet present.
+
+### 3.1  Extract sub-tab  (`/ops?tab=interpret#extract`)
+
+Pane `id="spane-interpret-extract"`.
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 1.4.P | Prompt Preview card | n/a | `GET /api/llm_prompts` | Assembled prompt with ticker context injected. Refresh before every new extraction run. |
+| 1.4.E | Prompt Editor card | CONFIG | `GET /api/llm_prompts/<metric>` · `POST /api/llm_prompts/<metric>` | Per-metric DB override; `active=0` = reset to hardcoded default. |
+| 3.1.1 | LLM Extraction panel | DATA | `POST /api/operations/interpret` · `GET /api/operations/interpret/<id>/progress` | `startExtractionRun()`. Controls: ticker bar (shared `_selectedCrawlTickers`), source docs cadence (all/monthly/quarterly/annual), date window (from/to), expected granularity radio, gap-fill checkbox (quarterly/annual only — math-based inference, not LLM), sample mode, extract workers, run mode dropdown, model selector. Run mode: **Resume** (new docs only), **Force** (re-run all, keep data), **Full Reset** (purge data+review queue then re-extract; requires ticker selection). |
+| 3.1.2 | Re-extract gap months panel | DATA | `POST /api/operations/requeue-missing` · `GET /api/operations/interpret/<id>/progress` | `runRequeueMissing()`. Finds `extraction_status='done'` reports missing data for selected metrics; resets them to `pending`; re-runs LLM on only those documents. Does not scrape. Analyst-protected rows are never overwritten. Ticker scope is independent of 3.1.1 (`_selectedGapTickers`). Metric list is SSOT-driven from `GET /api/metric_schema`. |
+
+**Run mode decision guide (3.1.1):**
+
+| Goal | Run mode |
+|------|----------|
+| Process only new/unextracted docs | Resume |
+| Re-run all docs after a prompt change | Force re-extract |
+| Start fresh for a ticker (destructive) | Full Reset + ticker selection |
+| Backfill a specific missing metric | Use **3.1.2** instead |
+
+**Gap-fill checkbox vs 3.1.2:**
+
+| Tool | What it does | Uses LLM? |
+|------|-------------|-----------|
+| "Run gap-fill after extraction" checkbox (3.1.1) | Derives missing monthly rows from quarterly totals already in DB | No — pure math |
+| Re-extract gap months panel (3.1.2) | Re-sends already-ingested docs missing a metric back to the LLM | Yes |
+
+### 3.2  QC sub-tab
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 3.2   | QC snapshot table | DATA | `GET /api/qc/summary` · `POST /api/qc/snapshot` | Precision/recall metrics per snapshot. Capture Snapshot button. |
+
+---
+
+## 4.0  Review tab  (`/ops?tab=review`)
+
+**Template:** `ops.html` — pane `id="pane-review"`.
 
 | ID    | Component        | Source | API endpoint(s) | Script(s) |
 |-------|------------------|--------|-----------------|-----------|
-| 3.1   | Filter bar       | n/a    | — | — |
-| 3.2   | Review table     | DATA   | `GET /api/review` | `AgreementEngine` (`extractors/agreement.py`) populates via `extraction_pipeline.py` |
-| 3.3   | Doc panel        | DATA   | `GET /api/review/<id>/document` | `doc_panel.js` |
-| 3.4   | Approve action   | n/a    | `POST /api/review/<id>/approve` | `db.approve_review_item()` |
-| 3.5   | Reject action    | n/a    | `POST /api/review/<id>/reject` | `db.reject_review_item()` |
-| 3.6   | Re-extract action | n/a   | `POST /api/review/<id>/reextract` | `extraction_pipeline.extract_report()` |
-| 3.7   | Bulk approve     | n/a    | `POST /api/review/<id>/approve` (looped client-side for selected rows) | — |
+| 4.1   | Filter bar       | n/a    | — | — |
+| 4.2   | Review table     | DATA   | `GET /api/review` | Populated by `interpret_pipeline.py` via `db.insert_review_item()` |
+| 4.3   | Doc panel        | DATA   | `GET /api/review/<id>/document` | `doc_panel.js`; controls collapsed by default |
+| 4.4   | Approve action   | n/a    | `POST /api/review/<id>/approve` | `db.approve_review_item()`; also writes `has_data` verdict to `report_metric_verdict` |
+| 4.5   | Reject action    | n/a    | `POST /api/review/<id>/reject` | `db.reject_review_item()` |
+| 4.6   | No-data action   | n/a    | `POST /api/review/<id>/no_data` | Writes `no_data` verdict to `report_metric_verdict`; rejects item. LLM_EMPTY items: no confirmation. Others: require `{confirmed: true}`. |
+| 4.7   | Re-extract action | n/a   | `POST /api/review/<id>/reextract` | `extraction_pipeline.extract_report()` |
+| 4.8   | Bulk approve     | n/a    | `POST /api/review/<id>/approve` (looped) | — |
 
 ---
 
-## 4.0  `/data-explorer`  — Data Explorer Page
+## 5.0  Data tab  (`/ops?tab=data`)
+
+**Template:** `ops.html` — pane `id="pane-data"`.
+
+Sub-tabs: **Explorer** (5.1) · **Registry** (5.2) · **Documents**.
+
+| ID    | Component | Source | API endpoint(s) | Script(s) |
+|-------|-----------|--------|-----------------|-----------|
+| 5.1   | Coverage heatmap (Explorer) | DATA | `GET /api/explorer/grid` | `coverage_logic.py`; 9-state cells; cell click opens detail panel |
+| 5.1.1 | Cell detail panel | DATA | `GET /api/explorer/cell/<ticker>/<period>/<metric>` | Save, Gap, Re-extract per-cell actions |
+| 5.1.2 | Period pipeline trace panel | DATA | `GET /api/coverage/period_trace?ticker=X&period=Y` | Shows why an empty cell is empty (no doc / keyword-gated / LLM_EMPTY / pending). `cell_state` field is the canonical 9-state value. |
+| 5.2   | Registry table | DATA | `GET /api/registry` | `ManifestScanner`; `POST /api/manifest/scan` to trigger; columns: parse quality, extraction status, char count, scan-keywords button |
+
+---
+
+## DE4.0  `/data-explorer`  — Data Explorer Page
 
 Template: `index.html`
 
 | ID    | Component          | Source | API endpoint(s) | Script(s) |
 |-------|--------------------|--------|-----------------|-----------|
-| 4.1   | Filter bar         | n/a    | — | — |
-| 4.2   | Data points table  | DATA   | `GET /api/data` | `db.query_data_points()` |
-| 4.3   | Export button      | n/a    | `GET /api/export.csv` | — |
-| 4.4   | Lineage panel      | DATA   | `GET /api/data/lineage` | — |
+| DE4.1 | Filter bar         | n/a    | — | — |
+| DE4.2 | Data points table  | DATA   | `GET /api/data` | `db.query_data_points()` |
+| DE4.3 | Export button      | n/a    | `GET /api/export.csv` | — |
+| DE4.4 | Lineage panel      | DATA   | `GET /api/data/lineage` | — |
 
 ---
 
-## 5.0  `/miner-data`  — Miner Data Page
+## MD5.0  `/miner-data`  — Miner Data Page
 
-| ID    | Component     | Source | API endpoint(s) | Script(s) |
-|-------|---------------|--------|-----------------|-----------|
-| 5.1   | Reports table | DATA   | `GET /api/reports` (if exposed) | `IRScraper`, `ArchiveIngestor`, `EdgarConnector` write to `reports` table |
-| 5.2   | Doc panel     | DATA   | `GET /api/operations/manifest/<id>/preview` | `doc_panel.js` |
+Template: `miner_data.html`.
+
+| ID      | Component | Source | API endpoint(s) | Script(s) |
+|---------|-----------|--------|-----------------|-----------|
+| MD5.1   | Company selector + month timeline table | DATA | `GET /api/miner/<ticker>/timeline` | Per-company monthly data grid; method badges; inline cell edit |
+| MD5.2   | Doc panel | DATA | `GET /api/operations/manifest/<id>/preview` | `doc_panel.js` |
+| MD5.3   | Interpret sub-view | DATA | `GET /api/miner/<ticker>/sec` · `GET /api/miner/<ticker>/interpret` | Reconciliation summary, analyst commentary, LLM reprompt, finalize staging |
+| MD5.3.1 | Start extraction | DATA | `POST /api/operations/interpret` · `GET /api/operations/interpret/<id>/progress` | `doExtract()` in `miner_data.js`; source scope (IR+SEC / IR only / SEC only) |
+| MD5.4   | LLM CSV export (unreviewed) | DATA | `GET /api/export_llm_csv?ticker=X` | Direct LLM output — not validated by agreement engine |
 
 ---
 
