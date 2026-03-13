@@ -14,20 +14,20 @@ class TestDetectEdgarReportWindow:
         assert result == {'min_date': None, 'max_date': None}
 
     def test_returns_correct_min_max(self, db_with_company):
-        db_with_company.insert_report('MARA', '2020-06-01', 'edgar_8k', 'http://a', 'text a')
-        db_with_company.insert_report('MARA', '2021-03-01', 'edgar_8k', 'http://b', 'text b')
+        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2020-06-01', 'source_type': 'edgar_8k', 'source_url': 'http://a', 'raw_text': 'text a'})
+        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2021-03-01', 'source_type': 'edgar_8k', 'source_url': 'http://b', 'raw_text': 'text b'})
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result['min_date'] == '2020-06-01'
         assert result['max_date'] == '2021-03-01'
 
     def test_ignores_non_edgar_source_types(self, db_with_company):
-        db_with_company.insert_report('MARA', '2019-01-01', 'archive_html', 'http://c', 'text c')
+        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2019-01-01', 'source_type': 'archive_html', 'source_url': 'http://c', 'raw_text': 'text c'})
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result == {'min_date': None, 'max_date': None}
 
     def test_only_counts_edgar_source_types(self, db_with_company):
-        db_with_company.insert_report('MARA', '2019-01-01', 'archive_html', 'http://c', 'text c')
-        db_with_company.insert_report('MARA', '2021-01-01', 'edgar_10q', 'http://d', 'text d')
+        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2019-01-01', 'source_type': 'archive_html', 'source_url': 'http://c', 'raw_text': 'text c'})
+        db_with_company.insert_report({'ticker': 'MARA', 'report_date': '2021-01-01', 'source_type': 'edgar_10q', 'source_url': 'http://d', 'raw_text': 'text d'})
         result = db_with_company.detect_edgar_report_window('MARA')
         assert result['min_date'] == '2021-01-01'
         assert result['max_date'] == '2021-01-01'
@@ -141,11 +141,9 @@ def app_with_mara(app):
     with app.app_context():
         from app_globals import get_db
         db = get_db()
-        db.upsert_company({
-            'ticker': 'MARA', 'name': 'Marathon', 'sector': 'BTC-miners',
-            'scraper_mode': 'rss', 'cik': '0001507605',
-            'btc_first_filing_date': '2020-01-01',
-        })
+        # MARA is seeded from companies.json on DB init; set the pivot date
+        db.update_company_scraper_fields('MARA', scraper_mode='rss')
+        db.set_btc_first_filing_date('MARA', '2020-01-01')
     return app
 
 
