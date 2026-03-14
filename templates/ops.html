@@ -1943,6 +1943,20 @@ tr.is-reviewed td { opacity: 0.65; }
       </p>
     </div>
 
+    <div id="interpret-metric-toggles-panel" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+        <span style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary)">Active Metrics</span>
+        <button class="btn btn-sm btn-secondary" onclick="loadInterpretMetricToggles(true)"
+                style="padding:1px 8px;font-size:0.72rem">Refresh</button>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:auto">
+          Active metrics are included in every extraction run.
+        </span>
+      </div>
+      <div id="interpret-metric-toggles" style="display:flex;flex-wrap:wrap;gap:0.3rem 0.5rem">
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">Loading...</span>
+      </div>
+    </div>
+
     <div class="acq-section-label"><span class="spec-id">3.1.1</span>LLM Extraction</div>
     <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
       <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.3rem"></div>
@@ -3292,7 +3306,7 @@ function activateTab(name) {
 
   if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
-  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); _loadGapMetrics(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); _loadGapMetrics(); loadInterpretMetricToggles(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -3849,6 +3863,56 @@ function _renderGapTickerBar() {
     };
     bar.appendChild(btn);
   });
+}
+
+async function loadInterpretMetricToggles(force) {
+  const wrap = document.getElementById('interpret-metric-toggles');
+  if (!wrap) return;
+  if (!force && wrap.dataset.loaded === '1') return;
+  try {
+    const resp = await fetch('/api/metric_schema');
+    const body = await resp.json();
+    if (!body.success) throw new Error(body.error?.message || 'Failed');
+    const metrics = (body.data || []).slice().sort(function(a, b) {
+      return (a.display_order || 999) - (b.display_order || 999);
+    });
+
+    const groupKeys = [];
+    const groups = {};
+    metrics.forEach(function(m) {
+      const g = m.metric_group || 'other';
+      if (!groups[g]) { groups[g] = []; groupKeys.push(g); }
+      groups[g].push(m);
+    });
+
+    wrap.innerHTML = '';
+    wrap.dataset.loaded = '1';
+
+    groupKeys.forEach(function(grp) {
+      const lbl = document.createElement('span');
+      lbl.textContent = grp + ':';
+      lbl.style.cssText = 'font-size:0.7rem;color:var(--theme-text-muted);align-self:center;white-space:nowrap';
+      wrap.appendChild(lbl);
+
+      groups[grp].forEach(function(m) {
+        const btn = document.createElement('button');
+        const isActive = !!m.active;
+        btn.textContent = (isActive ? '\u25cf ' : '\u25cb ') + m.label;
+        btn.title = m.key + (isActive ? ' \u2014 click to deactivate' : ' \u2014 click to activate');
+        btn.style.cssText = isActive
+          ? 'font-size:0.75rem;padding:2px 9px;border-radius:12px;border:1px solid var(--theme-accent,#3b82f6);background:var(--theme-accent,#3b82f6);color:#fff;cursor:pointer'
+          : 'font-size:0.75rem;padding:2px 9px;border-radius:12px;border:1px solid var(--theme-border);background:transparent;color:var(--theme-text-muted);cursor:pointer;opacity:0.65';
+        btn.onclick = async function() {
+          btn.disabled = true;
+          await toggleMetricSchemaActive(m.id, !isActive);
+          loadInterpretMetricToggles(true);
+        };
+        wrap.appendChild(btn);
+      });
+    });
+  } catch (err) {
+    if (wrap) wrap.textContent = 'Failed to load metrics';
+  }
 }
 
 function _loadGapMetrics() {
