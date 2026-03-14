@@ -181,7 +181,7 @@ def operations_queue():
         queue = db.get_operations_queue()
         return jsonify({'success': True, 'data': queue})
     except Exception:
-        log.error('Error in operations_queue', exc_info=True)
+        log.error('event=operations_queue_error route=/api/operations/queue', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -194,7 +194,7 @@ def operations_pipeline_observability():
         snapshot = db.get_pipeline_observability()
         return jsonify({'success': True, 'data': snapshot})
     except Exception:
-        log.error('Error in operations_pipeline_observability', exc_info=True)
+        log.error('event=pipeline_observability_error route=/api/operations/pipeline_observability', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -316,7 +316,7 @@ def operations_observer_swarm_start():
         t.start()
         return jsonify({'success': True, 'data': {'task_id': task_id, 'run_id': run_id}})
     except Exception:
-        log.error('Error in operations_observer_swarm_start', exc_info=True)
+        log.error('event=observer_swarm_start_error route=/api/operations/observer_swarm/start', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -330,7 +330,7 @@ def operations_observer_swarm_status(task_id: str):
             return jsonify({'success': False, 'error': {'message': 'Task not found'}}), 404
         return jsonify({'success': True, 'data': state})
     except Exception:
-        log.error('Error in operations_observer_swarm_status', exc_info=True)
+        log.error('event=observer_swarm_status_error task_id=%s', task_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -563,6 +563,11 @@ def operations_extract():
                             "No stored reports matched the selected filters. "
                             "Ingest first if source documents have not been added to reports yet."
                         )
+                    else:
+                        _extraction_progress[task_id]['logs'].append(
+                            f"Starting extraction: {len(reports)} reports, scope={_scope_label}, "
+                            f"source={_source_scope}, cadence={_cadence}, workers={_extract_workers}"
+                        )
 
                 grouped_reports: OrderedDict[str, list[dict]] = OrderedDict()
                 if _tickers:
@@ -588,6 +593,12 @@ def operations_extract():
                         prog['data_points'] = c['data_points']
                         prog['errors'] = c['errors']
 
+                def _ops_log_callback(msg: str) -> None:
+                    with _progress_lock:
+                        prog = _extraction_progress.get(task_id)
+                        if prog is not None:
+                            prog['logs'].append(msg)
+
                 ops_counters = run_extraction_phase(
                     db,
                     ops_run_id if ops_run_id is not None else 0,
@@ -598,6 +609,7 @@ def operations_extract():
                     extract_workers=_extract_workers,
                     run_config_factory=_ops_run_config_factory,
                     progress_callback=_ops_progress_callback,
+                    log_callback=_ops_log_callback,
                 )
 
                 if ops_run_id is not None:
@@ -638,7 +650,7 @@ def operations_extract():
             'extract_workers': extract_workers,
         }})
     except Exception:
-        log.error('Error in operations_extract', exc_info=True)
+        log.error('event=operations_extract_error route=/api/operations/interpret', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -652,7 +664,7 @@ def operations_extract_progress(task_id: str):
             return jsonify({'success': False, 'error': {'message': 'Task not found'}}), 404
         return jsonify({'success': True, 'data': progress})
     except Exception:
-        log.error('Error in operations_extract_progress', exc_info=True)
+        log.error('event=operations_extract_progress_error task_id=%s', task_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -787,7 +799,7 @@ def operations_requeue_missing():
             'scope_label': scope_label,
         }})
     except Exception:
-        log.error('Error in operations_requeue_missing', exc_info=True)
+        log.error('event=requeue_missing_error route=/api/operations/requeue-missing', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -915,7 +927,7 @@ def operations_gap_diagnosis():
             'pending_sample': [dict(r) for r in pending_ticker_periods],
         }})
     except Exception:
-        log.error('Error in operations_gap_diagnosis', exc_info=True)
+        log.error('event=gap_diagnosis_error route=/api/operations/gap-diagnosis', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -946,7 +958,7 @@ def operations_assign_period():
         log.info("Assigned period %s to manifest_id %s", period, manifest_id)
         return jsonify({'success': True, 'data': {'manifest_id': manifest_id, 'period': period}})
     except Exception:
-        log.error('Error in operations_assign_period', exc_info=True)
+        log.error('event=assign_period_error manifest_id=%s', manifest_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -995,7 +1007,7 @@ def manifest_preview(manifest_id: int):
         }}), 400
 
     except Exception:
-        log.error('Error in manifest_preview for id=%s', manifest_id, exc_info=True)
+        log.error('event=manifest_preview_error manifest_id=%s', manifest_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -1117,7 +1129,7 @@ def manifest_detect_period(manifest_id: int):
             }})
 
     except Exception:
-        log.error('Error in manifest_detect_period for id=%s', manifest_id, exc_info=True)
+        log.error('event=manifest_detect_period_error manifest_id=%s', manifest_id, exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
@@ -1156,7 +1168,7 @@ def purge_ticker():
             'final_data_points_deleted': fp_count,
         })
     except Exception:
-        log.error('purge_ticker_error ticker=%s', ticker, exc_info=True)
+        log.error('event=purge_ticker_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -1192,7 +1204,7 @@ def gap_fill():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception:
-        log.error('gap_fill_error ticker=%s', ticker, exc_info=True)
+        log.error('event=gap_fill_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -1225,7 +1237,7 @@ def derive_balance_change():
         result = derive_net_balance_change(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
         return jsonify(result)
     except Exception:
-        log.error('derive_balance_change_error ticker=%s', ticker, exc_info=True)
+        log.error('event=derive_balance_change_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 

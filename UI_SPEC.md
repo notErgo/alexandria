@@ -3,6 +3,9 @@
 Version: 1.6
 Port: 5004
 
+See [`docs/feature_glossary.md`](docs/feature_glossary.md) for canonical names, pipeline stage
+definitions, status vocabularies, and terms to avoid.
+
 ## Convention
 
 | Level | Format | Meaning |

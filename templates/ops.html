@@ -36,9 +36,6 @@
 .acq-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .acq-status { font-size: 0.78rem; color: var(--theme-text-muted); margin-top: 0.45rem; }
 .acq-section-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-text-muted); margin: 1rem 0 0.4rem; }
-.acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
-.acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; }
-.acq-log-warn { color: #f97316; }
 
 /* Explorer heatmap */
 .explorer-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
@@ -932,7 +929,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <button class="ops-tab" data-pane="ingest" data-ui-id="2.0">Ingest</button>
   <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
   <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
-  <button class="ops-tab" data-pane="interrogate" data-ui-id="5.0">Interrogate</button>
+  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Data</button>
 </div>
 
 <!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
@@ -2519,7 +2516,7 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
       <button class="btn btn-primary btn-sm" id="extract-btn" onclick="doExtract()">Start extraction</button>
       <button class="btn btn-secondary btn-sm" id="custom-prompt-toggle" onclick="toggleCustomPrompt()" style="margin-left:0.5rem">Custom prompt</button>
-      <span id="extract-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      <span id="miner-extract-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
     </div>
 
     <!-- Custom prompt panel (hidden by default) -->
@@ -2660,8 +2657,8 @@ tr.is-reviewed td { opacity: 0.65; }
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
       <input id="rv-ticker" type="text" maxlength="10" placeholder="Ticker" style="width:100px">
       <select id="rv-status">
-        <option value="PENDING">Pending</option>
         <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
         <option value="APPROVED">Approved</option>
         <option value="REJECTED">Rejected</option>
       </select>
@@ -3104,6 +3101,7 @@ tr.is-reviewed td { opacity: 0.65; }
 <script src="/static/js/doc_panel.js"></script>
 <script src="/static/js/review_panel.js"></script>
 <script src="/static/js/miner_data.js"></script>
+<script src="/static/js/log_panel.js"></script>
 <script>
 // ── Sector / SSOT globals ────────────────────────────────────────────────────
 const _currentSector = {{ current_sector | tojson }};
@@ -3552,19 +3550,10 @@ async function triggerAcquire(source, tickers) {
   }
 }
 
-function _appendExtractLog(line) {
-  const el = document.getElementById('extract-log');
-  if (!el) return;
-  el.style.display = '';
-  const row = document.createElement('div');
-  row.className = 'acq-log-row';
-  row.textContent = line;
-  el.prepend(row);
-  el.style.display = '';
-  while (el.children.length > 30) {
-    el.removeChild(el.lastChild);
-  }
-}
+const _extractPanel = new LogPanel('extract-log', { maxLines: 30 });
+const _gapReextractPanel = new LogPanel('gap-reextract-log', { maxLines: 30 });
+
+function _appendExtractLog(line, level) { _extractPanel.append(line, level); }
 
 function _setExtractStatus(text, isError) {
   const el = document.getElementById('extract-status');
@@ -3578,41 +3567,34 @@ function _setExtractEnabled(enabled) {
   if (btn) btn.disabled = !enabled;
 }
 
-let _extractLogCount = 0;  // tracks how many log lines we have already rendered
-
-async function _pollExtractionRun(taskId, ticker) {
-  if (_extractTimer) clearInterval(_extractTimer);
-  _extractLogCount = 0;
-  _extractTimer = setInterval(async function() {
-    try {
-      const resp = await fetch('/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress');
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error?.message || 'progress failed');
-      const p = data.data || {};
-      const state = p.status || 'running';
-      const processed = p.reports_processed || 0;
-      const total = p.reports_total || 0;
-      const points = p.data_points || 0;
-      const errors = p.errors || 0;
-      _setExtractStatus(
-        'Extraction ' + (ticker || 'ALL') + ': ' + state + ' (' + processed + '/' + total + ', points=' + points + ', errors=' + errors + ')',
-        state === 'error'
-      );
-      const logs = p.logs || [];
-      if (logs.length > _extractLogCount) {
-        const newLines = logs.slice(_extractLogCount);
-        newLines.forEach(function(line) { _appendExtractLog(line); });
-        _extractLogCount = logs.length;
-      }
-      if (state === 'running') return;
-      _extractTaskId = null;
-      clearInterval(_extractTimer);
-      _extractTimer = null;
-      _setExtractEnabled(true);
-      if (state === 'complete') {
-        _appendExtractLog(new Date().toISOString().slice(11, 19) + ' complete ' + (ticker || 'ALL')
-          + ' reports=' + processed + ' data_points=' + points + ' errors=' + errors);
+async function _pollExtractionRun(taskId, ticker, panelOverride) {
+  if (_extractTimer) { clearInterval(_extractTimer); _extractTimer = null; }
+  const panel = panelOverride || _extractPanel;
+  panel.stopPolling();
+  panel.startPolling(
+    taskId,
+    '/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress',
+    {
+      onProgress: function(p) {
+        const state     = p.status || 'running';
+        const processed = p.reports_processed || 0;
+        const total     = p.reports_total || 0;
+        const points    = p.data_points || 0;
+        const errors    = p.errors || 0;
+        _setExtractStatus(
+          'Extraction ' + (ticker || 'ALL') + ': ' + state
+          + ' (' + processed + '/' + total + ', points=' + points + ', errors=' + errors + ')',
+          state === 'error'
+        );
+      },
+      onComplete: async function(p) {
+        _extractTaskId = null;
+        _setExtractEnabled(true);
+        const processed = p.reports_processed || 0;
+        const points    = p.data_points || 0;
+        const errors    = p.errors || 0;
+        panel.append(new Date().toISOString().slice(11, 19) + ' complete ' + (ticker || 'ALL')
+          + '  reports=' + processed + '  pts=' + points + '  errors=' + errors);
         showToast('Extraction complete (' + (ticker || 'ALL') + ')');
         if (window._extractAutoGapFill) {
           window._extractAutoGapFill = false;
@@ -3621,19 +3603,23 @@ async function _pollExtractionRun(taskId, ticker) {
         loadPipelineObservability();
         if (_explorerLoaded) loadExplorer();
         if (_reviewLoaded) loadReview();
-      } else {
-        _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed ' + (ticker || 'ALL'));
+        if (window._minerDataBooted && typeof selectCompany === 'function' && typeof _ticker !== 'undefined' && _ticker) selectCompany(_ticker);
+      },
+      onError: function(p) {
+        _extractTaskId = null;
+        _setExtractEnabled(true);
+        panel.append(new Date().toISOString().slice(11, 19) + ' failed ' + (ticker || 'ALL'), 'error');
+        _setExtractStatus('Extraction failed: ' + (p.error_message || 'unknown error'), true);
         showToast('Extraction failed (' + (ticker || 'ALL') + ')', true);
-      }
-    } catch (err) {
-      _extractTaskId = null;
-      clearInterval(_extractTimer);
-      _extractTimer = null;
-      _setExtractEnabled(true);
-      _setExtractStatus('Extraction failed: ' + String(err), true);
-      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' failed (' + String(err) + ')');
+      },
+      onFetchError: function(err) {
+        _extractTaskId = null;
+        _setExtractEnabled(true);
+        _setExtractStatus('Extraction failed: ' + String(err), true);
+        panel.append(new Date().toISOString().slice(11, 19) + ' network error (' + String(err) + ')', 'error');
+      },
     }
-  }, 1000);
+  );
 }
 
 // Shared model loader — reads ollama_model config key as the SSOT default.
@@ -3885,7 +3871,7 @@ async function runRequeueMissing() {
   const logEl = document.getElementById('gap-reextract-log');
   if (btn) btn.disabled = true;
   if (statusEl) statusEl.textContent = 'Queuing...';
-  if (logEl) { logEl.style.display = ''; logEl.textContent = ''; }
+  _gapReextractPanel.clear();
   try {
     const resp = await fetch('/api/operations/requeue-missing', {
       method: 'POST',
@@ -3903,8 +3889,9 @@ async function runRequeueMissing() {
     }
     const scopeLabel = tickers.length ? tickers.join(',') : 'ALL';
     if (statusEl) statusEl.textContent = d.requeued_count + ' reports queued (' + scopeLabel + '). Running...';
-    if (logEl) logEl.textContent = new Date().toISOString().slice(11, 19) + ' task ' + (d.task_id || '?');
-    if (d.task_id) _pollExtractionRun(d.task_id, scopeLabel);
+    _gapReextractPanel.append(new Date().toISOString().slice(11, 19) + ' task ' + (d.task_id || '?')
+      + '  requeued=' + d.requeued_count + '  scope=' + scopeLabel);
+    if (d.task_id) _pollExtractionRun(d.task_id, scopeLabel, _gapReextractPanel);
   } catch (err) {
     if (statusEl) statusEl.textContent = 'Error: ' + String(err);
     showToast('Re-extract failed: ' + err.message, true);

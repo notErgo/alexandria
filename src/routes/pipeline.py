@@ -477,12 +477,18 @@ def _extract_reports_for_ticker(
     *,
     run_config=None,
     force_reextract: bool = False,
+    log_callback=None,
 ) -> None:
     from interpreters.interpret_pipeline import extract_report
     from infra.db import MinerDB
 
+    def _ts() -> str:
+        return datetime.now(timezone.utc).strftime('%H:%M:%S')
+
     if not reports:
         _event(db, run_id, 'extract', 'ticker_skipped', ticker=ticker, reason='no_pending_reports')
+        if log_callback:
+            log_callback(f"{_ts()} {ticker}: no pending reports — skipped")
         return
 
     ordered_reports = _sort_reports_chronologically(reports)
@@ -495,6 +501,8 @@ def _extract_reports_for_ticker(
         ticker=ticker, pending_reports=len(ordered_reports), workers=effective_workers,
         strict_chronology=1,
     )
+    if log_callback:
+        log_callback(f"{_ts()} {ticker}: starting {len(ordered_reports)} reports ({effective_workers} workers)")
 
     def _record_report_success(report: dict, summary, worker_id: int) -> None:
         nonlocal ticker_processed, ticker_data_points, ticker_errors
@@ -529,6 +537,21 @@ def _extract_reports_for_ticker(
             prompt_tokens=summary.prompt_tokens,
             response_tokens=summary.response_tokens,
         )
+        if log_callback:
+            period_short = (period or '')[:7]
+            src_short = (source_type or '').replace('edgar_', '').replace('archive_', 'arch_')
+            if summary.keyword_gated:
+                outcome = 'keyword_gated'
+            else:
+                parts = []
+                if summary.data_points_extracted:
+                    parts.append(f"{summary.data_points_extracted} pts")
+                if summary.review_flagged:
+                    parts.append(f"{summary.review_flagged} review")
+                outcome = ', '.join(parts) if parts else 'no data'
+            log_callback(
+                f"{_ts()} {ticker} {period_short} [{src_short}]  {progress}/{counters['total_reports']}  {outcome}"
+            )
 
     def _record_report_failure(report: dict, error: Exception, worker_id: int) -> None:
         nonlocal ticker_errors
@@ -545,6 +568,11 @@ def _extract_reports_for_ticker(
             report_id=report.get('id'), period=period,
             source_type=source_type, error=str(error),
         )
+        if log_callback:
+            period_short = (period or '')[:7]
+            src_short = (source_type or '').replace('edgar_', '').replace('archive_', 'arch_')
+            err_short = str(error)[:80]
+            log_callback(f"{_ts()} {ticker} {period_short} [{src_short}]  ERROR: {err_short}")
 
     claim_db = MinerDB(db.db_path)
     claim_index = 0
@@ -666,6 +694,12 @@ def _extract_reports_for_ticker(
         keyword_gated=ticker_keyword_gated,
         workers=effective_workers,
     )
+    if log_callback:
+        log_callback(
+            f"{_ts()} {ticker}: done  processed={ticker_processed}  pts={ticker_data_points}"
+            f"  review={counters.get('review_flagged', 0)}  errors={ticker_errors}"
+            f"  keyword_gated={ticker_keyword_gated}"
+        )
 
 
 def _build_extraction_batch_for_source_types(
@@ -701,6 +735,7 @@ def run_extraction_phase(
     run_config_factory=None,
     cancel_check=None,
     progress_callback=None,
+    log_callback=None,
     prebuilt_batches=None,
     failures=None,
 ) -> dict:
@@ -787,6 +822,7 @@ def run_extraction_phase(
             num_workers=max(1, int(extract_workers)),
             run_config=run_config,
             force_reextract=force_reextract,
+            log_callback=log_callback,
         )
         if progress_callback:
             progress_callback(dict(counters))

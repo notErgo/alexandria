@@ -990,7 +990,7 @@ def test_operations_extract_delegates_to_shared_worker(monkeypatch, tmp_path):
     delegate_calls = []
 
     def _fake_extract_for_ticker(db, run_id, ticker, reports, counters,
-                                  failures, num_workers, *, run_config=None, force_reextract=False):
+                                  failures, num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         delegate_calls.append({'ticker': ticker, 'reports': reports,
                                 'force_reextract': force_reextract})
         # Simulate successful extraction

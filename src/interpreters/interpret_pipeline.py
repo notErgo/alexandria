@@ -489,8 +489,8 @@ def _interpret_quarterly_report(
 
     if not covering_period:
         log.warning(
-            "Quarterly report id=%s ticker=%s has no covering_period — skipping",
-            report_id, ticker,
+            "event=quarterly_no_covering_period report_id=%s ticker=%s source_type=%s — skipping",
+            report_id, ticker, source_type,
         )
         db.mark_report_extracted(report_id)
         summary.errors += 1
@@ -544,7 +544,7 @@ def _interpret_quarterly_report(
 
     if not llm_available:
         log.warning(
-            "LLM not available for quarterly report id=%s ticker=%s %s — will retry when LLM is up",
+            "event=llm_unavailable_quarterly report_id=%s ticker=%s period=%s — will retry when LLM is up",
             report_id, ticker, covering_period,
         )
         # Transient failure: reset to 'pending' so this process can retry without waiting for next boot.
@@ -557,7 +557,10 @@ def _interpret_quarterly_report(
 
     all_metrics = _active_metric_keys(db)
     if not all_metrics:
-        log.warning("No active metrics in DB for quarterly extraction %s %s", ticker, covering_period)
+        log.warning(
+            "event=no_active_metrics_quarterly ticker=%s period=%s source_type=%s",
+            ticker, covering_period, source_type,
+        )
         db.mark_report_extraction_failed(report_id, 'no_metrics_in_schema')
         return summary
 
@@ -567,7 +570,8 @@ def _interpret_quarterly_report(
         )
     except Exception as e:
         log.error(
-            "Quarterly LLM extraction failed for %s %s: %s", ticker, covering_period, e, exc_info=True
+            "event=quarterly_llm_extract_failed ticker=%s period=%s report_id=%s error=%s",
+            ticker, covering_period, report_id, e, exc_info=True,
         )
         db.mark_report_extraction_failed(report_id, str(e)[:500])
         summary.errors += 1
@@ -575,8 +579,8 @@ def _interpret_quarterly_report(
 
     if getattr(llm_interpreter, '_last_transport_error', False) is True:
         log.warning(
-            "Quarterly LLM transport failure for %s %s — resetting to pending",
-            ticker, covering_period,
+            "event=quarterly_llm_transport_error ticker=%s period=%s report_id=%s — resetting to pending",
+            ticker, covering_period, report_id,
         )
         _invalidate_llm_availability_cache()
         db.reset_report_to_pending(report_id)
@@ -587,8 +591,9 @@ def _interpret_quarterly_report(
     # individually — single-metric prompts are simpler and more reliably parsed.
     if not llm_results:
         log.warning(
-            "Quarterly LLM batch empty for %s %s — falling back to per-metric (%d calls)",
-            ticker, covering_period, len(all_metrics),
+            "event=quarterly_llm_batch_empty ticker=%s period=%s report_id=%s"
+            " — falling back to per-metric (%d calls)",
+            ticker, covering_period, report_id, len(all_metrics),
         )
         fallback: dict = {}
         for _m in all_metrics:
@@ -600,13 +605,14 @@ def _interpret_quarterly_report(
                     fallback[_m] = single[_m]
             except Exception as _fb_err:
                 log.warning(
-                    "Quarterly per-metric fallback failed for %s %s %s: %s",
+                    "event=quarterly_per_metric_fallback_failed ticker=%s period=%s metric=%s error=%s",
                     ticker, covering_period, _m, _fb_err,
                 )
         if getattr(llm_interpreter, '_last_transport_error', False) is True:
             log.warning(
-                "Quarterly LLM transport failure for %s %s during fallback — resetting to pending",
-                ticker, covering_period,
+                "event=quarterly_llm_transport_error_fallback ticker=%s period=%s report_id=%s"
+                " — resetting to pending",
+                ticker, covering_period, report_id,
             )
             _invalidate_llm_availability_cache()
             db.reset_report_to_pending(report_id)
@@ -705,8 +711,9 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
 
     if not text.strip():
         log.warning(
-            "Empty raw_text for report id=%s ticker=%s period=%s",
+            "event=empty_raw_text report_id=%s ticker=%s period=%s source_type=%s",
             report.get('id'), report.get('ticker'), report.get('report_date'),
+            report.get('source_type'),
         )
         summary.errors += 1
         db.mark_report_extracted(report['id'])
@@ -790,8 +797,9 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
 
         if not llm_available:
             log.warning(
-                "LLM not available for monthly report id=%s ticker=%s %s — will retry when LLM is up",
-                report.get('id'), report.get('ticker'), report_date,
+                "event=llm_unavailable_monthly report_id=%s ticker=%s period=%s source_type=%s"
+                " — will retry when LLM is up",
+                report.get('id'), report.get('ticker'), report_date, source_type,
             )
             db.reset_report_to_pending(report['id'])
             log.info(
@@ -818,8 +826,9 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
             )
             if _batch_meta.get('transport_error'):
                 log.warning(
-                    "LLM transport failure for monthly report id=%s ticker=%s %s — resetting to pending",
-                    report.get('id'), report.get('ticker'), report_date,
+                    "event=monthly_llm_transport_error report_id=%s ticker=%s period=%s source_type=%s"
+                    " — resetting to pending",
+                    report.get('id'), report.get('ticker'), report_date, source_type,
                 )
                 _invalidate_llm_availability_cache()
                 db.reset_report_to_pending(report['id'])

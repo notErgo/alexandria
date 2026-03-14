@@ -1524,7 +1524,7 @@ async function doExtract() {
   const customPrompt = (customPromptEl && customPromptPanel && customPromptPanel.style.display !== 'none')
     ? customPromptEl.value.trim() : '';
   const btn = document.getElementById('extract-btn');
-  const statusEl = document.getElementById('extract-status');
+  const statusEl = document.getElementById('miner-extract-status');
   btn.disabled = true;
   statusEl.textContent = 'Starting…';
   try {
@@ -1540,9 +1540,12 @@ async function doExtract() {
     if (!body.success) throw new Error(body.error?.message || 'Failed');
     const taskId = body.data.task_id;
     await _pollExtractionProgress(taskId, statusEl);
-    _secRows = [];
-    await loadSecData(_ticker);
-    loadInterpretData(_ticker);
+    await selectCompany(_ticker);
+    if (_currentView === 'sec' || _currentView === 'interpret') {
+      _secRows = [];
+      await loadSecData(_ticker);
+    }
+    if (_currentView === 'interpret') loadInterpretData(_ticker);
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
     showToast(`Extraction failed: ${err.message}`, true);

@@ -813,3 +813,9 @@ body.dev-no-tips .info-bubble { display: none !important; }
     flex: 1;
     word-break: break-all;
 }
+
+/* ── Log Panel (shared across ops.html and miner_data.html) ─────────────────── */
+.acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
+.acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }
+.acq-log-warn  { color: #f97316; }
+.log-row-error { color: var(--theme-danger, #ef4444); }

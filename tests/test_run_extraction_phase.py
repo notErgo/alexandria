@@ -27,7 +27,7 @@ def test_run_extraction_phase_delegates_to_extract_reports_for_ticker(monkeypatc
     calls = []
 
     def _fake_worker(db, run_id, ticker, reports, counters, failures,
-                     num_workers, *, run_config=None, force_reextract=False):
+                     num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         calls.append({'ticker': ticker, 'num_workers': num_workers,
                       'force_reextract': force_reextract})
         counters['processed'] += len(reports)
@@ -169,7 +169,7 @@ def test_run_extraction_phase_cancel_check_stops_early(monkeypatch, tmp_path):
     extracted = []
 
     def _fake_worker(db, run_id, ticker, reports, counters, failures,
-                     num_workers, *, run_config=None, force_reextract=False):
+                     num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         extracted.append(ticker)
         counters['processed'] += 1
 
@@ -202,7 +202,7 @@ def test_run_extraction_phase_progress_callback_called_per_ticker(monkeypatch, t
     snapshots = []
 
     def _fake_worker(db, run_id, ticker, reports, counters, failures,
-                     num_workers, *, run_config=None, force_reextract=False):
+                     num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         counters['processed'] += 1
 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
@@ -234,7 +234,7 @@ def test_run_extraction_phase_run_config_factory_called_per_ticker(monkeypatch, 
         return f'config_for_{ticker}'
 
     def _fake_worker(db, run_id, ticker, reports, counters, failures,
-                     num_workers, *, run_config=None, force_reextract=False):
+                     num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         received_configs.append(run_config)
 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _fake_worker)
@@ -291,7 +291,7 @@ def test_run_extraction_phase_prebuilt_batches_skips_batch_building(monkeypatch,
                         lambda *a, **kw: build_calls.append(a) or [])
 
     def _worker(db, run_id, ticker, reports, counters, failures,
-                num_workers, *, run_config=None, force_reextract=False):
+                num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         worker_reports.extend(reports)
 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _worker)
@@ -312,7 +312,7 @@ def test_run_extraction_phase_default_extract_workers_is_positive(monkeypatch, t
     worker_calls = []
 
     def _worker(db, run_id, ticker, reports, counters, failures,
-                num_workers, *, run_config=None, force_reextract=False):
+                num_workers, *, run_config=None, force_reextract=False, log_callback=None):
         worker_calls.append(num_workers)
 
     monkeypatch.setattr(pipeline_mod, '_extract_reports_for_ticker', _worker)

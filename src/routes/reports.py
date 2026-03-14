@@ -39,7 +39,7 @@ def _run_auto_extract(db, tickers: list, source_types: list, triggered_by: str) 
         )
         run_id = int(run['id'])
     except Exception:
-        log.warning("auto_extract: failed to create pipeline_run row", exc_info=True)
+        log.warning("event=auto_extract_pipeline_run_create_failed task_id=%s", task_id, exc_info=True)
 
     if run_id is None:
         log.warning("auto_extract: skipping extraction (no pipeline_run row)")
@@ -89,7 +89,7 @@ def _run_archive_ingest(task_id: str, force: bool = False, tickers: Optional[lis
             'errors': summary.errors,
         })
     except Exception:
-        log.error("Archive ingest failed", exc_info=True)
+        log.error("event=archive_ingest_failed task_id=%s", task_id, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -187,7 +187,7 @@ def _run_ir_ingest(
         else:
             _update_progress(task_id, {'status': 'complete', 'source': 'ir', **totals})
     except Exception as e:
-        log.error("IR ingest failed: %s", e, exc_info=True)
+        log.error("event=ir_ingest_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -272,7 +272,7 @@ def _run_edgar_ingest(
         else:
             _update_progress(task_id, {'status': 'complete', 'source': 'edgar', **totals})
     except Exception as e:
-        log.error("EDGAR ingest failed: %s", e, exc_info=True)
+        log.error("event=edgar_ingest_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -297,7 +297,7 @@ def _run_edgar_bridge(task_id: str, ticker: Optional[str]) -> None:
             'cells_skipped_no_quarterly': summary.cells_skipped_no_quarterly,
         })
     except Exception as e:
-        log.error("EDGAR bridge failed: %s", e, exc_info=True)
+        log.error("event=edgar_bridge_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -527,7 +527,7 @@ def _run_edgar_refetch_8k(task_id: str, ticker: Optional[str]) -> None:
             'errors': summary.errors,
         })
     except Exception as e:
-        log.error("8-K refetch failed: %s", e, exc_info=True)
+        log.error("event=edgar_8k_refetch_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -582,7 +582,7 @@ def _run_edgar_refetch_xbrl(task_id: str, ticker: Optional[str]) -> None:
             'errors': summary.errors,
         })
     except Exception as e:
-        log.error("XBRL refetch failed: %s", e, exc_info=True)
+        log.error("event=edgar_xbrl_refetch_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -644,7 +644,7 @@ def _run_html_download(task_id: str, tickers: list, since_year: Optional[int]) -
             'companies': summary.companies_processed,
         })
     except Exception as e:
-        log.error("HTML download failed: %s", e, exc_info=True)
+        log.error("event=html_download_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:
@@ -735,7 +735,7 @@ def _run_reaudit(task_id: str, ticker: Optional[str] = None) -> None:
             'errors': summary.errors,
         })
     except Exception as e:
-        log.error("Re-audit failed: %s", e, exc_info=True)
+        log.error("event=reaudit_failed task_id=%s error=%s", task_id, e, exc_info=True)
         _update_progress(task_id, {'status': 'error', 'message': 'Internal server error'})
     finally:
         with _tasks_lock:

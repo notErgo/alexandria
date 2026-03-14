@@ -1023,6 +1023,7 @@ tr.is-reviewed td { opacity: 0.65; }
       <button class="btn btn-secondary btn-sm" id="custom-prompt-toggle" onclick="toggleCustomPrompt()" style="margin-left:0.5rem">Custom prompt</button>
       <span id="extract-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
     </div>
+    <div id="md-extract-log" class="acq-log" style="display:none;margin-top:0.5rem"></div>
 
     <!-- Custom prompt panel (hidden by default) -->
     <div id="custom-prompt-panel" data-spec-id="MD5.3" style="display:none;margin-top:0.5rem">
@@ -1140,6 +1141,7 @@ tr.is-reviewed td { opacity: 0.65; }
 
 {% block scripts %}
 <script src="/static/js/review_panel.js"></script>
+<script src="/static/js/log_panel.js"></script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 let _ticker = null;               // currently selected company ticker
@@ -2219,20 +2221,43 @@ async function doExtract() {
   }
 }
 
-async function _pollExtractionProgress(taskId, statusEl) {
-  for (let i = 0; i < 600; i++) {
-    await new Promise(r => setTimeout(r, 2000));
-    try {
-      const resp = await fetch(`/api/operations/interpret/${encodeURIComponent(taskId)}/progress`);
-      if (!resp.ok) break;
-      const body = await resp.json();
-      const prog = body.data || {};
-      const status = prog.status || 'running';
-      statusEl.textContent = `${prog.reports_processed || 0}/${prog.reports_total || '?'} reports, ${prog.data_points || 0} data points`;
-      if (status === 'complete') { statusEl.textContent += ' — done'; break; }
-      if (status === 'error') { statusEl.textContent = `Error: ${prog.error_message || 'unknown'}`; break; }
-    } catch (_) { break; }
-  }
+const _mdExtractPanel = new LogPanel('md-extract-log', { maxLines: 50 });
+
+function _pollExtractionProgress(taskId, statusEl) {
+  _mdExtractPanel.clear();
+  return new Promise(function(resolve) {
+    _mdExtractPanel.startPolling(
+      taskId,
+      '/api/operations/interpret/' + encodeURIComponent(taskId) + '/progress',
+      {
+        onProgress: function(p) {
+          const processed = p.reports_processed || 0;
+          const total     = p.reports_total || '?';
+          const points    = p.data_points || 0;
+          const errors    = p.errors || 0;
+          statusEl.textContent = processed + '/' + total + ' reports'
+            + (points ? ',  ' + points + ' pts' : '')
+            + (errors ? ',  ' + errors + ' errors' : '');
+        },
+        onComplete: function(p) {
+          const processed = p.reports_processed || 0;
+          const points    = p.data_points || 0;
+          const errors    = p.errors || 0;
+          statusEl.textContent = processed + ' reports done,  ' + points + ' pts'
+            + (errors ? ',  ' + errors + ' errors' : '') + '  — complete';
+          resolve();
+        },
+        onError: function(p) {
+          statusEl.textContent = 'Error: ' + (p.error_message || 'extraction failed');
+          resolve();
+        },
+        onFetchError: function(err) {
+          statusEl.textContent = 'Network error: ' + String(err);
+          resolve();
+        },
+      }
+    );
+  });
 }
 
 function toggleCustomPrompt() {
