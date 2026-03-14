@@ -739,12 +739,24 @@ class EdgarConnector:
             if until_date and filing_date > until_date.isoformat():
                 continue
 
+            # Derive the production-period report_date from period_of_report rather
+            # than filing_date.  For monthly production 8-Ks, period_of_report is the
+            # last day of the reporting month (e.g. "2024-09-30") while filing_date is
+            # the SEC submission date (e.g. "2024-10-07").  Storing report_date as the
+            # filing date would put data points a month ahead of the production period,
+            # misaligning with archive and IR records for the same month.
+            # Normalize to YYYY-MM-01 (first-of-month) for consistency with other sources.
+            from period_utils import normalize_period as _norm_period
+            _por = filing.get('period_of_report', '')
+            _norm = _norm_period(_por) if _por else None
+            report_date = f"{_norm}-01" if _norm else filing_date
+
             acc_no = filing.get('accession_number', '')
             if acc_no and self.db.report_exists_by_accession(acc_no):
                 log.debug("Already ingested 8-K by accession: %s %s", ticker, acc_no)
                 continue
-            if self.db.report_exists(ticker, filing_date, 'edgar_8k'):
-                log.debug("Already ingested 8-K %s %s", ticker, filing_date)
+            if self.db.report_exists(ticker, report_date, 'edgar_8k'):
+                log.debug("Already ingested 8-K %s %s", ticker, report_date)
                 continue
 
             acc_no_clean = acc_no.replace('-', '')
@@ -798,8 +810,8 @@ class EdgarConnector:
 
             report = {
                 'ticker':           ticker,
-                'report_date':      filing_date,
-                'published_date':   filing_date,
+                'report_date':      report_date,   # production period (YYYY-MM-01)
+                'published_date':   filing_date,   # SEC filing date preserved
                 'source_type':      'edgar_8k',
                 'source_url':       preferred_url,
                 'raw_text':         text,
@@ -814,13 +826,13 @@ class EdgarConnector:
                 self.db.set_report_parse_quality(report_id, parse_quality)
                 summary.reports_ingested += 1
                 log.info(
-                    "Stored 8-K filing: %s %s (quality=%s, chars=%d)",
-                    ticker, filing_date, parse_quality, text_len,
+                    "Stored 8-K filing: %s %s filed=%s (quality=%s, chars=%d)",
+                    ticker, report_date, filing_date, parse_quality, text_len,
                 )
                 self._emit(
                     'url_ingested', ticker=ticker,
                     form_type='8-K',
-                    period=filing_date,
+                    period=report_date,
                     filing_date=filing_date,
                     accession=acc_no,
                     quality=parse_quality,
@@ -829,11 +841,11 @@ class EdgarConnector:
                 )
             except Exception as e:
                 log.error(
-                    "Failed to insert 8-K report %s %s: %s", ticker, filing_date, e, exc_info=True
+                    "Failed to insert 8-K report %s %s: %s", ticker, report_date, e, exc_info=True
                 )
                 self._emit(
                     'url_error', ticker=ticker, level='WARNING',
-                    form_type='8-K', period=filing_date,
+                    form_type='8-K', period=report_date,
                     accession=acc_no, url=preferred_url, error=str(e),
                 )
                 summary.errors += 1

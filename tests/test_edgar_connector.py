@@ -448,6 +448,78 @@ class TestFetch8kSubmissionsAPI:
 
         mock_db.insert_report.assert_not_called()
 
+    def test_report_date_uses_period_of_report_not_filing_date(self):
+        """report_date must be derived from period_of_report (production period),
+        not filing_date.  Monthly production 8-Ks are filed ~7 days after the
+        month ends: filing_date="2024-10-07", period_of_report="2024-09-30".
+        The stored report_date must be "2024-09-01" so data points align with
+        the archive and IR records for the same September production period.
+        """
+        from datetime import date as dt
+        from scrapers.edgar_connector import EdgarConnector
+
+        period_of_report = '2024-09-30'   # last day of the reporting month
+        filing_date = '2024-10-07'        # when the 8-K was filed with the SEC
+
+        submissions_data = {
+            "filings": {
+                "recent": {
+                    "form":            ["8-K"],
+                    "filingDate":      [filing_date],
+                    "accessionNumber": ["0001167419-24-000001"],
+                    "primaryDocument": ["ex991.htm"],
+                    "periodOfReport":  [period_of_report],
+                    "reportDate":      [period_of_report],
+                }
+            }
+        }
+        cik_numeric = '1167419'
+        acc_no = '0001167419-24-000001'
+        acc_clean = acc_no.replace('-', '')
+
+        submissions_resp = MagicMock(status_code=200, raise_for_status=lambda: None)
+        submissions_resp.json.return_value = submissions_data
+
+        index_html = (
+            f"<html><body><table><tr>"
+            f"<td>EX-99.1</td>"
+            f"<td><a href='ex991.htm'>exhibit</a></td>"
+            f"</tr></table></body></html>"
+        )
+        index_resp = MagicMock(status_code=200, text=index_html, raise_for_status=lambda: None)
+        exhibit_resp = MagicMock(
+            status_code=200,
+            text="<html><body>RIOT mined 750 BTC during September 2024.</body></html>",
+            raise_for_status=lambda: None,
+        )
+
+        def side_effect(url, **kwargs):
+            if 'data.sec.gov' in url:
+                return submissions_resp
+            if f"{acc_clean}/{acc_no}-index.htm" in url:
+                return index_resp
+            return exhibit_resp
+
+        session = MagicMock()
+        session.get.side_effect = side_effect
+
+        mock_db = MagicMock()
+        mock_db.report_exists.return_value = False
+        mock_db.report_exists_by_accession.return_value = False
+        mock_db.insert_report.return_value = 1
+
+        connector = EdgarConnector(db=mock_db, session=session)
+        connector.fetch_8k_filings(cik='0001167419', ticker='RIOT', since_date=dt(2024, 1, 1))
+
+        mock_db.insert_report.assert_called_once()
+        stored = mock_db.insert_report.call_args[0][0]
+        # report_date must be "2024-09-01" (first of production month), NOT "2024-10-07"
+        assert stored['report_date'] == '2024-09-01', (
+            f"Expected '2024-09-01' (production period) but got '{stored['report_date']}'"
+        )
+        # filing_date must be preserved as published_date for audit trail
+        assert stored['published_date'] == filing_date
+
 
 class TestFetch8kNoExtraction:
     def test_fetch_8k_no_extraction(self):
