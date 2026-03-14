@@ -504,10 +504,14 @@ class LLMInterpreter:
         self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
+        # When config.target_metrics is set, restrict to those keys only.
+        _target_set = set(getattr(config, 'target_metrics', None) or [])
         unit_map: dict = {}
         if self._db is not None:
             try:
                 metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
+                if _target_set:
+                    metric_rows = [r for r in metric_rows if r['key'] in _target_set]
                 if metric_rows:
                     unit_map = {m['key']: (m.get('unit') or '') for m in metric_rows}
                     lines.append("=== TARGET METRICS ===")
@@ -520,7 +524,8 @@ class LLMInterpreter:
         if not unit_map:
             unit_map = self._fetch_unit_map()
 
-        for metric in metrics:
+        _metrics_for_prompt = [m for m in metrics if not _target_set or m in _target_set]
+        for metric in _metrics_for_prompt:
             lines.append(f"=== METRIC: {metric} ===")
             lines.append(self._get_prompt_instructions(metric))
             lines.append("")
@@ -531,7 +536,7 @@ class LLMInterpreter:
         lines.append("The top-level JSON value MUST be an object keyed by metric name.")
         lines.append("Do NOT return an array, list, markdown code fence, commentary, or repeated per-metric objects.")
         lines.append("{")
-        for metric in metrics:
+        for metric in _metrics_for_prompt:
             unit = unit_map.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
@@ -1081,10 +1086,14 @@ class LLMInterpreter:
         self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
+        # When config.target_metrics is set, restrict to those keys only.
+        _target_set = set(getattr(config, 'target_metrics', None) or [])
         unit_map: dict = {}
         if self._db is not None:
             try:
                 metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
+                if _target_set:
+                    metric_rows = [r for r in metric_rows if r['key'] in _target_set]
                 if metric_rows:
                     unit_map = {m['key']: (m.get('unit') or '') for m in metric_rows}
                     lines.append("=== TARGET METRICS ===")
@@ -1097,7 +1106,8 @@ class LLMInterpreter:
         if not unit_map:
             unit_map = self._fetch_unit_map()
 
-        for metric in metrics:
+        _metrics_for_prompt = [m for m in metrics if not _target_set or m in _target_set]
+        for metric in _metrics_for_prompt:
             lines.append(f"=== METRIC: {metric} ===")
             lines.append(self._get_quarterly_prompt_instructions(metric))
             lines.append("")
@@ -1105,7 +1115,7 @@ class LLMInterpreter:
         lines.append("=== OUTPUT FORMAT ===")
         lines.append("Return ONLY this JSON object, no other text:")
         lines.append("{")
-        for metric in metrics:
+        for metric in _metrics_for_prompt:
             unit = unit_map.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '

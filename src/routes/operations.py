@@ -694,10 +694,12 @@ def operations_requeue_missing():
     """Reset done reports that have no data_point for the given metrics and trigger extraction.
 
     Body:
-      metrics   list[str]  required — e.g. ["production_btc", "holdings_btc"]
-      tickers   list[str]  optional — scope to specific tickers; empty = all
-      from_period  str     optional — YYYY-MM
-      to_period    str     optional — YYYY-MM
+      metrics        list[str]  required — e.g. ["production_btc", "holdings_btc"]
+      tickers        list[str]  optional — scope to specific tickers; empty = all
+      from_period    str        optional — YYYY-MM
+      to_period      str        optional — YYYY-MM
+      target_metrics list[str]  optional — restrict LLM prompt to these metrics only;
+                                defaults to same value as metrics when omitted
     """
     try:
         body = request.get_json(silent=True) or {}
@@ -705,6 +707,7 @@ def operations_requeue_missing():
         tickers = body.get('tickers') or []
         from_period = (body.get('from_period') or '').strip() or None
         to_period = (body.get('to_period') or '').strip() or None
+        target_metrics = body.get('target_metrics') or metrics  # default: same as gap metrics
 
         if not metrics:
             return jsonify({'success': False, 'error': {
@@ -776,9 +779,11 @@ def operations_requeue_missing():
             }
 
         from routes.pipeline import run_extraction_phase
+        from miner_types import ExtractionRunConfig
 
         _grouped = dict(grouped)
         _run_key = run_key
+        _target_metrics = list(target_metrics) if target_metrics else None
 
         def _run():
             try:
@@ -789,6 +794,14 @@ def operations_requeue_missing():
                         prog['data_points'] = c['data_points']
                         prog['errors'] = c['errors']
 
+                def _run_config_factory(report_ticker: str):
+                    if not _target_metrics:
+                        return None
+                    return ExtractionRunConfig(
+                        ticker=report_ticker,
+                        target_metrics=_target_metrics,
+                    )
+
                 run_extraction_phase(
                     db,
                     0,
@@ -798,6 +811,7 @@ def operations_requeue_missing():
                     warm_model=False,
                     extract_workers=4,
                     progress_callback=_progress_cb,
+                    run_config_factory=_run_config_factory,
                 )
                 with _progress_lock:
                     _extraction_progress[task_id]['status'] = 'complete'

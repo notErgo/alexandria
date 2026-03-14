@@ -567,6 +567,8 @@ def _interpret_quarterly_report(
         return summary
 
     all_metrics = _active_metric_keys(db)
+    if config is not None and config.target_metrics:
+        all_metrics = [m for m in all_metrics if m in config.target_metrics]
     if not all_metrics:
         log.warning(
             "event=no_active_metrics_quarterly ticker=%s period=%s source_type=%s",
@@ -827,6 +829,8 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
         llm_text = _ctx_windows[0]['text'] if _ctx_windows else _clean_text[:_LLM_TEXT_MAX_CHARS]
 
         all_metrics = _active_metric_keys(db)
+        if _run_config is not None and _run_config.target_metrics:
+            all_metrics = [m for m in all_metrics if m in _run_config.target_metrics]
         ticker = report.get('ticker')
 
         llm_by_metric = {}
