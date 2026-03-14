@@ -23,18 +23,22 @@ _SIMHASH_MASK = 0xFFFFFFFFFFFFFFFF
 # Extraction writes only replace an existing row if the incoming priority
 # is <= the stored priority (equal or better wins; better = lower number).
 _SOURCE_PRIORITY: dict[str, int] = {
-    # EDGAR SEC filings — authoritative, audited
-    'edgar_8k': 1, 'edgar_8ka': 1,
-    'edgar_10q': 1, 'edgar_10k': 1,
-    'edgar_6k': 1, 'edgar_6ka': 1,
-    'edgar_20f': 1, 'edgar_20fa': 1,
-    'edgar_40f': 1, 'edgar_40fa': 1,
-    # IR press releases — company-published, not SEC-audited
-    'ir_press_release': 2,
-    # Offline archive files
-    'archive_pdf': 3, 'archive_html': 3,
+    # Monthly press releases — primary record for Bitcoin production metrics
+    'ir_press_release': 1,
+    'archive_pdf': 1, 'archive_html': 1,
+    'prnewswire_press_release': 1,
+    'globenewswire_press_release': 1,
+    'wire_press_release': 1,
+    # EDGAR event filings — confirms monthly PRs, cannot overwrite them
+    'edgar_8k': 2, 'edgar_8ka': 2,
+    # EDGAR quarterly
+    'edgar_10q': 3, 'edgar_6k': 3, 'edgar_6ka': 3,
+    # EDGAR annual
+    'edgar_10k': 4,
+    'edgar_20f': 4, 'edgar_20fa': 4,
+    'edgar_40f': 4, 'edgar_40fa': 4,
 }
-_DEFAULT_SOURCE_PRIORITY = 3  # fallback for unknown source types
+_DEFAULT_SOURCE_PRIORITY = 4  # fallback for unknown source types
 
 # Extraction methods that represent analyst decisions — always priority 0
 # (never overwritten by automated extraction regardless of source type).
@@ -432,6 +436,11 @@ class MinerDB:
                     self._migrate_v47(conn)
                     conn.execute("PRAGMA user_version = 47")
                     version = 47
+
+                if version < 48:
+                    self._migrate_v48(conn)
+                    conn.execute("PRAGMA user_version = 48")
+                    version = 48
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -1965,6 +1974,67 @@ class MinerDB:
                 ON metric_examples(metric_key, ticker)
         """)
 
+    def _migrate_v48(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v47 -> v48: backfill source_priority to new 5-tier scale.
+
+        New priority scale (lower = higher authority):
+          0 = analyst / review decision (never overwritten)
+          1 = monthly press releases: ir_press_release, archive_pdf, archive_html,
+              prnewswire_press_release, globenewswire_press_release, wire_press_release
+          2 = EDGAR event filings: edgar_8k, edgar_8ka
+          3 = EDGAR quarterly: edgar_10q, edgar_6k, edgar_6ka
+          4 = EDGAR annual: edgar_10k, edgar_20f, edgar_20fa, edgar_40f, edgar_40fa
+
+        Old scale had EDGAR=1, IR=2, archive=3.  Old analyst rows are already 0
+        and must stay 0.  All non-analyst rows are rebucketed by source_type.
+        """
+        # EDGAR annual -> 4
+        edgar_annual = "','".join([
+            'edgar_10k', 'edgar_20f', 'edgar_20fa', 'edgar_40f', 'edgar_40fa',
+        ])
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 4
+            WHERE source_priority != 0
+              AND report_id IN (
+                SELECT id FROM reports WHERE source_type IN ('{edgar_annual}')
+              )
+        """)
+        # EDGAR quarterly -> 3
+        edgar_quarterly = "','".join(['edgar_10q', 'edgar_6k', 'edgar_6ka'])
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 3
+            WHERE source_priority != 0
+              AND report_id IN (
+                SELECT id FROM reports WHERE source_type IN ('{edgar_quarterly}')
+              )
+        """)
+        # EDGAR 8-K -> 2
+        conn.execute("""
+            UPDATE data_points SET source_priority = 2
+            WHERE source_priority != 0
+              AND report_id IN (
+                SELECT id FROM reports WHERE source_type IN ('edgar_8k', 'edgar_8ka')
+              )
+        """)
+        # Monthly press releases -> 1
+        pr_types = "','".join([
+            'ir_press_release', 'archive_pdf', 'archive_html',
+            'prnewswire_press_release', 'globenewswire_press_release', 'wire_press_release',
+        ])
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 1
+            WHERE source_priority != 0
+              AND report_id IN (
+                SELECT id FROM reports WHERE source_type IN ('{pr_types}')
+              )
+        """)
+        # Analyst methods stay at 0 — re-apply to catch any that slipped through
+        analyst_methods = "','".join(_ANALYST_METHODS)
+        conn.execute(f"""
+            UPDATE data_points SET source_priority = 0
+            WHERE extraction_method IN ('{analyst_methods}')
+        """)
+
     # ── Metric examples CRUD ────────────────────────────────────────────────────
 
     _VALID_EXAMPLE_SOURCE_TYPES: frozenset = frozenset({'table_row', 'prose', 'manual'})
@@ -3097,7 +3167,7 @@ class MinerDB:
         with self._get_connection() as conn:
             rows = conn.execute(
                 f"SELECT * FROM reports {where} "
-                f"ORDER BY ticker, report_date, {self._report_extraction_order_sql()}, id",
+                f"ORDER BY ticker, {self._report_extraction_order_sql()}, report_date, id",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -3297,7 +3367,70 @@ class MinerDB:
         with self._get_connection() as conn:
             rows = conn.execute(
                 f"SELECT * FROM reports {where} "
-                f"ORDER BY ticker, report_date, {self._report_extraction_order_sql()}, id",
+                f"ORDER BY ticker, {self._report_extraction_order_sql()}, report_date, id",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_reports_for_backfill(
+        self,
+        ticker: Optional[str] = None,
+        source_types: Optional[list] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
+    ) -> list:
+        """Return reports eligible for backfill extraction.
+
+        Returns reports where raw_text is present AND the ticker+period has no
+        existing data: no data_points row and no PENDING/APPROVED review_queue
+        entry for the same YYYY-MM prefix as report_date.
+
+        Unlike get_unextracted_reports, this is NOT gated on extraction_status —
+        done/pending/failed are all eligible if the period is data-empty.
+
+        Period matching uses substr(report_date, 1, 7) || '%' to cover both
+        YYYY-MM and YYYY-MM-DD stored formats.
+
+        Args:
+            ticker: Limit to one company.
+            source_types: List of source_type values to include.
+            from_period: Earliest report_date to include (YYYY-MM or YYYY-MM-DD).
+            to_period: Latest report_date to include (YYYY-MM or YYYY-MM-DD).
+        """
+        clauses = [
+            "r.raw_text IS NOT NULL",
+            "r.raw_text != ''",
+            """NOT EXISTS (
+                SELECT 1 FROM data_points dp
+                WHERE dp.ticker = r.ticker
+                  AND dp.period LIKE substr(r.report_date, 1, 7) || '%'
+            )""",
+            """NOT EXISTS (
+                SELECT 1 FROM review_queue rq
+                WHERE rq.ticker = r.ticker
+                  AND rq.period LIKE substr(r.report_date, 1, 7) || '%'
+                  AND rq.status IN ('PENDING', 'APPROVED')
+            )""",
+        ]
+        params: list = []
+        if ticker:
+            clauses.append("r.ticker = ?")
+            params.append(ticker)
+        if source_types:
+            placeholders = ','.join('?' * len(source_types))
+            clauses.append(f"r.source_type IN ({placeholders})")
+            params.extend(source_types)
+        if from_period:
+            clauses.append("r.report_date >= ?")
+            params.append(from_period if len(from_period) > 7 else from_period + '-01')
+        if to_period:
+            clauses.append("r.report_date <= ?")
+            params.append(to_period if len(to_period) > 7 else to_period + '-31')
+        where = "WHERE " + " AND ".join(clauses)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"SELECT r.* FROM reports r {where} "
+                f"ORDER BY r.ticker, {self._report_extraction_order_sql()}, r.report_date, r.id",
                 params,
             ).fetchall()
             return [dict(r) for r in rows]
@@ -3767,21 +3900,23 @@ class MinerDB:
         return _SOURCE_PRIORITY.get(row[0], _DEFAULT_SOURCE_PRIORITY)
 
     def _report_extraction_order_sql(self) -> str:
-        """Return a SQL CASE expression for chronology-first extraction ordering.
+        """Return a SQL CASE expression for source-type-first extraction ordering.
 
-        The primary sort key is always report_date. This secondary key ensures
-        monthly sources are processed before SEC event filings and quarterly /
-        annual filings when multiple documents share the same report_date.
+        Source type is the primary sort key so that all monthly press releases
+        are committed before any 8-Ks, and 8-Ks before 10-Qs/10-Ks.  report_date
+        is the secondary key within each source-type cohort.
         """
         from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
-        monthly_types = "', '".join(MONTHLY_EXTRACTION_SOURCE_TYPES)
+        monthly_types = "', '".join(
+            list(MONTHLY_EXTRACTION_SOURCE_TYPES) + ['archive_html', 'archive_pdf']
+        )
         return (
             "CASE "
             f"WHEN source_type IN ('{monthly_types}') THEN 0 "
-            "WHEN source_type = 'edgar_8k' OR source_type = 'edgar_8ka' THEN 1 "
-            "WHEN source_type IN ('edgar_10q', 'edgar_6k') THEN 2 "
-            "WHEN source_type IN ('edgar_10k', 'edgar_20f', 'edgar_40f') THEN 3 "
+            "WHEN source_type IN ('edgar_8k', 'edgar_8ka') THEN 1 "
+            "WHEN source_type IN ('edgar_10q', 'edgar_6k', 'edgar_6ka') THEN 2 "
+            "WHEN source_type IN ('edgar_10k', 'edgar_20f', 'edgar_20fa', 'edgar_40f', 'edgar_40fa') THEN 3 "
             "ELSE 4 END"
         )
 

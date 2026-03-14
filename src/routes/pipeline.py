@@ -44,19 +44,19 @@ _NON_EDGAR_SOURCE_TYPES = MONTHLY_EXTRACTION_SOURCE_TYPES + ('archive_html', 'ar
 
 
 def _report_chronology_key(report: dict) -> tuple:
-    report_date = report.get('report_date') or ''
     source_type = report.get('source_type') or ''
-    if source_type in MONTHLY_EXTRACTION_SOURCE_TYPES:
+    report_date = report.get('report_date') or ''
+    if source_type in MONTHLY_EXTRACTION_SOURCE_TYPES or source_type in ('archive_html', 'archive_pdf'):
         source_rank = 0
     elif source_type in ('edgar_8k', 'edgar_8ka'):
         source_rank = 1
-    elif source_type in ('edgar_10q', 'edgar_6k'):
+    elif source_type in ('edgar_10q', 'edgar_6k', 'edgar_6ka'):
         source_rank = 2
-    elif source_type in ('edgar_10k', 'edgar_20f', 'edgar_40f'):
+    elif source_type in ('edgar_10k', 'edgar_20f', 'edgar_20fa', 'edgar_40f', 'edgar_40fa'):
         source_rank = 3
     else:
         source_rank = 4
-    return (report_date, source_rank, int(report.get('id') or 0))
+    return (source_rank, report_date, int(report.get('id') or 0))
 
 
 def _sort_reports_chronologically(reports: list[dict]) -> list[dict]:
@@ -720,6 +720,42 @@ def _build_extraction_batch_for_source_types(
             db.reset_report_extraction_status(r['id'])
     else:
         batch = db.get_unextracted_reports(ticker=ticker, source_types=source_types)
+    return _sort_reports_chronologically(batch)
+
+
+def _build_extraction_batch_backfill(
+    db,
+    ticker,
+    first_filing,
+    source_types=None,
+) -> list:
+    """Build extraction batch for backfill mode: only data-empty periods.
+
+    When source_types=None: applies EDGAR date gating (btc_first_filing_date)
+    exactly as _build_extraction_batch does.  IR/archive types are not gated.
+
+    When source_types is explicitly provided: single call with no date gating
+    (caller controls scope).
+
+    Resets extraction_status to 'pending' for all returned reports so that
+    interrupted backfill runs can be resumed correctly.
+    """
+    if source_types is not None:
+        batch = db.get_reports_for_backfill(ticker=ticker, source_types=source_types)
+    else:
+        edgar_batch = db.get_reports_for_backfill(
+            ticker=ticker,
+            source_types=list(_EDGAR_SOURCE_TYPES),
+            from_period=first_filing,
+        )
+        non_edgar_batch = db.get_reports_for_backfill(
+            ticker=ticker,
+            source_types=list(_NON_EDGAR_SOURCE_TYPES),
+        )
+        batch = edgar_batch + non_edgar_batch
+
+    for r in batch:
+        db.reset_report_extraction_status(r['id'])
     return _sort_reports_chronologically(batch)
 
 

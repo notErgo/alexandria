@@ -139,15 +139,17 @@ class TestNormalPath:
         assert edgar_old not in batch_ids
         assert edgar_new in batch_ids
 
-    def test_mixed_sources_are_globally_sorted_oldest_first(self, db, build_batch):
-        """Chronology is enforced across merged IR and EDGAR queues."""
+    def test_mixed_sources_are_globally_sorted_source_type_first(self, db, build_batch):
+        """Source type is the primary sort key: all monthly PRs before 8-Ks."""
         ir_old = _insert_report(db, 'MARA', '2021-04-01', 'ir_press_release')
         edgar_mid = _insert_report(db, 'MARA', '2024-01-01', 'edgar_8k')
         ir_new = _insert_report(db, 'MARA', '2025-02-01', 'ir_press_release')
 
         batch = build_batch('MARA', first_filing='2023-05-19')
 
-        assert [row['id'] for row in batch] == [ir_old, edgar_mid, ir_new]
+        # Both IR reports (rank 0) come before the 8-K (rank 1),
+        # and within each rank they are date-ordered.
+        assert [row['id'] for row in batch] == [ir_old, ir_new, edgar_mid]
 
     def test_all_edgar_types_gated(self, db, build_batch):
         """All six EDGAR source types respect the date gate."""

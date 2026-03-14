@@ -2022,6 +2022,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Run mode</label>
         <select id="extract-mode" style="font-size:0.82rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)" onchange="onExtractModeChange()">
           <option value="resume">Resume — new docs only (skip already-extracted)</option>
+          <option value="backfill">Backfill — periods with no data only</option>
           <option value="force">Force re-extract — re-run all, keep existing data</option>
           <option value="reset">Full Reset — purge data + review queue, then re-extract</option>
         </select>
@@ -3713,6 +3714,7 @@ function onExtractModeChange() {
   const warning = document.getElementById('extract-reset-warning');
   if (hint) {
     if (mode === 'resume') hint.textContent = 'Processes only reports not yet extracted. Analyst-approved rows are never overwritten.';
+    else if (mode === 'backfill') hint.textContent = 'Extracts only reports whose period has no existing data or pending review entries. Resets those reports to pending before running. Does not touch periods that already have results.';
     else if (mode === 'force') hint.textContent = 'Re-runs all matched reports and overwrites existing data_points. Analyst-approved rows are never overwritten. Review queue entries are appended (not cleared).';
     else hint.textContent = '';
   }
@@ -3798,6 +3800,7 @@ async function startExtractionRun() {
       body: JSON.stringify({
         ticker: ticker || null,
         tickers: tickers,
+        run_mode: mode,
         force,
         cadence,
         from_period: fromPeriod,

@@ -397,7 +397,12 @@ def operations_extract():
         tickers = _normalize_extract_tickers(body)
         ticker = tickers[0] if len(tickers) == 1 else None
         scope_label = _extract_scope_label(tickers)
+        run_mode = (body.get('run_mode') or '').strip().lower() or None
         force = bool(body.get('force', False))
+        if run_mode == 'force':
+            force = True
+        elif run_mode == 'backfill':
+            force = False
         warm_model = bool(body.get('warm_model', True))
         source_scope = (body.get('source_scope') or 'both').strip().lower()
         cadence = (body.get('cadence') or 'all').strip().lower()
@@ -455,14 +460,16 @@ def operations_extract():
             }
 
         log.info(
-            "event=extract_start task_id=%s scope=%s force=%s source_scope=%s "
+            "event=extract_start task_id=%s scope=%s force=%s run_mode=%s source_scope=%s "
             "warm_model=%s workers=%s custom_prompt=%s",
-            task_id, scope_label, force, source_scope, warm_model, extract_workers, bool(custom_prompt),
+            task_id, scope_label, force, run_mode, source_scope, warm_model, extract_workers,
+            bool(custom_prompt),
         )
 
         # Capture closure-local copies of all loop variables.
         _tickers = list(tickers)
         _scope_label = scope_label
+        _run_mode = run_mode
         _source_scope = source_scope
         _cadence = cadence
         _custom_prompt = custom_prompt
@@ -476,6 +483,7 @@ def operations_extract():
         from routes.pipeline import (
             _EDGAR_SOURCE_TYPES,
             _NON_EDGAR_SOURCE_TYPES,
+            _build_extraction_batch_backfill,
             run_extraction_phase,
         )
 
@@ -487,7 +495,7 @@ def operations_extract():
                     ops_run = db.create_pipeline_run(
                         triggered_by='manual_extract',
                         config={
-                            'force': force, 'cadence': _cadence,
+                            'force': force, 'run_mode': _run_mode, 'cadence': _cadence,
                             'source_scope': _source_scope,
                             'extract_workers': _extract_workers,
                         },
@@ -518,42 +526,51 @@ def operations_extract():
                 )
 
                 reports: list[dict] = []
-                getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
-                for selected_ticker in (_tickers or [None]):
-                    first_filing = db.get_btc_first_filing_date(selected_ticker) if selected_ticker else None
-                    edgar_from = _from_period or first_filing
+                if _run_mode == 'backfill':
+                    for selected_ticker in (_tickers or [None]):
+                        first_filing = db.get_btc_first_filing_date(selected_ticker) if selected_ticker else None
+                        reports.extend(_build_extraction_batch_backfill(
+                            db, selected_ticker, first_filing,
+                            source_types if source_types else None,
+                        ))
+                    log.info("Task %s: backfill mode — %d candidate reports", task_id, len(reports))
+                else:
+                    getter = db.get_all_reports_for_extraction if force else db.get_unextracted_reports
+                    for selected_ticker in (_tickers or [None]):
+                        first_filing = db.get_btc_first_filing_date(selected_ticker) if selected_ticker else None
+                        edgar_from = _from_period or first_filing
 
-                    if source_types is None:
-                        # cadence='all' + source_scope='both': preserve EDGAR date gating
-                        reports.extend(getter(
-                            ticker=selected_ticker,
-                            source_types=list(_EDGAR_SOURCE_TYPES),
-                            from_period=edgar_from,
-                            to_period=_to_period,
-                        ))
-                        reports.extend(getter(
-                            ticker=selected_ticker,
-                            source_types=list(_NON_EDGAR_SOURCE_TYPES),
-                            from_period=_from_period,
-                            to_period=_to_period,
-                        ))
-                    else:
-                        edgar_in_scope = [t for t in source_types if t in _EDGAR_SOURCE_TYPES]
-                        non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
-                        if edgar_in_scope:
+                        if source_types is None:
+                            # cadence='all' + source_scope='both': preserve EDGAR date gating
                             reports.extend(getter(
                                 ticker=selected_ticker,
-                                source_types=edgar_in_scope,
+                                source_types=list(_EDGAR_SOURCE_TYPES),
                                 from_period=edgar_from,
                                 to_period=_to_period,
                             ))
-                        if non_edgar_in_scope:
                             reports.extend(getter(
                                 ticker=selected_ticker,
-                                source_types=non_edgar_in_scope,
+                                source_types=list(_NON_EDGAR_SOURCE_TYPES),
                                 from_period=_from_period,
                                 to_period=_to_period,
                             ))
+                        else:
+                            edgar_in_scope = [t for t in source_types if t in _EDGAR_SOURCE_TYPES]
+                            non_edgar_in_scope = [t for t in source_types if t not in _EDGAR_SOURCE_TYPES]
+                            if edgar_in_scope:
+                                reports.extend(getter(
+                                    ticker=selected_ticker,
+                                    source_types=edgar_in_scope,
+                                    from_period=edgar_from,
+                                    to_period=_to_period,
+                                ))
+                            if non_edgar_in_scope:
+                                reports.extend(getter(
+                                    ticker=selected_ticker,
+                                    source_types=non_edgar_in_scope,
+                                    from_period=_from_period,
+                                    to_period=_to_period,
+                                ))
 
                 if _sample_n > 0 and len(reports) > _sample_n:
                     reports = _random.sample(reports, _sample_n)
