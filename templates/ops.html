@@ -2320,13 +2320,39 @@ tr.is-reviewed td { opacity: 0.65; }
 <!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Miner Timeline <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Miner Timeline <span class="wf-path-badge wf-critical">Critical</span></button>
     <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
-  <div class="pipeline-sub-pane" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+
+<!-- How this works — pipeline explanation -->
+<details style="margin-bottom:1rem;border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem 0.75rem">
+  <summary style="font-weight:600;font-size:0.85rem;cursor:pointer;user-select:none">How this works — document to monthly slot pipeline</summary>
+  <div style="font-size:0.82rem;line-height:1.6;margin-top:0.75rem;color:var(--theme-text)">
+    <p><strong>Sources.</strong> Each company has three document streams that feed monthly data slots:</p>
+    <ul>
+      <li><strong>Monthly press releases (PR/IR)</strong> — filed by the company on its investor-relations page, typically within a week of month-end. Each document covers one calendar month of production, holdings, and sales figures.</li>
+      <li><strong>SEC 8-K filings</strong> — a company may also file the same monthly production results as an 8-K with EDGAR. The report date is derived from the <em>period_of_report</em> field (the last day of the production month), not the SEC filing date, so data lands in the correct month.</li>
+      <li><strong>SEC 10-Q / 10-K filings</strong> — quarterly and annual reports. These contain cumulative figures across an entire quarter or year. The pipeline anchors on the MD&amp;A section (Item 2 for 10-Q, Item 7 for 10-K), skipping any Table-of-Contents stub, and allocates the figures to the reporting quarter.</li>
+    </ul>
+    <p><strong>Stage 1 — Ingest (fetch and store).</strong> Documents are fetched and their raw text is stored in the <em>reports</em> table. No extraction happens yet. The document is assigned a <em>source_type</em> (archive_html, archive_pdf, ir_press_release, edgar_8k, edgar_10q, edgar_10k).</p>
+    <p><strong>Stage 2 — Keyword gate.</strong> Before any LLM call, the pipeline checks whether the document contains at least one mining-related anchor phrase (e.g. "bitcoin produced", "hash rate", "BTC mined"). Documents that contain none of these phrases are skipped and marked <em>keyword_gated</em> — they never reach the LLM.</p>
+    <p><strong>Stage 3 — LLM extraction.</strong> Documents that pass the gate are sent to the local Qwen LLM (via Ollama) in a single batch call requesting all metrics at once. The LLM returns a JSON object with one value per metric. A confidence score is calculated for each value based on how close the matched text is to the keyword anchor, whether the value is within the expected range for that metric, and the pattern weight. Values below the 0.75 confidence threshold, or flagged as statistical outliers vs. recent history, are routed to the <strong>Review Queue</strong> for analyst decision. Values above the threshold are written directly to <strong>data_points</strong> as auto-accepted.</p>
+    <p><strong>Stage 4 — Metric distillation for display.</strong> Each monthly slot in the timeline below shows one row per metric. The value displayed is selected from the following priority order (highest wins):</p>
+    <ol>
+      <li><strong>Analyst / finalized</strong> — a value you have manually confirmed or edited (method badge: <span class="source-badge">A</span> or <span class="source-badge">F</span>). Never overwritten by the pipeline.</li>
+      <li><strong>EDGAR filing</strong> — auto-accepted value from an 8-K, 10-Q, or 10-K (source priority 1).</li>
+      <li><strong>IR press release</strong> — auto-accepted value from the company's investor-relations page (source priority 2).</li>
+      <li><strong>Archive</strong> — auto-accepted value from a locally stored historical PDF or HTML (source priority 3).</li>
+    </ol>
+    <p>If a value is sitting in the Review Queue and has not yet been approved, the cell shows <span class="source-badge source-badge-review">R</span> and the pending value. Approving it promotes it to data_points at the analyst tier.</p>
+    <p><strong>Method badges.</strong> Each cell carries a badge showing how the value was produced: <strong>L</strong> = LLM auto-accepted, <strong>R</strong> = regex pattern match, <strong>A</strong> = analyst entry, <strong>F</strong> = finalized, <strong>D</strong> = derived (gap-fill inference), <strong>S</strong> = SEC filing, <strong>P</strong> = press release.</p>
+    <p><strong>Coverage bar.</strong> The bar at the top of the selector shows what fraction of expected monthly slots have at least one accepted value. Gaps are months where no document produced a value above the confidence threshold and no analyst has filled them in.</p>
+  </div>
+</details>
 
 <!-- Chart panel (collapsed by default; opens after finalize) -->
 <div id="chart-panel" style="display:none; margin-bottom:1rem">
@@ -2671,7 +2697,7 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-review-miner -->
 
   <!-- Sub-pane: Review Queue (4.1) -->
-  <div class="pipeline-sub-pane active" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
+  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
     <div class="section-header-row" style="margin-bottom:0.75rem">
       <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
     </div>
