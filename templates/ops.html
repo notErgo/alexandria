@@ -1949,6 +1949,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <select id="extract-cadence" style="font-size:0.82rem;padding:0.2rem 0.4rem" onchange="onSourceDocsChange()" title="Which document types to process">
           <option value="all">All types</option>
           <option value="monthly">Press releases only  (monthly → monthly rows directly)</option>
+          <option value="sec">10-Q + 10-K filings  (SEC → needs gap-fill for monthly)</option>
           <option value="quarterly">10-Q filings only  (quarterly → needs gap-fill for monthly)</option>
           <option value="annual">10-K filings only  (annual → needs gap-fill for monthly)</option>
         </select>
@@ -3694,9 +3695,10 @@ function onSourceDocsChange() {
   const gapfillRow = document.getElementById('extract-gapfill-row');
   if (gapfillRow) {
     // Show gap-fill option when processing 10-Q or 10-K — those don't produce monthly rows directly
-    gapfillRow.style.display = (cadence === 'quarterly' || cadence === 'annual' || cadence === 'all') ? 'flex' : 'none';
+    gapfillRow.style.display = (cadence === 'quarterly' || cadence === 'annual' || cadence === 'sec' || cadence === 'all') ? 'flex' : 'none';
   }
   // Auto-sync granularity selector to match cadence selection
+  // 'sec' covers both 10-Q and 10-K so no single granularity is auto-selected
   const granMap = { monthly: 'gran-monthly', quarterly: 'gran-quarterly', annual: 'gran-annual' };
   const granId = granMap[cadence];
   if (granId) {

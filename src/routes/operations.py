@@ -339,6 +339,7 @@ _CADENCE_SOURCE_TYPES = {
     'monthly':   list(MONTHLY_EXTRACTION_SOURCE_TYPES),
     'quarterly': ['edgar_10q'],
     'annual':    ['edgar_10k'],
+    'sec':       ['edgar_10q', 'edgar_10k'],
     # 'all' / None: no filter (all source_types)
 }
 
