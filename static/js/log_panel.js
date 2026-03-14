@@ -6,15 +6,16 @@
  * incremental lines emitted by the backend pipeline.
  *
  * Usage:
- *   const panel = new LogPanel('extract-log', { maxLines: 30 });
+ *   const panel = new LogPanel('extract-log', { maxLines: 30, storageKey: 'logpanel_extract' });
  *   panel.startPolling(taskId, '/api/operations/interpret/' + taskId + '/progress', {
  *     onProgress(data) { statusEl.textContent = ...; },
  *     onComplete(data) { showToast('Done'); },
  *     onError(data)    { showToast('Failed', true); },
  *     onFetchError(err){ showToast('Network error', true); },
  *   });
+ *   panel.restore(callbacks);  // call on page load to replay logs from last session
  *   panel.stopPolling();
- *   panel.clear();
+ *   panel.clear();             // also clears persisted storageKey entry
  */
 class LogPanel {
   constructor(containerId, options) {
@@ -23,6 +24,7 @@ class LogPanel {
     this._timer = null;
     this._logCount = 0;
     this._pollInterval = (options && options.pollInterval) ? options.pollInterval : 1000;
+    this._storageKey = (options && options.storageKey) ? options.storageKey : null;
   }
 
   get el() {
@@ -50,7 +52,7 @@ class LogPanel {
     }
   }
 
-  /** Clear the panel and reset the polling cursor. */
+  /** Clear the panel, reset the polling cursor, and remove any persisted state. */
   clear() {
     const el = this.el;
     if (el) {
@@ -58,6 +60,9 @@ class LogPanel {
       el.style.display = 'none';
     }
     this._logCount = 0;
+    if (this._storageKey) {
+      try { localStorage.removeItem(this._storageKey); } catch(e) {}
+    }
   }
 
   /**
@@ -72,6 +77,9 @@ class LogPanel {
   startPolling(taskId, pollUrl, callbacks) {
     this.stopPolling();
     this._logCount = 0;
+    if (this._storageKey) {
+      try { localStorage.setItem(this._storageKey, JSON.stringify({taskId: taskId, pollUrl: pollUrl})); } catch(e) {}
+    }
     const cb = callbacks || {};
     this._timer = setInterval(async () => {
       try {
@@ -106,6 +114,20 @@ class LogPanel {
         if (cb.onFetchError) cb.onFetchError(err);
       }
     }, this._pollInterval);
+  }
+
+  /**
+   * Restore from a previous session by re-polling the saved task.
+   * If the task is still running, polling continues normally.
+   * If the task is already terminal, one poll renders all logs and stops.
+   * Silently does nothing if no storageKey is set or no saved state exists.
+   */
+  restore(callbacks) {
+    if (!this._storageKey) return;
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(this._storageKey) || 'null'); } catch(e) { return; }
+    if (!saved || !saved.taskId || !saved.pollUrl) return;
+    this.startPolling(saved.taskId, saved.pollUrl, callbacks || {});
   }
 
   stopPolling() {

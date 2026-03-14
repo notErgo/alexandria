@@ -2221,7 +2221,7 @@ async function doExtract() {
   }
 }
 
-const _mdExtractPanel = new LogPanel('md-extract-log', { maxLines: 50 });
+const _mdExtractPanel = new LogPanel('md-extract-log', { maxLines: 50, storageKey: 'logpanel_md_extract' });
 
 function _pollExtractionProgress(taskId, statusEl) {
   _mdExtractPanel.clear();
@@ -2510,5 +2510,30 @@ function switchToReviewTab(ticker, period) {
   const reviewTab = document.querySelector('[data-pane="review"]');
   if (reviewTab) reviewTab.click();
 }
+
+// Restore extraction log from previous session on page load.
+_mdExtractPanel.restore({
+  onProgress: function(p) {
+    const statusEl = document.getElementById('extract-status');
+    if (!statusEl) return;
+    const processed = p.reports_processed || 0;
+    const total = p.reports_total || '?';
+    statusEl.textContent = processed + '/' + total + ' (restored)';
+  },
+  onComplete: function(p) {
+    const statusEl = document.getElementById('extract-status');
+    if (!statusEl) return;
+    const processed = p.reports_processed || 0;
+    const points = p.data_points || 0;
+    const errors = p.errors || 0;
+    statusEl.textContent = processed + ' done,  ' + points + ' pts'
+      + (errors ? ',  ' + errors + ' errors' : '') + '  (restored)';
+  },
+  onError: function(p) {
+    const statusEl = document.getElementById('extract-status');
+    if (!statusEl) return;
+    statusEl.textContent = 'Error: ' + (p.error_message || 'failed') + '  (restored)';
+  },
+});
 </script>
 {% endblock %}

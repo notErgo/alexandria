@@ -3550,8 +3550,8 @@ async function triggerAcquire(source, tickers) {
   }
 }
 
-const _extractPanel = new LogPanel('extract-log', { maxLines: 30 });
-const _gapReextractPanel = new LogPanel('gap-reextract-log', { maxLines: 30 });
+const _extractPanel = new LogPanel('extract-log', { maxLines: 30, storageKey: 'logpanel_extract' });
+const _gapReextractPanel = new LogPanel('gap-reextract-log', { maxLines: 30, storageKey: 'logpanel_gap_reextract' });
 
 function _appendExtractLog(line, level) { _extractPanel.append(line, level); }
 
@@ -8657,5 +8657,62 @@ rvReviewPurgeOnInput();
 dzReviewPurgeOnInput();
 dbFinalOnInput();
 allPurgeOnInput();
+
+// Restore log panels from previous session on page load.
+_extractPanel.restore({
+  onProgress: function(p) {
+    const state = p.status || 'running';
+    const processed = p.reports_processed || 0;
+    const total = p.reports_total || 0;
+    _extractTaskId = _extractTaskId || 'restored';
+    _setExtractEnabled(false);
+    _setExtractStatus('Extraction (restored): ' + state + ' (' + processed + '/' + total + ')');
+  },
+  onComplete: function(p) {
+    _extractTaskId = null;
+    _setExtractEnabled(true);
+    const processed = p.reports_processed || 0;
+    const points = p.data_points || 0;
+    const errors = p.errors || 0;
+    _setExtractStatus('(restored) complete  reports=' + processed + '  pts=' + points + (errors ? '  errors=' + errors : ''));
+  },
+  onError: function(p) {
+    _extractTaskId = null;
+    _setExtractEnabled(true);
+    _setExtractStatus('(restored) error: ' + (p.error_message || 'extraction failed'), true);
+  },
+  onFetchError: function() {
+    _extractTaskId = null;
+    _setExtractEnabled(true);
+  },
+});
+
+_gapReextractPanel.restore({
+  onProgress: function(p) {
+    const statusEl = document.getElementById('gap-reextract-status');
+    if (statusEl) {
+      const state = p.status || 'running';
+      const processed = p.reports_processed || 0;
+      const total = p.reports_total || 0;
+      statusEl.textContent = 'Gap re-extract (restored): ' + state + ' (' + processed + '/' + total + ')';
+    }
+  },
+  onComplete: function(p) {
+    const statusEl = document.getElementById('gap-reextract-status');
+    const btn = document.getElementById('gap-reextract-btn');
+    if (btn) btn.disabled = false;
+    if (statusEl) {
+      const processed = p.reports_processed || 0;
+      const points = p.data_points || 0;
+      statusEl.textContent = '(restored) complete  reports=' + processed + '  pts=' + points;
+    }
+  },
+  onError: function(p) {
+    const statusEl = document.getElementById('gap-reextract-status');
+    const btn = document.getElementById('gap-reextract-btn');
+    if (btn) btn.disabled = false;
+    if (statusEl) statusEl.textContent = '(restored) error: ' + (p.error_message || 'failed');
+  },
+});
 </script>
 {% endblock %}
