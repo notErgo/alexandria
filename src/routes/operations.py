@@ -402,6 +402,7 @@ def operations_extract():
         source_scope = (body.get('source_scope') or 'both').strip().lower()
         cadence = (body.get('cadence') or 'all').strip().lower()
         custom_prompt = (body.get('custom_prompt') or '').strip() or None
+        model_override = (body.get('model') or '').strip() or None
         from_period = (body.get('from_period') or '').strip() or None
         to_period = (body.get('to_period') or '').strip() or None
         extract_workers = max(1, min(int(body.get('extract_workers') or 4), 12))
@@ -465,6 +466,7 @@ def operations_extract():
         _source_scope = source_scope
         _cadence = cadence
         _custom_prompt = custom_prompt
+        _model_override = model_override
         _from_period = from_period
         _to_period = to_period
         _extract_workers = extract_workers
@@ -578,13 +580,14 @@ def operations_extract():
                     grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
 
                 def _ops_run_config_factory(report_ticker: str):
-                    if not _expected_granularity and not _custom_prompt:
+                    if not _expected_granularity and not _custom_prompt and not _model_override:
                         return None
                     from miner_types import ExtractionRunConfig
                     return ExtractionRunConfig(
                         expected_granularity=_expected_granularity,
                         ticker=report_ticker,
                         custom_prompt_preamble=_custom_prompt,
+                        model=_model_override,
                     )
 
                 def _ops_progress_callback(c: dict) -> None:

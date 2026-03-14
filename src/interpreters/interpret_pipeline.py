@@ -164,9 +164,13 @@ _QUARTERLY_8K_TEXT_RE = re.compile(
 )
 _QUARTERLY_RESULTS_8K_TEXT_RE = re.compile(
     r'\b(?:(first|1st|second|2nd|third|3rd|fourth|4th)\s+quarter|q([1-4]))'
-    r'(?:\s+and\s+fiscal\s+year)?\s+(20\d{2})\s+results\b',
+    r'(?:\s+and\s+fiscal\s+year)?\s+(?:fy|fiscal(?:\s+year)?\s+)?(20\d{2})(?:\s+\w+){0,3}\s+results\b',
     re.IGNORECASE,
 )
+# Source types that may embed quarterly earnings text (press releases and 8-K exhibits).
+# These are inspected for quarterly-results patterns and rerouted to the quarterly path
+# when a match is found.  10-Q/10-K/20-F/40-F are handled via _QUARTERLY_SOURCES already.
+_QUARTERLY_EARNINGS_PR_SOURCES = frozenset({'edgar_8k', 'edgar_8ka', 'ir_press_release'})
 
 
 def _quarter_token_to_int(token: str) -> Optional[int]:
@@ -183,27 +187,33 @@ def _quarter_token_to_int(token: str) -> Optional[int]:
 
 
 def _infer_quarterly_covering_period(report: dict) -> Optional[str]:
-    """Infer covering_period for quarter-style 8-K exhibits.
+    """Infer covering_period for quarterly earnings press releases and 8-K exhibits.
 
-    Some issuers publish quarterly shareholder letters as 8-K exhibits. Those
-    documents should flow through the quarterly path even though their
-    ``source_type`` remains ``edgar_8k``. This also covers 8-K earnings
-    releases titled like "Third Quarter 2023 Results" or
-    "Fourth Quarter and Fiscal Year 2023 Results".
+    Handles EDGAR 8-K earnings exhibits (e.g. "Third Quarter 2025 Financial
+    Results") and IR press releases (e.g. "First Quarter FY2023 Financial
+    Results" from CLSK).  Documents matching a quarterly pattern are rerouted
+    to the quarterly extraction path regardless of their source_type.
+
+    Returns a covering_period string like '2025-Q3' when matched, the report's
+    existing covering_period when already set, or None when no quarterly
+    pattern is detected.
     """
-    if report.get('source_type') not in {'edgar_8k', 'edgar_8ka'}:
+    source_type = report.get('source_type')
+    if source_type not in _QUARTERLY_EARNINGS_PR_SOURCES:
         return report.get('covering_period')
 
     covering_period = report.get('covering_period')
     if covering_period:
         return covering_period
 
-    source_url = report.get('source_url') or ''
-    m = _QUARTERLY_8K_URL_RE.search(source_url)
-    if m:
-        quarter = int(m.group(1))
-        year = 2000 + int(m.group(2))
-        return f"{year:04d}-Q{quarter}"
+    # URL-based detection only applies to EDGAR 8-K shareholder letters.
+    if source_type in {'edgar_8k', 'edgar_8ka'}:
+        source_url = report.get('source_url') or ''
+        m = _QUARTERLY_8K_URL_RE.search(source_url)
+        if m:
+            quarter = int(m.group(1))
+            year = 2000 + int(m.group(2))
+            return f"{year:04d}-Q{quarter}"
 
     raw_text = (report.get('raw_text') or '')[:2000]
     m = _QUARTERLY_8K_TEXT_RE.search(raw_text)
@@ -472,6 +482,7 @@ def _interpret_quarterly_report(
     db,
     summary,
     attribution: Optional[str] = None,
+    config=None,
 ) -> 'ExtractionSummary':
     """Quarterly/annual extraction path: LLM only, wider text window, provenance fields.
 
@@ -566,7 +577,7 @@ def _interpret_quarterly_report(
 
     try:
         llm_results = llm_interpreter.extract_quarterly_batch(
-            text, all_metrics, ticker=ticker, period_type=period_type
+            text, all_metrics, ticker=ticker, period_type=period_type, config=config
         )
     except Exception as e:
         log.error(
@@ -599,7 +610,7 @@ def _interpret_quarterly_report(
         for _m in all_metrics:
             try:
                 single = llm_interpreter.extract_quarterly_batch(
-                    text, [_m], ticker=ticker, period_type=period_type
+                    text, [_m], ticker=ticker, period_type=period_type, config=config
                 )
                 if _m in single and single[_m] is not None:
                     fallback[_m] = single[_m]
@@ -729,22 +740,22 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
         source_type = report.get('source_type', '')
 
         inferred_covering_period = _infer_quarterly_covering_period(report)
-        treat_as_quarterly_8k = bool(
-            source_type in {'edgar_8k', 'edgar_8ka'} and inferred_covering_period
+        treat_as_quarterly_earnings = bool(
+            source_type in _QUARTERLY_EARNINGS_PR_SOURCES and inferred_covering_period
         )
         effective_report = (
             {**report, 'covering_period': inferred_covering_period}
-            if treat_as_quarterly_8k else report
+            if treat_as_quarterly_earnings else report
         )
 
         # Build ExtractionRunConfig if not supplied by caller.
         # Annual SEC sources → annual; quarterly SEC sources and quarter-style
-        # 8-K shareholder letters → quarterly; all else → monthly.
+        # earnings press releases (8-K or IR) → quarterly; all else → monthly.
         if config is None:
             from miner_types import ExtractionRunConfig
             if source_type in _ANNUAL_SOURCES:
                 _eg = 'annual'
-            elif source_type in _QUARTERLY_SOURCES or treat_as_quarterly_8k:
+            elif source_type in _QUARTERLY_SOURCES or treat_as_quarterly_earnings:
                 _eg = 'quarterly'
             else:
                 _eg = 'monthly'
@@ -756,8 +767,8 @@ def extract_report(report: dict, db, attribution: Optional[str] = None, config=N
 
         # Route quarterly and annual SEC filings to the dedicated extraction path.
         # These do not use regex extraction — LLM only with wider text window.
-        if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES or treat_as_quarterly_8k:
-            return _interpret_quarterly_report(effective_report, db, summary, attribution)
+        if source_type in _QUARTERLY_SOURCES or source_type in _ANNUAL_SOURCES or treat_as_quarterly_earnings:
+            return _interpret_quarterly_report(effective_report, db, summary, attribution, config=_run_config)
 
         from infra.keyword_service import get_mining_detection_phrases as _get_det_phrases
         _det_phrases = [p.lower() for p in _get_det_phrases(db) if p.strip()]

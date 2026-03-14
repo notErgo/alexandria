@@ -196,12 +196,13 @@ class LLMInterpreter:
         """
         # config wins over legacy param
         _eg = config.expected_granularity if config is not None else expected_granularity
+        _model = (config.model if config is not None else None) or None
         try:
             prompt = self._build_batch_prompt(text, metrics, ticker=ticker, config=config, period=period)
-            raw = self._call_llm(prompt)
+            raw = self._call_llm(prompt, model=_model)
             if raw is None:
                 return {}
-            return self._parse_batch_response(raw, metrics)
+            return self._parse_batch_response(raw, metrics, model=_model)
         except Exception as e:
             log.error("LLM batch extraction failed: %s", e, exc_info=True)
             return {}
@@ -723,7 +724,7 @@ class LLMInterpreter:
         return "\n".join(lines)
 
     def _parse_batch_response(
-        self, raw: str, metrics: list
+        self, raw: str, metrics: list, model: Optional[str] = None
     ) -> dict:
         """
         Parse the LLM's batch JSON response.
@@ -795,7 +796,7 @@ class LLMInterpreter:
             source_snippet = str(entry.get('source_snippet') or raw[:200])
             period_granularity = str(entry.get('period_granularity') or 'unknown').lower().strip()
 
-            _model = _active_model(self._db)
+            _model = model or _active_model(self._db)
             results[metric] = ExtractionResult(
                 metric=metric,
                 value=value,
@@ -864,9 +865,11 @@ class LLMInterpreter:
                 pass
         return default
 
-    def _call_llm(self, prompt: str) -> Optional[str]:
+    def _call_llm(self, prompt: str, model: Optional[str] = None) -> Optional[str]:
         """
         POST to the configured LLM backend. Returns the response text or None on failure.
+
+        model: optional per-call override; falls back to _active_model(db) when None.
 
         Supports two backends (controlled by LLM_BACKEND env var):
           "ollama"   — POST /api/generate  (default)
@@ -874,11 +877,12 @@ class LLMInterpreter:
         """
         import re as _re
         self._last_transport_error = False
+        _model = model or _active_model(self._db)
 
         if LLM_BACKEND == "llamacpp":
             url = f"{LLM_BASE_URL}/v1/chat/completions"
             payload = {
-                "model": _active_model(self._db),
+                "model": _model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.0,
                 "max_tokens": 768,
@@ -900,7 +904,7 @@ class LLMInterpreter:
         else:
             url = f"{LLM_BASE_URL}/api/generate"
             payload = {
-                "model": _active_model(self._db),
+                "model": _model,
                 "prompt": prompt,
                 "stream": False,
                 "keep_alive": self._extract_keep_alive(),
@@ -964,20 +968,24 @@ class LLMInterpreter:
         metrics: list,
         ticker: str = None,
         period_type: str = 'quarterly',  # 'quarterly' | 'annual'
+        config=None,
     ) -> dict:
         """Like extract_batch() but uses quarterly/annual prompts and preamble.
 
+        config: Optional ExtractionRunConfig. When supplied, config.model overrides
+            the global model setting for this call.
         Returns dict of {metric: ExtractionResult} for metrics where a valid value
         was found. Returns {} on any failure so caller can handle gracefully.
         """
+        _model = (config.model if config is not None else None) or None
         try:
             prompt = self._build_quarterly_batch_prompt(
                 text, metrics, ticker=ticker, period_type=period_type
             )
-            raw = self._call_llm(prompt)
+            raw = self._call_llm(prompt, model=_model)
             if raw is None:
                 return {}
-            return self._parse_quarterly_batch_response(raw, metrics, period_type=period_type)
+            return self._parse_quarterly_batch_response(raw, metrics, period_type=period_type, model=_model)
         except Exception as e:
             log.error("LLM quarterly batch extraction failed: %s", e, exc_info=True)
             return {}
@@ -1078,7 +1086,7 @@ class LLMInterpreter:
         return "\n".join(lines)
 
     def _parse_quarterly_batch_response(
-        self, raw: str, metrics: list, period_type: str = 'quarterly'
+        self, raw: str, metrics: list, period_type: str = 'quarterly', model: Optional[str] = None
     ) -> dict:
         """Parse LLM batch response for quarterly/annual extraction.
 
@@ -1149,7 +1157,7 @@ class LLMInterpreter:
             confidence = max(0.0, min(1.0, confidence))
             source_snippet = str(entry.get('source_snippet') or raw[:200])
 
-            _model = _active_model(self._db)
+            _model = model or _active_model(self._db)
             results[metric] = ExtractionResult(
                 metric=metric,
                 value=value,

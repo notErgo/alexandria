@@ -1010,6 +1010,105 @@ class TestKeywordGate:
         assert any(p['period'] == '2023-Q4' and abs(p['value'] - 4242.0) < 0.01 for p in points)
         assert not any(p['period'] == '2023-12-01' for p in points)
 
+    def test_quarterly_8k_financial_results_with_intervening_word(
+        self, db_with_company, monkeypatch
+    ):
+        """Earnings 8-Ks titled 'Third Quarter YYYY Financial Results' are routed quarterly.
+
+        RIOT Platforms uses 'Third Quarter 2025 Financial Results' (one word between
+        year and 'Results'), which previously slipped through to the monthly path.
+        """
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [
+                {'phrase': 'bitcoin produced', 'metric_key': 'production_btc'},
+            ],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=1406.0, unit='BTC', confidence=0.95,
+                extraction_method='llm_test', source_snippet='Q3 total 1,406 bitcoin produced',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=(
+                'Riot Platforms Reports Third Quarter 2025 Financial Results and Strategic Highlights. '
+                'Total Q3 bitcoin produced: 1,406 BTC.'
+            ),
+            report_date='2025-10-30',
+            source_type='edgar_8k',
+            source_url='https://www.sec.gov/Archives/edgar/data/1167419/000110465925104461/riot-20251030xex99d1.htm',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company)
+
+        assert summary.errors == 0
+        mock_llm.extract_quarterly_batch.assert_called_once()
+        points = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert any(p['period'] == '2025-Q3' and abs(p['value'] - 1406.0) < 0.01 for p in points)
+        assert not any(p['period'].startswith('2025-10') for p in points)
+
+    def test_quarterly_ir_press_release_fy_quarter_uses_quarterly_path(
+        self, db_with_company, monkeypatch
+    ):
+        """IR quarterly earnings PRs (e.g. 'First Quarter FY2023') are routed quarterly.
+
+        CLSK posts quarterly earnings on their IR site as ir_press_release.  These
+        previously slipped through to the monthly path because _infer_quarterly_covering_period
+        only inspected edgar_8k source types.
+        """
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [
+                {'phrase': 'mined', 'metric_key': 'production_btc'},
+            ],
+        )
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_quarterly_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=1531.0, unit='BTC', confidence=0.93,
+                extraction_method='llm_test', source_snippet='Mined 1,531 Bitcoin',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text=(
+                'CleanSpark Reports First Quarter FY2023 Financial Results '
+                'February 9, 2023. Mined 1,531 Bitcoin, a 132% increase over same prior year period.'
+            ),
+            report_date='2023-02-09',
+            source_type='ir_press_release',
+            source_url='https://investors.cleanspark.com/news/news-details/2023/CleanSpark-Reports-First-Quarter-FY2023-Financial-Results-02-09-2023/default.aspx',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company)
+
+        assert summary.errors == 0
+        mock_llm.extract_quarterly_batch.assert_called_once()
+        points = db_with_company.query_data_points(ticker='MARA', metric='production_btc')
+        assert any(p['period'] == '2023-Q1' and abs(p['value'] - 1531.0) < 0.01 for p in points)
+        assert not any(p['period'].startswith('2023-02') for p in points)
+
 
 class TestBoilerplateStrippingBySourceType:
     """Verify extract_report strips IR/archive boilerplate and EDGAR footers before LLM."""

@@ -276,7 +276,7 @@ class TestTemporalAnchor:
         session = MagicMock(spec=requests.Session)
         # Mock _call_llm to capture the prompt
         captured = {}
-        def fake_call(prompt):
+        def fake_call(prompt, model=None):
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)
@@ -292,7 +292,7 @@ class TestTemporalAnchor:
         import requests
         session = MagicMock(spec=requests.Session)
         captured = {}
-        def fake_call(prompt):
+        def fake_call(prompt, model=None):
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)
@@ -308,7 +308,7 @@ class TestTemporalAnchor:
         import requests
         session = MagicMock(spec=requests.Session)
         captured = {}
-        def fake_call(prompt):
+        def fake_call(prompt, model=None):
             captured['prompt'] = prompt
             return None
         interp = LLMInterpreter(session=session, db=None)

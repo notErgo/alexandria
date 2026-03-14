@@ -788,7 +788,7 @@ function openDocumentFromRow(period, reportId) {
   }) : null;
   document.getElementById('doc-panel-title-text').textContent =
     `${_ticker} · ${period.slice(0, 7)}${selectedDoc && selectedDoc.document_title ? ' · ' + selectedDoc.document_title : (selectedDoc && selectedDoc.source_type ? ' · ' + selectedDoc.source_type : (row && row.source_type ? ' · ' + row.source_type : ''))}`;
-  document.getElementById('pattern-panel').style.display = 'none';
+  const _pp = document.getElementById('pattern-panel'); if (_pp) _pp.style.display = 'none';
   document.getElementById('pattern-save-status').textContent = '';
   document.getElementById('apply-result').style.display = 'none';
   const nullMetrics = row
@@ -1034,9 +1034,9 @@ function selectPeriod(period) {
     `${_ticker} · ${periodLabel}${selectedDoc && selectedDoc.document_title ? ' · ' + selectedDoc.document_title : (selectedDoc && selectedDoc.source_type ? ' · ' + selectedDoc.source_type : (row && row.source_type ? ' · ' + row.source_type : ''))}`;
 
   // Reset pattern panel state (pattern generator is separate from ReviewPanel)
-  document.getElementById('pattern-panel').style.display = 'none';
-  document.getElementById('pattern-save-status').textContent = '';
-  document.getElementById('apply-result').style.display = 'none';
+  const _pp = document.getElementById('pattern-panel'); if (_pp) _pp.style.display = 'none';
+  const _ps = document.getElementById('pattern-save-status'); if (_ps) _ps.textContent = '';
+  const _ar = document.getElementById('apply-result'); if (_ar) _ar.style.display = 'none';
 
   // Open ReviewPanel for this cell (no specific metric — shows all analysis)
   ReviewPanel.openCell(_ticker, period, null, {
@@ -1057,7 +1057,7 @@ function closeDocPanel() {
   panel.classList.remove('visible');
   panel.style.display = 'none';
   _docSearchClose();
-  document.getElementById('pattern-panel').style.display = 'none';
+  const _pp = document.getElementById('pattern-panel'); if (_pp) _pp.style.display = 'none';
   ReviewPanel.close();
   // Clear row selection
   document.querySelectorAll('#timeline-tbody tr.selected').forEach(function(r) {

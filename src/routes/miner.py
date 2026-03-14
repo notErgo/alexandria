@@ -275,12 +275,22 @@ def get_miner_timeline(ticker: str):
         # Monthly source: normalize all periods to YYYY-MM-01 so that data points
         # stored with non-standard dates (e.g. "2025-01-31" from 8-K filing dates)
         # align with the monthly spine which always uses YYYY-MM-01.
+        # When multiple data points share the same normalized YYYY-MM (e.g. an IR
+        # press release at period=2025-10-01 and an EDGAR 8-K at 2025-10-30), keep
+        # the entry with the better (lower) source_priority so the most authoritative
+        # source wins rather than the one that happens to sort last.
         pivot: dict = {}
+        _pivot_prio: dict = {}  # (period, metric) → winning source_priority
         for dp in all_dps:
             period = dp['period']
             if source == 'monthly' and len(period) >= 10:
                 period = period[:7] + '-01'
             metric = dp['metric']
+            new_prio = dp.get('source_priority') if dp.get('source_priority') is not None else 3
+            existing_prio = _pivot_prio.get((period, metric), 999)
+            if new_prio > existing_prio:
+                continue  # existing entry is from a more authoritative source
+            _pivot_prio[(period, metric)] = new_prio
             if period not in pivot:
                 pivot[period] = {}
             pivot[period][metric] = {

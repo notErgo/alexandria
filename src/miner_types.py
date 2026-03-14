@@ -310,6 +310,7 @@ class ExtractionRunConfig:
     ticker: str = ''
     run_id: Optional[int] = None
     custom_prompt_preamble: Optional[str] = None
+    model: Optional[str] = None  # Ollama model override for this run; None → DB config / env default
 
     def __post_init__(self):
         if self.expected_granularity is not None:
