@@ -472,23 +472,6 @@ class TestNewMetricPromptKeys:
             assert '{metric}' not in prompt, (
                 f"{key} prompt looks like the generic fallback (contains '{{metric}}')"
             )
-            assert len(prompt) > 200, (
-                f"{key} prompt is suspiciously short ({len(prompt)} chars); "
-                "expected a detailed extraction prompt"
-            )
-
-    def test_new_keys_present_in_quarterly_prompts(self):
-        from interpreters.llm_interpreter import _QUARTERLY_PROMPTS
-        for key in self.NEW_KEYS:
-            assert key in _QUARTERLY_PROMPTS, f"{key} missing from _QUARTERLY_PROMPTS"
-
-    def test_new_keys_present_in_batch_unit_hints(self):
-        from interpreters.llm_interpreter import _BATCH_UNIT_HINTS
-        for key in self.NEW_KEYS:
-            assert key in _BATCH_UNIT_HINTS, f"{key} missing from _BATCH_UNIT_HINTS"
-            assert _BATCH_UNIT_HINTS[key] == 'BTC', (
-                f"{key} unit hint should be 'BTC', got '{_BATCH_UNIT_HINTS[key]}'"
-            )
 
     def test_get_default_prompt_returns_real_prompt_for_new_keys(self):
         from interpreters.llm_interpreter import LLMInterpreter

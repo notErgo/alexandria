@@ -46,7 +46,7 @@
     { "id": "interpreters.result_router",     "layer": 2, "path": "src/interpreters/result_router.py",
       "notes": "LLM result routing: _apply_llm_result, validate_period_granularity" },
     { "id": "interpreters.llm_prompt_builder","layer": 2, "path": "src/interpreters/llm_prompt_builder.py",
-      "notes": "prompt constants only: _DEFAULT_PROMPTS, _QUARTERLY_PROMPTS, preambles, unit hints" },
+      "notes": "prompt constants only: _DEFAULT_PROMPTS, preambles (monthly/quarterly/annual), _UNIVERSAL_FORMAT_RULES" },
     { "id": "interpreters.table_interpreter", "layer": 2, "path": "src/interpreters/table_interpreter.py" },
     { "id": "interpreters.llm_interpreter",   "layer": 2, "path": "src/interpreters/llm_interpreter.py" },
     { "id": "interpreters.broad_interpreter", "layer": 2, "path": "src/interpreters/broad_interpreter.py" },

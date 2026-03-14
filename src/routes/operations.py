@@ -1157,11 +1157,10 @@ def manifest_detect_period(manifest_id: int):
 @bp.route('/api/delete/scrape/ticker', methods=['POST'])
 @bp.route('/api/operations/purge_ticker', methods=['POST'])
 def purge_ticker():
-    """Canonical ticker-scoped SCRAPE-stage delete endpoint.
+    """Ticker-scoped extraction-output purge.
 
-    Cascades through every downstream layer in FK-safe order:
-      data_points → review_queue → final_data_points
-    Also resets reports.extraction_status = 'pending'.
+    Deletes extraction outputs only — source documents (reports) are not touched.
+    Cascades through: data_points → review_queue → final_data_points.
 
     Body: { "ticker": "MARA" }
     Returns: { "data_points_deleted": N, "review_queue_deleted": N, "final_data_points_deleted": N }

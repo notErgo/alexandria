@@ -442,6 +442,11 @@ class MinerDB:
                     conn.execute("PRAGMA user_version = 48")
                     version = 48
 
+                if version < 49:
+                    self._migrate_v49(conn)
+                    conn.execute("PRAGMA user_version = 49")
+                    version = 49
+
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
         # the env-backed default in config.AUTO_SYNC_COMPANIES_ON_STARTUP.
@@ -2034,6 +2039,39 @@ class MinerDB:
             UPDATE data_points SET source_priority = 0
             WHERE extraction_method IN ('{analyst_methods}')
         """)
+
+    def _migrate_v49(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v48 -> v49: metric_group column on metric_schema."""
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(metric_schema)").fetchall()}
+        if 'metric_group' not in existing_cols:
+            conn.execute(
+                "ALTER TABLE metric_schema ADD COLUMN metric_group TEXT NOT NULL DEFAULT 'other'"
+            )
+        # Seed group values for existing metrics
+        _GROUP_MAP = {
+            'production_btc':          'production',
+            'holdings_btc':            'holdings',
+            'unrestricted_holdings':   'holdings',
+            'restricted_holdings_btc': 'holdings',
+            'net_btc_balance_change':  'holdings',
+            'encumbered_btc':          'holdings',
+            'hodl_btc':                'holdings',
+            'hodl_btc_unrestricted':   'holdings',
+            'hodl_btc_restricted':     'holdings',
+            'sales_btc':               'sales',
+            'sold_btc':                'sales',
+            'hashrate_eh':             'operations',
+            'mining_mw':               'operations',
+            'ai_hpc_mw':               'ai_hpc',
+            'gpu_count':               'ai_hpc',
+            'hpc_revenue_usd':         'ai_hpc',
+            'realization_rate':        'financial',
+        }
+        for key, group in _GROUP_MAP.items():
+            conn.execute(
+                "UPDATE metric_schema SET metric_group = ? WHERE key = ?",
+                (group, key),
+            )
 
     # ── Metric examples CRUD ────────────────────────────────────────────────────
 
@@ -6423,6 +6461,7 @@ class MinerDB:
         unit: str = None,
         prompt_instructions: str = None,
         quarterly_prompt: str = None,
+        metric_group: str = None,
     ) -> bool:
         """Update active flag, label, unit, and/or prompt fields for a metric_schema row.
 
@@ -6446,6 +6485,9 @@ class MinerDB:
         if quarterly_prompt is not None:
             sets.append("quarterly_prompt = ?")
             params.append(quarterly_prompt if quarterly_prompt else None)
+        if metric_group is not None:
+            sets.append("metric_group = ?")
+            params.append(metric_group.strip() or 'other')
         if not sets:
             return False
         params.append(row_id)
@@ -6477,13 +6519,13 @@ class MinerDB:
                 )
         return cur.rowcount > 0
 
-    def add_analyst_metric(self, key: str, label: str, unit: str, sector: str) -> dict:
+    def add_analyst_metric(self, key: str, label: str, unit: str, sector: str, metric_group: str = 'other') -> dict:
         """Add an analyst-defined metric to the schema. Raises IntegrityError on duplicate key+sector."""
         with self._get_connection() as conn:
             cursor = conn.execute(
-                """INSERT INTO metric_schema (key, label, unit, sector, has_extraction_pattern, analyst_defined)
-                   VALUES (?, ?, ?, ?, 0, 1)""",
-                (key, label, unit, sector),
+                """INSERT INTO metric_schema (key, label, unit, sector, has_extraction_pattern, analyst_defined, metric_group)
+                   VALUES (?, ?, ?, ?, 0, 1, ?)""",
+                (key, label, unit, sector, metric_group),
             )
             row = conn.execute(
                 "SELECT * FROM metric_schema WHERE id = ?", (cursor.lastrowid,)

@@ -585,6 +585,8 @@ def add_metric_schema():
     label = body.get('label', '').strip()
     unit = body.get('unit', '').strip()
     sector = body.get('sector', 'BTC-miners').strip()
+    metric_group = body.get('metric_group', 'other') or 'other'
+    metric_group = str(metric_group).strip() or 'other'
 
     if not key or len(key) > 50 or ' ' in key:
         return jsonify({'success': False, 'error': {'message': 'key required (max 50 chars, no spaces)'}}), 400
@@ -592,7 +594,7 @@ def add_metric_schema():
         return jsonify({'success': False, 'error': {'message': 'label required (max 100 chars)'}}), 400
 
     try:
-        row = db.add_analyst_metric(key, label, unit, sector)
+        row = db.add_analyst_metric(key, label, unit, sector, metric_group=metric_group)
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'error': {
             'message': f'A column named {key!r} already exists in this sector\'s schema.'
@@ -678,10 +680,19 @@ def update_metric_schema(row_id):
                 }}), 400
             quarterly_prompt = val if val is not None else ''
 
+        metric_group = None
+        if 'metric_group' in body:
+            val = body['metric_group']
+            if val is not None:
+                metric_group = str(val).strip() or 'other'
+            else:
+                metric_group = 'other'
+
         updated = db.update_metric_schema(
             row_id, active=active, label=label, unit=unit,
             prompt_instructions=prompt_instructions,
             quarterly_prompt=quarterly_prompt,
+            metric_group=metric_group,
         )
         if not updated:
             return jsonify({'success': False, 'error': {

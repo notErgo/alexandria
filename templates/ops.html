@@ -1222,13 +1222,14 @@ tr.is-reviewed td { opacity: 0.65; }
           <th style="text-align:left;padding:3px 6px;white-space:nowrap">Key</th>
           <th style="text-align:left;padding:3px 6px">Label</th>
           <th style="text-align:left;padding:3px 6px;width:70px">Unit</th>
+          <th style="text-align:left;padding:3px 6px;width:80px">Group</th>
           <th style="text-align:left;padding:3px 6px">Keywords</th>
           <th style="text-align:center;padding:3px 4px;width:50px">Active</th>
           <th style="text-align:left;padding:3px 4px;width:60px"></th>
         </tr>
       </thead>
       <tbody id="metric-schema-tbody">
-        <tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
+        <tr><td colspan="7" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
       </tbody>
     </table>
 
@@ -1892,6 +1893,12 @@ tr.is-reviewed td { opacity: 0.65; }
         <select id="prompt-preview-ticker" style="font-size:0.82rem;padding:0.15rem 0.3rem">
           <option value="">(none)</option>
         </select>
+        <label style="font-size:0.78rem;font-weight:600;margin-left:0.75rem">Period type</label>
+        <select id="prompt-preview-period-type" style="font-size:0.82rem;padding:0.15rem 0.3rem" onchange="loadPromptPreview()">
+          <option value="monthly">Monthly (press release / 8-K)</option>
+          <option value="quarterly">Quarterly (10-Q)</option>
+          <option value="annual">Annual (10-K)</option>
+        </select>
         <span style="font-size:0.76rem;color:var(--theme-text-muted)">Select a ticker to inject its company context hint.</span>
       </div>
       <textarea id="prompt-preview-text" rows="14" readonly
@@ -2031,7 +2038,7 @@ tr.is-reviewed td { opacity: 0.65; }
         Processes only reports not yet extracted. Analyst-approved rows are never overwritten.
       </div>
       <div id="extract-reset-warning" style="display:none;font-size:0.72rem;color:var(--theme-danger);margin-bottom:0.5rem;line-height:1.5;padding:0.35rem 0.5rem;border:1px solid var(--theme-danger);border-radius:4px">
-        Full Reset will delete all data_points and review_queue entries for the selected ticker(s) before re-extracting. A ticker must be selected — global reset is blocked here. Use Purge Stages for global resets.
+        Full Reset clears extraction outputs (data_points, review_queue, final_data_points) for the selected ticker(s), then re-extracts from all existing source documents. Source documents are never deleted. A ticker must be selected — global reset is blocked here.
       </div>
 
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
@@ -3734,26 +3741,21 @@ async function startExtractionRun() {
       _setExtractStatus('Full Reset requires a ticker selection — select at least one ticker first.', true);
       return;
     }
-    // Purge data_points and review_queue for each selected ticker before extracting
+    // Purge extraction outputs only (data_points, review_queue, final_data_points).
+    // Source documents (reports table) are preserved — they are re-extracted with force=true.
     _setExtractEnabled(false);
     _extractTaskId = 'starting';
-    _setExtractStatus('Full Reset: purging ' + scopeLabel + '…', false);
+    _setExtractStatus('Full Reset: clearing extraction outputs for ' + scopeLabel + '…', false);
     try {
       for (const t of tickers) {
-        const pr = await fetch('/api/data/purge', {
+        const pr = await fetch('/api/operations/purge_ticker', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({confirm: true, ticker: t, purge_mode: 'reset'}),
+          body: JSON.stringify({ticker: t}),
         });
-        if (!pr.ok) { const pd = await pr.json(); throw new Error('data purge: ' + (pd.error?.message || pr.status)); }
-        const rr = await fetch('/api/review/purge', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({confirm: true, ticker: t, targets: ['queue']}),
-        });
-        if (!rr.ok) { const rd = await rr.json(); throw new Error('review purge: ' + (rd.error?.message || rr.status)); }
+        if (!pr.ok) { const pd = await pr.json(); throw new Error('purge: ' + (pd.error || pr.status)); }
       }
-      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' purged data+review for ' + scopeLabel);
+      _appendExtractLog(new Date().toISOString().slice(11, 19) + ' cleared extraction outputs for ' + scopeLabel);
     } catch (err) {
       _extractTaskId = null;
       _setExtractEnabled(true);
@@ -6092,7 +6094,7 @@ function highlightReviewRow(rows) {
 async function loadMetricSchemaTable() {
   const tbody = document.getElementById('metric-schema-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="7" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>';
   try {
     const [mResp, kResp] = await Promise.all([
       fetch('/api/metric_schema?sector=BTC-miners'),
@@ -6114,13 +6116,19 @@ async function loadMetricSchemaTable() {
     }
 
     if (!metrics.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--theme-text-muted);padding:6px">No metrics defined.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--theme-text-muted);padding:6px">No metrics defined.</td></tr>';
       return;
     }
     tbody.innerHTML = metrics.map(function(m) {
       const activeChecked = m.active ? 'checked' : '';
       const analystBadge = m.analyst_defined
         ? ' <span style="font-size:0.7rem;color:var(--theme-text-muted)">(custom)</span>' : '';
+      const groupBadge = m.metric_group && m.metric_group !== 'other'
+        ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:rgba(100,100,200,0.15);color:var(--theme-text-muted);margin-left:3px">${escapeHtml(m.metric_group)}</span>`
+        : '';
+      const tierBadge = m.prompt_instructions
+        ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;margin-left:3px" title="Serving from metric_schema.prompt_instructions">schema</span>`
+        : `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:var(--theme-bg-tertiary);color:var(--theme-text-muted);margin-left:3px" title="Serving from hardcoded default">default</span>`;
       const kws = kwsByMetric[m.key] || [];
       const chips = kws.map(function(kw) {
         const dimStyle = kw.active ? '' : 'opacity:0.5;';
@@ -6134,7 +6142,7 @@ async function loadMetricSchemaTable() {
       const piVal = m.prompt_instructions || '';
       const qpVal = m.quarterly_prompt || '';
       return `<tr data-ms-id="${m.id}" data-ms-key="${escapeHtml(m.key)}" style="border-bottom:1px solid var(--theme-border)">
-        <td style="padding:3px 6px;font-family:monospace;font-size:0.79rem;white-space:nowrap;vertical-align:top">${escapeHtml(m.key)}${analystBadge}</td>
+        <td style="padding:3px 6px;font-family:monospace;font-size:0.79rem;white-space:nowrap;vertical-align:top">${escapeHtml(m.key)}${analystBadge}${tierBadge}${groupBadge}</td>
         <td style="padding:3px 6px;vertical-align:top">
           <input type="text" value="${escapeHtml(m.label)}"
             style="font-size:0.8rem;padding:2px 5px;width:150px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text)"
@@ -6144,6 +6152,11 @@ async function loadMetricSchemaTable() {
           <input type="text" value="${escapeHtml(m.unit)}"
             style="font-size:0.8rem;padding:2px 5px;width:62px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text)"
             onblur="saveMetricSchemaField(${m.id},'unit',this.value)">
+        </td>
+        <td style="padding:3px 6px;vertical-align:top">
+          <input type="text" value="${escapeHtml(m.metric_group || 'other')}"
+            style="font-size:0.8rem;padding:2px 5px;width:70px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:3px;color:var(--theme-text)"
+            onblur="saveMetricSchemaField(${m.id},'metric_group',this.value)">
         </td>
         <td style="padding:3px 6px;vertical-align:middle">
           <div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center">
@@ -6161,7 +6174,7 @@ async function loadMetricSchemaTable() {
         </td>
       </tr>
       <tr id="prompt-row-${m.id}" class="prompt-detail-row">
-        <td colspan="6" style="padding:6px 10px;background:var(--theme-bg-secondary)">
+        <td colspan="7" style="padding:6px 10px;background:var(--theme-bg-secondary)">
           <div style="display:flex;gap:1rem;flex-wrap:wrap">
             <div style="flex:1;min-width:200px">
               <label style="font-size:0.75rem;color:var(--theme-text-muted);display:block;margin-bottom:2px">Monthly prompt instructions</label>
@@ -6182,7 +6195,7 @@ async function loadMetricSchemaTable() {
       </tr>`;
     }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--theme-danger);padding:6px">Error: ${escapeHtml(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--theme-danger);padding:6px">Error: ${escapeHtml(e.message)}</td></tr>`;
   }
 }
 
@@ -7480,15 +7493,29 @@ async function pePopulateMetrics() {
     });
     sel.appendChild(preambleGroup);
 
-    const metricGroup = document.createElement('optgroup');
-    metricGroup.label = 'Per-metric Prompts';
+    // Group metrics by metric_group
+    const groups = {};
     metrics.forEach(function(m) {
-      const opt = document.createElement('option');
-      opt.value = m.key || m;
-      opt.textContent = (m.label || m.key || m) + ' (' + (m.key || m) + ')';
-      metricGroup.appendChild(opt);
+      const grp = m.metric_group || 'other';
+      if (!groups[grp]) groups[grp] = [];
+      groups[grp].push(m);
     });
-    sel.appendChild(metricGroup);
+    // Render in a stable order
+    const groupOrder = ['production', 'holdings', 'sales', 'operations', 'ai_hpc', 'financial', 'other'];
+    const sortedGroups = [...new Set([...groupOrder, ...Object.keys(groups)])].filter(g => groups[g]);
+    for (const grp of sortedGroups) {
+      const og = document.createElement('optgroup');
+      og.label = grp;
+      groups[grp].forEach(function(m) {
+        const opt = document.createElement('option');
+        opt.value = m.key || m;
+        const activeIndicator = m.active === 0 ? ' [inactive]' : '';
+        opt.textContent = (m.label || m.key || m) + ' (' + (m.key || m) + ')' + activeIndicator;
+        if (m.active === 0) opt.style.color = 'var(--theme-text-muted)';
+        og.appendChild(opt);
+      });
+      sel.appendChild(og);
+    }
   } catch (err) {
     sel.innerHTML = '<option value="">Failed to load metrics</option>';
   }
@@ -7703,8 +7730,13 @@ async function loadPromptPreview() {
   }
 
   const ticker = tickerSel?.value || '';
-  const url = '/api/llm_prompts/preview' + (ticker ? '?ticker=' + encodeURIComponent(ticker) : '');
-  ta.value = 'Loading…';
+  const periodType = document.getElementById('prompt-preview-period-type')?.value || 'monthly';
+  let url = '/api/llm_prompts/preview';
+  const params = [];
+  if (ticker) params.push('ticker=' + encodeURIComponent(ticker));
+  if (periodType && periodType !== 'monthly') params.push('period_type=' + encodeURIComponent(periodType));
+  if (params.length) url += '?' + params.join('&');
+  ta.value = 'Loading...';
   try {
     const resp = await fetch(url);
     const data = await resp.json();

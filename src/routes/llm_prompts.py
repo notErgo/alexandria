@@ -77,15 +77,25 @@ def preview_llm_prompt():
                 log.warning('Could not load active metrics for preview', exc_info=True)
                 metrics = ['production_btc', 'holdings_btc', 'sales_btc']
 
+        period_type = request.args.get('period_type', 'monthly')
+        if period_type not in ('monthly', 'quarterly', 'annual'):
+            period_type = 'monthly'
+
         import requests as req_lib
         interpreter = LLMInterpreter(session=req_lib.Session(), db=db)
         stub_doc = '[document text will appear here during extraction]'
-        prompt = interpreter._build_batch_prompt(stub_doc, metrics, ticker=ticker)
+        if period_type == 'monthly':
+            prompt = interpreter._build_batch_prompt(stub_doc, metrics, ticker=ticker)
+        else:
+            prompt = interpreter._build_quarterly_batch_prompt(
+                stub_doc, metrics, ticker=ticker, period_type=period_type
+            )
 
         return jsonify({'success': True, 'data': {
             'prompt': prompt,
             'ticker': ticker,
             'metrics': metrics,
+            'period_type': period_type,
         }})
     except Exception:
         log.error('Error rendering prompt preview', exc_info=True)

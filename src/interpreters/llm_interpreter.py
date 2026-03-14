@@ -30,8 +30,6 @@ from interpreters.llm_prompt_builder import (
     _DEFAULT_FALLBACK_PROMPT,
     _QUARTERLY_BATCH_PREAMBLE,
     _ANNUAL_BATCH_PREAMBLE,
-    _QUARTERLY_PROMPTS,
-    _BATCH_UNIT_HINTS,
     _DEFAULT_BATCH_PREAMBLE,
 )
 from miner_types import ExtractionResult
@@ -269,8 +267,6 @@ class LLMInterpreter:
                         unit = schema_row['unit']
                 except Exception:
                     pass
-            if not unit:
-                unit = _BATCH_UNIT_HINTS.get(metric, '')
             preamble = (
                 f"Your first extraction returned {metric} = {first_value} {unit}.\n"
                 f"A cross-check raised a concern: {concern_context}\n\n"
@@ -372,8 +368,8 @@ class LLMInterpreter:
 
         Lookup order:
         1. metric_schema.quarterly_prompt
-        2. _QUARTERLY_PROMPTS[metric] (hardcoded)
-        3. _get_prompt_instructions(metric) (monthly instructions as fallback)
+        2. _get_prompt_instructions(metric) (monthly instructions as fallback — period scoping
+           is handled by the quarterly preamble, per-metric disambiguation is period-agnostic)
         """
         # Tier 1: metric_schema.quarterly_prompt
         if self._db is not None:
@@ -385,12 +381,18 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric_schema.quarterly_prompt for %s: %s", metric, e)
 
-        # Tier 2: hardcoded _QUARTERLY_PROMPTS
-        if metric in _QUARTERLY_PROMPTS:
-            return _QUARTERLY_PROMPTS[metric]
-
-        # Tier 3: fall back to monthly instructions
+        # Tier 2: fall back to monthly instructions (period scoping handled by preamble)
         return self._get_prompt_instructions(metric)
+
+    def _fetch_unit_map(self) -> dict:
+        """Return {metric_key: unit} from metric_schema. Empty dict on failure."""
+        if self._db is None:
+            return {}
+        try:
+            rows = self._db.get_metric_schema('BTC-miners', active_only=False)
+            return {r['key']: (r.get('unit') or '') for r in rows}
+        except Exception:
+            return {}
 
     def _append_examples_block(self, lines: list, metrics: list, ticker: str = None) -> None:
         """Inject === EXAMPLE PATTERNS === block into a prompt lines list.
@@ -437,9 +439,7 @@ class LLMInterpreter:
           Document:
           {text}
 
-        Unit hints are defined in the module-level _BATCH_UNIT_HINTS dict.
-        NOTE: when new metrics are added to _DEFAULT_PROMPTS, add their unit
-        hint to _BATCH_UNIT_HINTS at module level.
+        Unit values are read from metric_schema at build time.
         config: Optional ExtractionRunConfig. When supplied, prepend a TEMPORAL SCOPE block.
         period: Optional period string forwarded to the temporal anchor.
         """
@@ -481,11 +481,11 @@ class LLMInterpreter:
                 if kw_rows:
                     lines.append("=== ANCHOR TERMS ===")
                     lines.append(
-                        "Scan the document for these exact phrases and use them as anchor "
-                        "points to locate numeric values. When you find a passage containing "
-                        "one of these phrases, extract any numeric figures in the surrounding "
-                        "sentences before moving on. "
-                        "Do not skip a passage just because its phrasing is indirect."
+                        "Scan the document for these exact phrases as anchor points. "
+                        "When you find an anchor phrase, the associated numeric value is almost always in the same "
+                        "table row or the same sentence. Read the ~100 characters surrounding the phrase to locate it. "
+                        "Your source_snippet must be the verbatim text containing both the phrase and value (max 100 chars). "
+                        "If the value cannot be found within one table row or sentence of the phrase, return null — do not guess."
                     )
                     for kw in kw_rows:
                         entry = f"- {kw['phrase']}"
@@ -497,13 +497,19 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
 
+        # Unconditional ticker line — helps model orient to the correct company
+        if ticker:
+            lines.append(f"Company: {ticker}\n")
+
         self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
+        unit_map: dict = {}
         if self._db is not None:
             try:
                 metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
                 if metric_rows:
+                    unit_map = {m['key']: (m.get('unit') or '') for m in metric_rows}
                     lines.append("=== TARGET METRICS ===")
                     for m in metric_rows:
                         lines.append(f"- {m['label']} ({m['key']}, unit: {m['unit']})")
@@ -511,6 +517,8 @@ class LLMInterpreter:
                     lines.append("===\n")
             except Exception as e:
                 log.warning("Could not fetch metric schema for prompt: %s", e)
+        if not unit_map:
+            unit_map = self._fetch_unit_map()
 
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")
@@ -524,7 +532,7 @@ class LLMInterpreter:
         lines.append("Do NOT return an array, list, markdown code fence, commentary, or repeated per-metric objects.")
         lines.append("{")
         for metric in metrics:
-            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            unit = unit_map.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
                 f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>", '
@@ -560,6 +568,8 @@ class LLMInterpreter:
             f"(by month name or YYYY-MM date). If a period is not mentioned, set all its values to null.\n",
         ]
 
+        _unit_map = self._fetch_unit_map()
+
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")
             lines.append(self._get_prompt_instructions(metric))
@@ -571,7 +581,7 @@ class LLMInterpreter:
         for period in target_periods:
             lines.append(f'  "{period}": {{')
             for metric in metrics:
-                unit = _BATCH_UNIT_HINTS.get(metric, "")
+                unit = _unit_map.get(metric, "")
                 lines.append(
                     f'    "{metric}": {{"value": <number or null>, "unit": "{unit}", '
                     f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
@@ -707,11 +717,13 @@ class LLMInterpreter:
             lines.append(self._get_prompt_instructions(metric))
             lines.append("")
 
+        _unit_map = self._fetch_unit_map()
+
         lines.append("=== OUTPUT FORMAT ===")
         lines.append("Return ONLY this JSON object, no other text:")
         lines.append("{")
         for metric in metrics:
-            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            unit = _unit_map.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
                 f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
@@ -811,7 +823,13 @@ class LLMInterpreter:
         return results
 
     def _get_prompt(self, metric: str) -> str:
-        """Fetch prompt from llm_prompts DB table, or fall back to hardcoded default."""
+        """Fetch prompt from llm_prompts DB table, or fall back to hardcoded default.
+
+        Ensures the returned string contains '{text}' so extract() can substitute
+        the document. If the stored or default prompt is instructions-only (no
+        document placeholder), appends 'Document:\\n{text}' automatically.
+        """
+        raw = None
         if self._db is not None:
             try:
                 with self._db._get_connection() as conn:
@@ -821,16 +839,22 @@ class LLMInterpreter:
                         (metric,)
                     ).fetchone()
                     if row:
-                        return row[0]
+                        raw = row[0]
             except Exception as e:
                 log.warning("Could not fetch LLM prompt from DB for %s: %s", metric, e)
 
-        # Fall back to hardcoded defaults
-        if metric in _DEFAULT_PROMPTS:
-            return _DEFAULT_PROMPTS[metric]
+        if raw is None:
+            # Fall back to hardcoded defaults
+            if metric in _DEFAULT_PROMPTS:
+                raw = _DEFAULT_PROMPTS[metric]
+            else:
+                # Generic fallback for unknown metrics
+                raw = _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
 
-        # Generic fallback for unknown metrics
-        return _DEFAULT_FALLBACK_PROMPT.replace('{metric}', metric)
+        # Ensure document placeholder is present (slim prompts omit it)
+        if '{text}' not in raw:
+            raw = raw + '\n\nDocument:\n{text}'
+        return raw
 
     def _extract_keep_alive(self) -> str:
         """Return the keep_alive value to send with every Ollama call.
@@ -1000,7 +1024,8 @@ class LLMInterpreter:
         """Build a prompt for quarterly or annual extraction.
 
         Uses _QUARTERLY_BATCH_PREAMBLE or _ANNUAL_BATCH_PREAMBLE and
-        _QUARTERLY_PROMPTS instructions (which omit 'REJECT: quarterly' language).
+        per-metric instructions from _get_quarterly_prompt_instructions (period
+        scoping is handled by the preamble; per-metric disambiguation is period-agnostic).
         """
         preamble = _ANNUAL_BATCH_PREAMBLE if period_type == 'annual' else _QUARTERLY_BATCH_PREAMBLE
         if self._db is not None:
@@ -1033,11 +1058,11 @@ class LLMInterpreter:
                 if kw_rows:
                     lines.append("=== ANCHOR TERMS ===")
                     lines.append(
-                        "Scan the document for these exact phrases and use them as anchor "
-                        "points to locate numeric values. When you find a passage containing "
-                        "one of these phrases, extract any numeric figures in the surrounding "
-                        "sentences before moving on. "
-                        "Do not skip a passage just because its phrasing is indirect."
+                        "Scan the document for these exact phrases as anchor points. "
+                        "When you find an anchor phrase, the associated numeric value is almost always in the same "
+                        "table row or the same sentence. Read the ~100 characters surrounding the phrase to locate it. "
+                        "Your source_snippet must be the verbatim text containing both the phrase and value (max 100 chars). "
+                        "If the value cannot be found within one table row or sentence of the phrase, return null — do not guess."
                     )
                     for kw in kw_rows:
                         entry = f"- {kw['phrase']}"
@@ -1049,13 +1074,19 @@ class LLMInterpreter:
             except Exception as e:
                 log.warning("Could not fetch metric keywords for prompt: %s", e)
 
+        # Unconditional ticker line — helps model orient to the correct company
+        if ticker:
+            lines.append(f"Company: {ticker}\n")
+
         self._append_examples_block(lines, metrics, ticker=ticker)
 
         # Target metrics from metric_schema (SSOT — never hardcoded)
+        unit_map: dict = {}
         if self._db is not None:
             try:
                 metric_rows = self._db.get_metric_schema('BTC-miners', active_only=True)
                 if metric_rows:
+                    unit_map = {m['key']: (m.get('unit') or '') for m in metric_rows}
                     lines.append("=== TARGET METRICS ===")
                     for m in metric_rows:
                         lines.append(f"- {m['label']} ({m['key']}, unit: {m['unit']})")
@@ -1063,6 +1094,8 @@ class LLMInterpreter:
                     lines.append("===\n")
             except Exception as e:
                 log.warning("Could not fetch metric schema for prompt: %s", e)
+        if not unit_map:
+            unit_map = self._fetch_unit_map()
 
         for metric in metrics:
             lines.append(f"=== METRIC: {metric} ===")
@@ -1073,7 +1106,7 @@ class LLMInterpreter:
         lines.append("Return ONLY this JSON object, no other text:")
         lines.append("{")
         for metric in metrics:
-            unit = _BATCH_UNIT_HINTS.get(metric, "")
+            unit = unit_map.get(metric, "")
             lines.append(
                 f'  "{metric}": {{"value": <number or null>, "unit": "{unit}", '
                 f'"confidence": <0.0-1.0>, "source_snippet": "<max 100 chars>"}},'
