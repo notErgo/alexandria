@@ -1295,6 +1295,38 @@ class TestFindQuarterlyTextWindow:
         # The 200-char lookback means some of the prefix is in the window
         assert 'PRIOR CONTEXT' in window
 
+    def test_toc_stub_skipped_real_section_used(self):
+        # EDGAR 10-Q structure: TOC has "Item 2" at the top (short entry before
+        # Item 3), then the real Item 2 section appears much later with content.
+        # The function must skip the TOC entry and anchor on the real section.
+        toc_item2 = 'Item 2. Management\'s Discussion and Analysis ......... 25\n'
+        toc_item3 = 'Item 3. Quantitative and Qualitative Disclosures .... 60\n'
+        toc = 'TABLE OF CONTENTS\n' + toc_item2 + toc_item3 + '\n' * 5
+        front_matter = 'COVER PAGE AND RISK FACTORS\n' * 20   # ~580 chars
+        real_item2 = (
+            'Item 2. Management\'s Discussion and Analysis\n\n'
+            'We mined 750 BTC during the quarter at an average hashrate of 28 EH/s.\n'
+            + 'Operating detail. ' * 30  # enough body to exceed 300-char threshold
+        )
+        text = toc + front_matter + real_item2 + 'X' * 500
+        window, strategy = self._call(text, budget=2000)
+        assert strategy == 'mda_header'
+        # Real section content must appear in the window, not just the TOC entry
+        assert 'We mined 750 BTC' in window
+
+    def test_toc_only_falls_back_to_keyword_seek(self):
+        # If the only occurrences of Item headers are short TOC stubs (no real body)
+        # the function should fall through to keyword_seek.
+        toc = (
+            'Item 2. Management\'s Discussion .... 25\n'
+            'Item 3. Market Risk ................. 60\n'
+        )
+        data = 'During the period bitcoin production reached 600 BTC.\n' + 'Y' * 500
+        text = toc + data
+        window, strategy = self._call(text, budget=500)
+        # Must not anchor on the TOC stub; keyword_seek or start is acceptable
+        assert strategy in ('keyword_seek', 'start')
+
 
 class TestZeroExtractRouting:
     """

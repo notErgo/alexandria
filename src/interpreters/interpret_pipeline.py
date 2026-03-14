@@ -55,25 +55,44 @@ def _find_quarterly_text_window(full_text: str, budget: int) -> tuple[str, str]:
       'start'         — fallback: first budget chars (original behaviour)
 
     Strategy (first match wins):
-      1. Find Item 7 / Item 2 / "Management's Discussion" header; start 200 chars
-         before it to retain section title context.
+      1. Find Item 7 / Item 2 / "Management's Discussion" header with at least
+         _MIN_MDA_SECTION_CHARS before the next Item marker (skips TOC entries
+         which match the same patterns but have only a single-line body).
+         Start 200 chars before the matched header to retain section title context.
       2. Find the earliest occurrence of a mining-specific phrase; start 500 chars
          before it to retain surrounding paragraph context.
       3. Return full_text[:budget] unchanged.
     """
+    # Minimum characters between the matched header and the next Item marker before
+    # we accept the candidate as a real section body rather than a TOC stub.
+    # TOC entries span ~60-80 chars between consecutive items; real sections span
+    # thousands. 300 reliably distinguishes them while keeping unit tests green.
+    _MIN_MDA_SECTION_CHARS = 300
+
     text_lower = full_text.lower()
 
     for pat in _MDA_PATTERNS:
-        m = pat.search(full_text)
-        if m:
-            start = max(0, m.start() - 200)
-            return full_text[start:start + budget], 'mda_header'
+        pos = 0
+        while True:
+            m = pat.search(full_text, pos)
+            if not m:
+                break
+            # Estimate section length: distance to the next "Item N" marker.
+            # Skip only 10 chars (avoids self-match) so TOC entries whose next
+            # item appears within 40-80 chars are correctly treated as short stubs.
+            tail = full_text[m.start() + 10:]
+            next_item = re.search(r'\bItem\s+\d', tail, re.IGNORECASE)
+            section_len = next_item.start() if next_item else len(tail)
+            if section_len >= _MIN_MDA_SECTION_CHARS:
+                start = max(0, m.start() - 200)
+                return full_text[start:start + budget], 'mda_header'
+            pos = m.end()
 
     earliest = len(full_text)
     for phrase in _MINING_DATA_PHRASES:
-        pos = text_lower.find(phrase)
-        if 0 <= pos < earliest:
-            earliest = pos
+        p = text_lower.find(phrase)
+        if 0 <= p < earliest:
+            earliest = p
     if earliest < len(full_text):
         start = max(0, earliest - 500)
         return full_text[start:start + budget], 'keyword_seek'
