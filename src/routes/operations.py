@@ -12,10 +12,13 @@ Operations panel API routes.
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
+  GET  /api/db/export                              — copy live DB to ~/Downloads and stream the file
   GET  /operations                                 — render operations.html
 """
 import logging
 import random as _random
+import shutil
+import sqlite3
 import threading
 import uuid
 import re
@@ -1272,6 +1275,53 @@ def derive_balance_change():
         return jsonify(result)
     except Exception:
         log.error('event=derive_balance_change_error ticker=%s', ticker, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@bp.route('/api/db/export')
+def db_export():
+    """Copy the live SQLite database to ~/Downloads and stream it back to the browser.
+
+    Returns the .db file as an attachment so the browser triggers a Save dialog.
+    The copy in ~/Downloads is a convenience snapshot the user can keep or open
+    with any SQLite viewer.
+    """
+    from config import DATA_DIR
+
+    try:
+        src_path = Path(DATA_DIR) / 'minerdata.db'
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        filename = f'minerdata_backup_{timestamp}.db'
+        downloads_dir = Path.home() / 'Downloads'
+        dest_path = downloads_dir / filename
+
+        # Use the SQLite online-backup API so we get a consistent snapshot
+        # even while the server is writing.
+        src_conn = sqlite3.connect(str(src_path))
+        dst_conn = sqlite3.connect(str(dest_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+
+        log.info('event=db_export_complete dest=%s size_bytes=%d', dest_path, dest_path.stat().st_size)
+
+        def _stream():
+            with open(dest_path, 'rb') as fh:
+                while True:
+                    chunk = fh.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        return Response(
+            _stream(),
+            mimetype='application/octet-stream',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except Exception:
+        log.error('event=db_export_error', exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 

@@ -1523,6 +1523,20 @@ tr.is-reviewed td { opacity: 0.65; }
   <!-- Sub-pane: Database Purge Controls (1.6) -->
   <div class="pipeline-sub-pane" id="spane-config-dbpurge" data-ui-id="1.6" data-spec-id="1.6">
     <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.6</span>Purge Stages</h2>
+
+    <div class="card" style="margin-bottom:1.25rem">
+      <div style="font-weight:700;margin-bottom:0.25rem">Export Database</div>
+      <div style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.6rem">
+        Downloads a consistent SQLite snapshot to your Downloads folder and triggers a browser Save dialog.
+        Safe to run at any time — uses the SQLite online-backup API.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <a id="db-export-link" href="/api/db/export" class="btn btn-sm btn-secondary"
+           onclick="dbExportClick(event)">Download DB</a>
+        <span id="db-export-status" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.9rem">
       Global deletion schema: <strong>ALL → SCRAPE → REVIEW → FINAL</strong>. Deleting a stage deletes that stage and everything downstream.
     </p>
@@ -2426,6 +2440,7 @@ tr.is-reviewed td { opacity: 0.65; }
           <button class="btn btn-secondary btn-sm" id="table-mode-edit-btn" onclick="setMinerTableMode('edit')">Edit</button>
         </div>
         <button class="btn btn-secondary btn-sm" id="add-row-btn" onclick="toggleAddRowPanel()" style="display:none">Add Row</button>
+        <button id="sync-btn" class="btn-sync" onclick="syncEdits()" style="display:none">Sync</button>
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
         </label>
@@ -2473,6 +2488,9 @@ tr.is-reviewed td { opacity: 0.65; }
         <summary style="cursor:pointer;user-select:none;color:var(--theme-accent)">How to use this table</summary>
         <ul style="margin:0.4rem 0 0.3rem 1.1rem;padding:0;line-height:1.7;color:var(--theme-text-secondary)">
           <li><strong>View/Edit toggle</strong> controls interaction. In View mode, left click does not mutate table state. In Edit mode, click a metric cell to edit it and use Add Row to create a manual month.</li>
+          <li><strong>Editing a cell</strong> — click any metric cell in Edit mode to open an inline number input. Type a value, then press <strong>Enter</strong> or click <strong>OK</strong> to save it immediately. Press <strong>Escape</strong> to discard the change and restore the original value.</li>
+          <li><strong>Switching to View mode with an open edit</strong> — clicking View (or any action that exits Edit mode) while a cell input is open automatically saves the typed value, equivalent to pressing OK. No data is lost.</li>
+          <li><strong>Sync button</strong> — appears in Edit mode. Clicking it saves any open cell input and confirms all edits have been written to the database. Use it for peace of mind before navigating away.</li>
           <li><strong>Click a row in View mode</strong> — opens the document list directly below that row in the table.</li>
           <li><strong>Click a document in that row list</strong> — opens the review panel below the table for that specific source document.</li>
           <li><strong>Checkboxes only</strong> select rows for batch accept. <strong>Shift+click</strong> on checkboxes selects a range.</li>
@@ -4487,6 +4505,15 @@ function toggleCompanyDetail(ticker) {
   const row = document.getElementById('cdetail-' + ticker);
   if (!row) return;
   row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function dbExportClick(evt) {
+  const statusEl = document.getElementById('db-export-status');
+  statusEl.style.color = 'var(--theme-text-muted)';
+  statusEl.textContent = 'Preparing export…';
+  // Let the browser follow the link normally; show feedback then clear after a moment.
+  setTimeout(function() { statusEl.textContent = 'Download started — check your Downloads folder.'; }, 800);
+  setTimeout(function() { statusEl.textContent = ''; }, 6000);
 }
 
 function onPurgeInput() {

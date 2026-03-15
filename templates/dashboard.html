@@ -76,42 +76,6 @@
 }
 .chart-container { width: 100%; height: 260px; }
 
-/* Presence bars (gap visualization) */
-.presence-bars { margin-top: 0.75rem; }
-.presence-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
-.presence-label {
-  width: 45px;
-  font-size: 0.72rem;
-  color: var(--theme-text-muted);
-  font-family: ui-monospace, monospace;
-  flex-shrink: 0;
-}
-.presence-grid { display: flex; gap: 1px; flex-wrap: nowrap; overflow: hidden; }
-.presence-cell {
-  width: 8px;
-  height: 12px;
-  border-radius: 1px;
-  cursor: default;
-  flex-shrink: 0;
-  position: relative;
-}
-.presence-cell.has-data  { background: var(--theme-accent); opacity: 0.85; }
-.presence-cell.no-data   { background: rgba(255,255,255,0.08); }
-[data-theme="light"] .presence-cell.no-data { background: rgba(0,0,0,0.1); }
-.presence-cell:hover { opacity: 1 !important; outline: 1px solid var(--theme-text-muted); }
-
-/* Year axis labels under presence bars */
-.presence-axis {
-  display: flex;
-  margin-left: 45px; /* align with grid, not label */
-  gap: 0;
-  font-size: 0.65rem;
-  color: var(--theme-text-muted);
-  font-family: ui-monospace, monospace;
-  margin-top: 2px;
-  overflow: hidden;
-}
-
 /* Loading / error states */
 #dashboard-content { min-height: 200px; }
 .empty-state {
@@ -212,7 +176,7 @@
   </div>
 </div>
 
-<!-- Suggest modal (hidden; shown by openSuggestModal) -->
+<!-- Shared modal overlay (data lineage click-through) -->
 <div id="suggest-overlay" style="position:fixed; inset:0; z-index:200;
      background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center;">
   <div id="suggest-card" class="card" style="width:520px; max-width:90vw;
@@ -228,7 +192,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/review_panel.js"></script>
 <script>
 // ── Ticker color palette (colorblind-safe, assigned by index) ─────────────
 const TICKER_COLORS = [
@@ -335,76 +298,6 @@ function fmtValue(val, unit) {
   return val.toLocaleString(undefined, {maximumFractionDigits: 3}) + ' ' + unit;
 }
 
-// ── Presence bar rendering ────────────────────────────────────────────────
-function renderPresenceBars(containerId, timeSpine, series, unit, metric) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  container.innerHTML = '';
-
-  const n = timeSpine.length;
-
-  series.forEach(function(s) {
-    const row = document.createElement('div');
-    row.className = 'presence-row';
-
-    const lbl = document.createElement('span');
-    lbl.className = 'presence-label';
-    lbl.textContent = s.ticker;
-    row.appendChild(lbl);
-
-    const grid = document.createElement('div');
-    grid.className = 'presence-grid';
-
-    s.present.forEach(function(has, i) {
-      const cell = document.createElement('span');
-      cell.className = 'presence-cell ' + (has ? 'has-data' : 'no-data');
-      const val = s.values[i];
-      cell.title = timeSpine[i] + ': ' + fmtValue(val, unit);
-      if (!has) {
-        cell.dataset.ticker = s.ticker;
-        cell.dataset.metric = metric;
-        cell.dataset.period = timeSpine[i];
-        cell.dataset.unit   = unit;
-        cell.style.cursor   = 'pointer';
-        cell.addEventListener('click', openSuggestModal);
-      }
-      grid.appendChild(cell);
-    });
-
-    row.appendChild(grid);
-    container.appendChild(row);
-  });
-
-  // Year axis labels
-  if (n > 0) {
-    const axisRow = document.createElement('div');
-    axisRow.className = 'presence-axis';
-    // Place year labels at approximate positions
-    const years = {};
-    timeSpine.forEach(function(ym, i) {
-      const y = ym.slice(0, 4);
-      if (!(y in years)) years[y] = i;
-    });
-    // Build label row: cell-width=8px + gap=1px = 9px per cell
-    const cellW = 9; // px per cell
-    let lastEnd = 0;
-    Object.keys(years).sort().forEach(function(yr) {
-      const startIdx = years[yr];
-      const spacer = document.createElement('span');
-      spacer.style.width = ((startIdx - lastEnd) * cellW) + 'px';
-      spacer.style.display = 'inline-block';
-      spacer.style.flexShrink = '0';
-      axisRow.appendChild(spacer);
-      const lbl = document.createElement('span');
-      lbl.textContent = yr;
-      lbl.style.flexShrink = '0';
-      axisRow.appendChild(lbl);
-      lastEnd = startIdx + yr.length; // approximate char widths
-    });
-    container.appendChild(axisRow);
-  }
-}
-
 // ── Render one metric panel ───────────────────────────────────────────────
 function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   const metric = metricObj.metric;
@@ -442,13 +335,6 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   chartEl.id = chartId;
   chartEl.className = 'chart-container';
   panel.appendChild(chartEl);
-
-  // Presence bars container
-  const presenceId = 'presence-' + metric;
-  const presenceEl = document.createElement('div');
-  presenceEl.className = 'presence-bars';
-  presenceEl.id = presenceId;
-  panel.appendChild(presenceEl);
 
   parentEl.appendChild(panel);
 
@@ -521,8 +407,6 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
     openLineageModal(ticker, metric, period, params.value, unit);
   });
 
-  // Presence bars
-  renderPresenceBars(presenceId, timeSpine, series, unit, metric);
 }
 
 // ── Main load function ────────────────────────────────────────────────────
@@ -588,208 +472,8 @@ window.addEventListener('resize', function() {
   _charts.forEach(function(c) { try { c.resize(); } catch(e) {} });
 });
 
-// ── Suggest modal ─────────────────────────────────────────────────────────
-function openSuggestModal(event) {
-  const cell   = event.currentTarget;
-  const ticker = cell.dataset.ticker;
-  const metric = cell.dataset.metric;
-  const period = cell.dataset.period;
-  const unit   = cell.dataset.unit;
-
-  const body    = document.getElementById('suggest-body');
-  const overlay = document.getElementById('suggest-overlay');
-  body.innerHTML = '<span style="color:var(--theme-text-muted)">Loading…</span>';
-  overlay.style.display = 'flex';
-
-  fetch('/api/timeseries/suggest?ticker=' + encodeURIComponent(ticker) +
-        '&metric=' + encodeURIComponent(metric) +
-        '&period=' + encodeURIComponent(period))
-    .then(function(resp) {
-      if (!resp.ok) return resp.json().catch(function() { return {}; }).then(function(e) {
-        throw new Error(e.error && e.error.message ? e.error.message : 'HTTP ' + resp.status);
-      });
-      return resp.json();
-    })
-    .then(function(body_json) {
-      if (!body_json.success) throw new Error(
-        body_json.error && body_json.error.message ? body_json.error.message : 'API error');
-      renderSuggestBody(body_json.data);
-    })
-    .catch(function(err) {
-      body.innerHTML = '<span style="color:var(--theme-danger)">Error: ' +
-        escapeHtml(err.message) + '</span>';
-    });
-}
-
-function renderSuggestBody(data) {
-  const ticker = data.ticker;
-  const metric = data.metric;
-  const period = data.period;
-  const unit   = data.unit;
-  const interp = data.interpolation;
-  const reports = data.nearby_reports || [];
-  const items   = data.review_items   || [];
-
-  let html = '<h3 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;">' +
-    'Missing — <span style="color:var(--theme-accent)">' + escapeHtml(ticker) + '</span> ' +
-    escapeHtml(metric) + ' <span style="color:var(--theme-text-muted)">' +
-    escapeHtml(period) + '</span></h3>';
-
-  // ── Interpolation section ──
-  html += '<div class="suggest-section"><h3>Estimated Value</h3>';
-  let prefillVal = '';
-  let prefillNote = '';
-  if (interp) {
-    const fmt = function(v) { return v != null ? Number(v).toFixed(4) + ' ' + escapeHtml(unit) : '—'; };
-    html += '<p style="font-size:0.9rem;margin-bottom:0.3rem;">' +
-      '<strong>' + fmt(interp.value) + '</strong></p>';
-    if (interp.method === 'linear') {
-      html += '<p style="font-size:0.78rem;color:var(--theme-text-muted);">' +
-        'Linear interpolation between ' +
-        escapeHtml(interp.from.period) + ' (' + fmt(interp.from.value) + ') → ' +
-        escapeHtml(interp.to.period)   + ' (' + fmt(interp.to.value)   + ')</p>';
-      prefillNote = 'Interpolated between ' + interp.from.period + ' and ' + interp.to.period;
-    } else {
-      const neighbor = interp.from || interp.to;
-      html += '<p style="font-size:0.78rem;color:var(--theme-text-muted);">' +
-        'Extrapolated from ' + escapeHtml(neighbor.period) +
-        ' (' + fmt(neighbor.value) + ') — only one neighbor found</p>';
-      prefillNote = 'Extrapolated from ' + neighbor.period;
-    }
-    prefillVal = Number(interp.value).toFixed(4);
-  } else {
-    html += '<p style="font-size:0.82rem;color:var(--theme-text-muted);">No neighboring data — enter a value manually.</p>';
-  }
-  html += '</div>';
-
-  // ── Nearby reports ──
-  if (reports.length > 0) {
-    html += '<div class="suggest-section"><h3>Nearby Reports (±90 days)</h3>';
-    reports.forEach(function(r) {
-      let urlPart;
-      if (r.source_url && r.source_url.startsWith('http')) {
-        urlPart = '<a href="' + escapeHtml(r.source_url) + '" target="_blank" rel="noopener" ' +
-          'style="color:var(--theme-accent);text-decoration:none;">' +
-          escapeHtml(r.source_url.slice(0, 60)) + (r.source_url.length > 60 ? '…' : '') + '</a>';
-      } else if (r.source_url) {
-        const fname = r.source_url.split('/').pop() || r.source_url;
-        const display = fname.length > 60 ? fname.slice(0, 57) + '…' : fname;
-        urlPart = '<span title="' + escapeHtml(r.source_url) + '" ' +
-          'style="color:var(--theme-text-muted);font-size:0.78rem;cursor:help;">' +
-          escapeHtml(display) + '</span>';
-      } else {
-        urlPart = '—';
-      }
-      html += '<div class="suggest-report-row"><span>' + escapeHtml(r.report_date) + '</span>' +
-        '<span>' + escapeHtml(r.source_type) + '</span>' +
-        '<span>' + urlPart + '</span></div>';
-    });
-    html += '</div>';
-  }
-
-  // ── Review queue items ──
-  const pendingItems = items.filter(function(it) { return it.status === 'PENDING'; });
-  const nonPendingItems = items.filter(function(it) { return it.status !== 'PENDING'; });
-
-  if (nonPendingItems.length > 0) {
-    html += '<div class="suggest-section"><h3>Review Queue History</h3>';
-    nonPendingItems.forEach(function(it) {
-      const statusClass = it.status === 'APPROVED' ? 'badge-success' : 'badge-danger';
-      const snippet = it.source_snippet ? escapeHtml(it.source_snippet.slice(0, 80)) : '';
-      html += '<div class="suggest-review-row">' +
-        '<span>' + escapeHtml(String(it.raw_value)) + ' ' + escapeHtml(unit) + '</span> ' +
-        '<span style="color:var(--theme-text-muted)">conf ' + Number(it.confidence).toFixed(2) + '</span> ' +
-        '<span class="badge ' + statusClass + '">' + escapeHtml(it.status) + '</span>' +
-        (snippet ? '<div style="margin-top:2px;font-size:0.75rem;color:var(--theme-text-muted);">' + snippet + '</div>' : '') +
-        '</div>';
-    });
-    html += '</div>';
-  }
-
-  // ── If PENDING item exists: embed ReviewPanel; else show fill form ──
-  if (pendingItems.length > 0) {
-    html += '<div class="suggest-section"><h3>Pending Review Item</h3>' +
-      '<div id="dash-review-panel" style="min-height:200px"></div></div>';
-  } else {
-    html += '<div class="suggest-section fill-form">' +
-      '<h3>Submit to Review Queue</h3>' +
-      '<label>Value (' + escapeHtml(unit) + ')<br>' +
-      '<input type="number" id="fill-value" step="any" min="0" style="width:160px;" ' +
-      'value="' + escapeHtml(prefillVal) + '"></label>' +
-      '<label>Note (optional)<br>' +
-      '<textarea id="fill-note">' + escapeHtml(prefillNote) + '</textarea></label>' +
-      '<button class="btn btn-primary btn-sm" id="fill-submit" ' +
-      'data-ticker="' + escapeHtml(ticker) + '" ' +
-      'data-metric="' + escapeHtml(metric) + '" ' +
-      'data-period="' + escapeHtml(period) + '" ' +
-      'data-unit="' + escapeHtml(unit) + '">' +
-      'Submit to Review Queue</button>' +
-      '</div>';
-  }
-
-  document.getElementById('suggest-body').innerHTML = html;
-
-  // ── Wire ReviewPanel if PENDING item was injected ──
-  if (pendingItems.length > 0) {
-    const itemId = pendingItems[0].id;
-    ReviewPanel.init('dash-review-panel');
-    ReviewPanel.openItem(itemId);
-    ReviewPanel.setOnApproved(function() {
-      closeSuggestModal();
-      // Refresh dashboard to reflect newly approved data
-      loadDashboard();
-    });
-    ReviewPanel.setOnRejected(function() {
-      closeSuggestModal();
-    });
-  }
-}
-
-function submitFill(ticker, metric, period, unit) {
-  const valEl  = document.getElementById('fill-value');
-  const noteEl = document.getElementById('fill-note');
-  const value  = parseFloat(valEl ? valEl.value : '');
-  if (!isFinite(value) || value <= 0) {
-    showToast('Enter a positive number before submitting.', true);
-    return;
-  }
-  const note = noteEl ? noteEl.value.trim() : '';
-
-  fetch('/api/timeseries/fill', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticker: ticker, metric: metric, period: period, value: value, note: note }),
-  })
-    .then(function(resp) {
-      if (resp.status === 409) {
-        document.getElementById('suggest-body').innerHTML =
-          '<p style="color:var(--theme-warning);">Data already exists for this period — ' +
-          'reload the dashboard to see it.</p>';
-        return null;
-      }
-      return resp.json().then(function(body_json) {
-        if (!resp.ok || !body_json.success) {
-          throw new Error(body_json.error && body_json.error.message
-            ? body_json.error.message : 'HTTP ' + resp.status);
-        }
-        return body_json;
-      });
-    })
-    .then(function(body_json) {
-      if (!body_json) return; // 409 handled above
-      const id = body_json.data.review_id;
-      document.getElementById('suggest-body').innerHTML =
-        '<p style="color:var(--theme-success);">Added to review queue (#' + id + '). ' +
-        '<a href="/review" style="color:var(--theme-accent);">Go to Review →</a> to approve.</p>';
-    })
-    .catch(function(err) {
-      showToast('Submit failed: ' + err.message, true);
-    });
-}
-
 function closeSuggestModal() {
   document.getElementById('suggest-overlay').style.display = 'none';
-  ReviewPanel.close();
 }
 
 // ── Data lineage click-through ────────────────────────────────────────────
@@ -874,14 +558,6 @@ document.addEventListener('keydown', function(e) {
 // Close on backdrop click (not on the card itself)
 document.getElementById('suggest-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeSuggestModal();
-});
-
-// Submit-to-review-queue — delegated listener on the persistent suggest-body element
-// (wired once to avoid listener accumulation; data-* attrs carry the values — see Anti-pattern #26/#27)
-document.getElementById('suggest-body').addEventListener('click', function(e) {
-  const btn = e.target.closest('#fill-submit');
-  if (!btn) return;
-  submitFill(btn.dataset.ticker, btn.dataset.metric, btn.dataset.period, btn.dataset.unit);
 });
 
 // ── View toggle (Overview / Stacked Bar / Timeseries) ────────────────────
