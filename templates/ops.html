@@ -2332,25 +2332,38 @@ tr.is-reviewed td { opacity: 0.65; }
 <details style="margin-bottom:1rem;border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem 0.75rem">
   <summary style="font-weight:600;font-size:0.85rem;cursor:pointer;user-select:none">How this works — document to monthly slot pipeline</summary>
   <div style="font-size:0.82rem;line-height:1.6;margin-top:0.75rem;color:var(--theme-text)">
-    <p><strong>Sources.</strong> Each company has three document streams that feed monthly data slots:</p>
+
+    <p><strong>Three views, two data tracks.</strong> The toggle at the top of this panel switches between three views. The first two correspond to distinct data tracks that are kept separate in the database:</p>
     <ul>
-      <li><strong>Monthly press releases (PR/IR)</strong> — filed by the company on its investor-relations page, typically within a week of month-end. Each document covers one calendar month of production, holdings, and sales figures.</li>
-      <li><strong>SEC 8-K filings</strong> — a company may also file the same monthly production results as an 8-K with EDGAR. The report date is derived from the <em>period_of_report</em> field (the last day of the production month), not the SEC filing date, so data lands in the correct month.</li>
-      <li><strong>SEC 10-Q / 10-K filings</strong> — quarterly and annual reports. These contain cumulative figures across an entire quarter or year. The pipeline anchors on the MD&amp;A section (Item 2 for 10-Q, Item 7 for 10-K), skipping any Table-of-Contents stub, and allocates the figures to the reporting quarter.</li>
+      <li><strong>Monthly PRs / 8-K</strong> — monthly-granularity records (period format: YYYY-MM). These come from IR press releases, archive PDFs/HTMLs, and monthly production 8-K filings. Each document covers one calendar month. This is the primary view for month-by-month analysis.</li>
+      <li><strong>SEC Filings (10-Q / 10-K)</strong> — quarterly/annual-granularity records (period format: YYYY-Qn or YYYY-FY). These come from 10-Q and 10-K filings. Each document covers an entire quarter or fiscal year. Values here are <em>not</em> visible in the Monthly view — they live in separate slots.</li>
+      <li><strong>Interpret</strong> — manual LLM reprompt and per-report extraction controls.</li>
     </ul>
-    <p><strong>Stage 1 — Ingest (fetch and store).</strong> Documents are fetched and their raw text is stored in the <em>reports</em> table. No extraction happens yet. The document is assigned a <em>source_type</em> (archive_html, archive_pdf, ir_press_release, edgar_8k, edgar_10q, edgar_10k).</p>
-    <p><strong>Stage 2 — Keyword gate.</strong> Before any LLM call, the pipeline checks whether the document contains at least one mining-related anchor phrase (e.g. "bitcoin produced", "hash rate", "BTC mined"). Documents that contain none of these phrases are skipped and marked <em>keyword_gated</em> — they never reach the LLM.</p>
-    <p><strong>Stage 3 — LLM extraction.</strong> Documents that pass the gate are sent to the local Qwen LLM (via Ollama) in a single batch call requesting all metrics at once. The LLM returns a JSON object with one value per metric. A confidence score is calculated for each value based on how close the matched text is to the keyword anchor, whether the value is within the expected range for that metric, and the pattern weight. Values below the 0.75 confidence threshold, or flagged as statistical outliers vs. recent history, are routed to the <strong>Review Queue</strong> for analyst decision. Values above the threshold are written directly to <strong>data_points</strong> as auto-accepted.</p>
-    <p><strong>Stage 4 — Metric distillation for display.</strong> Each monthly slot in the timeline below shows one row per metric. The value displayed is selected from the following priority order (highest wins):</p>
+
+    <p><strong>Sources.</strong> Each document stream feeds one of the two tracks:</p>
+    <ul>
+      <li><strong>Monthly press releases (PR/IR)</strong> — filed by the company on its investor-relations page, typically within a week of month-end. Each document covers one calendar month. Goes to the Monthly track.</li>
+      <li><strong>SEC 8-K filings (monthly production)</strong> — many miners also file monthly production results as an 8-K. The period is derived from the filing's <em>period_of_report</em> field (last day of production month), not the SEC submission date, so the data lands in the correct month. Goes to the Monthly track.</li>
+      <li><strong>SEC 10-Q / 10-K filings</strong> — quarterly and annual reports. The pipeline anchors on the MD&amp;A section (Item 2 for 10-Q, Item 7 for 10-K), skipping any Table-of-Contents entry with the same heading. Extracted values are stored against the quarter (e.g. "2024-Q3") or fiscal year (e.g. "2024-FY"). Goes to the SEC track only.</li>
+    </ul>
+
+    <p><strong>Stage 1 — Ingest (fetch and store).</strong> Documents are fetched and raw text is stored in the <em>reports</em> table. No extraction happens yet. The document is assigned a <em>source_type</em> (archive_html, archive_pdf, ir_press_release, edgar_8k, edgar_10q, edgar_10k).</p>
+    <p><strong>Stage 2 — Keyword gate.</strong> Before any LLM call, the pipeline checks whether the document contains at least one mining-related anchor phrase (e.g. "bitcoin produced", "hash rate", "BTC mined"). Documents with no matching phrases are skipped and marked <em>keyword_gated</em>.</p>
+    <p><strong>Stage 3 — LLM extraction.</strong> Documents that pass the gate are sent to the local Qwen LLM in a single batch call. The LLM returns a JSON object with one value per metric. A confidence score is computed per value. Values below the 0.75 threshold, or flagged as statistical outliers, are routed to the <strong>Review Queue</strong>. Values above the threshold are written directly to <strong>data_points</strong> as auto-accepted.</p>
+
+    <p><strong>How 10-Q/10-K quarterly totals reach monthly slots — gap-fill.</strong> Because 10-Q and 10-K values are stored at quarterly/annual granularity, they do not appear in the Monthly view automatically. To propagate them into monthly slots, run the <strong>gap-fill</strong> step (Operations &rarr; Interpret tab &rarr; Gap Fill, or <code>cli.py gap-fill --ticker TICKER</code>). Gap-fill uses the quarterly total as a constraint and infers individual monthly values using delta inference for flow metrics (production, sales) or endpoint propagation for snapshot metrics (holdings). Inferred monthly values are written to the Monthly track with method badge <strong>D</strong> (derived) and are always overridden by a directly extracted monthly value if one exists.</p>
+
+    <p><strong>Source priority within the Monthly track.</strong> When multiple documents contribute a value for the same month and metric, the highest-authority source wins:</p>
     <ol>
-      <li><strong>Analyst / finalized</strong> — a value you have manually confirmed or edited (method badge: <span class="source-badge">A</span> or <span class="source-badge">F</span>). Never overwritten by the pipeline.</li>
-      <li><strong>EDGAR filing</strong> — auto-accepted value from an 8-K, 10-Q, or 10-K (source priority 1).</li>
-      <li><strong>IR press release</strong> — auto-accepted value from the company's investor-relations page (source priority 2).</li>
-      <li><strong>Archive</strong> — auto-accepted value from a locally stored historical PDF or HTML (source priority 3).</li>
+      <li><strong>Analyst / finalized</strong> — manually confirmed or edited. Never overwritten by the pipeline.</li>
+      <li><strong>EDGAR (8-K)</strong> — auto-accepted from a monthly production 8-K (source priority 1).</li>
+      <li><strong>IR press release</strong> — auto-accepted from the company's investor-relations page (source priority 2).</li>
+      <li><strong>Archive</strong> — auto-accepted from a locally stored historical PDF or HTML (source priority 3).</li>
+      <li><strong>Derived (gap-fill)</strong> — inferred from a quarterly total (source priority 4).</li>
     </ol>
-    <p>If a value is sitting in the Review Queue and has not yet been approved, the cell shows <span class="source-badge source-badge-review">R</span> and the pending value. Approving it promotes it to data_points at the analyst tier.</p>
-    <p><strong>Method badges.</strong> Each cell carries a badge showing how the value was produced: <strong>L</strong> = LLM auto-accepted, <strong>R</strong> = regex pattern match, <strong>A</strong> = analyst entry, <strong>F</strong> = finalized, <strong>D</strong> = derived (gap-fill inference), <strong>S</strong> = SEC filing, <strong>P</strong> = press release.</p>
-    <p><strong>Coverage bar.</strong> The bar at the top of the selector shows what fraction of expected monthly slots have at least one accepted value. Gaps are months where no document produced a value above the confidence threshold and no analyst has filled them in.</p>
+    <p>If a value is in the Review Queue (not yet approved), the cell shows <span class="source-badge source-badge-review">R</span>. Approving it promotes it to data_points at the analyst tier.</p>
+    <p><strong>Method badges.</strong> <strong>L</strong> = LLM auto-accepted, <strong>R</strong> = regex pattern match, <strong>A</strong> = analyst entry, <strong>F</strong> = finalized, <strong>D</strong> = derived (gap-fill), <strong>S</strong> = SEC filing, <strong>P</strong> = press release.</p>
+    <p><strong>Coverage bar.</strong> Shows what fraction of expected monthly slots have at least one accepted value. Gaps are months where no document produced a confident value and no analyst has filled them in.</p>
   </div>
 </details>
 

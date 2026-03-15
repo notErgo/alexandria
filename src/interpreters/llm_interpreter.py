@@ -1009,7 +1009,7 @@ class LLMInterpreter:
         _model = (config.model if config is not None else None) or None
         try:
             prompt = self._build_quarterly_batch_prompt(
-                text, metrics, ticker=ticker, period_type=period_type
+                text, metrics, ticker=ticker, period_type=period_type, config=config
             )
             raw = self._call_llm(prompt, model=_model)
             if raw is None:
@@ -1025,6 +1025,7 @@ class LLMInterpreter:
         metrics: list,
         ticker: str = None,
         period_type: str = 'quarterly',
+        config=None,
     ) -> str:
         """Build a prompt for quarterly or annual extraction.
 
