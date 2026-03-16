@@ -549,6 +549,82 @@ def export_final_csv():
     return response
 
 
+@bp.route('/api/export/final_long.csv')
+def export_final_long_csv():
+    """Export final_data_points in long format with optional forward-fill.
+
+    Query params:
+        ticker        — repeated param; omit for all tickers
+        forward_fill  — MA window size (int >= 1); 0 = disabled (default)
+        from_period   — YYYY-MM lower bound (optional)
+        to_period     — YYYY-MM upper bound (optional)
+
+    CSV columns: period, metric, value, unit, is_projected
+        metric value is prefixed with the ticker, e.g. MARA_production_btc.
+        is_projected is empty for confirmed values; '*' for forward-filled rows.
+    """
+    import datetime
+    from app_globals import get_db
+    from interpreters.forward_fill import compute_forward_fill
+
+    db = get_db()
+
+    tickers_raw = request.args.getlist('ticker')
+    tickers = [t.strip().upper() for t in tickers_raw if t.strip()] or None
+    from_period = request.args.get('from_period', '').strip() or None
+    to_period   = request.args.get('to_period', '').strip() or None
+    try:
+        ff_window = int(request.args.get('forward_fill', '0'))
+    except ValueError:
+        ff_window = 0
+
+    # Normalise YYYY-MM → YYYY-MM-01 for period comparison
+    if from_period and len(from_period) == 7:
+        from_period = from_period + '-01'
+    if to_period and len(to_period) == 7:
+        to_period = to_period + '-01'
+
+    if tickers:
+        rows = []
+        for t in tickers:
+            rows.extend(db.query_final_data_points(
+                ticker=t, from_period=from_period, to_period=to_period))
+    else:
+        rows = db.query_final_data_points(from_period=from_period, to_period=to_period)
+
+    projected = []
+    if ff_window >= 1:
+        current_period = datetime.date.today().strftime('%Y-%m')
+        projected = compute_forward_fill(rows, ff_window, current_period)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['period', 'metric', 'value', 'unit', 'is_projected'])
+
+    for row in rows:
+        ticker  = row.get('ticker') or ''
+        period  = (row.get('period') or '')[:7]   # normalise to YYYY-MM
+        metric  = f"{ticker}_{row.get('metric') or ''}"
+        value   = '' if row.get('value') is None else row['value']
+        unit    = row.get('unit') or ''
+        writer.writerow([period, metric, value, unit, ''])
+
+    for row in projected:
+        ticker  = row.get('ticker') or ''
+        period  = (row.get('period') or '')[:7]
+        metric  = f"{ticker}_{row.get('metric') or ''}"
+        value   = '' if row.get('value') is None else row['value']
+        unit    = row.get('unit') or ''
+        writer.writerow([period, metric, value, unit, '*'])
+
+    ticker_slug = '_'.join(tickers) if tickers else 'all'
+    fname = f"final_long_{ticker_slug}.csv"
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={fname}'
+    return response
+
+
 @bp.route('/api/export_llm_csv')
 def export_llm_csv():
     """LLM-direct CSV export — bypasses the agreement engine.

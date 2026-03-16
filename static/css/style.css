@@ -819,3 +819,77 @@ body.dev-no-tips .info-bubble { display: none !important; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }
 .acq-log-warn  { color: #f97316; }
 .log-row-error { color: var(--theme-danger, #ef4444); }
+
+/* ── Edit-mode blank cell affordance ────────────────────────────────────────── */
+#timeline-table.edit-mode .td-empty,
+#timeline-table.edit-mode .td-nodoc {
+    outline: 1px dashed var(--theme-border);
+    cursor: cell;
+}
+#timeline-table.edit-mode .td-empty:hover,
+#timeline-table.edit-mode .td-nodoc:hover {
+    background: rgba(59,130,246,0.08);
+    outline: 1px solid var(--theme-accent);
+}
+
+/* ── Projected (forward-filled) row styles ───────────────────────────────────── */
+tr.row-projected td {
+    opacity: 0.5;
+}
+tr.row-projected .td-projected {
+    font-style: italic;
+    color: var(--theme-text-muted);
+}
+.badge-method-proj {
+    background: rgba(148,163,184,0.2);
+    color: #94a3b8;
+}
+
+/* ── Projection config dropdown panel ───────────────────────────────────────── */
+.proj-config-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 120;
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    border-radius: 6px;
+    padding: 0.75rem;
+    width: 280px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+.proj-config-panel label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--theme-text-secondary);
+    margin-bottom: 0.15rem;
+}
+.proj-config-panel .proj-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.proj-config-panel input[type=number] {
+    width: 60px;
+    background: var(--theme-bg-input);
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    color: var(--theme-text-primary);
+    padding: 0.2rem 0.35rem;
+    font-size: 0.8rem;
+}
+
+/* ── Sync button (edit-mode toolbar) ────────────────────────────────────────── */
+.btn-sync {
+    background: #1a7f5a;
+    color: #fff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.btn-sync:hover {
+    background: #15664a;
+}

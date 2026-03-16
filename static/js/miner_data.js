@@ -12,6 +12,11 @@ let _tableMode = 'view';
 let _expandedDocsPeriod = null;
 let _selectedReportIds = {};
 
+// ── Projection / forward-fill state ───────────────────────────────────────
+let _projEnabled = false;         // whether forward-fill projection is on
+let _projWindow  = 6;             // moving-average window in months
+let _projPanelOpen = false;       // dropdown panel visibility
+
 // Metric highlight colours — 5 known colours; extras assigned from a palette.
 const _METRIC_COLORS_KNOWN = {
   production_btc:   '#3b82f6',
@@ -94,6 +99,41 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
   });
+
+  // ── SEC table row click → open doc panel ────────────────────────────────
+  const _secTbody = document.getElementById('sec-timeline-tbody');
+  if (_secTbody) {
+    _secTbody.addEventListener('click', function(e) {
+      if (e.target.closest('a')) return;  // let type-col links open normally
+      const row = e.target.closest('tr[data-period]');
+      if (!row) return;
+      const period = row.getAttribute('data-period');
+      const secRow = _secRows.find(function(r) { return r.period === period; });
+      const reportId = secRow ? secRow.report_id : null;
+      const nullMetrics = secRow
+        ? _secMetricKeys.filter(function(m) { return !secRow.metrics[m] || secRow.metrics[m].value == null; })
+        : _secMetricKeys.slice();
+
+      // Highlight selected row
+      _secTbody.querySelectorAll('tr[data-period]').forEach(function(r) {
+        r.classList.toggle('selected', r.getAttribute('data-period') === period);
+      });
+
+      // Show doc panel
+      const panel = document.getElementById('doc-panel');
+      if (panel) {
+        panel.classList.add('visible');
+        panel.style.display = 'flex';
+        const titleEl = document.getElementById('doc-panel-title-text');
+        if (titleEl) titleEl.textContent = `${_ticker} · ${period}` + (secRow && secRow.source_type ? ` · ${secRow.source_type}` : '');
+      }
+
+      ReviewPanel.openCell(_ticker, period, null, {
+        nullMetrics: nullMetrics,
+        reportId: reportId != null ? reportId : null,
+      });
+    });
+  }
 
   // ── ReviewPanel init ────────────────────────────────────────────────────
   ReviewPanel.init('miner-review-panel');
@@ -352,6 +392,44 @@ function cancelInlineEdit() {
   if (!_editingCell) return;
   _editingCell.td.innerHTML = _editingCell.original;
   _editingCell = null;
+}
+
+async function flushInlineEdit() {
+  if (!_editingCell) return;
+  const input = _editingCell.td.querySelector('input');
+  const val = input ? parseFloat(input.value) : NaN;
+  if (isNaN(val) || val < 0) {
+    cancelInlineEdit();
+    return;
+  }
+  const { period, metric } = _editingCell;
+  _editingCell = null;
+  try {
+    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: [{period, metric, value: val}]}),
+    });
+    const body = await resp.json();
+    if (body.success) {
+      const row = _rows.find(function(r) { return r.period === period; });
+      if (row) {
+        if (!row.metrics[metric]) row.metrics[metric] = {};
+        row.metrics[metric].value = val;
+        row.metrics[metric].is_finalized = true;
+      }
+      showToast('Value finalized');
+    } else {
+      showToast((body.error && body.error.message) || 'Finalize failed', true);
+    }
+  } catch (e) {
+    showToast('Finalize failed', true);
+  }
+}
+
+async function syncEdits() {
+  await flushInlineEdit();
+  showToast('All edits saved to database');
 }
 
 async function acceptRow(period) {
@@ -619,8 +697,174 @@ function fmtValue(m) {
   return v.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1});
 }
 
+// ── Forward-fill period helpers ────────────────────────────────────────────
+
+function _ffAddMonths(yyyymm, n) {
+  let year = parseInt(yyyymm.slice(0, 4), 10);
+  let month = parseInt(yyyymm.slice(5, 7), 10);
+  month += n;
+  while (month > 12) { month -= 12; year++; }
+  while (month < 1)  { month += 12; year--; }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function _ffPeriodToNorm(period) {
+  // 'YYYY-MM-01' or 'YYYY-MM' → 'YYYY-MM'
+  if (!period) return null;
+  const m = period.match(/^(\d{4})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}` : null;
+}
+
+function _ffQuarterToMonths(period) {
+  // 'YYYY-Qn' → ['YYYY-MM', 'YYYY-MM', 'YYYY-MM']
+  const m = period.match(/^(\d{4})-Q([1-4])$/);
+  if (!m) return [];
+  const year = parseInt(m[1], 10);
+  const start = (parseInt(m[2], 10) - 1) * 3 + 1;
+  return [0, 1, 2].map(function(i) {
+    return `${year}-${String(start + i).padStart(2, '0')}`;
+  });
+}
+
+function _ffCurrentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Returns a map:  period (YYYY-MM) → { metricKey → projectedValue }
+// Only covers periods not already present in confirmedRows.
+function _computeProjections(confirmedRows) {
+  if (!_projEnabled || _projWindow < 1) return {};
+
+  const currentMonth = _ffCurrentMonth();
+
+  // Per-metric: collect (period, value) from confirmed rows
+  const metricSeries = {};  // metricKey → [ {period:'YYYY-MM', value:float} ]
+
+  for (const row of confirmedRows) {
+    if (row.is_projected) continue;
+    const rowPeriod = row.period;
+    for (const metric of Object.keys(row.metrics || {})) {
+      const m = row.metrics[metric];
+      if (!m || m.value == null) continue;
+      const v = parseFloat(m.value);
+      if (isNaN(v)) continue;
+
+      if (!metricSeries[metric]) metricSeries[metric] = {};
+
+      // Handle quarterly period rows in the timeline
+      const qMatch = rowPeriod && rowPeriod.match(/^(\d{4})-Q([1-4])$/);
+      if (qMatch) {
+        for (const mp of _ffQuarterToMonths(rowPeriod)) {
+          if (!metricSeries[metric][mp]) metricSeries[metric][mp] = v;
+        }
+      } else {
+        const mp = _ffPeriodToNorm(rowPeriod);
+        if (mp && !metricSeries[metric][mp]) metricSeries[metric][mp] = v;
+      }
+    }
+  }
+
+  // Build set of confirmed periods (normalised) so we don't project over real data
+  const confirmedPeriodSet = new Set(
+    confirmedRows
+      .filter(function(r) { return !r.is_projected; })
+      .map(function(r) { return _ffPeriodToNorm(r.period); })
+      .filter(Boolean)
+  );
+
+  // For each metric, compute MA and generate projected values
+  const projMap = {};  // period → { metricKey → value }
+
+  for (const metric of Object.keys(metricSeries)) {
+    const sorted = Object.keys(metricSeries[metric]).sort();
+    if (!sorted.length) continue;
+    const lastPeriod = sorted[sorted.length - 1];
+    if (lastPeriod >= currentMonth) continue;
+
+    // MA base: last _projWindow confirmed values
+    const base = sorted.slice(-_projWindow);
+    const maVal = base.reduce(function(acc, p) {
+      return acc + metricSeries[metric][p];
+    }, 0) / base.length;
+
+    let fp = _ffAddMonths(lastPeriod, 1);
+    while (fp <= currentMonth) {
+      if (!confirmedPeriodSet.has(fp)) {
+        if (!projMap[fp]) projMap[fp] = {};
+        projMap[fp][metric] = maVal;
+      }
+      fp = _ffAddMonths(fp, 1);
+    }
+  }
+
+  return projMap;
+}
+
+// Build synthetic row objects for projected periods not in confirmedRows,
+// and augment existing confirmed rows with projected values for missing metrics.
+function _mergeProjections(confirmedRows, projMap) {
+  if (!Object.keys(projMap).length) return confirmedRows;
+
+  const confirmedByPeriod = {};
+  for (const row of confirmedRows) {
+    const np = _ffPeriodToNorm(row.period);
+    if (np) confirmedByPeriod[np] = row;
+  }
+
+  // Augment confirmed rows that are missing some metrics
+  for (const [period, metricVals] of Object.entries(projMap)) {
+    if (confirmedByPeriod[period]) {
+      const row = confirmedByPeriod[period];
+      for (const [metric, val] of Object.entries(metricVals)) {
+        if (!row.metrics[metric] || row.metrics[metric].value == null) {
+          if (!row._projectedMetrics) row._projectedMetrics = {};
+          row._projectedMetrics[metric] = val;
+        }
+      }
+    }
+  }
+
+  // Create new synthetic rows for periods with no confirmed data
+  const syntheticRows = [];
+  for (const [period, metricVals] of Object.entries(projMap)) {
+    if (confirmedByPeriod[period]) continue;
+    const metrics = {};
+    for (const metric of Object.keys(metricVals)) {
+      metrics[metric] = {
+        value: metricVals[metric],
+        unit: '',
+        is_projected: true,
+        extraction_method: 'projected',
+      };
+    }
+    syntheticRows.push({
+      period:        period + '-01',
+      period_label:  period,
+      is_gap:        false,
+      is_reviewed:   false,
+      is_projected:  true,
+      has_report:    false,
+      source_type:   null,
+      report_date:   null,
+      report_id:     null,
+      doc_priority:  null,
+      alt_docs:      [],
+      metrics:       metrics,
+    });
+  }
+
+  const merged = confirmedRows.concat(syntheticRows);
+  merged.sort(function(a, b) {
+    return (a.period || '').localeCompare(b.period || '');
+  });
+  return merged;
+}
+
 function renderTable(allRows) {
-  const rows = applyFilters(allRows);
+  // Inject forward-fill projections before filtering so projected rows are visible
+  const baseRows = _projEnabled ? _mergeProjections(allRows, _computeProjections(allRows)) : allRows;
+  const rows = applyFilters(baseRows);
   const tbody = document.getElementById('timeline-tbody');
 
   document.getElementById('table-row-count').textContent =
@@ -635,18 +879,49 @@ function renderTable(allRows) {
   const parts = [];
   for (const row of rows) {
     const isGap = row.is_gap;
-    const rowClass = isGap ? 'row-gap' : '';
+    const isProjRow = !!row.is_projected;
+    const rowClass = isGap ? 'row-gap' : (isProjRow ? 'row-projected' : '');
     const isSelected = row.period === _selectedPeriod;
     const selClass = isSelected ? ' selected' : '';
 
     // Build metric cells
     const metricCells = METRICS_ORDER.map(function(metric) {
-      const m = row.metrics[metric];
+      // Check if this specific metric is a projection (either full projected row
+      // or a projected metric injected into a confirmed row via _projectedMetrics).
+      const isProjMetric = isProjRow ||
+        (row._projectedMetrics && row._projectedMetrics[metric] != null);
+      const metricColor = _assignMetricColor(metric);
+
+      let m = row.metrics[metric];
+
+      // Overlay projected value for confirmed rows that have a projected metric
+      if (!isProjRow && row._projectedMetrics && row._projectedMetrics[metric] != null
+          && (!m || m.value == null)) {
+        m = {
+          value: row._projectedMetrics[metric],
+          unit: '',
+          extraction_method: 'projected',
+          is_projected: true,
+        };
+      }
+
       if (isGap) {
-        return `<td class="td-gap-label">—</td>`;
+        return `<td class="td-gap-label" data-metric="${escapeHtml(metric)}" onclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}')}" ondblclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}');}">—</td>`;
       }
       if (m && m.value != null) {
         const formatted = escapeHtml(fmtValue(m) || '');
+
+        // Projected cell: faded tint of series color, ~ prefix, no interaction
+        if (m.extraction_method === 'projected' || m.is_projected) {
+          const r = parseInt(metricColor.slice(1, 3), 16);
+          const g = parseInt(metricColor.slice(3, 5), 16);
+          const b = parseInt(metricColor.slice(5, 7), 16);
+          const projBg = `rgba(${r},${g},${b},0.12)`;
+          return `<td class="td-projected" data-metric="${escapeHtml(metric)}"
+            style="background:${projBg};font-style:italic;opacity:0.6"
+            title="Forward-fill projection (${_projWindow}-month MA)">~${formatted}<span class="badge-method badge-method-proj" style="font-size:0.6rem;margin-left:2px">~</span></td>`;
+        }
+
         if (m.is_pending) {
           return `<td class="td-pending">${formatted}<span class="badge-pending">P</span></td>`;
         }
@@ -685,9 +960,9 @@ function renderTable(allRows) {
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
-        return `<td class="td-empty" data-metric="${escapeHtml(metric)}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+        return `<td class="td-empty" data-metric="${escapeHtml(metric)}" onclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}')}" ondblclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}');}">—</td>`;
       }
-      return `<td class="td-nodoc" data-metric="${escapeHtml(metric)}" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+      return `<td class="td-nodoc" data-metric="${escapeHtml(metric)}" onclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}')}" ondblclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}');}">—</td>`;
     });
 
     // Type and Date columns
@@ -707,8 +982,10 @@ function renderTable(allRows) {
     const dateCell = `<td class="td-date-col">${escapeHtml(dateVal)}</td>`;
 
     const reviewedClass = row.is_reviewed ? ' is-reviewed' : '';
-    // Checkbox is a selection control for batch accept (always starts unchecked on render)
-    const reviewedCb = `<td style="text-align:center"><input type="checkbox" class="row-select-cb" data-period="${escapeHtml(row.period)}"></td>`;
+    // Projected rows: no checkbox, no accept button
+    const reviewedCb = isProjRow
+      ? `<td></td>`
+      : `<td style="text-align:center"><input type="checkbox" class="row-select-cb" data-period="${escapeHtml(row.period)}"></td>`;
 
     // Accept button: finalize all non-null metric values for this period
     const allFinalized = METRICS_ORDER.every(function(m) {
@@ -717,7 +994,7 @@ function renderTable(allRows) {
     const hasValues = METRICS_ORDER.some(function(m) {
       return row.metrics[m] && row.metrics[m].value != null;
     });
-    const acceptBtn = (!isGap && hasValues)
+    const acceptBtn = (!isGap && !isProjRow && hasValues)
       ? `<td style="text-align:center"><button class="btn btn-xs ${allFinalized ? 'btn-secondary' : 'btn-primary'}" title="${allFinalized ? 'All values finalized' : 'Accept all values for this period'}" onclick="acceptRow('${escapeHtml(row.period)}')">${allFinalized ? 'F' : 'Accept'}</button></td>`
       : `<td></td>`;
 
@@ -800,20 +1077,24 @@ function openDocumentFromRow(period, reportId) {
   });
 }
 
-function setMinerTableMode(mode) {
+async function setMinerTableMode(mode) {
   if (mode !== 'edit' && _editingCell) {
-    cancelInlineEdit();
+    await flushInlineEdit();
   }
   _tableMode = mode === 'edit' ? 'edit' : 'view';
+  const table = document.getElementById('timeline-table');
+  if (table) table.classList.toggle('edit-mode', _tableMode === 'edit');
   const viewBtn = document.getElementById('table-mode-view-btn');
   const editBtn = document.getElementById('table-mode-edit-btn');
   const addRowBtn = document.getElementById('add-row-btn');
   const addRowPanel = document.getElementById('add-row-panel');
   const banner = document.getElementById('table-mode-banner');
+  const syncBtn = document.getElementById('sync-btn');
   if (viewBtn) viewBtn.classList.toggle('active', _tableMode === 'view');
   if (editBtn) editBtn.classList.toggle('active', _tableMode === 'edit');
   if (addRowBtn) addRowBtn.style.display = _tableMode === 'edit' ? '' : 'none';
   if (addRowPanel && _tableMode === 'view') addRowPanel.style.display = 'none';
+  if (syncBtn) syncBtn.style.display = _tableMode === 'edit' ? '' : 'none';
   if (banner) {
     banner.textContent = _tableMode === 'edit'
       ? 'Edit mode: click any metric cell to change it or fill an empty value. Use Add Row for a manual month.'
@@ -1400,7 +1681,7 @@ function renderSecTable(rows) {
       : `<td class="td-type-col">${escapeHtml(typeLabel)}</td>`;
     const secDateVal = row.report_date ? row.report_date.slice(0, 10) : '—';
     const dateCellSec = `<td class="td-date-col">${escapeHtml(secDateVal)}</td>`;
-    parts.push(`<tr>
+    parts.push(`<tr data-period="${escapeHtml(row.period)}" data-report-id="${row.report_id != null ? row.report_id : ''}">
       <td class="td-period">${escapeHtml(row.period_label)}</td>
       ${metricCells.join('')}${typeCellSec}${dateCellSec}
     </tr>`);

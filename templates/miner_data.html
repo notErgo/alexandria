@@ -177,8 +177,8 @@
 }
 td.row-gap .td-period { color: var(--theme-text-muted); }
 .td-value { color: var(--theme-text-primary); }
-.td-empty { color: var(--theme-text-muted); }
-.td-nodoc { color: var(--theme-text-muted); font-style: italic; font-size: 0.75rem; }
+.td-empty { color: var(--theme-text-muted); cursor: cell; }
+.td-nodoc { color: var(--theme-text-muted); font-style: italic; font-size: 0.75rem; cursor: cell; }
 .td-gap-label {
   color: rgba(249,115,22,0.6);
   font-size: 0.75rem;
@@ -1044,16 +1044,68 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
-    <!-- Final data CSV export -->
+    <!-- Projection & Export config -->
     <div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
-      <button class="btn btn-primary btn-sm" onclick="exportFinalCsv()">Export Final CSV</button>
-      <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.5rem">Analyst-accepted values from final_data_points.</span>
-    </div>
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+        <!-- Projection config dropdown -->
+        <div style="position:relative">
+          <button id="proj-config-btn" class="btn btn-secondary btn-sm"
+            onclick="toggleProjPanel()"
+            title="Configure forward-fill projection and export">Projection &amp; Export</button>
+          <div id="proj-config-panel" class="proj-config-panel" style="display:none">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--theme-text-primary);margin-bottom:0.5rem">Projection &amp; Export</div>
 
-    <!-- LLM CSV export (unreviewed direct output) -->
-    <div data-spec-id="MD5.4" style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
-      <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
-      <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.5rem">Direct LLM output — not validated by agreement engine.</span>
+            <!-- Forward-fill toggle -->
+            <div class="proj-row">
+              <input type="checkbox" id="proj-enabled-cb" onchange="onProjToggle(this.checked)">
+              <label for="proj-enabled-cb" style="margin:0;cursor:pointer">Enable forward-fill projection</label>
+            </div>
+
+            <!-- MA window -->
+            <div class="proj-row">
+              <label for="proj-window-input" style="margin:0;white-space:nowrap">MA window:</label>
+              <input type="number" id="proj-window-input" min="1" max="60" value="6"
+                style="width:60px"
+                onchange="onProjWindowChange(this.value)">
+              <span style="font-size:0.78rem;color:var(--theme-text-muted)">months</span>
+            </div>
+
+            <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
+              Projects each metric forward from its last confirmed value using a moving average.
+              Projected cells appear faded (~) in the timeline.
+            </div>
+
+            <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
+              <div style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem">Export</div>
+
+              <!-- Ticker selection for export -->
+              <div style="margin-bottom:0.4rem">
+                <label style="font-size:0.78rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Tickers to export:</label>
+                <div id="proj-export-ticker-list" style="max-height:120px;overflow-y:auto;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;padding:0.25rem 0.4rem;font-size:0.78rem">
+                  <label style="display:flex;align-items:center;gap:0.35rem;margin-bottom:0.2rem;cursor:pointer">
+                    <input type="checkbox" id="proj-export-all-cb" checked onchange="onProjExportAllToggle(this.checked)">
+                    <span>All tickers</span>
+                  </label>
+                  <div id="proj-export-ticker-cbs" style="margin-left:1rem"></div>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="exportLongCsv()">Export Long CSV</button>
+                <button class="btn btn-secondary btn-sm" onclick="exportFinalCsv()">Export (legacy)</button>
+              </div>
+              <div style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:0.2rem">
+                Long CSV: long format, TICKER_metric names, includes projections (marked *).
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LLM CSV export (unreviewed direct output) -->
+        <div data-spec-id="MD5.4">
+          <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
+        </div>
+      </div>
     </div>
 
     <!-- Staging list -->
@@ -1182,8 +1234,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!row) return;
     // Skip td-value cells — dblclick handles inline edit; don't fire selectPeriod on
     // the first click of a dblclick sequence (would cause scroll jump before edit).
-    // td-empty and td-nodoc cells have their own onclick (openPipelineTrace) that
-    // calls event.stopPropagation(), so they will not reach this handler anyway.
+    // td-empty cells have their own onclick (openPipelineTrace) that calls
+    // event.stopPropagation(). td-nodoc cells also stop propagation via onclick.
     if (e.target.closest('.td-value')) return;
     selectPeriod(row.getAttribute('data-period'));
   });
@@ -1698,9 +1750,9 @@ function renderTable(allRows) {
       }
       // No value — check if has report (could fill)
       if (row.has_report) {
-        return `<td class="td-empty" onclick="event.stopPropagation();openPipelineTrace('${escapeHtml(_ticker)}','${escapeHtml(row.period)}','${escapeHtml(metric)}')" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
+        return `<td class="td-empty" onclick="event.stopPropagation()" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       }
-      return `<td class="td-nodoc">—</td>`;
+      return `<td class="td-nodoc" onclick="event.stopPropagation()" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
     });
 
     // Type and Date columns
@@ -2057,12 +2109,12 @@ function renderSecTable(rows) {
   for (const row of rows) {
     const metricCells = _secMetricKeys.map(function(metric) {
       const m = row.metrics[metric];
-      if (!m || m.value == null) return `<td class="td-empty">—</td>`;
+      if (!m || m.value == null) return `<td class="td-empty" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">—</td>`;
       if (m.is_pending) {
         return `<td class="td-pending">${escapeHtml(fmtValue(m) || '')}<span class="badge-pending">pending</span></td>`;
       }
       const finalBadge = m.is_finalized ? `<span class="badge-final">F</span>` : '';
-      return `<td class="td-value">${escapeHtml(fmtValue(m) || '')}${finalBadge}</td>`;
+      return `<td class="td-value" ondblclick="inlineEditCell(event,'${escapeHtml(row.period)}','${escapeHtml(metric)}')">${escapeHtml(fmtValue(m) || '')}${finalBadge}</td>`;
     });
     const srcType = row.source_type || '';
     const srcUrl  = row.source_url  || '';
@@ -2303,6 +2355,78 @@ function exportLLMCsv() {
   if (!_ticker) { showToast('Select a company first', true); return; }
   window.location = `/api/export_llm_csv?ticker=${encodeURIComponent(_ticker)}`;
 }
+
+// ── Projection & Export panel ──────────────────────────────────────────────
+
+function toggleProjPanel() {
+  const panel = document.getElementById('proj-config-panel');
+  _projPanelOpen = !_projPanelOpen;
+  panel.style.display = _projPanelOpen ? '' : 'none';
+  if (_projPanelOpen) _populateProjTickerList();
+}
+
+function _populateProjTickerList() {
+  const container = document.getElementById('proj-export-ticker-cbs');
+  if (!container || container.dataset.populated) return;
+  const tickers = Array.from(document.querySelectorAll('.md-tab[data-ticker]'))
+    .map(function(btn) { return btn.getAttribute('data-ticker'); });
+  container.innerHTML = tickers.map(function(t) {
+    return `<label style="display:flex;align-items:center;gap:0.3rem;margin-bottom:0.15rem;cursor:pointer">
+      <input type="checkbox" class="proj-ticker-cb" value="${t}" checked>
+      <span>${t}</span>
+    </label>`;
+  }).join('');
+  container.dataset.populated = '1';
+}
+
+function onProjExportAllToggle(checked) {
+  document.querySelectorAll('.proj-ticker-cb').forEach(function(cb) {
+    cb.checked = checked;
+    cb.disabled = checked;
+  });
+}
+
+function onProjToggle(enabled) {
+  _projEnabled = enabled;
+  renderTable(_rows);
+}
+
+function onProjWindowChange(val) {
+  const n = parseInt(val, 10);
+  if (n >= 1) {
+    _projWindow = n;
+    if (_projEnabled) renderTable(_rows);
+  }
+}
+
+function exportLongCsv() {
+  const ffWindow = _projEnabled ? _projWindow : 0;
+  const allCb = document.getElementById('proj-export-all-cb');
+  let tickers = [];
+  if (!allCb || allCb.checked) {
+    tickers = [];  // server default = all
+  } else {
+    tickers = Array.from(document.querySelectorAll('.proj-ticker-cb:checked'))
+      .map(function(cb) { return cb.value; });
+    if (!tickers.length) { showToast('Select at least one ticker', true); return; }
+  }
+  const params = new URLSearchParams();
+  tickers.forEach(function(t) { params.append('ticker', t); });
+  if (ffWindow >= 1) params.set('forward_fill', ffWindow);
+  window.location = '/api/export/final_long.csv?' + params.toString();
+}
+
+// Close projection panel when clicking outside
+document.addEventListener('click', function(e) {
+  if (!_projPanelOpen) return;
+  const btn = document.getElementById('proj-config-btn');
+  const panel = document.getElementById('proj-config-panel');
+  if (!btn || !panel) return;
+  if (!btn.contains(e.target) && !panel.contains(e.target)) {
+    _projPanelOpen = false;
+    panel.style.display = 'none';
+  }
+});
 
 function renderStagingTable() {
   const tbody = document.getElementById('staging-tbody');
