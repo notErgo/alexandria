@@ -124,6 +124,89 @@ class TestHtmlToPlain:
         assert "In 2026 HIVE's renewable" not in result, "nav bleed from 2026 article must not appear"
         assert "February 2026 Production Report" not in result, "footer bleed must not appear"
 
+    def test_drupal_nir_bitf_article_extraction(self):
+        """investor.bitfarms.com (Drupal NIR) puts the press release body inside
+        <article class="node--nir-news--full">.  The nav menu and © 2026 footer
+        copyright must not appear in the extracted text."""
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "Bitfarms Provides January 2022 Production and Mining Operations Update. "
+            "Paraguay Farm Commences Production. "
+            "Bitfarms Ltd. produced 411 BTC in January 2022, a 29% increase vs December 2021. "
+            "Total operational hashrate reached 3.0 EH/s as of January 31, 2022. "
+            "Total BTC holdings as of January 31, 2022: 4,300 BTC. "
+            "The company expanded capacity to 116 MW with seven farms in production."
+        )
+        html = f"""<html><head><title>Bitfarms January 2022 Production Update</title></head>
+        <body>
+          <nav>Skip to main navigation Select Language English Francais
+            Overview Shareholder Meeting News Events Press Releases Financials</nav>
+          <article class="node node--nir-news--full node--type-nir-news node--view-mode-full">
+            <div class="node__content">
+              <p>{article_body}</p>
+            </div>
+          </article>
+          <footer>
+            <div>Contact Investor Relations investors@bitfarms.com</div>
+            <div>Information posted on this site was accurate at the time of posting.</div>
+            <div>\u00a9 2026 Bitfarms Ltd. Search Investors Search this site Submit</div>
+          </footer>
+        </body></html>"""
+        result = html_to_plain(html)
+        assert "411 BTC" in result, "production figure must be present"
+        assert "3.0 EH/s" in result, "hashrate must be present"
+        assert "Skip to main navigation" not in result, "nav bleed must be excluded"
+        assert "© 2026 Bitfarms Ltd." not in result, "footer copyright year bleed must be excluded"
+
+    def test_drupal_nir_btdr_sidebar_bleed(self):
+        """ir.bitdeer.com (Drupal NIR) sidebar renders links to recent articles including
+        future-year content.  Only the <article> body must appear in the result."""
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "Bitdeer Announces May 2023 Operations Updates. "
+            "SINGAPORE, June 14, 2023 -- Bitdeer Technologies Group (NASDAQ: BTDR). "
+            "Bitdeer mined 382 BTC in May 2023, self-mining hashrate 4.8 EH/s. "
+            "Average power cost was 3.2 cents per kWh across all facilities. "
+            "Bhutan data center achieved full operational capacity during the period."
+        )
+        html = f"""<html><head><title>Bitdeer May 2023 Operations Updates</title></head>
+        <body>
+          <nav>Skip to main navigation News Releases Events Financials Stock Governance</nav>
+          <aside class="sidebar">
+            <h3>Recent News</h3>
+            <a href="/news/btdr-january-2026-update/">Bitdeer January 2026 Production Update</a>
+            <a href="/news/btdr-q3-2025-results/">Bitdeer Q3 2025 Financial Results</a>
+          </aside>
+          <article class="node node--nir-news--full node--type-nir-news node--view-mode-full">
+            <div class="node__content">
+              <p>{article_body}</p>
+            </div>
+          </article>
+          <footer>
+            <div>\u00a9 2026 Bitdeer Technologies Group</div>
+          </footer>
+        </body></html>"""
+        result = html_to_plain(html)
+        assert "382 BTC" in result, "production BTC must be present"
+        assert "4.8 EH/s" in result, "hashrate must be present"
+        assert "Bitdeer January 2026 Production Update" not in result, "sidebar 2026 bleed must be excluded"
+        assert "Bitdeer Q3 2025 Financial Results" not in result, "sidebar 2025 bleed must be excluded"
+        assert "© 2026 Bitdeer" not in result, "footer copyright bleed must be excluded"
+
+    def test_article_tag_not_used_when_too_short(self):
+        """If <article> exists but is tiny (stub/preview), fall back to full-page text."""
+        from infra.text_utils import html_to_plain
+        html = """<html><body>
+          <nav>Skip to main navigation Overview Financials Stock Governance</nav>
+          <article><p>Short stub.</p></article>
+          <div class="main-content">
+            <p>Bitfarms produced 411 BTC in January 2022. Hashrate: 3.0 EH/s. Holdings: 4300 BTC.</p>
+          </div>
+        </body></html>"""
+        result = html_to_plain(html)
+        # Falls back to full page — article body div content must be present
+        assert "411 BTC" in result
+
     def test_q4_shell_equisolve_aspnet_id_selector(self):
         """Equisolve ASP.NET pages use IDs like 'divPressReleaseBody' — html_to_plain
         should extract the body even when the container has no semantic tag."""

@@ -366,6 +366,15 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
         text = _re.sub(r'\s+', ' ', hive_section.get_text(separator=' ', strip=True)).strip()
         if len(text) >= _ARTICLE_BODY_MIN_CHARS:
             return text
+    # Drupal NIR sites (investor.bitfarms.com, ir.bitdeer.com) and standard HTML5
+    # pages wrap the press release body in <article>.  Nav menus, sidebars with
+    # recent-article links, and footer copyright years all live outside <article>,
+    # so extracting it avoids period bleed without any site-specific detection.
+    article_node = soup.find('article')
+    if article_node is not None:
+        text = _re.sub(r'\s+', ' ', article_node.get_text(separator=' ', strip=True)).strip()
+        if len(text) >= _ARTICLE_BODY_MIN_CHARS:
+            return text
     return plain
 
 
