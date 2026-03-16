@@ -335,6 +335,10 @@ class TestCurlCffiDomains:
     def test_bitdeer_ir_in_curl_cffi_domains(self):
         assert "ir.bitdeer.com" in _CURL_CFFI_DOMAINS
 
+    def test_bitfarms_in_curl_cffi_domains(self):
+        # investor.bitfarms.com embeds /cdn-cgi/ in page, causing false-positive bot detection
+        assert "investor.bitfarms.com" in _CURL_CFFI_DOMAINS
+
     def test_bitdeer_ir_not_in_js_rendered_domains(self):
         # ir.bitdeer.com is Cloudflare-protected (curl-cffi), not a plain JS-rendered domain
         assert "ir.bitdeer.com" not in _JS_RENDERED_DOMAINS

@@ -461,7 +461,9 @@ _JS_RENDERED_DOMAINS: frozenset = frozenset({
 # (connection timeout) and headless Playwright (HTTP/2 protocol error).
 # curl-cffi mimics the full TLS fingerprint of a real Chrome browser.
 _CURL_CFFI_DOMAINS: frozenset = frozenset({
-    "ir.bitdeer.com",  # Bitdeer — Cloudflare blocks requests + Playwright; curl-cffi chrome124 works
+    "ir.bitdeer.com",       # Bitdeer — Cloudflare blocks requests + Playwright; curl-cffi chrome124 works
+    "investor.bitfarms.com",  # Bitfarms — Cloudflare embeds /cdn-cgi/ in page, triggering false-positive
+                              # bot-challenge detection; curl-cffi Chrome impersonation fetches cleanly
 })
 
 _HEADERS = {
