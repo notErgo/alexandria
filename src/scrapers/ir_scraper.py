@@ -1423,7 +1423,7 @@ class IRScraper:
                 period_hint
                 or infer_period_from_text(title)
                 or infer_period_from_text(full_url)
-                or infer_period_from_text(pr_text[:5000])
+                or infer_period_from_text(pr_text[:15000])
             )
             published_date = infer_published_date_from_html(pr_text)
             if page_period is None and published_date:
@@ -1996,7 +1996,7 @@ class IRScraper:
                     published_date = infer_published_date_from_html(pr_resp.text)
                     page_period = period
                     if page_period is None:
-                        page_period = infer_period_from_text(pr_resp.text[:5000])
+                        page_period = infer_period_from_text(pr_resp.text[:15000])
                     if page_period is None and published_date:
                         pub = datetime.fromisoformat(published_date).date()
                         page_period = date(pub.year, pub.month, 1)

@@ -1352,3 +1352,18 @@ class TestScrapeDiscoveryInitialFetchFailure:
         assert result.errors == 1
         assert result.reports_ingested == 0
         db.insert_report.assert_not_called()
+
+
+class TestPeriodInferenceWindow:
+    """Period inference must scan enough HTML to find content past large page headers."""
+
+    def test_infer_period_from_text_finds_month_past_5000_chars(self):
+        """Sites like HIVE embed period text (e.g. 'November 2025') at ~8k chars.
+        The [:15000] window must capture it; [:5000] would not."""
+        from scrapers.ir_scraper import infer_period_from_text
+        from datetime import date
+        # Simulate a page where the period text appears after 6000 chars of HTML boilerplate
+        padding = "x" * 6000
+        body = padding + " Reports November 2025 Bitcoin Production "
+        assert infer_period_from_text(body[:5000]) is None  # old limit fails
+        assert infer_period_from_text(body[:15000]) == date(2025, 11, 1)  # new limit succeeds
