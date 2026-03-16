@@ -372,6 +372,33 @@ class TestBoilerplateStripping:
         assert "700 BTC" in result
         assert "About MARA" not in result
 
+    def test_forward_looking_information_stripped(self):
+        """Canadian-variant 'Forward-Looking Information' in back 60% is stripped."""
+        from interpreters.interpret_pipeline import _clean_for_llm
+        prefix = "A" * 500 + " BITF mined 300 BTC in March.\n\n"
+        suffix = "Forward-Looking Information\nThis release contains forward-looking information."
+        result = _clean_for_llm(prefix + suffix)
+        assert "300 BTC" in result
+        assert "Forward-Looking Information" not in result
+
+    def test_cautionary_note_stripped(self):
+        """'Cautionary Note Regarding Forward-Looking Information' in back 60% is stripped."""
+        from interpreters.interpret_pipeline import _clean_for_llm
+        prefix = "A" * 500 + " BITF mined 300 BTC in March.\n\n"
+        suffix = "Cautionary Note Regarding Forward-Looking Information\nThis release contains cautionary statements."
+        result = _clean_for_llm(prefix + suffix)
+        assert "300 BTC" in result
+        assert "Cautionary Note Regarding Forward-Looking Information" not in result
+
+    def test_non_ifrs_stripped(self):
+        """'Non-IFRS Financial Measures' in back 60% is stripped."""
+        from interpreters.interpret_pipeline import _clean_for_llm
+        prefix = "A" * 500 + " BITF mined 300 BTC in March.\n\n"
+        suffix = "Non-IFRS Financial Measures\nThis release refers to non-IFRS measures."
+        result = _clean_for_llm(prefix + suffix)
+        assert "300 BTC" in result
+        assert "Non-IFRS Financial Measures" not in result
+
 
 # ── Gap Fill ─────────────────────────────────────────────────────────────────
 

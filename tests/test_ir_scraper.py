@@ -234,19 +234,6 @@ class TestRiotHistoricalTemplates:
 
 
 class TestDiscoveryHelpers:
-    def test_cleanspark_discovery_uses_prnewswire_pages(self):
-        urls = discovery_page_urls_for_company(
-            {
-                "ticker": "CLSK",
-                "ir_url": "https://investors.cleanspark.com/news/",
-                "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
-            }
-        )
-        assert urls[0] == "https://investors.cleanspark.com/news"
-        assert urls[1] == "https://investors.cleanspark.com/news?page=2"
-        assert "https://www.prnewswire.com/news/cleanspark%2C%20inc." in urls
-        assert "https://www.prnewswire.com/news/cleanspark%2C%20inc.?page=2" in urls
-
     def test_riot_discovery_uses_archive_pages(self):
         urls = discovery_page_urls_for_company(
             {"ticker": "RIOT", "ir_url": "https://www.riotplatforms.com/overview/news-events/press-releases/"}
@@ -277,23 +264,6 @@ class TestDiscoveryHelpers:
         assert len(links) == 1
         assert links[0][1].startswith("https://investors.cleanspark.com/news/news-details/2024/")
         assert links[0][2] == date(2024, 1, 1)
-
-    def test_discovery_link_extraction_handles_prnewswire_articles(self):
-        company = {"ticker": "CLSK"}
-        html = """
-        <html><body>
-          <a href="/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html">
-            CleanSpark Releases January 2026 Operational Update
-          </a>
-          <a href="/news-releases/cleanspark-delivers-181-million-in-q1-revenue-302680687.html">
-            CleanSpark Delivers $181 Million in Q1 Revenue
-          </a>
-        </body></html>
-        """
-        links = discovery_links_from_html(company, html, "https://www.prnewswire.com/news/cleanspark%2C%20inc./")
-        assert len(links) == 1
-        assert links[0][1] == "https://www.prnewswire.com/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html"
-        assert links[0][2] == date(2026, 1, 1)
 
     def test_hive_discovery_returns_single_page_url(self):
         """HIVE news page has all content on one URL; no pagination needed."""
@@ -326,7 +296,7 @@ class TestDiscoveryHelpers:
         url, title, period = links[0][1], links[0][0], links[0][2]
         assert url == (
             "https://www.hivedigitaltechnologies.com/news/"
-            "hive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase"
+            "hive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase/"
         )
         assert period == date(2025, 8, 1)
 
@@ -501,7 +471,7 @@ class TestTemplateModeBackfill:
         assert result.reports_ingested == 1
         assert any("riot-blockchain-announces-january-2020-production-update" in u for u in call_urls)
         inserted = scraper.db.insert_report.call_args[0][0]
-        assert inserted["source_url"].endswith("/riot-blockchain-announces-january-2020-production-update")
+        assert inserted["source_url"].endswith("/riot-blockchain-announces-january-2020-production-update/")
 
     def test_cleanspark_operational_update_fallback_uses_working_candidate(self):
         scraper = self._make_scraper(latest_ir="2025-12-01")
@@ -685,51 +655,6 @@ class TestDiscoveryMode:
         assert inserted["fetch_strategy"] == "discovery"
         assert inserted["report_date"] == "2024-01-01"
         assert inserted["published_date"] == "2024-02-05"
-
-    def test_scrape_discovery_stores_prnewswire_source_type(self):
-        db = MagicMock()
-        db.report_exists_by_url_hash.return_value = False
-        db.find_near_duplicates.return_value = []
-        scraper = IRScraper(db=db, session=MagicMock())
-        company = {
-            "ticker": "CLSK",
-            "scraper_mode": "discovery",
-            "ir_url": "https://investors.cleanspark.com/news/",
-            "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
-            "pr_start_date": "2023-01-01",
-        }
-
-        listing_resp = MagicMock()
-        listing_resp.text = """
-        <html><body>
-          <a href="/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html">
-            CleanSpark Releases January 2026 Operational Update
-          </a>
-        </body></html>
-        """
-        article_resp = MagicMock()
-        article_resp.text = """
-        <html><head><meta property="article:published_time" content="2026-02-05T08:00:00Z" /></head>
-        <body><h1>CleanSpark Releases January 2026 Operational Update</h1><p>Mined BTC in January 2026.</p></body></html>
-        """
-
-        def _fake_fetch(url, session, **kwargs):
-            if "prnewswire.com/news/cleanspark%2C%20inc." in url:
-                return listing_resp
-            if "operational-update-302678881.html" in url:
-                return article_resp
-            return None
-
-        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]), patch(
-            "scrapers.ir_scraper._fetch_with_rate_limit",
-            side_effect=_fake_fetch,
-        ):
-            result = scraper._scrape_discovery(company)
-
-        assert result.reports_ingested == 1
-        inserted = db.insert_report.call_args[0][0]
-        assert inserted["source_type"] == "prnewswire_press_release"
-        assert inserted["report_date"] == "2026-01-01"
 
     def test_scrape_discovery_keeps_insert_order_deterministic_with_parallel_fetch(self):
         db = MagicMock()

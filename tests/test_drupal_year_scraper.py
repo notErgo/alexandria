@@ -90,10 +90,11 @@ class TestDrupalYearScraper:
         company = _make_company(pr_start_year=2024)
 
         responses = [
-            _make_response(BASE_PAGE_HTML),   # base page
-            _make_response(YEAR_PAGE_HTML),   # year 2024 filter
-            _make_response(PR_HTML),          # first PR
-            _make_response(PR_HTML),          # second PR
+            _make_response(BASE_PAGE_HTML),                   # base page
+            _make_response(YEAR_PAGE_HTML),                   # year 2024 page_offset=0
+            _make_response(PR_HTML),                          # first PR detail
+            _make_response(PR_HTML),                          # second PR detail
+            _make_response('<html><body></body></html>'),      # year 2024 page_offset=1 (empty → break)
         ]
         with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=responses), \
              patch('scrapers.ir_scraper.date') as mock_date:
@@ -170,6 +171,7 @@ class TestDrupalYearScraper:
             _make_response(BASE_PAGE_HTML),
             _make_response(YEAR_PAGE_HTML_BROAD.replace("January 2024", "January 2026")),
             article,
+            _make_response('<html><body></body></html>'),  # page_offset=1 → empty → break
         ]
 
         with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=responses):
@@ -219,6 +221,7 @@ class TestDrupalYearScraper:
         responses = [
             _make_response(BASE_PAGE_HTML),
             _make_response(YEAR_PAGE_HTML),
+            _make_response('<html><body></body></html>'),  # page_offset=1 → empty → break
         ]
         with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=responses), \
              patch('scrapers.ir_scraper.date') as mock_date:
@@ -227,6 +230,45 @@ class TestDrupalYearScraper:
 
         assert result.reports_ingested == 0
         db.insert_report.assert_not_called()
+
+    def test_relative_href_no_slash_uses_urljoin(self, tmp_path):
+        """Relative href without leading '/' must be resolved via urljoin(year_url, href),
+        not by concatenating pr_base_url (which produces a malformed URL)."""
+        scraper, db = self._get_scraper(tmp_path)
+
+        # href has no leading slash
+        year_page_no_slash = f"""<html><body>
+<form>
+  <input type="hidden" name="form_build_id" value="form-TESTTOKEN2" />
+  <input type="hidden" name="{WIDGET_ID}_widget_id" value="{WIDGET_ID}" />
+  <input type="hidden" name="form_id" value="widget_form_base" />
+</form>
+<a href="news/detail/999">Bitdeer Reports Bitcoin Production for March 2024</a>
+</body></html>"""
+
+        fetched_urls = []
+        def _fake_fetch(url, session, **kwargs):
+            fetched_urls.append(url)
+            if url == _make_company()['ir_url']:
+                return _make_response(BASE_PAGE_HTML)
+            # Return results only for page=0 (no 'page=' param); return empty for subsequent pages
+            if 'Filter' in url and 'page=' not in url:
+                return _make_response(year_page_no_slash)
+            if 'Filter' in url:
+                return _make_response('<html><body></body></html>')
+            return _make_response(PR_HTML)
+
+        with patch('scrapers.ir_scraper._fetch_with_rate_limit', side_effect=_fake_fetch), \
+             patch('scrapers.ir_scraper.date') as mock_date:
+            mock_date.today.return_value = MagicMock(year=2024)
+            result = scraper._scrape_drupal_year(_make_company())
+
+        assert result.reports_ingested == 1
+        company_ir_url = _make_company()['ir_url']
+        detail_urls = [u for u in fetched_urls if 'Filter' not in u and u != company_ir_url]
+        assert detail_urls, "Detail page was never fetched"
+        # Must not produce "https://ir.example.comnews/detail/999" (missing slash)
+        assert "comnews" not in detail_urls[0]
 
     def test_form_build_id_refreshed_between_years(self, tmp_path):
         """form_build_id from year N response is used for year N+1 request."""

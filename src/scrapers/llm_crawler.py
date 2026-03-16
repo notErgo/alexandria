@@ -182,8 +182,6 @@ _STORE_DOCUMENT_TOOL = {
                 'type': 'string',
                 'enum': [
                     'ir_press_release',
-                    'prnewswire_press_release',
-                    'globenewswire_press_release',
                     'edgar_8k',
                     'wire_press_release',
                 ],
@@ -198,8 +196,8 @@ _STORE_DOCUMENT_TOOL = {
 _WEB_SEARCH_TOOL = {
     'name': 'web_search',
     'description': (
-        'Search the web for press releases on GlobeNewswire, PRNewswire, '
-        'and other wire services. Returns up to 10 results as title + URL pairs. '
+        'Search the web for investor relations press releases. '
+        'Returns up to 10 results as title + URL pairs. '
         'Follow up with fetch_url to retrieve individual pages.'
     ),
     'input_schema': {

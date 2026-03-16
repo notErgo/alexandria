@@ -220,8 +220,8 @@ class TestWebSearchTool(unittest.TestCase):
     def test_web_search_returns_results(self):
         crawler = _make_crawler()
         html = self._mock_ddg_html([
-            ('MARA Production Jan 2024', 'https://globenewswire.com/a'),
-            ('MARA BTC Output', 'https://prnewswire.com/b'),
+            ('MARA Production Jan 2024', 'https://ir.mara.com/a'),
+            ('MARA BTC Output', 'https://ir.mara.com/b'),
             ('MARA Monthly Update', 'https://ir.mara.com/c'),
         ])
         mock_resp = MagicMock()
@@ -230,8 +230,7 @@ class TestWebSearchTool(unittest.TestCase):
         crawler._session.get = MagicMock(return_value=mock_resp)
 
         result = crawler._tool_web_search('MARA production 2024')
-        self.assertIn('globenewswire.com', result)
-        self.assertIn('prnewswire.com', result)
+        self.assertIn('ir.mara.com', result)
         # At most 10 pairs
         pairs = [p for p in result.split('\n\n') if p.strip()]
         self.assertLessEqual(len(pairs), 10)

@@ -42,7 +42,6 @@
     "ir_url": "https://investors.cleanspark.com/news/",
     "pr_base_url": "https://investors.cleanspark.com",
     "rss_url": null,
-    "prnewswire_url": "https://www.prnewswire.com/news/cleanspark%2C%20inc./",
     "cik": "0000827876",
     "active": true,
     "scraper_mode": "discovery",
@@ -52,7 +51,7 @@
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 9,
-    "sandbox_note": "CleanSpark IR is currently protected by a Cloudflare challenge, so discovery uses the PR Newswire organization page instead of the IR listing. Direct IR templates remain reference-only for known historical URLs. PRNewswire org page: https://www.prnewswire.com/news/cleanspark%2C%20inc./"
+    "sandbox_note": "CleanSpark IR is currently protected by a Cloudflare challengeprnewswire.com/news/cleanspark%2C%20inc./"
   },
   {
     "ticker": "CORZ",
@@ -222,7 +221,7 @@
     "tier": 2,
     "ir_url": "https://ir.bitdeer.com/news-events/news-releases",
     "pr_base_url": "https://ir.bitdeer.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitdeer%20Technologies%20Group",
+    "rss_url": null,
     "cik": "0001899123",
     "active": true,
     "scraper_mode": "drupal_year",
@@ -258,7 +257,7 @@
     "tier": 2,
     "ir_url": "https://ir.bitfufu.com/news-events/press-releases",
     "pr_base_url": "https://ir.bitfufu.com",
-    "rss_url": "https://www.globenewswire.com/en/search/keyword/BitFuFu+Inc",
+    "rss_url": null,
     "cik": "0001921158",
     "active": true,
     "scraper_mode": "skip",
@@ -294,7 +293,7 @@
     "tier": 1,
     "ir_url": "https://investor.bitfarms.com/news-events/press-releases",
     "pr_base_url": "https://investor.bitfarms.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitfarms%20Ltd",
+    "rss_url": null,
     "cik": "0001812477",
     "active": true,
     "scraper_mode": "drupal_year",
@@ -304,7 +303,7 @@
     "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available; listing HTML renders server-side so Drupal form tokens are present in initial curl-cffi response. Article detail URLs migrated to /news-releases/news-release-details/{slug} (confirmed 2026-03-16; old pattern /news-events/press-releases/detail/{id}/{slug} is stale). Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) — IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd"
+    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available; listing HTML renders server-side so Drupal form tokens are present in initial curl-cffi response. Article detail URLs migrated to /news-releases/news-release-details/{slug} (confirmed 2026-03-16; old pattern /news-events/press-releases/detail/{id}/{slug} is stale). Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) \u2014 IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd"
   },
   {
     "ticker": "HIVE",

@@ -814,6 +814,14 @@ body.dev-no-tips .info-bubble { display: none !important; }
     word-break: break-all;
 }
 
+/* ── Pattern Suggestion Panel (miner_data.html interpret tab) ───────────────── */
+.sug-card { border:1px solid var(--theme-border); border-radius:4px; padding:0.5rem 0.75rem; margin-bottom:0.4rem; background:var(--theme-bg-secondary); font-size:0.78rem; }
+.sug-found  { border-left:3px solid var(--theme-success,#16a34a); }
+.sug-missed { border-left:3px solid var(--theme-warning,#d97706); }
+.sug-pattern { font-family:ui-monospace,monospace; font-size:0.72rem; color:var(--theme-text-secondary); margin:0.2rem 0; }
+.sug-apply-area { display:none; margin-top:0.5rem; }
+.sug-apply-area textarea { width:100%; font-size:0.72rem; font-family:ui-monospace,monospace; resize:vertical; padding:0.3rem; min-height:60px; box-sizing:border-box; }
+
 /* ── Log Panel (shared across ops.html and miner_data.html) ─────────────────── */
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }
 .acq-log-row { font-size: 0.72rem; font-family: ui-monospace, monospace; color: var(--theme-text-secondary); margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }

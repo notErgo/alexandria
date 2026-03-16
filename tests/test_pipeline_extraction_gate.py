@@ -107,16 +107,6 @@ class TestNormalPath:
         batch = build_batch('MARA', first_filing='2023-05-19')
         assert r_id in _ids(batch)
 
-    def test_prnewswire_before_gate_included(self, db, build_batch):
-        r_id = _insert_report(db, 'MARA', '2021-04-01', 'prnewswire_press_release')
-        batch = build_batch('MARA', first_filing='2023-05-19')
-        assert r_id in _ids(batch)
-
-    def test_globenewswire_before_gate_included(self, db, build_batch):
-        r_id = _insert_report(db, 'MARA', '2021-04-01', 'globenewswire_press_release')
-        batch = build_batch('MARA', first_filing='2023-05-19')
-        assert r_id in _ids(batch)
-
     def test_wire_before_gate_included(self, db, build_batch):
         r_id = _insert_report(db, 'MARA', '2021-04-01', 'wire_press_release')
         batch = build_batch('MARA', first_filing='2023-05-19')

@@ -63,7 +63,7 @@ _PR_FOOTER_UNCONDITIONAL = [
     _re.compile(r'^Distributed by\s+\w', _re.IGNORECASE),  # wire attribution (GlobeNewswire etc.)
 ]
 _PR_FOOTER_CONDITIONAL = [
-    _re.compile(r'^Forward-Looking Statements?\s*$', _re.IGNORECASE),
+    _re.compile(r'^Forward-Looking (?:Statements?|Information)\s*$', _re.IGNORECASE),
     _re.compile(r'^Cautionary Statements?\s*$', _re.IGNORECASE),
     _re.compile(r'^About [A-Z][A-Za-z]'),
     _re.compile(r'^For more information,?\s+visit\s*$', _re.IGNORECASE),

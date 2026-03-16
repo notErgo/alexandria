@@ -12,7 +12,7 @@ def test_source_type_display_known_keys():
     from config import SOURCE_TYPE_DISPLAY
     required = [
         'edgar_8k', 'edgar_10q', 'edgar_10k', 'edgar_20f',
-        'ir_press_release', 'archive_html', 'archive_pdf', 'prnewswire',
+        'ir_press_release', 'archive_html', 'archive_pdf',
     ]
     for key in required:
         assert key in SOURCE_TYPE_DISPLAY, f'SOURCE_TYPE_DISPLAY missing key: {key}'

@@ -25,10 +25,12 @@ class TestCanonicalUrl:
         assert "page=2" in result
         assert "id=123" in result
 
-    def test_normalizes_trailing_slash(self):
+    def test_preserves_trailing_slash(self):
+        # Trailing slashes are preserved because some servers (e.g. HIVE) return
+        # different content for /slug vs /slug/ — stripping would cause wrong fetches.
         from scrapers.dedup import canonical_url
         result = canonical_url("https://example.com/pr/")
-        assert result == "https://example.com/pr"
+        assert result == "https://example.com/pr/"
 
     def test_lowercases_scheme_and_host(self):
         from scrapers.dedup import canonical_url

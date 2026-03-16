@@ -28,7 +28,7 @@ def test_scout_exhaustion_gate_marks_blocked_when_no_sources(tmp_path):
     assert contract["status"] == "blocked"
     assert contract["sources"] == []
     assert any(b.startswith("exhausted:ir:") for b in contract["blockers"])
-    assert "coverage_gate:no_ir_and_no_wire_signal" in contract["blockers"]
+    assert "coverage_gate:no_ir_source" in contract["blockers"]
     assert contract["attempts_by_family"]["ir"] == 2
 
 
@@ -158,60 +158,3 @@ def test_discover_year_filter_heuristic_from_script_like_markup(tmp_path):
     assert "2026" in y["years"]
 
 
-def test_execute_wire_search_ingests_reports(tmp_path):
-    class _Resp:
-        def __init__(self, status_code: int, text: str):
-            self.status_code = status_code
-            self.text = text
-
-    class _Session:
-        def get(self, url, **_kwargs):
-            if "search/news" in url:
-                return _Resp(200, """
-                <html><body>
-                  <a href="https://www.prnewswire.com/news-releases/example-march-2026-bitcoin-production-update-301.html">
-                    March 2026 Bitcoin Production Update
-                  </a>
-                </body></html>
-                """)
-            if "production-update" in url:
-                return _Resp(200, "<html><body><h1>March 2026 Bitcoin Production Update</h1><p>content</p></body></html>")
-            return _Resp(404, "")
-
-    class _DB:
-        def __init__(self):
-            self.rows = []
-
-        def report_exists(self, ticker, report_date, source_type):
-            return any(
-                r["ticker"] == ticker and r["report_date"] == report_date and r["source_type"] == source_type
-                for r in self.rows
-            )
-
-        def insert_report(self, report):
-            self.rows.append(dict(report))
-            return len(self.rows)
-
-    db = _DB()
-    worker = ScoutWorker(
-        run_id="run1",
-        scout_id="scout-1",
-        db=db,
-        session=_Session(),
-        output_dir=Path(tmp_path),
-        config=ScoutConfig(max_attempts_per_source=1, max_consecutive_no_yield=1, execute_scrape=True),
-        companies_by_ticker={},
-    )
-    worker._source_url_exists = lambda *_args, **_kwargs: False  # noqa: SLF001
-    ing = worker._execute_scrape_for_source(
-        {"ticker": "MARA", "name": "MARA"},
-        {
-            "family": "prnewswire",
-            "entry_url": "https://www.prnewswire.com/search/news/?keyword=MARA",
-            "discovery_method": "search",
-            "validation": {"http_ok": True, "parse_ok": True, "sample_count": 1},
-        },
-    )
-    assert ing == 1
-    assert len(db.rows) == 1
-    assert db.rows[0]["source_type"] == "prnewswire_press_release"

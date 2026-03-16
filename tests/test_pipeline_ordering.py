@@ -24,9 +24,7 @@ def db(tmp_path):
 # ── Source priority mapping ──────────────────────────────────────────────────
 
 def test_monthly_pr_types_have_priority_1():
-    for st in ('ir_press_release', 'archive_pdf', 'archive_html',
-               'prnewswire_press_release', 'globenewswire_press_release',
-               'wire_press_release'):
+    for st in ('ir_press_release', 'archive_pdf', 'archive_html', 'wire_press_release'):
         assert _SOURCE_PRIORITY[st] == 1, f"{st} should be priority 1"
 
 

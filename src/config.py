@@ -251,8 +251,6 @@ SOURCE_TYPES: dict = {
     'archive_pdf':       'Archived PDF (OffChain/Miner/)',
     'archive_html':      'Archived HTML (OffChain/Miner/)',
     'ir_press_release':  'IR press release (live scrape)',
-    'prnewswire_press_release': 'PRNewswire press release (live scrape)',
-    'globenewswire_press_release': 'GlobeNewswire press release (live scrape)',
     'edgar_8k':          'SEC EDGAR 8-K filing',
     'edgar_10q':         'SEC EDGAR 10-Q filing',
     'edgar_10k':         'SEC EDGAR 10-K filing',
@@ -272,9 +270,6 @@ SOURCE_TYPE_DISPLAY: dict = {
     'ir_press_release':            'IR Press Release',
     'archive_html':                'IR Press Release',
     'archive_pdf':                 'IR Press Release',
-    'prnewswire':                  'PRNewswire',
-    'prnewswire_press_release':    'PRNewswire',
-    'globenewswire_press_release': 'GlobeNewswire',
     'wire_press_release':          'Wire',
     'manual':                      'Manual Entry',
 }
@@ -283,8 +278,6 @@ SOURCE_TYPE_DISPLAY: dict = {
 # regardless of which route starts extraction.
 MONTHLY_EXTRACTION_SOURCE_TYPES: tuple[str, ...] = (
     'ir_press_release',
-    'prnewswire_press_release',
-    'globenewswire_press_release',
     'wire_press_release',
 )
 

@@ -51,6 +51,7 @@ from routes.pipeline import bp as pipeline_bp
 from routes.qc import bp as qc_bp
 from routes.crawl import bp as crawl_bp
 from routes.interpret import bp as interpret_bp
+from routes.suggestions import bp as suggestions_bp
 log = logging.getLogger('miners.web')
 
 
@@ -110,6 +111,7 @@ def create_app() -> Flask:
     app.register_blueprint(qc_bp)
     app.register_blueprint(crawl_bp)
     app.register_blueprint(interpret_bp)
+    app.register_blueprint(suggestions_bp)
 
     @app.errorhandler(404)
     def not_found(e):

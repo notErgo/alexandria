@@ -368,18 +368,12 @@ def discovery_page_urls_for_company(company: dict) -> list[str]:
     """Return archive/listing pages to walk for discovery-first scraping."""
     ticker = (company.get("ticker") or "").upper()
     ir_url = (company.get("ir_url") or "").rstrip("/")
-    prnewswire_url = (company.get("prnewswire_url") or "").rstrip("/")
 
     if ticker == "CLSK":
-        # Primary: native IR listing page (more reliable, no bot challenge)
         pages = []
         if ir_url:
             pages.append(ir_url)
             pages.extend(f"{ir_url}?page={page}" for page in range(2, 11))
-        # Secondary: prnewswire archive (broader historical coverage, bot-challenged)
-        if prnewswire_url:
-            pages.append(prnewswire_url)
-            pages.extend(f"{prnewswire_url}?page={page}" for page in range(2, 21))
         return pages
 
     if ticker == "RIOT":
@@ -1122,13 +1116,9 @@ class IRScraper:
 
         summary = IngestSummary()
         ticker = company["ticker"]
-        rss_url = (
-            company.get("rss_url")
-            or company.get("globenewswire_url")
-            or company.get("prnewswire_url")
-        )
+        rss_url = company.get("rss_url")
         if not rss_url:
-            log.error("%s: rss_url/globenewswire_url/prnewswire_url not set", ticker)
+            log.error("%s: rss_url not set", ticker)
             summary.errors += 1
             return summary
 
@@ -1241,13 +1231,11 @@ class IRScraper:
             page_sources: list[tuple[str, str]] = [
                 (html, ir_url) for html in page_htmls_js
             ]
-            # prnewswire (or other non-IR) fallback URLs are only used if Playwright
-            # returned nothing at all — i.e., the native IR site is completely unreachable.
             if page_htmls_js:
                 static_fallback_urls: list[str] = []
             else:
-                log.warning("%s: Playwright got 0 pages from %s — falling back to secondary URLs", ticker, ir_url)
-                static_fallback_urls = [u for u in page_urls if urlparse(u).netloc.lower() != ir_host]
+                log.warning("%s: Playwright got 0 pages from %s", ticker, ir_url)
+                static_fallback_urls = []
         else:
             page_sources = []
             static_fallback_urls = page_urls
@@ -1483,11 +1471,7 @@ class IRScraper:
                 summary=summary,
                 title=title,
                 published_date=published_date,
-                source_type=(
-                    "prnewswire_press_release"
-                    if "prnewswire.com" in urlparse(full_url).netloc.lower()
-                    else "ir_press_release"
-                ),
+                source_type="ir_press_release",
                 url_claimed=True,
                 url_hash=url_hash,
             )

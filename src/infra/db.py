@@ -26,8 +26,6 @@ _SOURCE_PRIORITY: dict[str, int] = {
     # Monthly press releases — primary record for Bitcoin production metrics
     'ir_press_release': 1,
     'archive_pdf': 1, 'archive_html': 1,
-    'prnewswire_press_release': 1,
-    'globenewswire_press_release': 1,
     'wire_press_release': 1,
     # EDGAR event filings — confirms monthly PRs, cannot overwrite them
     'edgar_8k': 2, 'edgar_8ka': 2,
@@ -482,6 +480,11 @@ class MinerDB:
                     self._migrate_v49(conn)
                     conn.execute("PRAGMA user_version = 49")
                     version = 49
+
+                if version < 50:
+                    self._migrate_v50(conn)
+                    conn.execute("PRAGMA user_version = 50")
+                    version = 50
 
         # Sync company config from companies.json on startup only if enabled.
         # Runtime config key "auto_sync_companies_on_startup" (0/1) overrides
@@ -2021,7 +2024,7 @@ class MinerDB:
         New priority scale (lower = higher authority):
           0 = analyst / review decision (never overwritten)
           1 = monthly press releases: ir_press_release, archive_pdf, archive_html,
-              prnewswire_press_release, globenewswire_press_release, wire_press_release
+              wire_press_release
           2 = EDGAR event filings: edgar_8k, edgar_8ka
           3 = EDGAR quarterly: edgar_10q, edgar_6k, edgar_6ka
           4 = EDGAR annual: edgar_10k, edgar_20f, edgar_20fa, edgar_40f, edgar_40fa
@@ -2059,8 +2062,7 @@ class MinerDB:
         """)
         # Monthly press releases -> 1
         pr_types = "','".join([
-            'ir_press_release', 'archive_pdf', 'archive_html',
-            'prnewswire_press_release', 'globenewswire_press_release', 'wire_press_release',
+            'ir_press_release', 'archive_pdf', 'archive_html', 'wire_press_release',
         ])
         conn.execute(f"""
             UPDATE data_points SET source_priority = 1
@@ -2108,6 +2110,25 @@ class MinerDB:
                 "UPDATE metric_schema SET metric_group = ? WHERE key = ?",
                 (group, key),
             )
+
+    def _migrate_v50(self, conn: sqlite3.Connection) -> None:
+        """Schema migration v49 -> v50: qc_ticker_health table for health card persistence."""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS qc_ticker_health (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker       TEXT NOT NULL,
+                generated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                trigger      TEXT NOT NULL DEFAULT 'api',
+                months       INTEGER NOT NULL DEFAULT 24,
+                result_json  TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_qch_ticker ON qc_ticker_health(ticker)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_qch_generated ON qc_ticker_health(generated_at)"
+        )
 
     # ── Metric examples CRUD ────────────────────────────────────────────────────
 
@@ -4190,6 +4211,86 @@ class MinerDB:
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
+
+    def get_review_queue_stats(self, ticker: str) -> dict:
+        """Return total_pending and llm_empty_count for a ticker's PENDING review queue rows."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT
+                     COUNT(*) AS total_pending,
+                     SUM(CASE WHEN agreement_status='LLM_EMPTY' THEN 1 ELSE 0 END) AS llm_empty_count
+                   FROM review_queue
+                   WHERE ticker = ? AND status = 'PENDING'""",
+                (ticker,),
+            ).fetchone()
+            if row:
+                return {
+                    'total_pending': row['total_pending'] or 0,
+                    'llm_empty_count': row['llm_empty_count'] or 0,
+                }
+            return {'total_pending': 0, 'llm_empty_count': 0}
+
+    def reset_orphaned_reports(self, ticker: Optional[str] = None) -> int:
+        """Set extraction_status='pending' for all reports with status='running'.
+
+        Args:
+            ticker: if given, limit to that ticker; otherwise resets all tickers.
+
+        Returns:
+            Number of rows updated.
+        """
+        if ticker:
+            sql = "UPDATE reports SET extraction_status='pending' WHERE extraction_status='running' AND ticker=?"
+            params: tuple = (ticker,)
+        else:
+            sql = "UPDATE reports SET extraction_status='pending' WHERE extraction_status='running'"
+            params = ()
+        with self._get_connection() as conn:
+            cur = conn.execute(sql, params)
+            count = cur.rowcount
+        log.info("reset_orphaned_reports: reset %d rows (ticker=%s)", count, ticker or 'ALL')
+        return count
+
+    def save_health_check(
+        self,
+        ticker: str,
+        health_card: dict,
+        trigger: str = 'api',
+        months: int = 24,
+    ) -> None:
+        """Persist a health card result to qc_ticker_health."""
+        import json as _json
+        result_json = _json.dumps(health_card)
+        generated_at = health_card.get('generated_at', '')
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO qc_ticker_health (ticker, generated_at, trigger, months, result_json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (ticker, generated_at, trigger, months, result_json),
+            )
+
+    def get_health_check_history(self, ticker: str, limit: int = 20) -> list:
+        """Return health check rows for a ticker, most recent first, result_json deserialized."""
+        import json as _json
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT id, ticker, generated_at, trigger, months, result_json
+                   FROM qc_ticker_health
+                   WHERE ticker = ?
+                   ORDER BY generated_at DESC
+                   LIMIT ?""",
+                (ticker, limit),
+            ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            try:
+                parsed = _json.loads(d.pop('result_json', '{}') or '{}')
+                d['checks'] = parsed.get('checks', {})
+            except Exception:
+                d['checks'] = {}
+            result.append(d)
+        return result
 
     def delete_review_items_by_filter(
         self,

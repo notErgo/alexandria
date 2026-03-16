@@ -8,6 +8,11 @@
 .ops-tab:hover { color: var(--theme-text-primary); }
 .ops-tab.active { color: var(--theme-accent); border-bottom-color: var(--theme-accent); font-weight: 600; }
 .crawl-ticker-btn.active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
+.qc-flag-ok   { color: var(--theme-success, #16a34a); }
+.qc-flag-warn { color: var(--theme-warning, #d97706); }
+.qc-flag-err  { color: var(--theme-danger, #dc2626); }
+.health-detail-row td { background: var(--theme-bg-secondary); font-size: 0.78rem; padding: 0.4rem 1rem; }
+.health-history-row td { background: var(--theme-bg-tertiary, #f9fafb); font-size: 0.75rem; padding: 0.3rem 1rem; color: var(--theme-text-secondary); }
 .ops-pane { display: none; }
 .ops-pane.active { display: block; }
 
@@ -930,6 +935,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
   <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
   <button class="ops-tab" data-pane="data" data-ui-id="5.0">Data</button>
+  <button class="ops-tab" data-pane="health" data-ui-id="7.0">Health</button>
 </div>
 
 <!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
@@ -2552,9 +2558,11 @@ tr.is-reviewed td { opacity: 0.65; }
   <div id="view-interpret" style="display:none">
 
     <!-- Side-by-side reconciliation summary -->
-    <div>
-      <div class="interp-section-title">Reconciliation Summary</div>
-      <div id="interp-reconcile-wrap" style="overflow-x:auto">
+    <details open>
+      <summary class="interp-section-title" style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:0.4rem">
+        Reconciliation Summary
+      </summary>
+      <div id="interp-reconcile-wrap" style="overflow-x:auto;margin-top:0.4rem">
         <table id="interp-reconcile-table">
           <thead>
             <tr>
@@ -2567,7 +2575,7 @@ tr.is-reviewed td { opacity: 0.65; }
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
 
     <!-- Analyst commentary -->
     <div>
@@ -2589,7 +2597,24 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
       <button class="btn btn-primary btn-sm" id="extract-btn" onclick="doExtract()">Start extraction</button>
       <button class="btn btn-secondary btn-sm" id="custom-prompt-toggle" onclick="toggleCustomPrompt()" style="margin-left:0.5rem">Custom prompt</button>
+      <button class="btn btn-secondary btn-sm" id="suggestions-btn" onclick="loadExtractionSuggestions(_ticker, null)" style="margin-left:0.5rem">Suggestions</button>
       <span id="miner-extract-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+    </div>
+
+    <!-- Pattern suggestions — shown after extraction completes -->
+    <div id="suggestion-panel" style="display:none;margin-top:0.75rem">
+      <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.4rem;flex-wrap:wrap">
+        <span style="font-size:0.82rem;font-weight:600">Pattern Suggestions</span>
+        <span id="suggestion-count-badge" class="badge" style="margin-left:0.1rem"></span>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.2rem">
+          <strong>Found</strong> — text structures from successful extractions (data_points.source_snippet), clustered by normalized pattern and ranked by frequency.
+          <strong>Missed</strong> — context windows near metric keywords in reports where the LLM returned nothing (review_queue LLM_EMPTY items); indicates patterns the extractor may need to learn.
+          Up to 5 suggestions per metric. Apply to ticker hint or metric prompt to improve future extractions.
+        </span>
+        <button class="btn btn-xs btn-secondary" style="margin-left:auto"
+                onclick="closeSuggestionPanel()">Dismiss</button>
+      </div>
+      <div id="suggestion-list"></div>
     </div>
 
     <!-- Custom prompt panel (hidden by default) -->
@@ -2628,42 +2653,6 @@ tr.is-reviewed td { opacity: 0.65; }
         </table>
       </div>
     </div>
-
-    <!-- Stage FINAL -->
-    <details class="danger-zone">
-      <summary>Stage FINAL</summary>
-      <div class="dz-body">
-        <div>
-          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for <span id="dz-ticker-label">—</span></div>
-          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
-            Removes all finalized values for this ticker. Raw pipeline data is untouched.
-            Type <code id="dz-confirm-word">CLEAR_FINAL_TICKER</code> to confirm.
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <input type="text" class="dz-confirm-input" id="dz-ticker-confirm-input"
-              placeholder="Type confirmation word">
-            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Delete FINAL</button>
-            <span id="dz-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-          </div>
-        </div>
-        <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
-          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
-          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
-            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <select id="dz-purge-mode" style="padding:0.2rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem">
-              <option value="clear">clear</option>
-              <option value="archive">archive</option>
-            </select>
-            <input type="text" class="dz-confirm-input" id="dz-global-confirm-input"
-              placeholder="CLEAR_FINAL_ALL">
-            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Delete FINAL</button>
-            <span id="dz-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-          </div>
-        </div>
-      </div>
-    </details>
 
   </div><!-- /#view-interpret -->
 
@@ -2864,6 +2853,36 @@ tr.is-reviewed td { opacity: 0.65; }
   </p>
   <div class="card" style="padding:1.5rem;text-align:center;color:var(--theme-text-muted)">
     Coming soon: LLM-powered interrogation of the extracted time-series dataset.
+  </div>
+</div>
+
+<!-- ── Health pane (7.0) ─────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-health" data-ui-id="7.0">
+  <div class="section-header-row" style="margin-bottom:0.75rem">
+    <h2 style="font-size:1rem;margin:0">Ticker Health Checks</h2>
+    <button class="btn btn-sm btn-secondary" onclick="loadHealthTab(true)" id="health-refresh-btn">Refresh</button>
+    <span id="health-status-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+  </div>
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+    Per-ticker outlier detection, coverage gap analysis, stuck queue detection, and extraction backlog.
+    Click [Run] to fetch a live health card. Results are persisted and shown in Past Runs.
+  </p>
+  <div style="overflow-x:auto">
+    <table style="width:100%;font-size:0.8rem;border-collapse:collapse" id="health-ticker-table">
+      <thead>
+        <tr style="border-bottom:1px solid var(--theme-border)">
+          <th style="text-align:left;padding:0.3rem 0.5rem">Ticker</th>
+          <th style="text-align:center;padding:0.3rem 0.5rem">Outliers</th>
+          <th style="text-align:center;padding:0.3rem 0.5rem">Gap %</th>
+          <th style="text-align:center;padding:0.3rem 0.5rem">Queue</th>
+          <th style="text-align:center;padding:0.3rem 0.5rem">Backlog</th>
+          <th style="text-align:center;padding:0.3rem 0.5rem">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="health-ticker-tbody">
+        <tr><td colspan="6" style="padding:0.5rem;color:var(--theme-text-muted)">Loading companies…</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -3291,7 +3310,7 @@ function toggleInspect() {
 })();
 
 // ── Tab routing ─────────────────────────────────────────────────────────────
-const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate'];
+const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate', 'health'];
 const TAB_ALIASES = {
   companies: 'config', rules: 'config', settings: 'config', research: 'ingest',
   registry: 'data', explorer: 'data', qc: 'interpret', guide: 'workflow',
@@ -3327,6 +3346,7 @@ function activateTab(name) {
 
   if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
+  if (name === 'health') { loadHealthTab(false); }
   if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); _loadGapMetrics(); loadInterpretMetricToggles(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
 }
 
@@ -3666,6 +3686,7 @@ async function _pollExtractionRun(taskId, ticker, panelOverride) {
     }
   );
 }
+
 
 // Shared model loader — reads ollama_model config key as the SSOT default.
 // Sorts: saved config model first, then preferred fallbacks, then alpha.
@@ -7691,7 +7712,7 @@ const _SETTINGS_GROUPS = [
   {
     label: 'LLM',
     keys: [
-      {key: 'ollama_model', label: 'Ollama model', type: 'text',
+      {key: 'ollama_model', label: 'Ollama model', type: 'model_select',
        desc: 'Ollama model ID used for extraction and crawl. Must be pulled and available locally (e.g. qwen2.5:32b). Run "ollama list" to see installed models.'},
       {key: 'llm_timeout_seconds', label: 'LLM timeout (seconds)', type: 'number',
        desc: 'Seconds before an Ollama API call is abandoned. Increase for large models or slow hardware. Default is 300s (5 min).'},
@@ -8123,15 +8144,25 @@ function _renderSettingsGroups() {
         input = document.createElement('textarea');
         input.rows = 4;
         input.style.cssText = 'flex:1;font-family:monospace;font-size:0.72rem;padding:0.2rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+        input.id = 'setting-' + item.key;
+        input.value = _settingsValues[item.key] || '';
+        const defaultVal0 = _settingsDefaults[item.key];
+        input.placeholder = defaultVal0 != null ? String(defaultVal0) : 'default';
+      } else if (item.type === 'model_select') {
+        input = document.createElement('select');
+        input.style.cssText = 'width:220px;font-size:0.8rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+        input.id = 'setting-' + item.key;
+        input.innerHTML = '<option value="">Loading models\u2026</option>';
+        populateOllamaModelSelect('setting-' + item.key);
       } else {
         input = document.createElement('input');
         input.type = item.type;
         input.style.cssText = 'width:160px;font-size:0.8rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-surface);color:var(--theme-text)';
+        input.id = 'setting-' + item.key;
+        input.value = _settingsValues[item.key] || '';
+        const defaultVal = _settingsDefaults[item.key];
+        input.placeholder = defaultVal != null ? String(defaultVal) : 'default';
       }
-      input.id = 'setting-' + item.key;
-      input.value = _settingsValues[item.key] || '';
-      const defaultVal = _settingsDefaults[item.key];
-      input.placeholder = defaultVal != null ? String(defaultVal) : 'default';
       row.appendChild(lblWrap);
       row.appendChild(input);
       section.appendChild(row);
@@ -8899,5 +8930,186 @@ _gapReextractPanel.restore({
     if (statusEl) statusEl.textContent = '(restored) error: ' + (p.error_message || 'failed');
   },
 });
+
+// ── Health tab ───────────────────────────────────────────────────────────────
+let _healthLoaded = false;
+
+function loadHealthTab(force) {
+  if (_healthLoaded && !force) return;
+  _healthLoaded = true;
+  const tbody = document.getElementById('health-ticker-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="padding:0.5rem;color:var(--theme-text-muted)">Loading companies…</td></tr>';
+  fetch('/api/companies?active_only=false')
+    .then(function(r) { return r.json(); })
+    .then(function(body) {
+      if (!body.success || !body.data) { tbody.innerHTML = '<tr><td colspan="6">Failed to load companies</td></tr>'; return; }
+      tbody.innerHTML = '';
+      body.data.forEach(function(co) {
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-ticker', co.ticker);
+        tr.style.borderBottom = '1px solid var(--theme-border)';
+        tr.innerHTML = '<td style="padding:0.3rem 0.5rem;font-weight:600">' + escapeHtml(co.ticker) + '</td>'
+          + '<td id="hc-outliers-' + co.ticker + '" style="text-align:center;padding:0.3rem 0.5rem" class="qc-flag-ok">--</td>'
+          + '<td id="hc-gap-' + co.ticker + '" style="text-align:center;padding:0.3rem 0.5rem" class="qc-flag-ok">--</td>'
+          + '<td id="hc-queue-' + co.ticker + '" style="text-align:center;padding:0.3rem 0.5rem" class="qc-flag-ok">--</td>'
+          + '<td id="hc-backlog-' + co.ticker + '" style="text-align:center;padding:0.3rem 0.5rem" class="qc-flag-ok">--</td>'
+          + '<td style="text-align:center;padding:0.3rem 0.5rem">'
+          + '<button class="btn btn-xs btn-secondary" onclick="runHealthCheck(\'' + co.ticker + '\')">Run</button>'
+          + ' <button class="btn btn-xs btn-secondary" onclick="resetOrphanedReports(\'' + co.ticker + '\')" title="Reset orphaned running reports to pending">Reset</button>'
+          + '</td>';
+        tbody.appendChild(tr);
+      });
+      const msg = document.getElementById('health-status-msg');
+      if (msg) msg.textContent = body.data.length + ' companies loaded';
+    })
+    .catch(function(e) {
+      tbody.innerHTML = '<tr><td colspan="6" class="qc-flag-err">Error: ' + escapeHtml(String(e)) + '</td></tr>';
+    });
+}
+
+function runHealthCheck(ticker) {
+  const cells = ['outliers', 'gap', 'queue', 'backlog'];
+  cells.forEach(function(k) {
+    const el = document.getElementById('hc-' + k + '-' + ticker);
+    if (el) { el.textContent = '…'; el.className = 'qc-flag-ok'; }
+  });
+  // Remove any existing detail rows for this ticker
+  document.querySelectorAll('.health-detail-for-' + ticker).forEach(function(r) { r.remove(); });
+
+  fetch('/api/qc/ticker_report?ticker=' + encodeURIComponent(ticker))
+    .then(function(r) { return r.json(); })
+    .then(function(body) {
+      if (!body.success) {
+        cells.forEach(function(k) {
+          const el = document.getElementById('hc-' + k + '-' + ticker);
+          if (el) { el.textContent = 'err'; el.className = 'qc-flag-err'; }
+        });
+        return;
+      }
+      const c = body.data.checks;
+      // Outliers
+      const outlierEl = document.getElementById('hc-outliers-' + ticker);
+      if (outlierEl) {
+        outlierEl.textContent = c.outliers.length;
+        outlierEl.className = c.outliers.length > 0 ? 'qc-flag-warn' : 'qc-flag-ok';
+        outlierEl.style.cursor = 'pointer';
+        outlierEl.title = 'Click for details';
+      }
+      // Gap
+      const gapEl = document.getElementById('hc-gap-' + ticker);
+      if (gapEl) {
+        const pct = (c.coverage_gaps.gap_ratio * 100).toFixed(1) + '%';
+        gapEl.textContent = pct;
+        gapEl.className = c.coverage_gaps.gap_ratio > 0.1 ? 'qc-flag-warn' : 'qc-flag-ok';
+      }
+      // Queue
+      const queueEl = document.getElementById('hc-queue-' + ticker);
+      if (queueEl) {
+        queueEl.textContent = c.stuck_queue.llm_empty_count;
+        queueEl.className = c.stuck_queue.flagged ? 'qc-flag-err' : 'qc-flag-ok';
+      }
+      // Backlog
+      const backlogEl = document.getElementById('hc-backlog-' + ticker);
+      if (backlogEl) {
+        const total = (c.extraction_backlog.pending || 0) + (c.extraction_backlog.orphaned_running || 0);
+        backlogEl.textContent = total;
+        backlogEl.className = c.extraction_backlog.orphaned_running > 0 ? 'qc-flag-warn' : 'qc-flag-ok';
+      }
+      // Insert expandable detail row
+      _insertHealthDetailRow(ticker, body.data);
+    })
+    .catch(function(e) {
+      cells.forEach(function(k) {
+        const el = document.getElementById('hc-' + k + '-' + ticker);
+        if (el) { el.textContent = 'err'; el.className = 'qc-flag-err'; }
+      });
+    });
+}
+
+function _insertHealthDetailRow(ticker, healthCard) {
+  const tbody = document.getElementById('health-ticker-tbody');
+  const tickerRow = tbody.querySelector('[data-ticker="' + ticker + '"]');
+  if (!tickerRow) return;
+
+  const c = healthCard.checks;
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'health-detail-row health-detail-for-' + ticker;
+
+  let html = '<td colspan="6">';
+  // Outliers
+  if (c.outliers.length > 0) {
+    html += '<strong>Outliers:</strong><ul style="margin:0.2rem 0 0.4rem 1.2rem;padding:0">';
+    c.outliers.forEach(function(o) {
+      html += '<li>' + escapeHtml(o.period) + ' ' + escapeHtml(o.metric)
+        + ' = ' + o.value + ' (trailing avg ' + o.trailing_avg + ', dev ' + (o.deviation_pct * 100).toFixed(0) + '%)</li>';
+    });
+    html += '</ul>';
+  }
+  // Coverage gaps
+  if (c.coverage_gaps.missing_periods && c.coverage_gaps.missing_periods.length > 0) {
+    const shown = c.coverage_gaps.missing_periods.slice(0, 12);
+    const extra = c.coverage_gaps.missing_periods.length - shown.length;
+    html += '<strong>Missing periods (' + c.coverage_gaps.missing_periods.length + '):</strong> '
+      + shown.map(escapeHtml).join(', ') + (extra > 0 ? ' + ' + extra + ' more' : '') + '<br>';
+  }
+  // Past runs link
+  html += '<button class="btn btn-xs btn-secondary" style="margin-top:0.4rem" '
+    + 'onclick="_toggleHealthHistory(\'' + ticker + '\', this)">Past Runs</button>';
+  html += '</td>';
+  detailTr.innerHTML = html;
+
+  tickerRow.parentNode.insertBefore(detailTr, tickerRow.nextSibling);
+}
+
+function _toggleHealthHistory(ticker, btn) {
+  const existing = document.querySelector('.health-history-section-' + ticker);
+  if (existing) { existing.remove(); btn.textContent = 'Past Runs'; return; }
+  btn.textContent = 'Loading…';
+  fetch('/api/qc/ticker_history?ticker=' + encodeURIComponent(ticker) + '&limit=10')
+    .then(function(r) { return r.json(); })
+    .then(function(body) {
+      btn.textContent = 'Hide Past Runs';
+      if (!body.success || !body.data.length) {
+        btn.insertAdjacentHTML('afterend', '<span class="health-history-section-' + ticker + '" style="font-size:0.75rem;margin-left:0.5rem;color:var(--theme-text-muted)"> No history yet</span>');
+        return;
+      }
+      let h = '<div class="health-history-section-' + ticker + '" style="margin-top:0.5rem">'
+        + '<table style="width:100%;font-size:0.75rem;border-collapse:collapse">'
+        + '<thead><tr style="border-bottom:1px solid var(--theme-border)">'
+        + '<th style="text-align:left;padding:0.2rem 0.4rem">Generated</th>'
+        + '<th style="text-align:center;padding:0.2rem 0.4rem">Trigger</th>'
+        + '<th style="text-align:center;padding:0.2rem 0.4rem">Outliers</th>'
+        + '<th style="text-align:center;padding:0.2rem 0.4rem">Gap %</th>'
+        + '<th style="text-align:center;padding:0.2rem 0.4rem">Stuck</th>'
+        + '</tr></thead><tbody>';
+      body.data.forEach(function(row) {
+        const chk = row.checks || {};
+        const outlierCount = (chk.outliers || []).length;
+        const gapRatio = (chk.coverage_gaps || {}).gap_ratio || 0;
+        const stuck = (chk.stuck_queue || {}).flagged ? 'yes' : 'no';
+        h += '<tr class="health-history-row">'
+          + '<td style="padding:0.2rem 0.4rem">' + escapeHtml(row.generated_at || '') + '</td>'
+          + '<td style="text-align:center;padding:0.2rem 0.4rem">' + escapeHtml(row.trigger || '') + '</td>'
+          + '<td style="text-align:center;padding:0.2rem 0.4rem">' + outlierCount + '</td>'
+          + '<td style="text-align:center;padding:0.2rem 0.4rem">' + (gapRatio * 100).toFixed(1) + '%</td>'
+          + '<td style="text-align:center;padding:0.2rem 0.4rem">' + stuck + '</td>'
+          + '</tr>';
+      });
+      h += '</tbody></table></div>';
+      btn.insertAdjacentHTML('afterend', h);
+    })
+    .catch(function() { btn.textContent = 'Past Runs'; });
+}
+
+function resetOrphanedReports(ticker) {
+  fetch('/api/qc/reset_orphaned?ticker=' + encodeURIComponent(ticker), { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(body) {
+      const msg = document.getElementById('health-status-msg');
+      if (msg) msg.textContent = ticker + ': reset ' + (body.data ? body.data.reset_count : 0) + ' orphaned report(s)';
+    })
+    .catch(function() {});
+}
 </script>
 {% endblock %}

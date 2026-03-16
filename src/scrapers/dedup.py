@@ -23,7 +23,8 @@ def canonical_url(url: str) -> str:
     Steps:
       - Lowercase scheme and host.
       - Remove tracking query params (utm_*, fbclid, gclid, ref, source, _hsenc, _hsmi).
-      - Strip trailing slash from path (unless path is just '/').
+      - Preserve path as-is (trailing slashes are kept because some servers, e.g.
+        hivedigitaltechnologies.com, return different content for /slug vs /slug/).
       - Rebuild with urlunparse.
     Returns empty string for empty/invalid input.
     """
@@ -45,12 +46,7 @@ def canonical_url(url: str) -> str:
     ]
     query = urlencode(params)
 
-    # Strip trailing slash from path unless it is the root
-    path = parsed.path
-    if path.endswith('/') and len(path) > 1:
-        path = path.rstrip('/')
-
-    return urlunparse((scheme, netloc, path, parsed.params, query, ''))
+    return urlunparse((scheme, netloc, parsed.path, parsed.params, query, ''))
 
 
 def simhash_text(text: str) -> int:

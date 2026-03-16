@@ -660,6 +660,36 @@ class TestStripPressReleaseBoilerplate:
         assert "Media Contact" not in result
         assert "850 BTC" in result
 
+    def _content_only(self) -> str:
+        """Return body content repeated 10x to push sentinels past 40% threshold."""
+        return self._CONTENT * 10
+
+    def test_strips_forward_looking_information(self):
+        """Canadian-style 'Forward-Looking Information' heading is stripped."""
+        from infra.text_utils import strip_press_release_boilerplate
+        footer = "Forward-Looking Information\nThis press release contains forward-looking information.\n"
+        result = strip_press_release_boilerplate(self._content_only() + footer)
+        assert "Forward-Looking Information" not in result
+        assert "850 BTC" in result
+
+    def test_strips_bitf_style_footer(self):
+        """Full BITF-style footer with About, Cautionary Note, and Non-IFRS sections is stripped."""
+        from infra.text_utils import strip_press_release_boilerplate
+        content = self._content_only()
+        footer = (
+            "About Bitfarms Ltd.\n"
+            "Bitfarms Ltd. is a vertically integrated bitcoin mining company.\n"
+            "Cautionary Note Regarding Forward-Looking Information\n"
+            "This press release contains forward-looking information within the meaning of applicable securities laws.\n"
+            "Non-IFRS Financial Measures\n"
+            "This press release refers to certain financial measures that are not recognized under IFRS.\n"
+        )
+        result = strip_press_release_boilerplate(content + footer)
+        assert "About Bitfarms Ltd." not in result
+        assert "Cautionary Note Regarding Forward-Looking Information" not in result
+        assert "Non-IFRS Financial Measures" not in result
+        assert "850 BTC" in result
+
 
 class TestStripEdgarBoilerplate:
     """Tests for strip_edgar_boilerplate() — SEC filing footer removal."""

@@ -19,10 +19,10 @@ _MONTHLY_SOURCE_TYPES = frozenset(MONTHLY_EXTRACTION_SOURCE_TYPES)
 # Only stripped when the match falls at or after the 40% mark of the document,
 # preventing false positives from titles like "Forward-Looking Statements Disclosure".
 _BOILERPLATE_SENTINELS = [
-    re.compile(r'\bFORWARD.LOOKING\s+STATEMENTS?\b', re.IGNORECASE),
+    re.compile(r'\bFORWARD.LOOKING\s+(?:STATEMENTS?|INFORMATION)\b', re.IGNORECASE),
     re.compile(r'\bSAFE\s+HARBOR\s+STATEMENTS?\b', re.IGNORECASE),
-    re.compile(r'\bCAUTIONARY\s+STATEMENTS?\b', re.IGNORECASE),
-    re.compile(r'\bNON.GAAP\s+FINANCIAL\s+MEASURE', re.IGNORECASE),
+    re.compile(r'\bCAUTIONARY\s+(?:STATEMENTS?|NOTE)\b', re.IGNORECASE),
+    re.compile(r'\bNON.(?:GAAP|IFRS)\s+FINANCIAL\s+(?:MEASURE|METRIC)', re.IGNORECASE),
     re.compile(r'^Recent Announcements\s*$', re.MULTILINE),
     re.compile(r'^Investor Notice\s*$', re.MULTILINE),
     re.compile(  # canonical-sources: noqa — regex pattern matching company names, not a ticker list

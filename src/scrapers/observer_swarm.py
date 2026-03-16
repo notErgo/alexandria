@@ -32,7 +32,7 @@ from scrapers.source_contract import merge_contracts, normalize_contract, valida
 
 log = logging.getLogger("miners.scrapers.observer_swarm")
 
-SOURCE_FAMILIES = ("ir", "globenewswire", "prnewswire")
+SOURCE_FAMILIES = ("ir",)
 _HEADERS = {
     "User-Agent": (
         "Hermeneutic Research Platform/1.0 "
@@ -147,20 +147,6 @@ class ScoutWorker:
                     urls.append(expand_url_template(tmpl, datetime.now(timezone.utc).date().replace(day=1)))
                 except Exception:
                     pass
-        elif family == "globenewswire":
-            gw = (company.get("globenewswire_url") or "").strip()
-            if gw:
-                urls.append(gw)
-            if "globenewswire.com" in rss_url.lower():
-                urls.append(rss_url)
-            urls.append(f'https://www.globenewswire.com/search/keyword?keyword={name.replace(" ", "+")}')
-        elif family == "prnewswire":
-            pn = (company.get("prnewswire_url") or "").strip()
-            if pn:
-                urls.append(pn)
-            if "prnewswire.com" in rss_url.lower():
-                urls.append(rss_url)
-            urls.append(f'https://www.prnewswire.com/search/news/?keyword={name.replace(" ", "%20")}')
         return [u for u in urls if u]
 
     def _discover_source(self, company: dict, family: str) -> Optional[dict]:
@@ -291,12 +277,7 @@ class ScoutWorker:
                     href = a["href"]
                     if href.startswith("http"):
                         evidence.append(href)
-            if family in {"globenewswire", "prnewswire"} and sample_count == 0:
-                # Deep-search pagination pass for wire search pages.
-                deep_sample, deep_evidence = self._scan_wire_search(entry_url)
-                sample_count += deep_sample
-                evidence.extend(deep_evidence)
-            method = "index" if family == "ir" else "search"
+            method = "index"
             conf = 0.8 if sample_count > 0 else 0.55
             pagination = {"type": "none", "template": "", "max_page": 0}
             if "?page=" in lower or "page=" in lower:
@@ -536,10 +517,6 @@ class ScoutWorker:
         return urljoin(base, href)
 
     def _wire_source_type(self, family: str) -> str:
-        if family == "prnewswire":
-            return "prnewswire_press_release"
-        if family == "globenewswire":
-            return "globenewswire_press_release"
         return "wire_press_release"
 
     def _source_url_exists(self, url: str) -> bool:
@@ -757,8 +734,6 @@ class ScoutWorker:
         family = str(source.get("family") or "").strip().lower()
         if mode == "year_filter":
             return self._execute_year_filter_scrape(company, source)
-        if family in {"prnewswire", "globenewswire"} and mode in {"search", "rss", "index"}:
-            return self._execute_wire_scrape(company, source)
 
         pre = _count_reports_for_ticker(self.db, company["ticker"])
         if mode not in {"rss", "index", "template"}:
@@ -823,13 +798,10 @@ class ScoutWorker:
                 reason = self._last_discovery_reason.get(family, "unknown")
                 blockers.append(f"exhausted:{family}:{reason}")
 
-        # Coverage gate: block weak outputs where IR is missing and wire discovery
-        # has no usable signals.
+        # Coverage gate: block if no IR source was discovered.
         ir_sources = [s for s in sources if s.get("family") == "ir"]
-        wire_sources = [s for s in sources if s.get("family") in {"globenewswire", "prnewswire"}]
-        wire_signal = sum(int((s.get("validation") or {}).get("sample_count", 0)) for s in wire_sources)
-        if not ir_sources and wire_signal == 0:
-            blockers.append("coverage_gate:no_ir_and_no_wire_signal")
+        if not ir_sources:
+            blockers.append("coverage_gate:no_ir_source")
 
         status = "ready_for_scrape"
         if not sources and blockers:

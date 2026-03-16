@@ -4,7 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-_FAMILIES = {"ir", "globenewswire", "prnewswire"}
+_FAMILIES = {"ir"}
 _DISCOVERY_METHODS = {"rss", "index", "template", "search", "year_filter"}
 _STATUSES = {"ready_for_scrape", "partially_covered", "exhausted", "blocked"}
 

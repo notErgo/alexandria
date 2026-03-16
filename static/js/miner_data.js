@@ -1611,6 +1611,7 @@ async function switchView(view) {
   if (view === 'interpret' && _ticker) {
     if (_secRows.length === 0) await loadSecData(_ticker);
     loadInterpretData(_ticker);
+    loadExtractionSuggestions(_ticker, null);
   }
 }
 
@@ -1845,11 +1846,123 @@ async function _pollExtractionProgress(taskId, statusEl) {
       const prog = body.data || {};
       const status = prog.status || 'running';
       statusEl.textContent = `${prog.reports_processed || 0}/${prog.reports_total || '?'} reports, ${prog.data_points || 0} data points`;
-      if (status === 'complete') { statusEl.textContent += ' — done'; break; }
+      if (status === 'complete') { statusEl.textContent += ' — done'; if (_ticker) loadExtractionSuggestions(_ticker, prog.run_id || null); break; }
       if (status === 'error') { statusEl.textContent = `Error: ${prog.error_message || 'unknown'}`; break; }
     } catch (_) { break; }
   }
 }
+
+// ── Pattern Suggestion Panel ──────────────────────────────────────────────────
+
+async function loadExtractionSuggestions(ticker, runId) {
+  if (!ticker) return;
+  const panel = document.getElementById('suggestion-panel');
+  const list  = document.getElementById('suggestion-list');
+  const badge = document.getElementById('suggestion-count-badge');
+  if (!panel || !list) return;
+  try {
+    const url = '/api/suggestions/' + encodeURIComponent(ticker) + (runId ? '?run_id=' + runId : '');
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return;
+    const d = await resp.json();
+    const sugs = (d.data && d.data.suggestions) || [];
+    if (sugs.length === 0) { panel.style.display = 'none'; return; }
+    if (badge) badge.textContent = sugs.length;
+    list.innerHTML = sugs.map(s => _renderSuggestionCard(s, ticker)).join('');
+    panel.style.display = '';
+  } catch (_e) {}
+}
+
+function _renderSuggestionCard(sug, ticker) {
+  const signalClass  = sug.signal === 'found' ? 'sug-found' : 'sug-missed';
+  const hintAreaId   = 'sug-hint-area-'   + sug.id;
+  const promptAreaId = 'sug-prompt-area-' + sug.id;
+  return `<div class="sug-card ${signalClass}" id="sug-card-${sug.id}">`
+    + `<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">`
+    + `<span class="badge">${sug.signal}</span>`
+    + `<span class="badge" style="opacity:.7">${escapeHtml(sug.pattern_type || '')}</span>`
+    + `<span style="font-size:0.78rem;font-weight:600">${escapeHtml(sug.metric || '')}</span>`
+    + `<span style="font-size:0.72rem;color:var(--theme-text-muted)">freq=${sug.frequency || 1} reports=${sug.report_count || 1}</span>`
+    + `</div>`
+    + `<div class="sug-pattern" style="margin-top:0.3rem">${escapeHtml((sug.text_window || '').slice(0, 100))}</div>`
+    + `<div class="sug-pattern" style="color:var(--theme-text-muted)">${escapeHtml((sug.normalized_pattern || '').slice(0, 120))}</div>`
+    + `<div style="display:flex;gap:0.4rem;margin-top:0.35rem;flex-wrap:wrap">`
+    + `<button class="btn btn-xs btn-secondary" onclick="openSugApply('${sug.id}','hint')">+ Ticker hint</button>`
+    + `<button class="btn btn-xs btn-secondary" onclick="openSugApply('${sug.id}','prompt')">+ Metric prompt</button>`
+    + `</div>`
+    + `<div class="sug-apply-area" id="${hintAreaId}">`
+    + `<textarea id="ta-hint-${sug.id}">${escapeHtml(sug.suggested_hint_addition || '')}</textarea>`
+    + `<div style="display:flex;gap:0.4rem;margin-top:0.3rem">`
+    + `<button class="btn btn-xs btn-primary" onclick="saveSugApply('${ticker}','ticker_hint','','ta-hint-${sug.id}','${sug.id}')">Save to ticker hint</button>`
+    + `<button class="btn btn-xs btn-secondary" onclick="document.getElementById('${hintAreaId}').style.display='none'">Cancel</button>`
+    + `</div></div>`
+    + `<div class="sug-apply-area" id="${promptAreaId}">`
+    + `<textarea id="ta-prompt-${sug.id}">${escapeHtml(sug.suggested_prompt_addition || '')}</textarea>`
+    + `<div style="display:flex;gap:0.4rem;margin-top:0.3rem">`
+    + `<button class="btn btn-xs btn-primary" onclick="saveSugApply('${ticker}','metric_prompt','${escapeHtml(sug.metric || '')}','ta-prompt-${sug.id}','${sug.id}')">Save to metric prompt</button>`
+    + `<button class="btn btn-xs btn-secondary" onclick="document.getElementById('${promptAreaId}').style.display='none'">Cancel</button>`
+    + `</div></div>`
+    + `</div>`;
+}
+
+function openSugApply(sugId, areaType) {
+  const hintArea   = document.getElementById('sug-hint-area-'   + sugId);
+  const promptArea = document.getElementById('sug-prompt-area-' + sugId);
+  if (areaType === 'hint') {
+    if (hintArea)   hintArea.style.display   = hintArea.style.display   === 'none' ? '' : 'none';
+    if (promptArea) promptArea.style.display = 'none';
+  } else {
+    if (promptArea) promptArea.style.display = promptArea.style.display === 'none' ? '' : 'none';
+    if (hintArea)   hintArea.style.display   = 'none';
+  }
+}
+
+async function saveSugApply(ticker, target, metric, taId, sugId) {
+  const ta = document.getElementById(taId);
+  if (!ta) return;
+  const appendText = ta.value.trim();
+  if (!appendText) return;
+  const body = { target, append_text: appendText };
+  if (metric) body.metric = metric;
+  const card = document.getElementById('sug-card-' + sugId);
+  try {
+    const resp = await fetch('/api/suggestions/' + encodeURIComponent(ticker) + '/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await resp.json();
+    if (d.success) {
+      if (card) {
+        const ok = document.createElement('div');
+        ok.style.cssText = 'font-size:0.72rem;color:var(--theme-success,#16a34a);margin-top:0.3rem';
+        ok.textContent = 'Saved to ' + target.replace('_', ' ');
+        card.appendChild(ok);
+      }
+      const areaEl = document.getElementById('sug-' + (target === 'ticker_hint' ? 'hint' : 'prompt') + '-area-' + sugId);
+      if (areaEl) areaEl.style.display = 'none';
+    } else {
+      _sugApplyError(card, (d.error && d.error.message) || 'Save failed');
+    }
+  } catch (_err) {
+    _sugApplyError(card, 'Network error');
+  }
+}
+
+function _sugApplyError(card, msg) {
+  if (!card) return;
+  const el = document.createElement('div');
+  el.style.cssText = 'font-size:0.72rem;color:var(--theme-danger,#ef4444);margin-top:0.3rem';
+  el.textContent = msg;
+  card.appendChild(el);
+}
+
+function closeSuggestionPanel() {
+  const panel = document.getElementById('suggestion-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+// ── End Pattern Suggestion Panel ──────────────────────────────────────────────
 
 function toggleCustomPrompt() {
   const panel = document.getElementById('custom-prompt-panel');

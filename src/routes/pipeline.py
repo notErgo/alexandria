@@ -860,6 +860,39 @@ def run_extraction_phase(
             force_reextract=force_reextract,
             log_callback=log_callback,
         )
+        # Post-extraction QC health check log
+        try:
+            from interpreters.qc_check import run_ticker_health_check
+            hc = run_ticker_health_check(db, ticker)
+            c = hc['checks']
+            log.info(
+                "event=qc_health_check_end ticker=%s outlier_count=%d gap_ratio=%.2f "
+                "stuck_queue_flagged=%d orphaned_running=%d",
+                ticker,
+                len(c['outliers']),
+                c['coverage_gaps']['gap_ratio'],
+                int(c['stuck_queue']['flagged']),
+                c['extraction_backlog']['orphaned_running'],
+            )
+            if c['outliers']:
+                for o in c['outliers']:
+                    log.warning(
+                        "event=qc_outlier_detected ticker=%s period=%s metric=%s "
+                        "value=%s trailing_avg=%s deviation_pct=%.2f",
+                        ticker, o['period'], o['metric'],
+                        o['value'], o['trailing_avg'], o['deviation_pct'],
+                    )
+            if c['stuck_queue']['flagged']:
+                log.warning(
+                    "event=qc_stuck_queue ticker=%s llm_empty_count=%d",
+                    ticker, c['stuck_queue']['llm_empty_count'],
+                )
+            try:
+                db.save_health_check(ticker, hc, trigger='pipeline')
+            except Exception:
+                log.debug("event=qc_health_check_save_error ticker=%s", ticker, exc_info=True)
+        except Exception:
+            log.debug("event=qc_health_check_error ticker=%s", ticker, exc_info=True)
         if progress_callback:
             progress_callback(dict(counters))
 
