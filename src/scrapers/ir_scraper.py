@@ -454,10 +454,12 @@ def discovery_links_from_html(company: dict, html_text: str, page_url: str) -> l
 
 # Domains whose IR listing pages are JS-rendered (Equisolve/Q4 widgets).
 # requests returns a static shell with no article links; Playwright is required.
+# NOTE: investors.corescientific.com (CORZ) and investors.terawulf.com (WULF) are
+# intentionally NOT here — both listing pages are server-rendered with plain HTTP
+# and support ?page=N pagination (confirmed 2026-03-16). Only escalate to Playwright
+# if a future site change breaks plain-request listing fetches.
 _JS_RENDERED_DOMAINS: frozenset = frozenset({
     "investors.cleanspark.com",
-    "investors.corescientific.com",  # Core Scientific — Equisolve widget
-    "investors.terawulf.com",        # TeraWulf — Equisolve widget
     # www.hivedigitaltechnologies.com is intentionally NOT here: detail page URLs
     # return full server-rendered article HTML with plain requests (~23KB).
     # Only the /news/ listing page is a Vue.js SPA shell; the linked slugs are SSR.
@@ -468,7 +470,8 @@ _JS_RENDERED_DOMAINS: frozenset = frozenset({
 # (connection timeout) and headless Playwright (HTTP/2 protocol error).
 # curl-cffi mimics the full TLS fingerprint of a real Chrome browser.
 _CURL_CFFI_DOMAINS: frozenset = frozenset({
-    "ir.bitdeer.com",       # Bitdeer — Cloudflare blocks requests + Playwright; curl-cffi chrome124 works
+    "ir.bitdeer.com",         # Bitdeer — Cloudflare blocks requests + Playwright; curl-cffi chrome124 works
+    "bitdeer.gcs-web.com",    # Bitdeer GCS fallback domain — same Cloudflare protection as ir.bitdeer.com
     "investor.bitfarms.com",  # Bitfarms — Cloudflare embeds /cdn-cgi/ in page, triggering false-positive
                               # bot-challenge detection; curl-cffi Chrome impersonation fetches cleanly
 })

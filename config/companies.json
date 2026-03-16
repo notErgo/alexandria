@@ -70,7 +70,7 @@
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Discovery-first IR scraper now walks investors.corescientific.com press release pagination directly. Pre-bankruptcy coverage is irregular and should be boundary-checked from 2022 onward. CIK 0001839341 verified against EDGAR (Core Scientific, Inc./tx). Old CIK 0001836012 was WDC Fund 1 LLC (wrong)."
+    "sandbox_note": "Listing page at investors.corescientific.com is server-rendered; plain ?page=N requests return distinct HTML pages (confirmed 2026-03-16). Playwright not required for listing. investors.corescientific.com is NOT in _JS_RENDERED_DOMAINS. Detail pages also served via plain HTTP. Discovery walks ?page=N pagination. Pre-bankruptcy coverage is irregular and should be boundary-checked from 2022 onward. CIK 0001839341 verified against EDGAR (Core Scientific, Inc./tx). Old CIK 0001836012 was WDC Fund 1 LLC (wrong)."
   },
   {
     "ticker": "CIFR",
@@ -106,7 +106,7 @@
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Discovery-first IR scraper walks investors.terawulf.com press release pagination directly; RSS remains secondary but is not treated as the full-history boundary. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. Old CIK 0001839175 was M3-Brigade Acquisition II Corp (wrong). TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
+    "sandbox_note": "Listing page at investors.terawulf.com is server-rendered; plain ?page=N requests return distinct HTML pages (confirmed 2026-03-16). Playwright not required. investors.terawulf.com is NOT in _JS_RENDERED_DOMAINS. Monthly production reports continued past September 2024 (October and December 2024 confirmed live). RSS remains secondary. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
   },
   {
     "ticker": "HUT",
@@ -232,7 +232,7 @@
     "skip_reason": null,
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Drupal year-filter widget at ir.bitdeer.com. Site is Cloudflare-protected: plain requests timeout, Playwright returns HTTP/2 protocol error. curl-cffi with impersonate=chrome124 works (HTTP 200). Scraper routes ir.bitdeer.com through _CURL_CFFI_DOMAINS in ir_scraper.py. Confirmed production PRs 2023-2026. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
+    "sandbox_note": "Drupal year-filter widget at ir.bitdeer.com. Site is Cloudflare-protected: plain requests timeout, Playwright returns HTTP/2 protocol error. curl-cffi with impersonate=chrome124 works (HTTP 200). Both ir.bitdeer.com and fallback domain bitdeer.gcs-web.com are in _CURL_CFFI_DOMAINS. Article detail URLs migrated to /news-releases/news-release-details/{slug} (confirmed 2026-03-16; old pattern /news-events/news-releases/detail/{id}/{slug} is stale). Confirmed production PRs 2023-2026. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
   },
   {
     "ticker": "ARBK",
@@ -304,7 +304,7 @@
     "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available. Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) \u2014 IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd\u00a7"
+    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available; listing HTML renders server-side so Drupal form tokens are present in initial curl-cffi response. Article detail URLs migrated to /news-releases/news-release-details/{slug} (confirmed 2026-03-16; old pattern /news-events/press-releases/detail/{id}/{slug} is stale). Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) — IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd"
   },
   {
     "ticker": "HIVE",

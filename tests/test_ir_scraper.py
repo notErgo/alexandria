@@ -1330,16 +1330,16 @@ class TestScrapeDiscoveryInitialFetchFailure:
     """Initial-fetch probe added to surface unreachable IR sites (e.g. CORZ)."""
 
     def test_js_domain_playwright_zero_pages_increments_errors(self):
-        """CORZ-like: JS-rendered domain, Playwright returns 0 pages, no cross-domain fallback."""
+        """CLSK-like: JS-rendered domain, Playwright returns 0 pages, no cross-domain fallback."""
         db = MagicMock()
         db.report_exists_by_url_hash.return_value = False
         db.find_near_duplicates.return_value = []
         scraper = IRScraper(db=db, session=MagicMock())
-        # investors.corescientific.com is in _JS_RENDERED_DOMAINS
+        # investors.cleanspark.com is in _JS_RENDERED_DOMAINS
         company = {
-            "ticker": "CORZ",
+            "ticker": "CLSK",
             "scraper_mode": "discovery",
-            "ir_url": "https://investors.corescientific.com/news-releases",
+            "ir_url": "https://investors.cleanspark.com/news",
             "pr_start_date": "2022-01-01",
         }
 
@@ -1376,11 +1376,9 @@ class TestScrapeDiscoveryInitialFetchFailure:
 class TestFetchIsolatedPlainFirst:
     """_fetch_isolated must try plain requests before Playwright for detail pages.
 
-    Root cause: investors.corescientific.com (CORZ) is in _JS_RENDERED_DOMAINS
-    because its listing page requires Playwright. But its detail pages return HTTP 200
-    via plain requests. Routing detail fetches through Playwright caused 92 timeout
-    errors per CORZ scrape run. _fetch_isolated now tries plain requests first and
-    only falls back to full routing (Playwright/curl-cffi) on failure or bot-challenge.
+    CORZ listing page is server-rendered (plain requests work; Playwright not required).
+    CORZ detail pages also return HTTP 200 via plain requests. _fetch_isolated tries
+    plain requests first and only falls back to full routing on failure or bot-challenge.
     """
 
     def test_corz_detail_page_uses_plain_requests_not_playwright(self):
@@ -1388,7 +1386,7 @@ class TestFetchIsolatedPlainFirst:
         from scrapers.ir_scraper import IRScraper, _JS_RENDERED_DOMAINS
         import requests as _req
 
-        assert "investors.corescientific.com" in _JS_RENDERED_DOMAINS
+        assert "investors.corescientific.com" not in _JS_RENDERED_DOMAINS
 
         db = MagicMock()
         scraper = IRScraper(db=db, session=MagicMock())
@@ -1697,3 +1695,62 @@ class TestPlaywrightFetch:
             result = _fetch_with_playwright("https://investors.cleanspark.com/news/")
 
         assert result is None
+
+
+class TestDomainRouting:
+    """Verify domain routing tables match live site behaviour (confirmed 2026-03-16).
+
+    CORZ and WULF listing pages are server-rendered; plain ?page=N requests return
+    distinct HTML. Playwright is not required for their listing pages.
+
+    BTDR article URLs migrated from /news-events/news-releases/detail/{id}/{slug}
+    to /news-releases/news-release-details/{slug}. A fallback domain bitdeer.gcs-web.com
+    serves the same articles with the same Cloudflare protection.
+
+    BITF article URLs migrated from /news-events/press-releases/detail/{id}/{slug}
+    to /news-releases/news-release-details/{slug}. Listing page HTML renders server-side
+    with the Drupal year widget present in the initial response (curl-cffi still required).
+    """
+
+    def test_corz_not_in_js_rendered_domains(self):
+        assert "investors.corescientific.com" not in _JS_RENDERED_DOMAINS
+
+    def test_wulf_not_in_js_rendered_domains(self):
+        assert "investors.terawulf.com" not in _JS_RENDERED_DOMAINS
+
+    def test_bitdeer_gcs_in_curl_cffi_domains(self):
+        assert "bitdeer.gcs-web.com" in _CURL_CFFI_DOMAINS
+
+    def test_bitf_news_release_details_url_recognised(self):
+        """New BITF detail URL /news-releases/news-release-details/{slug} is matched."""
+        company = {"ticker": "BITF", "pr_base_url": "https://investor.bitfarms.com"}
+        html = """
+        <html><body>
+          <a href="/news-releases/news-release-details/bitfarms-provides-january-2025-production-and-operations-update">
+            Bitfarms Provides January 2025 Production and Operations Update
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(
+            company, html, "https://investor.bitfarms.com/news-events/press-releases"
+        )
+        assert len(links) == 1
+        assert "/news-release-details/" in links[0][1]
+        assert links[0][2] == date(2025, 1, 1)
+
+    def test_btdr_news_release_details_url_recognised(self):
+        """New BTDR detail URL /news-releases/news-release-details/{slug} is matched."""
+        company = {"ticker": "BTDR", "pr_base_url": "https://ir.bitdeer.com"}
+        html = """
+        <html><body>
+          <a href="/news-releases/news-release-details/bitdeer-announces-january-2025-production-and-operations">
+            Bitdeer Announces January 2025 Production and Operations Update
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(
+            company, html, "https://ir.bitdeer.com/news-events/news-releases"
+        )
+        assert len(links) == 1
+        assert "/news-release-details/" in links[0][1]
+        assert links[0][2] == date(2025, 1, 1)
