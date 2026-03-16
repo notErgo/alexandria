@@ -99,14 +99,14 @@
     "rss_url": "https://investors.terawulf.com/news-events/press-releases/rss",
     "cik": "0001083301",
     "active": true,
-    "scraper_mode": "discovery",
+    "scraper_mode": "index",
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_date": "2022-01-01",
     "skip_reason": null,
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Discovery-first IR scraper walks investors.terawulf.com press release pagination directly; RSS remains secondary but is not treated as the full-history boundary. CIK 0001083301 verified against EDGAR (TERAWULF INC., ticker WULF). This is a legacy shell CIK (formerly IKONICS CORP / CHROMALINE CORP) reused via reverse merger Dec 2021. Old CIK 0001839175 was M3-Brigade Acquisition II Corp (wrong). TeraWulf began mining operations at Lake Mariner facility December 2021; first full-month production PRs begin early 2022."
+    "sandbox_note": "Equisolve IR widget at investors.terawulf.com. In _JS_RENDERED_DOMAINS — Playwright used for both listing and detail fetches. Listing page supports ?page=N pagination (confirmed: ?page=5 returns Oct 2024 era items). Monthly production reports ran through Sept 2024; switched to quarterly after. CIK 0001083301 verified (TERAWULF INC.). Legacy shell CIK reused via reverse merger Dec 2021 (formerly IKONICS CORP)."
   },
   {
     "ticker": "HUT",
@@ -121,7 +121,7 @@
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_date": null,
-    "skip_reason": "EDGAR 10-K/10-Q filings are primary source. Monthly production PRs available via PRNewswire (https://www.prnewswire.com/news/hut-8-corp./) but no RSS feed confirmed.",
+    "skip_reason": "Hut 8 stopped publishing monthly Bitcoin production press releases after the Nov 2023 US merger with USBTC. Now reports quarterly only. IR site investors.hut8.com (Equisolve widget) returns ECONNREFUSED from external probes — likely behind WAF. Use EDGAR 10-K/10-Q for financial data.",
     "filing_regime": "domestic",
     "fiscal_year_end_month": 12,
     "sandbox_note": "Hut 8 Corp is the US-incorporated entity formed from the November 2023 merger of Hut 8 Mining Corp (Canada) and US Bitcoin Corp (USBTC). Ticker changed from HUT8 to HUT at that time. CIK 0001964789 verified against EDGAR (Hut 8 Corp., ticker HUT, DE incorporated). Old entity Hut 8 Mining Corp is CIK 0001731805 (Canadian, deregistered Dec 2023, no ticker). Old config CIK 0001900035 was First Person Ltd (wrong)."
@@ -207,14 +207,14 @@
     "rss_url": null,
     "cik": "0001710350",
     "active": true,
-    "scraper_mode": "skip",
+    "scraper_mode": "playwright",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_date": null,
-    "skip_reason": "Foreign private issuer; EDGAR 6-K/20-F filings are primary source.",
+    "pr_start_date": "2020-12-01",
+    "skip_reason": null,
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "CIK 0001710350 verified against EDGAR (Bit Digital, Inc, ticker BTBT). Cayman Islands holding company, operations primarily in North America and Iceland. Monthly BTC production updates filed as 6-K with SEC. Formerly ZW Data Action Technologies; pivoted to BTC mining 2020. Old CIK 0001717307 was Industrial Logistics Properties Trust (wrong)."
+    "sandbox_note": "Equisolve IR widget at ir.bit-digital.com. Playwright mode fetches listing + detail pages in a single headless session. Monthly reports titled 'Bit Digital Inc. Reports Monthly Bitcoin Mining Operational Update for [Month] [Year]' — matches _PRODUCTION_KEYWORDS via 'operational update'. CIK 0001710350 verified (Bit Digital, Inc.). Formerly ZW Data Action Technologies; pivoted to BTC mining Dec 2020."
   },
   {
     "ticker": "BTDR",
@@ -315,13 +315,12 @@
     "rss_url": null,
     "cik": "0001720424",
     "active": true,
-    "scraper_mode": "discovery",
+    "scraper_mode": "index",
     "reporting_cadence": "monthly",
     "url_template": null,
     "pr_start_date": "2021-12-01",
-    "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 3,
-    "sandbox_note": "CIK 0001720424 verified against EDGAR (HIVE Digital Technologies Ltd., ticker HIVE). Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Fiscal year ends March 31. Files 40-F (annual) and 6-K (current reports) with SEC. Mines both BTC and GPU compute (Iceland, Sweden, Canada, Paraguay). Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023. IR news at /news/ (not /investors/): single unpaginated page, all PRs from Dec 2021 present, HTTP 200 with plain requests. discovery_page_urls_for_company returns one URL (no pagination needed). Old CIK 0001558730 was Destrier Capital Partners Ltd (wrong)."
+    "sandbox_note": "CIK 0001720424 verified against EDGAR (HIVE Digital Technologies Ltd., ticker HIVE). Listing page /news/ returns plain HTML with article links in <section class=\"content post-preview\"><a href=\"slug/\"><h3>title</h3></a>. Detail pages render article body in <section id=\"news\" class=\"content\">. Plain requests work for both. Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023. Files 40-F (annual) and 6-K (current reports) with SEC."
   }
 ]

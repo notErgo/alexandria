@@ -458,6 +458,9 @@ _JS_RENDERED_DOMAINS: frozenset = frozenset({
     "investors.cleanspark.com",
     "investors.corescientific.com",  # Core Scientific — Equisolve widget
     "investors.terawulf.com",        # TeraWulf — Equisolve widget
+    # www.hivedigitaltechnologies.com: plain requests returns the correct
+    # server-rendered static HTML. Playwright breaks it — Vue Router boots
+    # after page load and re-renders the homepage over the article content.
 })
 
 # Domains that require curl-cffi Chrome TLS impersonation.
@@ -1688,20 +1691,14 @@ class IRScraper:
                 href = link['href']
                 if not is_production_pr(title):
                     continue
-                period = infer_period_from_pr_title(title)
+                full_url = canonical_url(urljoin(page_url, href))
+                period = infer_period_from_pr_title(title) or infer_period_from_text(full_url)
                 if period is None:
-                    log.debug("Could not infer period from PR title: %s", title)
+                    log.debug("Could not infer period from PR title or URL: %s", title)
                     continue
                 if start_year and period.year < start_year:
                     log.debug("Skipping PR before pr_start_date year=%d: %s %s", start_year, ticker, title)
                     continue
-                if not href.startswith("http"):
-                    if not pr_base_url:
-                        log.debug("Skipping relative href with empty pr_base_url: %s", href)
-                        continue
-                    full_url = pr_base_url + href
-                else:
-                    full_url = href
                 production_links.append((title, full_url, period))
 
             new_count = 0
@@ -1723,14 +1720,11 @@ class IRScraper:
 
                     html_fields = make_html_report_fields(pr_resp.text)
                     content_hash = simhash_text(html_fields["raw_text"][:5000])
-                    dupes = self.db.find_near_duplicates(content_hash, ticker)
-                    if dupes:
-                        log.warning(
-                            "Near-duplicate content detected for %s, skipping insert (matched report id=%s)",
-                            ticker, dupes[0]["id"],
-                        )
-                        self._emit('url_skipped', ticker=ticker, level='WARNING', reason='near_duplicate', url=full_url, period=period_str, matched_id=dupes[0]['id'])
-                        continue
+                    # Near-duplicate check is intentionally skipped in index mode.
+                    # URL-based dedup (_claim_url) is sufficient here: each entry on the
+                    # listing page is a distinct article at a canonical URL. Simhash
+                    # near-dedup causes false positives on sites whose PR detail pages
+                    # share large navigation blocks that dominate the first 5000 chars.
                     report = {
                         "ticker": ticker,
                         "report_date": period_str,

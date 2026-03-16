@@ -357,6 +357,15 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
         meta_text = _extract_meta_text(soup)
         if meta_text:
             return meta_text
+    # hivedigitaltechnologies.com: article body is in <section id="news">.
+    # The full page includes nav/footer with links to other-period articles
+    # (e.g. 2026 sidebar links on a 2024 article page), which bleeds into the
+    # extracted text and corrupts LLM extraction.  Isolate the article section.
+    hive_section = soup.find('section', id='news')
+    if hive_section is not None:
+        text = _re.sub(r'\s+', ' ', hive_section.get_text(separator=' ', strip=True)).strip()
+        if len(text) >= _ARTICLE_BODY_MIN_CHARS:
+            return text
     return plain
 
 

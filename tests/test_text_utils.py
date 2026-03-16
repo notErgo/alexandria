@@ -86,6 +86,44 @@ class TestHtmlToPlain:
         assert "January production: 305 BTC." not in result, "short meta description should be superseded by article body"
         assert "Cookie settings" not in result
 
+    def test_hive_page_extracts_only_article_section(self):
+        """HIVE detail pages have nav/footer with links to future articles.
+
+        A 2024-08-01 page that has a sidebar link to a 2026 article must not
+        include the 2026 text in raw_text.  The article body lives in
+        <section id="news" class="content"> and must be extracted in isolation.
+        """
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "HIVE Digital Technologies Provides August 2024 Production Report. "
+            "HIVE mined 247.8 BTC in August 2024. "
+            "Deployed hashrate reached 6.3 EH/s as of August 31, 2024. "
+            "The company continues to expand its renewable-energy-powered data centers. "
+            "Total Bitcoin holdings as of August 31, 2024: 2,201 BTC. "
+            "Management comments on disciplined capital allocation and growth strategy."
+        )
+        html = f"""<html>
+          <head><title>HIVE Digital Technologies Provides August 2024 Production Report</title></head>
+          <body>
+            <nav>
+              <a href="/news/hive-digital-q1-2026-update/">In 2026 HIVE's renewable energy capacity</a>
+              <a href="/news/hive-digital-february-2026-production/">February 2026 Production Report</a>
+            </nav>
+            <section id="news" class="content">
+              <p>{article_body}</p>
+            </section>
+            <footer>
+              <a href="/news/hive-digital-february-2026-production/">See our 2026 reports</a>
+              Copyright 2024 HIVE Digital Technologies Ltd.
+            </footer>
+          </body>
+        </html>"""
+        result = html_to_plain(html)
+        assert "247.8 BTC" in result, "article body metric must be present"
+        assert "6.3 EH/s" in result, "article body hashrate must be present"
+        assert "In 2026 HIVE's renewable" not in result, "nav bleed from 2026 article must not appear"
+        assert "February 2026 Production Report" not in result, "footer bleed must not appear"
+
     def test_q4_shell_equisolve_aspnet_id_selector(self):
         """Equisolve ASP.NET pages use IDs like 'divPressReleaseBody' — html_to_plain
         should extract the body even when the container has no semantic tag."""

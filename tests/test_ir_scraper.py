@@ -1538,3 +1538,104 @@ class TestDrupalYearPagination:
         # to confirm empty, so total _fetch calls = base + page0 + pr + page1(empty)
         assert result.reports_ingested == 1
         assert mock_fetch.call_count == 4  # base, page0, pr detail, page1 (empty→break)
+
+
+class TestHiveIndexMode:
+    """hivedigitaltechnologies.com uses plain requests in index mode.
+
+    The server renders article content as static HTML — no JavaScript needed.
+    Playwright breaks it: Vue Router boots after page load and re-renders
+    the homepage over the article content, producing identical boilerplate
+    for every article. Plain requests returns the correct server-rendered HTML.
+
+    Confirmed via downloaded HTML (2026-03-16): article body lives in
+    <section id="news" class="content"> as static server-rendered content.
+    """
+
+    def test_hive_domain_not_in_js_rendered_domains(self):
+        """www.hivedigitaltechnologies.com must not be in _JS_RENDERED_DOMAINS."""
+        assert "www.hivedigitaltechnologies.com" not in _JS_RENDERED_DOMAINS
+
+    def test_scrape_index_hive_uses_plain_requests(self):
+        """_scrape_index for HIVE must use plain requests, not Playwright."""
+        company = {
+            "ticker": "HIVE",
+            "scraper_mode": "index",
+            "ir_url": "https://www.hivedigitaltechnologies.com/news/",
+            "pr_base_url": "https://www.hivedigitaltechnologies.com",
+            "pr_start_date": "2020-01-01",
+        }
+
+        _LISTING_HTML = """<html><body>
+            <a href="https://www.hivedigitaltechnologies.com/news/hive-digital-august-2025-production-report/">
+                HIVE Digital Technologies Provides August 2025 Production Report
+            </a>
+        </body></html>"""
+        _ARTICLE_HTML = (
+            "<html><body>"
+            "<section id='news' class='content'>"
+            "<p>HIVE mined 247 BTC in August 2025.</p>"
+            "</section></body></html>"
+        )
+
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+
+        mock_listing = MagicMock()
+        mock_listing.text = _LISTING_HTML
+        mock_article = MagicMock()
+        mock_article.text = _ARTICLE_HTML
+
+        with patch("scrapers.ir_scraper._fetch_with_playwright") as mock_pw, \
+             patch.object(scraper, "_fetch", side_effect=[mock_listing, mock_article]), \
+             patch("scrapers.ir_scraper.time") as mock_time:
+            mock_time.sleep.return_value = None
+            result = scraper._scrape_index(company)
+
+        mock_pw.assert_not_called()
+        assert result.reports_ingested == 1
+
+
+class TestPlaywrightFetch:
+    """_fetch_with_playwright returns page HTML for JS-rendered IR sites."""
+
+    def _make_pw_mock(self, mock_page):
+        mock_context = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser = MagicMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_pw_instance = MagicMock()
+        mock_pw_instance.chromium.launch.return_value = mock_browser
+        cm = MagicMock()
+        cm.__enter__ = MagicMock(return_value=mock_pw_instance)
+        cm.__exit__ = MagicMock(return_value=False)
+        return cm
+
+    def test_returns_page_content(self):
+        from scrapers.ir_scraper import _fetch_with_playwright
+
+        mock_page = MagicMock()
+        mock_page.content.return_value = "<html><body><p>CleanSpark news.</p></body></html>"
+        cm = self._make_pw_mock(mock_page)
+
+        with patch("playwright.sync_api.sync_playwright", return_value=cm):
+            result = _fetch_with_playwright("https://investors.cleanspark.com/news/")
+
+        assert result is not None
+        assert "CleanSpark" in result
+
+    def test_returns_none_on_bot_challenge(self):
+        from scrapers.ir_scraper import _fetch_with_playwright
+
+        mock_page = MagicMock()
+        mock_page.content.return_value = (
+            "<html><body>Just a moment... Enable JavaScript and cookies to continue</body></html>"
+        )
+        cm = self._make_pw_mock(mock_page)
+
+        with patch("playwright.sync_api.sync_playwright", return_value=cm):
+            result = _fetch_with_playwright("https://investors.cleanspark.com/news/")
+
+        assert result is None
