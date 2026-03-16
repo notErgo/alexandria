@@ -935,3 +935,51 @@ def delete_all():
         default_mode='hard_delete',
         body=body,
     )
+
+
+@bp.route('/api/data/management-inventory', methods=['GET'])
+def management_inventory():
+    """Return per-ticker counts for all pipeline stages.
+
+    Query params:
+        ticker (optional) — limit to a single ticker
+
+    Returns:
+        [{"ticker": "MARA", "reports": N, "data_points": N,
+          "review_pending": N, "review_all": N, "final_values": N}, ...]
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        ticker_filter = (request.args.get('ticker') or '').strip().upper() or None
+
+        companies = db.get_companies(active_only=False)
+        if ticker_filter:
+            companies = [c for c in companies if c['ticker'] == ticker_filter]
+
+        # Build per-ticker counts in a single pass via SQL for efficiency
+        with db._get_connection() as conn:
+            def _count(sql, params=()):
+                return conn.execute(sql, params).fetchone()[0]
+
+            result = []
+            for company in companies:
+                t = company['ticker']
+                result.append({
+                    'ticker': t,
+                    'reports': _count("SELECT COUNT(*) FROM reports WHERE ticker=?", (t,)),
+                    'data_points': _count("SELECT COUNT(*) FROM data_points WHERE ticker=?", (t,)),
+                    'review_pending': _count(
+                        "SELECT COUNT(*) FROM review_queue WHERE ticker=? AND status='PENDING'", (t,)
+                    ),
+                    'review_all': _count("SELECT COUNT(*) FROM review_queue WHERE ticker=?", (t,)),
+                    'final_values': _count(
+                        "SELECT COUNT(*) FROM final_data_points WHERE ticker=?", (t,)
+                    ),
+                })
+
+        return jsonify({'success': True, 'data': result})
+    except Exception:
+        log.exception("management_inventory failed")
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500

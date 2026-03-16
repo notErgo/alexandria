@@ -418,6 +418,81 @@ def reject_review_item(item_id):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+@bp.route('/api/review/batches', methods=['GET'])
+def review_batches():
+    """Return review_queue grouped by ingestion batch (date x ticker).
+
+    Query params:
+        ticker (optional) — limit to a single ticker
+        status (optional, default PENDING) — row status to query
+
+    Returns:
+        {"success": true, "data": {"batches": [
+          {"batch_date": "2026-03-15", "ticker": "MARA",
+           "item_count": 403, "overlap_final": 285}, ...
+        ]}}
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+        ticker = (request.args.get('ticker') or '').strip().upper() or None
+        status = (request.args.get('status') or 'PENDING').strip().upper()
+        batches = db.get_review_batches(ticker=ticker, status=status)
+        return jsonify({'success': True, 'data': {'batches': batches}})
+    except Exception:
+        log.exception("review_batches failed")
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/review/batch-delete', methods=['POST'])
+def review_batch_delete():
+    """Delete review_queue rows for a specific ingestion date without touching extraction_status.
+
+    Body (JSON):
+        created_date (str, required) — ISO date 'YYYY-MM-DD' to target
+        ticker (str, optional)       — limit to one ticker
+        dry_run (bool, optional)     — if true, return count without deleting
+
+    Returns:
+        {"success": true, "data": {"deleted": N, "dry_run": false}}
+    """
+    try:
+        from app_globals import get_db
+        db = get_db()
+
+        body = request.get_json(silent=True) or {}
+        created_date = (body.get('created_date') or '').strip()
+        if not created_date:
+            return jsonify({'success': False, 'error': {
+                'code': 'MISSING_CREATED_DATE',
+                'message': 'created_date is required',
+            }}), 400
+
+        ticker = (body.get('ticker') or '').strip().upper() or None
+        dry_run = bool(body.get('dry_run', False))
+
+        if dry_run:
+            with db._get_connection() as conn:
+                clauses = ["status='PENDING'", "date(created_at)=?"]
+                params: list = [created_date]
+                if ticker:
+                    clauses.append('ticker=?')
+                    params.append(ticker)
+                where = ' AND '.join(clauses)
+                count = conn.execute(
+                    f"SELECT COUNT(*) FROM review_queue WHERE {where}", params
+                ).fetchone()[0]
+            return jsonify({'success': True, 'data': {'deleted': count, 'dry_run': True}})
+
+        deleted = db.delete_review_items_by_filter(
+            ticker=ticker, created_date=created_date, status='PENDING',
+        )
+        return jsonify({'success': True, 'data': {'deleted': deleted, 'dry_run': False}})
+    except Exception:
+        log.exception("review_batch_delete failed")
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
 @bp.route('/api/review/<int:item_id>/no_data', methods=['POST'])
 def no_data_review_item(item_id):
     """

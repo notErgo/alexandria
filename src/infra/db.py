@@ -4160,6 +4160,76 @@ class MinerDB:
         log.info("purge_review_queue: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
         return count
 
+    def get_review_batches(self, ticker: Optional[str] = None, status: str = 'PENDING') -> list:
+        """Return review_queue rows grouped by date(created_at) x ticker.
+
+        Each row includes:
+          batch_date    — date portion of created_at
+          ticker        — company ticker
+          item_count    — number of rows in that batch
+          overlap_final — how many of those rows also exist in final_data_points
+        """
+        params: list = [status]
+        ticker_clause = ''
+        if ticker:
+            ticker_clause = ' AND rq.ticker=?'
+            params.append(ticker)
+        sql = f"""
+            SELECT
+              date(rq.created_at) AS batch_date,
+              rq.ticker,
+              COUNT(*) AS item_count,
+              SUM(CASE WHEN fdp.ticker IS NOT NULL THEN 1 ELSE 0 END) AS overlap_final
+            FROM review_queue rq
+            LEFT JOIN final_data_points fdp
+              ON rq.ticker=fdp.ticker AND rq.period=fdp.period AND rq.metric=fdp.metric
+            WHERE rq.status=?{ticker_clause}
+            GROUP BY batch_date, rq.ticker
+            ORDER BY batch_date DESC, rq.ticker
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_review_items_by_filter(
+        self,
+        ticker: Optional[str] = None,
+        created_date: Optional[str] = None,
+        status: str = 'PENDING',
+    ) -> int:
+        """Delete review_queue rows by filter without touching reports.extraction_status.
+
+        Unlike purge_review_queue(), this method is safe to call for targeted cleanup:
+        it does NOT reset extracted_at or extraction_status on any report.
+
+        Args:
+            ticker:       limit to one ticker (None = all tickers)
+            created_date: ISO date string 'YYYY-MM-DD' to match date(created_at)
+            status:       row status to target (default 'PENDING')
+
+        Returns:
+            Number of rows deleted.
+        """
+        clauses = ['status=?']
+        params: list = [status]
+        if ticker:
+            clauses.append('ticker=?')
+            params.append(ticker)
+        if created_date:
+            clauses.append("date(created_at)=?")
+            params.append(created_date)
+        where = ' AND '.join(clauses)
+        with self._get_connection() as conn:
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM review_queue WHERE {where}", params
+            ).fetchone()[0]
+            conn.execute(f"DELETE FROM review_queue WHERE {where}", params)
+        log.info(
+            "delete_review_items_by_filter: deleted %d rows (ticker=%s, date=%s, status=%s)",
+            count, ticker or 'ALL', created_date or 'any', status,
+        )
+        return count
+
     def _create_purge_archive_batch(self, mode: str, ticker_scope: Optional[str], reason: Optional[str]) -> int:
         with self._get_archive_connection() as conn:
             cur = conn.execute(
@@ -4665,6 +4735,13 @@ class MinerDB:
         time_grain = item.get('time_grain') or self._derive_time_grain(period)
         expected_granularity = item.get('expected_granularity')
         with self._get_connection() as conn:
+            # Dedup: replace any existing PENDING row for the same (ticker, period, metric).
+            # This gives upsert semantics — the latest pipeline run wins, no accumulation.
+            if item.get('status', 'PENDING') == 'PENDING':
+                conn.execute(
+                    "DELETE FROM review_queue WHERE ticker=? AND period=? AND metric=? AND status='PENDING'",
+                    (item['ticker'], period, item['metric']),
+                )
             precedence = self._resolve_review_precedence(conn, {
                 **item,
                 'period': period,
@@ -5652,7 +5729,14 @@ class MinerDB:
                           WHEN raw_text IS NOT NULL AND raw_text != '' AND extracted_at IS NULL THEN 1
                           ELSE 0
                         END
-                      ) AS reports_unextracted
+                      ) AS reports_unextracted,
+                      SUM(CASE WHEN extraction_status IN ('pending') OR extraction_status IS NULL THEN 1 ELSE 0 END) AS reports_pending,
+                      SUM(CASE WHEN extraction_status = 'done' THEN 1 ELSE 0 END) AS reports_done,
+                      SUM(CASE WHEN extraction_status = 'keyword_gated' THEN 1 ELSE 0 END) AS reports_keyword_gated,
+                      SUM(CASE WHEN extraction_status = 'failed' THEN 1 ELSE 0 END) AS reports_failed,
+                      SUM(CASE WHEN source_type = 'ir_press_release' THEN 1 ELSE 0 END) AS reports_ir,
+                      SUM(CASE WHEN source_type LIKE 'edgar_%' THEN 1 ELSE 0 END) AS reports_edgar,
+                      SUM(CASE WHEN source_type LIKE 'archive_%' THEN 1 ELSE 0 END) AS reports_archive
                     FROM reports
                     GROUP BY ticker
                   ),
@@ -5686,6 +5770,13 @@ class MinerDB:
                   COALESCE(r.reports_parsed, 0) AS reports_parsed,
                   COALESCE(r.reports_extracted, 0) AS reports_extracted,
                   COALESCE(r.reports_unextracted, 0) AS reports_unextracted,
+                  COALESCE(r.reports_pending, 0) AS reports_pending,
+                  COALESCE(r.reports_done, 0) AS reports_done,
+                  COALESCE(r.reports_keyword_gated, 0) AS reports_keyword_gated,
+                  COALESCE(r.reports_failed, 0) AS reports_failed,
+                  COALESCE(r.reports_ir, 0) AS reports_ir,
+                  COALESCE(r.reports_edgar, 0) AS reports_edgar,
+                  COALESCE(r.reports_archive, 0) AS reports_archive,
                   COALESCE(dp.data_points_total, 0) AS data_points_total,
                   COALESCE(rq.review_total, 0) AS review_total,
                   COALESCE(rq.review_pending, 0) AS review_pending
@@ -5723,6 +5814,13 @@ class MinerDB:
                 'reports_parsed': row['reports_parsed'],
                 'reports_extracted': row['reports_extracted'],
                 'reports_unextracted': row['reports_unextracted'],
+                'reports_pending': row['reports_pending'],
+                'reports_done': row['reports_done'],
+                'reports_keyword_gated': row['reports_keyword_gated'],
+                'reports_failed': row['reports_failed'],
+                'reports_ir': row['reports_ir'],
+                'reports_edgar': row['reports_edgar'],
+                'reports_archive': row['reports_archive'],
                 'data_points_total': row['data_points_total'],
                 'review_total': row['review_total'],
                 'review_pending': row['review_pending'],
