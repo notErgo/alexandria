@@ -1999,7 +1999,7 @@ class IRScraper:
                 if fresh_build_id:
                     form_build_id = fresh_build_id
 
-                new_on_page = 0
+                candidates_on_page = 0
                 for link in year_soup.find_all('a', href=True):
                     title = link.get_text(separator=' ', strip=True)
                     href = link['href']
@@ -2012,6 +2012,10 @@ class IRScraper:
                         log.debug("Could not infer period from PR title: %s", title)
                         continue
 
+                    # Count all matching candidates regardless of dedup status so the
+                    # pagination break only fires on genuinely empty pages.
+                    candidates_on_page += 1
+
                     full_url = href if href.startswith('http') else pr_base_url + href
                     full_url = canonical_url(full_url)
                     period_str = period.strftime('%Y-%m-%d')
@@ -2022,8 +2026,6 @@ class IRScraper:
                         self._emit('url_skipped', ticker=ticker, reason=reason,
                                    url=full_url, period=period_str)
                         continue
-
-                    new_on_page += 1
                     try:
                         pr_resp = self._fetch(full_url)
                         if pr_resp is None:
@@ -2060,7 +2062,7 @@ class IRScraper:
                     finally:
                         self._release_url(ticker, url_hash)
 
-                if new_on_page == 0:
-                    break  # no new candidates on this page — no further pages needed
+                if candidates_on_page == 0:
+                    break  # page has no matching links — end of results for this year
 
         return summary

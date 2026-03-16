@@ -1448,3 +1448,93 @@ class TestPeriodInferenceWindow:
         body = padding + " Reports November 2025 Bitcoin Production "
         assert infer_period_from_text(body[:5000]) is None  # old limit fails
         assert infer_period_from_text(body[:15000]) == date(2025, 11, 1)  # new limit succeeds
+
+
+_DRUPAL_WIDGET_ID = "aabbccdd" * 5  # 40-char hex widget ID
+
+def _make_drupal_listing_html(links: list[tuple[str, str]], widget_id: str = _DRUPAL_WIDGET_ID) -> str:
+    """Build minimal Drupal IR listing HTML with the given (href, title) link pairs."""
+    link_tags = "\n".join(
+        f'<a href="{href}">{title}</a>' for href, title in links
+    )
+    return f"""<html><body>
+    <input type="hidden" name="{widget_id}_widget_id" value="{widget_id}" />
+    <input name="form_build_id" value="fbid_test" />
+    {link_tags}
+    </body></html>"""
+
+
+class TestDrupalYearPagination:
+    """drupal_year scraper must traverse page=1, page=2... even when page=0 is all-duplicate.
+
+    The candidates_on_page counter must count all matching links regardless of whether
+    _claim_url() returns False (duplicate_url). Only a genuinely empty page (zero matching
+    links) should terminate the inner pagination loop.
+    """
+
+    _COMPANY = {
+        "ticker": "BITF",
+        "scraper_mode": "drupal_year",
+        "ir_url": "https://investor.bitfarms.com/news-releases/",
+        "pr_base_url": "https://investor.bitfarms.com",
+        "pr_start_date": "2026-01-01",  # single year (2026) keeps side_effect counts predictable
+    }
+
+    # page=0: one link that's already ingested (duplicate)
+    _PAGE0_HTML = _make_drupal_listing_html(
+        links=[
+            ("/bitfarms-october-2025-bitcoin-production", "Bitfarms Reports October 2025 Bitcoin Production"),
+        ]
+    )
+    # page=1: one new link not yet ingested
+    _PAGE1_HTML = _make_drupal_listing_html(
+        links=[
+            ("/bitfarms-september-2025-bitcoin-production", "Bitfarms Reports September 2025 Bitcoin Production"),
+        ]
+    )
+    # page=2: empty — no mining-activity links → pagination stops here
+    _PAGE2_HTML = _make_drupal_listing_html(links=[])
+    # detail page HTML (returned when fetching the new PR URL)
+    _PR_HTML = "<html><body><p>Bitfarms Reports September 2025 Bitcoin Production</p></body></html>"
+
+    def _make_scraper(self, page0_duplicate: bool = True):
+        db = MagicMock()
+        # page=0 URL duplicate; page=1 URL is new
+        db.report_exists_by_url_hash.side_effect = [page0_duplicate, False]
+        db.find_near_duplicates.return_value = []
+        return IRScraper(db=db, session=MagicMock())
+
+    def test_pagination_continues_past_all_duplicate_page(self):
+        """When page=0 has only duplicate links, page=1 must still be fetched."""
+        scraper = self._make_scraper(page0_duplicate=True)
+
+        base_resp = MagicMock(); base_resp.text = self._PAGE0_HTML
+        page0_resp = MagicMock(); page0_resp.text = self._PAGE0_HTML
+        page1_resp = MagicMock(); page1_resp.text = self._PAGE1_HTML
+        page2_resp = MagicMock(); page2_resp.text = self._PAGE2_HTML
+        pr_resp = MagicMock(); pr_resp.text = self._PR_HTML
+
+        with patch.object(scraper, "_fetch",
+                          side_effect=[base_resp, page0_resp, page1_resp, page2_resp, pr_resp]):
+            result = scraper._scrape_drupal_year(self._COMPANY)
+
+        assert result.reports_ingested == 1
+
+    def test_pagination_stops_on_empty_page(self):
+        """When a page genuinely has zero matching links the loop must terminate."""
+        scraper = self._make_scraper(page0_duplicate=False)
+
+        base_resp = MagicMock(); base_resp.text = self._PAGE0_HTML
+        page0_resp = MagicMock(); page0_resp.text = self._PAGE0_HTML
+        pr_resp = MagicMock(); pr_resp.text = self._PR_HTML
+        # page=1 is empty — should not be fetched after the empty termination check
+        page1_resp = MagicMock(); page1_resp.text = self._PAGE2_HTML  # reuse empty HTML
+
+        with patch.object(scraper, "_fetch",
+                          side_effect=[base_resp, page0_resp, pr_resp, page1_resp]) as mock_fetch:
+            result = scraper._scrape_drupal_year(self._COMPANY)
+
+        # page=1 is empty: loop breaks after fetching page=0 + its PR; page=1 also fetched
+        # to confirm empty, so total _fetch calls = base + page0 + pr + page1(empty)
+        assert result.reports_ingested == 1
+        assert mock_fetch.call_count == 4  # base, page0, pr detail, page1 (empty→break)
