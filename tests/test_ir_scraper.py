@@ -1373,6 +1373,68 @@ class TestScrapeDiscoveryInitialFetchFailure:
         db.insert_report.assert_not_called()
 
 
+class TestFetchIsolatedPlainFirst:
+    """_fetch_isolated must try plain requests before Playwright for detail pages.
+
+    Root cause: investors.corescientific.com (CORZ) is in _JS_RENDERED_DOMAINS
+    because its listing page requires Playwright. But its detail pages return HTTP 200
+    via plain requests. Routing detail fetches through Playwright caused 92 timeout
+    errors per CORZ scrape run. _fetch_isolated now tries plain requests first and
+    only falls back to full routing (Playwright/curl-cffi) on failure or bot-challenge.
+    """
+
+    def test_corz_detail_page_uses_plain_requests_not_playwright(self):
+        """_fetch_isolated must not route investors.corescientific.com through Playwright."""
+        from scrapers.ir_scraper import IRScraper, _JS_RENDERED_DOMAINS
+        import requests as _req
+
+        assert "investors.corescientific.com" in _JS_RENDERED_DOMAINS
+
+        db = MagicMock()
+        scraper = IRScraper(db=db, session=MagicMock())
+
+        plain_resp = MagicMock(spec=_req.models.Response)
+        plain_resp.ok = True
+        plain_resp.status_code = 200
+        plain_resp.text = "<html><body>March 2025 Bitcoin Production</body></html>"
+        plain_resp.headers = {}
+
+        url = "https://investors.corescientific.com/news-events/press-releases/detail/83/core-scientific-march-2025"
+
+        with patch("scrapers.ir_scraper.DEFAULT_RETRY_POLICY") as mock_retry, \
+             patch("scrapers.ir_scraper._fetch_with_playwright") as mock_pw:
+            mock_retry.execute.return_value = plain_resp
+            result = scraper._fetch_isolated(url)
+
+        # Plain request succeeded — Playwright must never be called for detail pages
+        mock_pw.assert_not_called()
+        assert result is plain_resp
+
+    def test_fetch_isolated_falls_back_to_playwright_on_plain_failure(self):
+        """If plain request fails (network error), _fetch_isolated falls back to full routing."""
+        from scrapers.ir_scraper import IRScraper
+        import requests as _req
+
+        db = MagicMock()
+        scraper = IRScraper(db=db, session=MagicMock())
+
+        playwright_resp = MagicMock(spec=_req.models.Response)
+        playwright_resp.ok = True
+        playwright_resp.status_code = 200
+        playwright_resp.text = "<html><body>content</body></html>"
+        playwright_resp.headers = {}
+
+        url = "https://investors.corescientific.com/news-events/press-releases/detail/83/some-release"
+
+        with patch("scrapers.ir_scraper.DEFAULT_RETRY_POLICY") as mock_retry, \
+             patch("scrapers.ir_scraper._fetch_with_rate_limit", return_value=playwright_resp) as mock_rate:
+            mock_retry.execute.side_effect = _req.exceptions.ConnectionError("timeout")
+            result = scraper._fetch_isolated(url)
+
+        mock_rate.assert_called_once()
+        assert result is playwright_resp
+
+
 class TestPeriodInferenceWindow:
     """Period inference must scan enough HTML to find content past large page headers."""
 
