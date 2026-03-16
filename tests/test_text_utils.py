@@ -124,6 +124,31 @@ class TestHtmlToPlain:
         assert "In 2026 HIVE's renewable" not in result, "nav bleed from 2026 article must not appear"
         assert "February 2026 Production Report" not in result, "footer bleed must not appear"
 
+    def test_hive_post_menu_stripped_from_article(self):
+        """The .post-menu Share/Print widget inside section#news must not appear in raw_text."""
+        from infra.text_utils import html_to_plain
+        article_body = (
+            "HIVE Digital Technologies Reports November Production of 290 BTC. "
+            "HIVE mined 290 BTC in November 2025. Deployed hashrate was 25.0 EH/s. "
+            "Total Bitcoin holdings as of November 30, 2025: 3,010 BTC. "
+            "Paraguay Phase 3 at 300 MW full capacity. Management commentary on AI."
+        )
+        html = f"""<html><body>
+          <section id="intro">
+            <h2>HIVE Digital Technologies Reports November Production of 290 BTC</h2>
+            <span>09 Dec 2025</span>
+          </section>
+          <section id="news" class="content">
+            <div class="post-menu"><a>Share</a><a>Print-Ready Version</a></div>
+            <p>{article_body}</p>
+          </section>
+        </body></html>"""
+        result = html_to_plain(html)
+        assert "290 BTC" in result, "production figure must be present"
+        assert "25.0 EH/s" in result, "hashrate must be present"
+        assert "Share" not in result, ".post-menu Share link must be stripped"
+        assert "Print-Ready Version" not in result, ".post-menu Print link must be stripped"
+
     def test_drupal_nir_bitf_article_extraction(self):
         """investor.bitfarms.com (Drupal NIR) puts the press release body inside
         <article class="node--nir-news--full">.  The nav menu and © 2026 footer

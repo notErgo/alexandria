@@ -458,9 +458,9 @@ _JS_RENDERED_DOMAINS: frozenset = frozenset({
     "investors.cleanspark.com",
     "investors.corescientific.com",  # Core Scientific — Equisolve widget
     "investors.terawulf.com",        # TeraWulf — Equisolve widget
-    # www.hivedigitaltechnologies.com: plain requests returns the correct
-    # server-rendered static HTML. Playwright breaks it — Vue Router boots
-    # after page load and re-renders the homepage over the article content.
+    # www.hivedigitaltechnologies.com is intentionally NOT here: detail page URLs
+    # return full server-rendered article HTML with plain requests (~23KB).
+    # Only the /news/ listing page is a Vue.js SPA shell; the linked slugs are SSR.
 })
 
 # Domains that require curl-cffi Chrome TLS impersonation.
@@ -1691,24 +1691,22 @@ class IRScraper:
                 href = link['href']
                 if not is_production_pr(title):
                     continue
-                full_url = canonical_url(urljoin(page_url, href))
+                full_url = urljoin(page_url, href)
                 period = infer_period_from_pr_title(title) or infer_period_from_text(full_url)
-                if period is None:
-                    log.debug("Could not infer period from PR title or URL: %s", title)
-                    continue
-                if start_year and period.year < start_year:
+                if period is not None and start_year and period.year < start_year:
                     log.debug("Skipping PR before pr_start_date year=%d: %s %s", start_year, ticker, title)
                     continue
+                # period may still be None (e.g. slug has month but no year);
+                # keep these links so the detail page body can resolve the year.
                 production_links.append((title, full_url, period))
 
             new_count = 0
             for title, full_url, period in production_links:
-                period_str = period.strftime("%Y-%m-%d")
-
                 claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
                 if not claimed:
+                    _period_str = period.strftime("%Y-%m-%d") if period else "unknown"
                     log.debug("Skipping index PR by URL (%s): %s %s", reason, ticker, full_url)
-                    self._emit('url_skipped', ticker=ticker, reason=reason, url=full_url, period=period_str)
+                    self._emit('url_skipped', ticker=ticker, reason=reason, url=full_url, period=_period_str)
                     continue
 
                 new_count += 1
@@ -1719,6 +1717,18 @@ class IRScraper:
                         continue
 
                     html_fields = make_html_report_fields(pr_resp.text)
+
+                    # If period could not be inferred from title/URL, try the article body.
+                    if period is None:
+                        period = infer_period_from_text(html_fields["raw_text"])
+                    if period is None:
+                        log.debug("Could not infer period for index PR (title+URL+body): %s", title)
+                        continue
+                    if start_year and period.year < start_year:
+                        log.debug("Skipping PR before pr_start_date year=%d: %s %s", start_year, ticker, title)
+                        continue
+
+                    period_str = period.strftime("%Y-%m-%d")
                     content_hash = simhash_text(html_fields["raw_text"][:5000])
                     # Near-duplicate check is intentionally skipped in index mode.
                     # URL-based dedup (_claim_url) is sufficient here: each entry on the
@@ -1742,8 +1752,9 @@ class IRScraper:
                     self._emit('url_ingested', ticker=ticker, period=period_str,
                                title=title, fetch_strategy='index', text_chars=len(html_fields["raw_text"]), url=full_url)
                 except Exception as e:
-                    log.error("Failed to insert IR report %s %s: %s", ticker, period_str, e, exc_info=True)
-                    self._emit('url_error', ticker=ticker, level='WARNING', period=period_str,
+                    _ps = period.strftime("%Y-%m-%d") if period else "unknown"
+                    log.error("Failed to insert IR report %s %s: %s", ticker, _ps, e, exc_info=True)
+                    self._emit('url_error', ticker=ticker, level='WARNING', period=_ps,
                                title=title, fetch_strategy='index', url=full_url, error=str(e))
                     summary.errors += 1
                 finally:
@@ -2010,7 +2021,7 @@ class IRScraper:
                     # pagination break only fires on genuinely empty pages.
                     candidates_on_page += 1
 
-                    full_url = href if href.startswith('http') else pr_base_url + href
+                    full_url = href if href.startswith('http') else urljoin(year_url, href)
                     full_url = canonical_url(full_url)
                     period_str = period.strftime('%Y-%m-%d')
 

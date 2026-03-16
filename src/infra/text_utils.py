@@ -363,8 +363,13 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
     # extracted text and corrupts LLM extraction.  Isolate the article section.
     hive_section = soup.find('section', id='news')
     if hive_section is not None:
+        # Strip share/print widget that prepends nav noise to extracted text.
+        for junk in hive_section.select('.post-menu'):
+            junk.decompose()
         text = _re.sub(r'\s+', ' ', hive_section.get_text(separator=' ', strip=True)).strip()
-        if len(text) >= _ARTICLE_BODY_MIN_CHARS:
+        # section#news is a site-specific selector for hivedigitaltechnologies.com —
+        # no generic minimum-length guard needed here.
+        if text:
             return text
     # Drupal NIR sites (investor.bitfarms.com, ir.bitdeer.com) and standard HTML5
     # pages wrap the press release body in <article>.  Nav menus, sidebars with

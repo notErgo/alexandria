@@ -1598,6 +1598,64 @@ class TestHiveIndexMode:
         assert result.reports_ingested == 1
 
 
+class TestHiveIndexPeriodFallback:
+    """_scrape_index falls back to body-text period inference when title has no year."""
+
+    def test_period_inferred_from_article_body_text(self):
+        """HIVE titles like 'Reports November Production of 290 BTC' have no year.
+        When title+URL period inference returns None, _scrape_index must fetch
+        the detail page and call infer_period_from_text on the extracted body
+        to find 'November 2025' -> report_date 2025-11-01."""
+        from scrapers.ir_scraper import IRScraper
+        from unittest.mock import MagicMock, patch
+
+        company = {
+            "ticker": "HIVE",
+            "scraper_mode": "index",
+            "ir_url": "https://www.hivedigitaltechnologies.com/news/",
+            "pr_base_url": "https://www.hivedigitaltechnologies.com",
+            "pr_start_date": "2020-01-01",
+        }
+
+        _LISTING_HTML = """<html><body>
+            <a href="hive-reports-november-production-of-290-btc/">
+                HIVE Digital Technologies Reports November Production of 290 BTC
+            </a>
+        </body></html>"""
+
+        _ARTICLE_HTML = """<html><body>
+            <section id="intro">
+                <h2>HIVE Digital Technologies Reports November Production of 290 BTC</h2>
+                <span>09 Dec 2025</span>
+            </section>
+            <section id="news" class="content">
+                <div class="post-menu"><a>Share</a><a>Print-Ready Version</a></div>
+                <p>HIVE mined 290 BTC in November 2025. Hashrate: 25.0 EH/s. Total HODL: 3,010 BTC.</p>
+            </section>
+        </body></html>"""
+
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+
+        mock_listing = MagicMock(); mock_listing.text = _LISTING_HTML
+        mock_article = MagicMock(); mock_article.text = _ARTICLE_HTML
+
+        with patch.object(scraper, "_fetch", side_effect=[mock_listing, mock_article]), \
+             patch("scrapers.ir_scraper.time") as mock_time:
+            mock_time.sleep.return_value = None
+            result = scraper._scrape_index(company)
+
+        assert result.reports_ingested == 1
+        inserted = db.insert_report.call_args[0][0]
+        assert inserted["report_date"] == "2025-11-01", \
+            f"expected 2025-11-01 from body text, got {inserted['report_date']}"
+        assert "290 BTC" in inserted["raw_text"]
+        assert "Share" not in inserted["raw_text"], ".post-menu must be stripped"
+        assert "Print-Ready Version" not in inserted["raw_text"], ".post-menu must be stripped"
+
+
 class TestPlaywrightFetch:
     """_fetch_with_playwright returns page HTML for JS-rendered IR sites."""
 
