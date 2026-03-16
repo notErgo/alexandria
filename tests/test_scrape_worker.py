@@ -1,6 +1,6 @@
 """Tests for ScrapeWorker background thread."""
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 
 class TestScrapeWorker:
@@ -52,3 +52,41 @@ class TestScrapeWorker:
         result = worker._process_one()
         assert result is False
 
+    def test_execute_scrape_raises_when_ir_summary_all_errors(self, db_with_active_company):
+        """_execute_scrape raises RuntimeError when IR scrape returns only errors and 0 reports."""
+        from scrapers.scrape_worker import ScrapeWorker
+        from miner_types import IngestSummary
+
+        db_with_active_company.update_company_scraper_fields('MARA', scraper_mode='rss')
+        worker = ScrapeWorker(db_with_active_company)
+
+        failing_summary = IngestSummary(reports_ingested=0, errors=1)
+
+        with patch('scrapers.ir_scraper.IRScraper') as MockIR, \
+             patch('scrapers.edgar_connector.EdgarConnector'):
+            MockIR.return_value.scrape_company.return_value = failing_summary
+            job = {'ticker': 'MARA'}
+            with pytest.raises(RuntimeError, match="1 error"):
+                worker._execute_scrape(job)
+
+        company = db_with_active_company.get_company('MARA')
+        assert company['scraper_status'] == 'error'
+
+    def test_execute_scrape_ok_when_partial_errors(self, db_with_active_company):
+        """_execute_scrape completes normally when some reports were ingested despite errors."""
+        from scrapers.scrape_worker import ScrapeWorker
+        from miner_types import IngestSummary
+
+        db_with_active_company.update_company_scraper_fields('MARA', scraper_mode='rss')
+        worker = ScrapeWorker(db_with_active_company)
+
+        partial_summary = IngestSummary(reports_ingested=3, errors=1)
+
+        with patch('scrapers.ir_scraper.IRScraper') as MockIR, \
+             patch('scrapers.edgar_connector.EdgarConnector'):
+            MockIR.return_value.scrape_company.return_value = partial_summary
+            job = {'ticker': 'MARA'}
+            worker._execute_scrape(job)
+
+        company = db_with_active_company.get_company('MARA')
+        assert company['scraper_status'] == 'ok'

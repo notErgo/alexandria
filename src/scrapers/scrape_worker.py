@@ -105,7 +105,11 @@ class ScrapeWorker(threading.Thread):
                     ticker, scraper_mode,
                 )
                 ir = IRScraper(db=self._db, session=session)
-                ir.scrape_company(company)
+                ir_summary = ir.scrape_company(company)
+                if ir_summary and ir_summary.errors > 0 and ir_summary.reports_ingested == 0:
+                    raise RuntimeError(
+                        f"{ticker} IR scrape completed with {ir_summary.errors} error(s) and 0 reports ingested"
+                    )
                 log.info("event=ir_scrape_end ticker=%s", ticker)
             else:
                 log.info("event=ir_scrape_skip ticker=%s reason=mode=%s", ticker, scraper_mode)

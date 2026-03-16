@@ -62,6 +62,42 @@ def _to_signed64(v: Optional[int]) -> Optional[int]:
     return v
 
 
+def scraper_mode_issue(row: dict) -> "str | None":
+    """Return a human-readable issue string if the scraper config for *row* is
+    invalid, or ``None`` if the config looks correct.
+
+    Extracted to module level so it can be imported and unit-tested directly.
+    ``get_pipeline_health`` delegates to this function.
+    """
+    mode = (row.get('scraper_mode') or 'skip').strip().lower()
+    if mode == 'rss':
+        if not (row.get('rss_url') or '').strip():
+            return 'rss mode missing rss_url'
+    elif mode == 'discovery':
+        if not (row.get('ir_url') or '').strip():
+            return 'discovery mode missing ir_url'
+        if not row.get('pr_start_date'):
+            return 'discovery mode missing pr_start_date'
+    elif mode == 'index':
+        if not (row.get('ir_url') or '').strip():
+            return 'index mode missing ir_url'
+    elif mode == 'template':
+        if not (row.get('url_template') or '').strip():
+            return 'template mode missing url_template'
+        if not row.get('pr_start_date'):
+            return 'template mode missing pr_start_date'
+    elif mode == 'drupal_year':
+        if not (row.get('ir_url') or '').strip():
+            return 'drupal_year mode missing ir_url'
+        if not row.get('pr_start_date'):
+            return 'drupal_year mode missing pr_start_date'
+    elif mode == 'skip':
+        return None
+    else:
+        return f"unknown scraper_mode '{mode}'"
+    return None
+
+
 class MinerDB:
     """SQLite store for all miner data."""
 
@@ -5663,28 +5699,7 @@ class MinerDB:
             ).fetchall()
 
         def _scraper_mode_issue(row: dict) -> str | None:
-            mode = (row.get('scraper_mode') or 'skip').strip().lower()
-            if mode == 'rss':
-                if not (row.get('rss_url') or '').strip():
-                    return 'rss mode missing rss_url'
-            elif mode == 'discovery':
-                if not (row.get('ir_url') or '').strip():
-                    return 'discovery mode missing ir_url'
-                if not row.get('pr_start_date'):
-                    return 'discovery mode missing pr_start_date'
-            elif mode == 'index':
-                if not (row.get('ir_url') or '').strip():
-                    return 'index mode missing ir_url'
-            elif mode == 'template':
-                if not (row.get('url_template') or '').strip():
-                    return 'template mode missing url_template'
-                if not row.get('pr_start_date'):
-                    return 'template mode missing pr_start_date'
-            elif mode == 'skip':
-                return None
-            else:
-                return f"unknown scraper_mode '{mode}'"
-            return None
+            return scraper_mode_issue(row)
 
         ticker_summaries = []
         invalid_tickers = []

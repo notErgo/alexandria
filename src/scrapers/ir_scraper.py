@@ -386,6 +386,12 @@ def discovery_page_urls_for_company(company: dict) -> list[str]:
             for page in range(1, 61)
         ]
 
+    if ticker == "HIVE":
+        # hivedigitaltechnologies.com/news/ is a single unpaginated page containing
+        # all press releases from 2021 to present. ?page=N returns identical content;
+        # only one fetch is needed.
+        return [ir_url] if ir_url else []
+
     if not ir_url:
         return []
 
@@ -448,6 +454,14 @@ _JS_RENDERED_DOMAINS: frozenset = frozenset({
     "investors.cleanspark.com",
     "investors.corescientific.com",  # Core Scientific — Equisolve widget
     "investors.terawulf.com",        # TeraWulf — Equisolve widget
+})
+
+# Domains that require curl-cffi Chrome TLS impersonation.
+# These sites use Cloudflare bot-protection that blocks both plain requests
+# (connection timeout) and headless Playwright (HTTP/2 protocol error).
+# curl-cffi mimics the full TLS fingerprint of a real Chrome browser.
+_CURL_CFFI_DOMAINS: frozenset = frozenset({
+    "ir.bitdeer.com",  # Bitdeer — Cloudflare blocks requests + Playwright; curl-cffi chrome124 works
 })
 
 _HEADERS = {
@@ -750,6 +764,35 @@ def _playwright_collect_all_pages(url: str, max_pages: int = 30, min_year: Optio
     return pages_html
 
 
+def _fetch_with_curl_cffi(url: str) -> Optional[requests.Response]:
+    """Fetch using curl-cffi Chrome TLS impersonation for Cloudflare-protected sites.
+
+    Returns a mock requests.Response with .text and .status_code populated,
+    or None on failure. Falls back gracefully if curl-cffi is not installed.
+    """
+    try:
+        from curl_cffi import requests as _cffi_req
+    except ImportError:
+        log.warning("curl_cffi not installed — cannot fetch Cloudflare-protected URL %s", url)
+        return None
+    try:
+        r = _cffi_req.get(url, impersonate="chrome124", timeout=20)
+        if r.status_code in (400, 404):
+            log.debug("curl-cffi: %d for %s", r.status_code, url)
+            return None
+        if not (200 <= r.status_code < 300):
+            log.warning("curl-cffi: unexpected status %d for %s", r.status_code, url)
+            return None
+        mock = requests.models.Response()
+        mock.status_code = r.status_code
+        mock._content = r.content
+        mock.encoding = r.encoding or "utf-8"
+        return mock
+    except Exception as e:
+        log.warning("curl-cffi fetch failed for %s: %s", url, e)
+        return None
+
+
 def _fetch_with_rate_limit(
     url: str,
     session: requests.Session,
@@ -768,6 +811,13 @@ def _fetch_with_rate_limit(
     """
     from urllib.parse import urlparse as _urlparse
     host = _urlparse(url).netloc.lower()
+    if host in _CURL_CFFI_DOMAINS:
+        if throttle is not None:
+            throttle.wait(host)
+        else:
+            time.sleep(IR_REQUEST_DELAY_SECONDS)
+        log.debug("Cloudflare-protected domain — using curl-cffi for %s", url)
+        return _fetch_with_curl_cffi(url)
     if host in _JS_RENDERED_DOMAINS:
         if throttle is not None:
             throttle.wait(host)
@@ -1163,6 +1213,24 @@ class IRScraper:
         else:
             page_sources = []
             static_fallback_urls = page_urls
+
+        # Probe first available page early so unreachable sites fail visibly
+        # rather than completing with 0 reports and scraper_status='ok'.
+        if not page_sources and not static_fallback_urls:
+            # JS-rendered path got 0 pages and no non-IR fallback URLs exist.
+            log.warning("%s: discovery has no pages to fetch (Playwright got 0, no fallback)", ticker)
+            summary.errors += 1
+            return summary
+        if not page_sources and static_fallback_urls:
+            _initial_resp = self._fetch(static_fallback_urls[0])
+            if _initial_resp is None:
+                log.warning(
+                    "%s: discovery initial page unreachable: %s",
+                    ticker,
+                    static_fallback_urls[0],
+                )
+                summary.errors += 1
+                return summary
 
         seen_urls: set[str] = set()
         consecutive_empty = 0

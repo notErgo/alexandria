@@ -3,6 +3,8 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 from scrapers.ir_scraper import (
     IRScraper,
+    _CURL_CFFI_DOMAINS,
+    _JS_RENDERED_DOMAINS,
     _playwright_collect_all_pages,
     candidate_urls_for_period,
     cleanspark_candidate_urls,
@@ -277,6 +279,41 @@ class TestDiscoveryHelpers:
         assert links[0][1] == "https://www.prnewswire.com/news-releases/cleanspark-releases-january-2026-operational-update-302678881.html"
         assert links[0][2] == date(2026, 1, 1)
 
+    def test_hive_discovery_returns_single_page_url(self):
+        """HIVE news page has all content on one URL; no pagination needed."""
+        urls = discovery_page_urls_for_company(
+            {
+                "ticker": "HIVE",
+                "ir_url": "https://www.hivedigitaltechnologies.com/news/",
+            }
+        )
+        assert urls == ["https://www.hivedigitaltechnologies.com/news"]
+
+    def test_hive_discovery_links_resolves_bare_relative_hrefs(self):
+        """HIVE article hrefs are bare slugs; urljoin must resolve them under /news/."""
+        company = {"ticker": "HIVE", "pr_base_url": "https://www.hivedigitaltechnologies.com"}
+        html = """
+        <html><body>
+          <a href="hive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase/">
+            HIVE Digital Technologies Provides August 2025 Production Report with 22% Monthly Increase
+          </a>
+          <a href="hive-digital-technologies-announces-q1-2025-financial-results/">
+            HIVE Digital Technologies Announces Q1 2025 Financial Results
+          </a>
+        </body></html>
+        """
+        links = discovery_links_from_html(
+            company, html,
+            "https://www.hivedigitaltechnologies.com/news/",
+        )
+        assert len(links) == 1
+        url, title, period = links[0][1], links[0][0], links[0][2]
+        assert url == (
+            "https://www.hivedigitaltechnologies.com/news/"
+            "hive-digital-technologies-provides-august-2025-production-report-with-22-monthly-increase"
+        )
+        assert period == date(2025, 8, 1)
+
     def test_discovery_link_extraction_keeps_mara_ir_detail_pages(self):
         company = {"ticker": "MARA", "pr_base_url": "https://ir.mara.com"}
         html = """
@@ -292,6 +329,29 @@ class TestDiscoveryHelpers:
             "https://ir.mara.com/news-events/press-releases/detail/1400/"
             "mara-prices-convertible-notes-offering"
         )
+
+
+class TestCurlCffiDomains:
+    def test_bitdeer_ir_in_curl_cffi_domains(self):
+        assert "ir.bitdeer.com" in _CURL_CFFI_DOMAINS
+
+    def test_bitdeer_ir_not_in_js_rendered_domains(self):
+        # ir.bitdeer.com is Cloudflare-protected (curl-cffi), not a plain JS-rendered domain
+        assert "ir.bitdeer.com" not in _JS_RENDERED_DOMAINS
+
+    def test_fetch_with_curl_cffi_routes_cloudflare_domain(self):
+        """_fetch_with_rate_limit uses curl-cffi for _CURL_CFFI_DOMAINS."""
+        from scrapers.ir_scraper import _fetch_with_curl_cffi
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"<html>ok</html>"
+        mock_resp.encoding = "utf-8"
+        with patch("scrapers.ir_scraper._fetch_with_curl_cffi", return_value=MagicMock(status_code=200, text="<html>ok</html>")) as mock_cffi:
+            from scrapers.ir_scraper import _fetch_with_rate_limit
+            import requests as _req
+            session = _req.Session()
+            result = _fetch_with_rate_limit("https://ir.bitdeer.com/news", session)
+            mock_cffi.assert_called_once_with("https://ir.bitdeer.com/news")
 
 
 class TestCleanSparkHistoricalTemplates:
@@ -1241,3 +1301,50 @@ class TestGetPrStartDate:
         from datetime import date
         company = {'pr_start_date': 'not-a-date', 'pr_start_year': 2021}
         assert _get_pr_start_date(company) == date(2021, 1, 1)
+
+
+class TestScrapeDiscoveryInitialFetchFailure:
+    """Initial-fetch probe added to surface unreachable IR sites (e.g. CORZ)."""
+
+    def test_js_domain_playwright_zero_pages_increments_errors(self):
+        """CORZ-like: JS-rendered domain, Playwright returns 0 pages, no cross-domain fallback."""
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        # investors.corescientific.com is in _JS_RENDERED_DOMAINS
+        company = {
+            "ticker": "CORZ",
+            "scraper_mode": "discovery",
+            "ir_url": "https://investors.corescientific.com/news-releases",
+            "pr_start_date": "2022-01-01",
+        }
+
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]):
+            result = scraper._scrape_discovery(company)
+
+        assert result.errors == 1
+        assert result.reports_ingested == 0
+        db.insert_report.assert_not_called()
+
+    def test_static_domain_initial_fetch_none_increments_errors(self):
+        """Non-JS domain where first static page fetch returns None."""
+        db = MagicMock()
+        db.report_exists_by_url_hash.return_value = False
+        db.find_near_duplicates.return_value = []
+        scraper = IRScraper(db=db, session=MagicMock())
+        company = {
+            "ticker": "FAKE",
+            "scraper_mode": "discovery",
+            "ir_url": "https://ir.fakecompany.example.com/news",
+            "pr_start_date": "2022-01-01",
+        }
+
+        with patch(
+            "scrapers.ir_scraper._playwright_collect_all_pages", return_value=[]
+        ), patch.object(scraper, "_fetch", return_value=None):
+            result = scraper._scrape_discovery(company)
+
+        assert result.errors == 1
+        assert result.reports_ingested == 0
+        db.insert_report.assert_not_called()

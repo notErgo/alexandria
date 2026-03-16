@@ -232,7 +232,7 @@
     "skip_reason": null,
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "Drupal year-filter widget. Widget ID and form_build_id extracted dynamically from base page. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
+    "sandbox_note": "Drupal year-filter widget at ir.bitdeer.com. Site is Cloudflare-protected: plain requests timeout, Playwright returns HTTP/2 protocol error. curl-cffi with impersonate=chrome124 works (HTTP 200). Scraper routes ir.bitdeer.com through _CURL_CFFI_DOMAINS in ir_scraper.py. Confirmed production PRs 2023-2026. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
   },
   {
     "ticker": "ARBK",
@@ -294,7 +294,7 @@
     "tier": 1,
     "ir_url": "https://investor.bitfarms.com/news-events/press-releases",
     "pr_base_url": "https://investor.bitfarms.com",
-    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitfarms%20Ltd%C2%A7",
+    "rss_url": "https://www.globenewswire.com/RssFeed/organization/Bitfarms%20Ltd",
     "cik": "0001812477",
     "active": true,
     "scraper_mode": "drupal_year",
@@ -304,24 +304,24 @@
     "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 12,
-    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available. Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) — IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd\u00a7"
+    "sandbox_note": "IR site migrated from bitfarms.com/investors/ to investor.bitfarms.com. Drupal year-filter widget; years 2018-2026 available. Company announced US redomiciliation and rebranding to 'Keel Infrastructure' (Feb 2026) \u2014 IR domain may change again. Old URL (https://bitfarms.com/investors/press-releases/) returns 404. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitfarms%20Ltd\u00a7"
   },
   {
     "ticker": "HIVE",
     "name": "HIVE Digital Technologies Ltd.",
     "tier": 1,
-    "ir_url": "https://www.hivedigitaltechnologies.com/investors/",
+    "ir_url": "https://www.hivedigitaltechnologies.com/news/",
     "pr_base_url": "https://www.hivedigitaltechnologies.com",
     "rss_url": null,
     "cik": "0001720424",
     "active": true,
-    "scraper_mode": "skip",
+    "scraper_mode": "discovery",
     "reporting_cadence": "monthly",
     "url_template": null,
-    "pr_start_date": null,
-    "skip_reason": "Canadian company filing 40-F/6-K via EDGAR; monthly GPU and BTC production updates in 6-K filings.",
+    "pr_start_date": "2021-12-01",
+    "skip_reason": null,
     "filing_regime": "canadian",
     "fiscal_year_end_month": 3,
-    "sandbox_note": "CIK 0001720424 verified against EDGAR (HIVE Digital Technologies Ltd., ticker HIVE). Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Fiscal year ends March 31. Files 40-F (annual) and 6-K (current reports) with SEC. Mines both BTC and ETH (GPU farms in Iceland, Sweden, Canada). Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023. Old CIK 0001558730 was Destrier Capital Partners Ltd (wrong)."
+    "sandbox_note": "CIK 0001720424 verified against EDGAR (HIVE Digital Technologies Ltd., ticker HIVE). Incorporated in British Columbia, Canada; dual-listed on Nasdaq and TSX. Fiscal year ends March 31. Files 40-F (annual) and 6-K (current reports) with SEC. Mines both BTC and GPU compute (Iceland, Sweden, Canada, Paraguay). Formerly HIVE Blockchain Technologies; rebranded to HIVE Digital in 2023. IR news at /news/ (not /investors/): single unpaginated page, all PRs from Dec 2021 present, HTTP 200 with plain requests. discovery_page_urls_for_company returns one URL (no pagination needed). Old CIK 0001558730 was Destrier Capital Partners Ltd (wrong)."
   }
 ]
