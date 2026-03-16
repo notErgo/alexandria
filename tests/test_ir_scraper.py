@@ -68,6 +68,22 @@ class TestBotChallengeDetection:
         html = "<html><body><a href='/news-events/press-releases/detail/1'>Press release</a></body></html>"
         assert not is_bot_challenge_page(html, {"server": "Apache"}, 200)
 
+    def test_cdn_cgi_beacon_script_does_not_trigger_false_positive(self):
+        # Cloudflare embeds /cdn-cgi/challenge-platform/ as a beacon script on
+        # every page it proxies, including successful ones. This must NOT be treated
+        # as a challenge page — only the explicit interstitial strings should trigger.
+        html = (
+            "<html><body>"
+            "<script src='/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1'></script>"
+            "<a href='/news/production-update-november-2025'>November 2025 production update</a>"
+            "</body></html>"
+        )
+        assert not is_bot_challenge_page(html, {"server": "cloudflare"}, 200)
+
+    def test_cf_mitigated_header_is_still_detected(self):
+        html = "<html><body>Some page</body></html>"
+        assert is_bot_challenge_page(html, {"cf-mitigated": "challenge"}, 200)
+
 
 _RSS_FEED_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -655,10 +671,13 @@ class TestDiscoveryMode:
                 return article_resp
             return None
 
-        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), patch(
-            "scrapers.ir_scraper._fetch_with_rate_limit",
-            side_effect=_fake_fetch,
-        ):
+        import requests as _requests
+        with patch("scrapers.ir_scraper._playwright_collect_all_pages", return_value=[listing_resp.text]), \
+             patch("scrapers.ir_scraper._fetch_with_rate_limit", side_effect=_fake_fetch), \
+             patch("scrapers.ir_scraper.DEFAULT_RETRY_POLICY") as mock_retry:
+            # Force _fetch_isolated plain-request attempt to fail so it falls
+            # back to the mocked _fetch_with_rate_limit (which returns article_resp).
+            mock_retry.execute.side_effect = _requests.exceptions.ConnectionError("mocked")
             result = scraper._scrape_discovery(company)
 
         assert result.reports_ingested == 1

@@ -110,11 +110,15 @@ _PUBLISHED_DATE_PATTERNS: tuple[re.Pattern, ...] = (
     ),
 )
 
+# Markers that appear ONLY in actual bot-challenge interstitial pages.
+# Do NOT include "/cdn-cgi/challenge-platform/" here — Cloudflare embeds that
+# path as a beacon script on every page it proxies, even successful ones.
+# A real challenge page is detected by the explicit user-visible strings below,
+# or by the cf-mitigated header / 403+cloudflare checks in is_bot_challenge_page().
 _BOT_CHALLENGE_MARKERS: tuple[str, ...] = (
     "just a moment",
     "enable javascript and cookies to continue",
     "performing security verification",
-    "/cdn-cgi/challenge-platform/",
 )
 
 
@@ -918,8 +922,34 @@ class IRScraper:
         )
 
     def _fetch_isolated(self, url: str) -> Optional[requests.Response]:
-        """Fetch using a fresh Session for thread-pooled discovery detail pages."""
+        """Fetch using a fresh Session for thread-pooled discovery detail pages.
+
+        Detail pages are typically static HTML even on hosts whose listing pages
+        require JS rendering.  We always attempt plain requests first so that
+        _JS_RENDERED_DOMAINS detail fetches do not incur Playwright overhead
+        (and Playwright timeouts on sites like CORZ that block headless browsers
+        on detail pages but serve them fine via plain HTTP).
+
+        Falls back to full routing (curl-cffi or Playwright) only when the plain
+        request itself fails or returns a bot-challenge interstitial.
+        """
+        from urllib.parse import urlparse as _up
+        host = _up(url).netloc.lower()
+
+        # curl-cffi domains need TLS impersonation even for detail pages.
+        if host in _CURL_CFFI_DOMAINS:
+            return _fetch_with_curl_cffi(url)
+
         with requests.Session() as session:
+            try:
+                resp = DEFAULT_RETRY_POLICY.execute(
+                    session.get, url, timeout=15, headers=_HEADERS
+                )
+                if not is_bot_challenge_page(resp.text, dict(resp.headers), resp.status_code):
+                    return resp
+                # Bot-challenge on plain request — fall through to full routing
+            except Exception:
+                pass
             return _fetch_with_rate_limit(
                 url,
                 session,
@@ -1942,85 +1972,95 @@ class IRScraper:
         current_year = date.today().year
 
         for year in range(start_year, current_year + 1):
-            params = {
-                f'{widget_id}_year[value]': str(year),
-                'op': 'Filter',
-                f'{widget_id}_widget_id': widget_id,
-                'form_id': 'widget_form_base',
-            }
-            if form_build_id:
-                params['form_build_id'] = form_build_id
+            # Paginate within each year filter: page=0 is the first page;
+            # continue incrementing until a page yields zero new candidates.
+            for page_offset in range(50):  # hard cap against runaway pagination
+                params = {
+                    f'{widget_id}_year[value]': str(year),
+                    'op': 'Filter',
+                    f'{widget_id}_widget_id': widget_id,
+                    'form_id': 'widget_form_base',
+                }
+                if form_build_id:
+                    params['form_build_id'] = form_build_id
+                if page_offset > 0:
+                    params['page'] = str(page_offset)
 
-            year_url = f"{ir_url}?{urlencode(params)}"
-            self._emit('page_fetch', ticker=ticker, url=year_url, page=year)
+                year_url = f"{ir_url}?{urlencode(params)}"
+                self._emit('page_fetch', ticker=ticker, url=year_url, page=year)
 
-            resp = self._fetch(year_url)
-            if resp is None:
-                log.warning("%s: no response for year %d filter", ticker, year)
-                continue
+                resp = self._fetch(year_url)
+                if resp is None:
+                    log.warning("%s: no response for year %d page %d filter", ticker, year, page_offset)
+                    break
 
-            # Refresh token for subsequent year requests
-            fresh_build_id, _, year_soup = _extract_tokens(resp.text)
-            if fresh_build_id:
-                form_build_id = fresh_build_id
+                # Refresh token for subsequent requests
+                fresh_build_id, _, year_soup = _extract_tokens(resp.text)
+                if fresh_build_id:
+                    form_build_id = fresh_build_id
 
-            for link in year_soup.find_all('a', href=True):
-                title = link.get_text(separator=' ', strip=True)
-                href = link['href']
-                check_text = f"{title} {href.replace('-', ' ').replace('/', ' ')}"
+                new_on_page = 0
+                for link in year_soup.find_all('a', href=True):
+                    title = link.get_text(separator=' ', strip=True)
+                    href = link['href']
+                    check_text = f"{title} {href.replace('-', ' ').replace('/', ' ')}"
 
-                if not is_mining_activity_pr(check_text):
-                    continue
-                period = infer_period_from_text(check_text)
-                if period is None:
-                    log.debug("Could not infer period from PR title: %s", title)
-                    continue
-
-                full_url = href if href.startswith('http') else pr_base_url + href
-                full_url = canonical_url(full_url)
-                period_str = period.strftime('%Y-%m-%d')
-
-                claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
-                if not claimed:
-                    log.debug("Skipping drupal_year PR by URL (%s): %s %s", reason, ticker, full_url)
-                    self._emit('url_skipped', ticker=ticker, reason=reason,
-                               url=full_url, period=period_str)
-                    continue
-
-                try:
-                    pr_resp = self._fetch(full_url)
-                    if pr_resp is None:
-                        summary.errors += 1
+                    if not is_mining_activity_pr(check_text):
+                        continue
+                    period = infer_period_from_text(check_text)
+                    if period is None:
+                        log.debug("Could not infer period from PR title: %s", title)
                         continue
 
-                    published_date = infer_published_date_from_html(pr_resp.text)
-                    page_period = period
-                    if page_period is None:
-                        page_period = infer_period_from_text(pr_resp.text[:15000])
-                    if page_period is None and published_date:
-                        pub = datetime.fromisoformat(published_date).date()
-                        page_period = date(pub.year, pub.month, 1)
-                    if page_period is None:
-                        log.debug("%s: could not infer period for drupal_year PR %s", ticker, full_url)
-                        continue
-                    period_str = page_period.strftime('%Y-%m-%d')
+                    full_url = href if href.startswith('http') else pr_base_url + href
+                    full_url = canonical_url(full_url)
+                    period_str = period.strftime('%Y-%m-%d')
 
-                    inserted = self._insert_ir_report(
-                        ticker=ticker,
-                        period=page_period,
-                        source_url=full_url,
-                        html_text=pr_resp.text,
-                        fetch_strategy='drupal_year',
-                        summary=summary,
-                        title=title,
-                        published_date=published_date,
-                        url_claimed=True,
-                        url_hash=url_hash,
-                    )
-                    if inserted:
-                        log.info("Ingested drupal_year PR: %s %s from %s",
-                                 ticker, period_str, full_url)
-                finally:
-                    self._release_url(ticker, url_hash)
+                    claimed, full_url, url_hash, reason = self._claim_url(ticker, full_url)
+                    if not claimed:
+                        log.debug("Skipping drupal_year PR by URL (%s): %s %s", reason, ticker, full_url)
+                        self._emit('url_skipped', ticker=ticker, reason=reason,
+                                   url=full_url, period=period_str)
+                        continue
+
+                    new_on_page += 1
+                    try:
+                        pr_resp = self._fetch(full_url)
+                        if pr_resp is None:
+                            summary.errors += 1
+                            continue
+
+                        published_date = infer_published_date_from_html(pr_resp.text)
+                        page_period = period
+                        if page_period is None:
+                            page_period = infer_period_from_text(pr_resp.text[:15000])
+                        if page_period is None and published_date:
+                            pub = datetime.fromisoformat(published_date).date()
+                            page_period = date(pub.year, pub.month, 1)
+                        if page_period is None:
+                            log.debug("%s: could not infer period for drupal_year PR %s", ticker, full_url)
+                            continue
+                        period_str = page_period.strftime('%Y-%m-%d')
+
+                        inserted = self._insert_ir_report(
+                            ticker=ticker,
+                            period=page_period,
+                            source_url=full_url,
+                            html_text=pr_resp.text,
+                            fetch_strategy='drupal_year',
+                            summary=summary,
+                            title=title,
+                            published_date=published_date,
+                            url_claimed=True,
+                            url_hash=url_hash,
+                        )
+                        if inserted:
+                            log.info("Ingested drupal_year PR: %s %s from %s",
+                                     ticker, period_str, full_url)
+                    finally:
+                        self._release_url(ticker, url_hash)
+
+                if new_on_page == 0:
+                    break  # no new candidates on this page — no further pages needed
 
         return summary
