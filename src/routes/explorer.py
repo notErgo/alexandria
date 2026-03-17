@@ -168,8 +168,13 @@ def explorer_cell(ticker, period, metric):
 
 @bp.route('/api/explorer/cell/<ticker>/<period>/<metric>/save', methods=['POST'])
 def explorer_cell_save(ticker, period, metric):
+    import re as _re
     db = get_db()
     ticker = ticker.upper()
+    # Normalize YYYY-MM to YYYY-MM-01 so the stored period matches the
+    # monthly timeline spine format. SEC periods (YYYY-Qn, YYYY-FY) pass through.
+    if _re.match(r'^\d{4}-\d{2}$', period):
+        period = period + '-01'
     body = request.get_json(silent=True) or {}
     try:
         value = float(body['value'])

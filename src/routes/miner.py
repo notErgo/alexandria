@@ -340,13 +340,18 @@ def get_miner_timeline(ticker: str):
                 }
 
         # Merge finalized-only values: cells in final_data_points that have no
-        # corresponding raw data_points or review_queue entry.  These are analyst-
-        # entered or analyst-promoted values that must appear in the timeline even
-        # when the pipeline never extracted anything for that (period, metric).
+        # corresponding raw data_points entry.  Finalized analyst values also
+        # override pending review_queue entries that have no extracted value
+        # (null llm_value + null regex_value → value=None), because an explicit
+        # analyst finalization takes precedence over an unresolved pipeline
+        # candidate.  If a data_points cell already exists (is_pending=False),
+        # the data_points value is kept and is_finalized=True is set via
+        # finalized_keys (see line above the pivot loop).
         for (fp, fmetric), f in finals_by_pm.items():
             if fp not in pivot:
                 pivot[fp] = {}
-            if fmetric not in pivot[fp]:
+            existing = pivot[fp].get(fmetric)
+            if existing is None or (existing.get('is_pending') and existing.get('value') is None):
                 pivot[fp][fmetric] = {
                     'value':             f['value'],
                     'unit':              f.get('unit', ''),

@@ -584,7 +584,11 @@ const ReviewPanel = (function () {
     if (!_currentTicker || !_currentPeriod) return _setStatus('No cell selected.', true);
     if (!metric) return _setStatus('Select a metric.', true);
     if (!Number.isFinite(value)) return _setStatus('Enter a valid value.', true);
-    const period = String(_currentPeriod).slice(0, 7);
+    // Normalize to YYYY-MM-01 for monthly periods so the stored period matches
+    // the data_points/timeline spine format. SEC periods (YYYY-Qn, YYYY-FY)
+    // and full YYYY-MM-DD dates pass through unchanged.
+    let period = String(_currentPeriod || '');
+    if (/^\d{4}-\d{2}$/.test(period)) period = period + '-01';
     const url = '/api/explorer/cell/' + encodeURIComponent(_currentTicker) + '/'
       + encodeURIComponent(period) + '/' + encodeURIComponent(metric) + '/save';
     try {
