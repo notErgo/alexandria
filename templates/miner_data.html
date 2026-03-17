@@ -842,8 +842,10 @@ tr.is-reviewed td { opacity: 0.65; }
 
     <!-- Right: filters + table -->
     <div class="md-table-panel" data-spec-id="MD5.1">
-      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
-        <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
+      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <span><span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span></span>
+        <button id="md-promote-btn" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem" onclick="mdPromoteToReview()" title="Queue all accepted data points for this ticker into the review table">Queue for review</button>
+        <span id="md-promote-status" style="font-size:0.75rem;color:var(--theme-text-muted);font-weight:400"></span>
       </div>
       <div class="md-table-filters">
         <label>
@@ -1356,6 +1358,29 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ── Coverage summary ───────────────────────────────────────────────────────
+async function mdPromoteToReview() {
+  const btn = document.getElementById('md-promote-btn');
+  const statusEl = document.getElementById('md-promote-status');
+  if (!_ticker) { if (statusEl) statusEl.textContent = 'Select a company first.'; return; }
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Queuing...';
+  try {
+    const resp = await fetch('/api/operations/promote-to-review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker: _ticker}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const n = data.data.promoted;
+    if (statusEl) statusEl.textContent = n + ' row' + (n === 1 ? '' : 's') + ' queued for review';
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Error: ' + String(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function loadCoverageSummary(ticker) {
   const bar = document.getElementById('coverage-summary-bar');
   if (!bar) return;

@@ -99,6 +99,7 @@ def apply_suggestion(ticker: str):
 
         applied_to = target
         metric = None
+        new_prompt_preview = None
 
         if target == 'ticker_hint':
             current = db.get_ticker_hint(ticker.upper()) or ''
@@ -128,6 +129,7 @@ def apply_suggestion(ticker: str):
             current = (existing.get('prompt_text') or '') if existing else ''
             new_text = (current + '\n\n' + append_text).strip() if current else append_text
             db.upsert_llm_prompt(metric, new_text)
+            new_prompt_preview = new_text[:300]
             log.info(
                 'event=suggestion_apply_metric_prompt ticker=%s metric=%s chars_appended=%d',
                 ticker.upper(), metric, len(append_text),
@@ -138,8 +140,9 @@ def apply_suggestion(ticker: str):
             'data': {
                 'applied_to': applied_to,
                 'ticker': ticker.upper(),
-                'metric': metric,
+                'metric': metric or None,
                 'updated_at': datetime.now(timezone.utc).isoformat(),
+                'new_prompt_preview': new_prompt_preview,
             },
         })
 

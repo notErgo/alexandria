@@ -3171,16 +3171,60 @@ class MinerDB:
             )
 
     def reset_report_extraction_status(self, report_id: int) -> None:
-        """Reset one report's extraction_status to 'pending' and clear extracted_at.
+        """Reset one report's extraction_status to 'pending', clear extracted_at, and zero
+        extraction_attempts so the report is eligible for get_unextracted_reports again.
 
         Used by force_reextract in the pipeline to re-run LLM on already-extracted reports
         without deleting their data_points (unlike purge_data_points which deletes all data).
         """
         with self._get_connection() as conn:
             conn.execute(
-                "UPDATE reports SET extraction_status = 'pending', extracted_at = NULL WHERE id = ?",
+                "UPDATE reports"
+                " SET extraction_status = 'pending', extracted_at = NULL, extraction_attempts = 0"
+                " WHERE id = ?",
                 (report_id,),
             )
+
+    def reset_extraction_attempts(self, ticker: str) -> int:
+        """Zero extraction_attempts for all pending/failed/dead_letter reports for a ticker.
+
+        Returns the number of rows updated.  Used to unblock reports that have hit the
+        MAX_EXTRACTION_ATTEMPTS cap without being permanently discarded.
+        Only touches non-done reports so successfully-extracted reports are not affected.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE reports SET extraction_attempts = 0"
+                " WHERE ticker = ?"
+                "   AND extraction_status IN ('pending', 'failed', 'dead_letter')",
+                (ticker,),
+            )
+            return conn.execute("SELECT changes()").fetchone()[0]
+
+    def get_dead_letter_count(self, ticker: Optional[str] = None) -> int:
+        """Return the number of pending/failed reports blocked by the attempts cap.
+
+        These are reports the normal extraction path skips silently because
+        extraction_attempts >= MAX_EXTRACTION_ATTEMPTS.
+        """
+        from config import MAX_EXTRACTION_ATTEMPTS
+        with self._get_connection() as conn:
+            if ticker:
+                return conn.execute(
+                    "SELECT COUNT(*) FROM reports"
+                    " WHERE raw_text IS NOT NULL AND raw_text != ''"
+                    "   AND extraction_status IN ('pending', 'failed')"
+                    "   AND extraction_attempts >= ?"
+                    "   AND ticker = ?",
+                    (MAX_EXTRACTION_ATTEMPTS, ticker),
+                ).fetchone()[0] or 0
+            return conn.execute(
+                "SELECT COUNT(*) FROM reports"
+                " WHERE raw_text IS NOT NULL AND raw_text != ''"
+                "   AND extraction_status IN ('pending', 'failed')"
+                "   AND extraction_attempts >= ?",
+                (MAX_EXTRACTION_ATTEMPTS,),
+            ).fetchone()[0] or 0
 
     def reset_interrupted_report_extractions(self) -> int:
         """Reset orphaned report-level extraction claims left in 'running'.
@@ -4153,6 +4197,73 @@ class MinerDB:
                 )
         log.info("purge_data_points: deleted %d rows (ticker=%s)", count, ticker or 'ALL')
         return count
+
+    def promote_data_points_to_review(
+        self,
+        ticker: Optional[str] = None,
+        from_period: Optional[str] = None,
+        to_period: Optional[str] = None,
+        metrics: Optional[list] = None,
+    ) -> int:
+        """Copy existing data_points rows into review_queue as PENDING items.
+
+        Skips data_points that already have a PENDING review_queue row for the
+        same (ticker, period, metric) — those are handled by insert_review_item's
+        dedup logic. Skips analyst-owned rows (extraction_method IN
+        ('analyst','analyst_approved','review_approved','review_edited')).
+
+        Returns count of rows promoted.
+        """
+        promoted = 0
+        with self._get_connection() as conn:
+            where = ["dp.extraction_method NOT IN ('analyst','analyst_approved','review_approved','review_edited')"]
+            params: list = []
+            if ticker:
+                where.append("dp.ticker = ?")
+                params.append(ticker)
+            if from_period:
+                where.append("dp.period >= ?")
+                params.append(from_period)
+            if to_period:
+                where.append("dp.period <= ?")
+                params.append(to_period)
+            if metrics:
+                placeholders = ','.join('?' * len(metrics))
+                where.append(f"dp.metric IN ({placeholders})")
+                params.extend(metrics)
+            where_clause = ' AND '.join(where)
+            rows = conn.execute(
+                f"""SELECT dp.id, dp.ticker, dp.period, dp.metric,
+                           dp.value, dp.confidence, dp.source_snippet,
+                           dp.extraction_method, dp.report_id,
+                           dp.expected_granularity, dp.time_grain
+                    FROM data_points dp
+                    WHERE {where_clause}
+                    ORDER BY dp.ticker, dp.period, dp.metric""",
+                params,
+            ).fetchall()
+        for row in rows:
+            self.insert_review_item({
+                'data_point_id':        row['id'],
+                'ticker':               row['ticker'],
+                'period':               row['period'],
+                'metric':               row['metric'],
+                'raw_value':            str(row['value']),
+                'confidence':           row['confidence'],
+                'source_snippet':       row['source_snippet'],
+                'llm_value':            row['value'],
+                'agreement_status':     'LLM_HIGH_CONF',
+                'report_id':            row['report_id'],
+                'expected_granularity': row['expected_granularity'],
+                'time_grain':           row['time_grain'],
+                'status':               'PENDING',
+            })
+            promoted += 1
+        log.info(
+            "promote_data_points_to_review: promoted %d rows (ticker=%s from=%s to=%s)",
+            promoted, ticker or 'ALL', from_period or '*', to_period or '*',
+        )
+        return promoted
 
     def purge_review_queue(self, ticker: Optional[str] = None) -> int:
         """Delete review_queue rows and reset matching reports to pending.

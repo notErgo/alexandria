@@ -1500,3 +1500,61 @@ class TestZeroExtractRouting:
 
         assert summary.zero_extract_misses == 0
         assert summary.keyword_gated >= 1
+
+
+class TestMonthlyIrWithYyyyMmCoveringPeriod:
+    """Fix B: YYYY-MM covering_period must not trigger the quarterly extraction path."""
+
+    @pytest.fixture
+    def db_with_company(self, db):
+        db.insert_company({
+            'ticker': 'MARA', 'name': 'MARA Holdings, Inc.',
+            'tier': 1, 'ir_url': 'https://www.marathondh.com/news',
+            'pr_base_url': 'https://www.marathondh.com',
+            'cik': '0001437491', 'active': 1,
+        })
+        return db
+
+    def test_monthly_ir_with_yyyy_mm_covering_period_uses_monthly_path(
+        self, db_with_company, monkeypatch
+    ):
+        """IR press release with covering_period='2023-04' (YYYY-MM) must stay on the
+        monthly extraction path. The YYYY-MM value must NOT be treated as a quarterly
+        signal — only YYYY-Qn formats should be propagated as quarterly."""
+        import interpreters.interpret_pipeline as _ep
+        from unittest.mock import MagicMock
+        from miner_types import ExtractionResult
+
+        monkeypatch.setattr(
+            db_with_company, 'get_all_metric_keywords',
+            lambda active_only=True: [
+                {'phrase': 'mined', 'metric_key': 'production_btc'},
+            ],
+        )
+
+        mock_llm = MagicMock()
+        mock_llm.check_connectivity.return_value = True
+        mock_llm.extract_batch.return_value = {
+            'production_btc': ExtractionResult(
+                metric='production_btc', value=379.0, unit='BTC', confidence=0.92,
+                extraction_method='llm_test', source_snippet='mined 379 BTC',
+                pattern_id='llm_test',
+            ),
+        }
+        monkeypatch.setattr(_ep, '_get_llm_interpreter', lambda db: mock_llm)
+
+        report_id = db_with_company.insert_report(make_report(
+            raw_text='MARA mined 379 BTC in April 2023.',
+            report_date='2023-04-01',
+            source_type='ir_press_release',
+            covering_period='2023-04',
+        ))
+        report = db_with_company.get_report(report_id)
+
+        from interpreters.interpret_pipeline import extract_report
+        summary = extract_report(report, db_with_company)
+
+        # Monthly path was used (extract_batch), not quarterly path
+        mock_llm.extract_batch.assert_called()
+        mock_llm.extract_quarterly_batch.assert_not_called()
+        assert summary.errors == 0

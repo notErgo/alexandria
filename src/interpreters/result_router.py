@@ -94,6 +94,7 @@ def _apply_llm_result(
     if llm_result is not None:
         _result_grain = getattr(llm_result, 'period_granularity', None)
         if not validate_period_granularity(_result_grain, _expected_grain):
+            _time_grain = db._derive_time_grain(period_str)
             log.warning(
                 "event=temporal_reject ticker=%s period=%s metric=%s "
                 "result_grain=%r expected=%r snippet=%r",
@@ -102,7 +103,24 @@ def _apply_llm_result(
                 (llm_result.source_snippet or '')[:60],
             )
             summary.temporal_rejects += 1
-            llm_result = None
+            db.insert_review_item({
+                "report_id":            report_id,
+                "data_point_id":        None,
+                "ticker":               ticker,
+                "period":               period_str,
+                "metric":               metric,
+                "raw_value":            str(llm_result.value),
+                "confidence":           llm_result.confidence,
+                "source_snippet":       llm_result.source_snippet,
+                "status":               "PENDING",
+                "llm_value":            llm_result.value,
+                "regex_value":          None,
+                "agreement_status":     "TEMPORAL_REJECT",
+                "expected_granularity": _expected_grain,
+                "time_grain":           _time_grain,
+            })
+            summary.review_flagged += 1
+            return
 
     if llm_result is None:
         return
@@ -163,7 +181,8 @@ def _apply_llm_result(
             except Exception as _corr_err:
                 log.debug("Self-correction pass failed (non-fatal): %s", _corr_err)
 
-    if llm_result.confidence >= confidence_threshold and not is_outlier:
+    _force_review = run_config.force_review if run_config is not None else False
+    if llm_result.confidence >= confidence_threshold and not is_outlier and not _force_review:
         db.insert_data_point({
             "report_id": report_id,
             "ticker": ticker,

@@ -179,3 +179,77 @@ class TestForceReextractPath:
         batch = build_batch('MARA', first_filing=None, force=True)
         assert ir_id in _ids(batch)
         assert edgar_id in _ids(batch)
+
+
+# ---------------------------------------------------------------------------
+# attempt-cap visibility and reset
+# ---------------------------------------------------------------------------
+
+class TestAttemptCapReset:
+    def test_reset_report_extraction_status_zeros_attempts(self, db):
+        """reset_report_extraction_status must zero extraction_attempts so force-reextract
+        doesn't re-dead-letter the report on the next failure."""
+        conn = db._get_connection()
+        with conn:
+            rid = conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, raw_text,"
+                " extraction_status, extraction_attempts)"
+                " VALUES ('MARA','2024-01-01','archive_html','data','pending',5)",
+            ).lastrowid
+        db.reset_report_extraction_status(rid)
+        row = conn.execute(
+            "SELECT extraction_status, extraction_attempts FROM reports WHERE id=?", (rid,)
+        ).fetchone()
+        assert row[0] == 'pending'
+        assert row[1] == 0
+
+    def test_reset_extraction_attempts_unblocks_dead_letter_reports(self, db):
+        """reset_extraction_attempts(ticker) zeroes attempts so get_unextracted_reports
+        can return those reports again."""
+        conn = db._get_connection()
+        with conn:
+            rid = conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, raw_text,"
+                " extraction_status, extraction_attempts)"
+                " VALUES ('MARA','2024-01-01','archive_html','data','pending',5)",
+            ).lastrowid
+        # Before reset: blocked
+        before = db.get_unextracted_reports(ticker='MARA')
+        assert rid not in _ids(before)
+        # After reset: eligible
+        db.reset_extraction_attempts('MARA')
+        after = db.get_unextracted_reports(ticker='MARA')
+        assert rid in _ids(after)
+
+    def test_get_dead_letter_count_returns_blocked_reports(self, db):
+        """get_dead_letter_count returns the number of pending/failed reports blocked
+        by the attempts cap."""
+        conn = db._get_connection()
+        with conn:
+            conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, raw_text,"
+                " extraction_status, extraction_attempts)"
+                " VALUES ('MARA','2024-01-01','archive_html','data','pending',5)",
+            )
+            conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, raw_text,"
+                " extraction_status, extraction_attempts)"
+                " VALUES ('MARA','2024-02-01','archive_html','data','pending',3)",
+            )
+        count = db.get_dead_letter_count(ticker='MARA')
+        assert count == 1  # only the one at attempts=5 is blocked
+
+    def test_reset_extraction_attempts_does_not_touch_done_reports(self, db):
+        """reset_extraction_attempts must not zero attempts on already-extracted reports."""
+        conn = db._get_connection()
+        with conn:
+            rid = conn.execute(
+                "INSERT INTO reports (ticker, report_date, source_type, raw_text,"
+                " extraction_status, extraction_attempts)"
+                " VALUES ('MARA','2024-01-01','archive_html','data','done',5)",
+            ).lastrowid
+        db.reset_extraction_attempts('MARA')
+        row = conn.execute(
+            "SELECT extraction_attempts FROM reports WHERE id=?", (rid,)
+        ).fetchone()
+        assert row[0] == 5  # unchanged

@@ -225,6 +225,14 @@ class TestRiotHistoricalTemplates:
             "https://www.riotplatforms.com/riot-blockchain-announces-july-production-and-operations-updates/"
         )
 
+    def test_riot_candidates_for_2026_returns_empty(self):
+        """RIOT switched to quarterly reporting after December 2025.
+        Confirmed by IR boundary agent audit (source_contract_RIOT.json, 2026-03-05).
+        No monthly PR candidate URLs should be generated for 2026+."""
+        assert riot_candidate_urls(date(2026, 1, 1)) == []
+        assert riot_candidate_urls(date(2026, 6, 1)) == []
+        assert riot_candidate_urls(date(2027, 3, 1)) == []
+
     def test_candidate_urls_for_non_riot_uses_configured_template(self):
         urls = candidate_urls_for_period(
             {"ticker": "MARA", "url_template": "https://example.com/{month}-{year}"},
@@ -247,6 +255,33 @@ class TestDiscoveryHelpers:
         )
         assert urls[0] == "https://ir.mara.com/news-events/press-releases"
         assert urls[1] == "https://ir.mara.com/news-events/press-releases?page=2"
+
+    def test_mara_discovery_max_10_pages(self):
+        """MARA IR confirmed max_page=10 by agent audit (source_contract_MARA.json,
+        2026-03-05). Scraper must not generate wasteful fetches beyond page 10."""
+        urls = discovery_page_urls_for_company(
+            {"ticker": "MARA", "ir_url": "https://ir.mara.com/news-events/press-releases"}
+        )
+        assert len(urls) == 10
+        assert urls[-1] == "https://ir.mara.com/news-events/press-releases?page=10"
+
+    def test_corz_discovery_max_10_pages(self):
+        """CORZ IR confirmed max_page=10 by agent audit (source_contract_CORZ.json,
+        2026-03-05). Listing is server-rendered with ?page=N pagination."""
+        urls = discovery_page_urls_for_company(
+            {"ticker": "CORZ", "ir_url": "https://investors.corescientific.com/news-events/press-releases"}
+        )
+        assert len(urls) == 10
+        assert urls[-1] == "https://investors.corescientific.com/news-events/press-releases?page=10"
+
+    def test_wulf_discovery_max_10_pages(self):
+        """WULF IR confirmed max_page=10 by agent audit (source_contract_WULF.json,
+        2026-03-05). Listing is server-rendered with ?page=N pagination."""
+        urls = discovery_page_urls_for_company(
+            {"ticker": "WULF", "ir_url": "https://investors.terawulf.com/news-events/press-releases"}
+        )
+        assert len(urls) == 10
+        assert urls[-1] == "https://investors.terawulf.com/news-events/press-releases?page=10"
 
     def test_discovery_link_extraction_filters_to_mining_activity(self):
         company = {"ticker": "CLSK", "pr_base_url": "https://investors.cleanspark.com"}

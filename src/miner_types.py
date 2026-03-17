@@ -312,6 +312,7 @@ class ExtractionRunConfig:
     custom_prompt_preamble: Optional[str] = None
     model: Optional[str] = None  # Ollama model override for this run; None → DB config / env default
     target_metrics: Optional[list] = None  # When set, restrict LLM extraction to these metric keys only
+    force_review: bool = False  # When True, route ALL results to review_queue regardless of confidence
 
     def __post_init__(self):
         if self.expected_granularity is not None:

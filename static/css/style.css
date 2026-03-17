@@ -821,6 +821,13 @@ body.dev-no-tips .info-bubble { display: none !important; }
 .sug-pattern { font-family:ui-monospace,monospace; font-size:0.72rem; color:var(--theme-text-secondary); margin:0.2rem 0; }
 .sug-apply-area { display:none; margin-top:0.5rem; }
 .sug-apply-area textarea { width:100%; font-size:0.72rem; font-family:ui-monospace,monospace; resize:vertical; padding:0.3rem; min-height:60px; box-sizing:border-box; }
+.sug-pattern-dim { color: var(--theme-text-muted); }
+.sug-examples-toggle { font-size: 0.7rem; color: var(--theme-text-muted); background: none; border: none; padding: 0; cursor: pointer; margin-top: 0.15rem; text-decoration: underline; }
+.sug-examples-list { display: none; margin-top: 0.25rem; }
+.sug-example-row { font-size: 0.7rem; padding-left: 0.5rem; border-left: 2px solid var(--theme-border); }
+.sug-save-feedback { font-size: 0.72rem; color: var(--theme-success, #16a34a); margin-top: 0.3rem; }
+.sug-prompt-preview { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--theme-text-secondary); background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 3px; padding: 0.3rem 0.4rem; margin-top: 0.2rem; white-space: pre-wrap; word-break: break-all; }
+.sug-edit-link { font-size: 0.72rem; }
 
 /* ── Log Panel (shared across ops.html and miner_data.html) ─────────────────── */
 .acq-log { margin-top: 0.45rem; max-height: 130px; overflow-y: auto; background: var(--theme-bg-primary); border: 1px solid var(--theme-border); border-radius: 6px; padding: 6px 8px; }

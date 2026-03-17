@@ -1884,8 +1884,9 @@ function _renderSuggestionCard(sug, ticker) {
     + `<span style="font-size:0.78rem;font-weight:600">${escapeHtml(sug.metric || '')}</span>`
     + `<span style="font-size:0.72rem;color:var(--theme-text-muted)">freq=${sug.frequency || 1} reports=${sug.report_count || 1}</span>`
     + `</div>`
-    + `<div class="sug-pattern" style="margin-top:0.3rem">${escapeHtml((sug.text_window || '').slice(0, 100))}</div>`
-    + `<div class="sug-pattern" style="color:var(--theme-text-muted)">${escapeHtml((sug.normalized_pattern || '').slice(0, 120))}</div>`
+    + `<div class="sug-pattern" style="margin-top:0.3rem">${escapeHtml(sug.text_window || '')}</div>`
+    + `<div class="sug-pattern sug-pattern-dim">${escapeHtml(sug.normalized_pattern || '')}</div>`
+    + _renderSugExamples(sug)
     + `<div style="display:flex;gap:0.4rem;margin-top:0.35rem;flex-wrap:wrap">`
     + `<button class="btn btn-xs btn-secondary" onclick="openSugApply('${sug.id}','hint')">+ Ticker hint</button>`
     + `<button class="btn btn-xs btn-secondary" onclick="openSugApply('${sug.id}','prompt')">+ Metric prompt</button>`
@@ -1905,14 +1906,45 @@ function _renderSuggestionCard(sug, ticker) {
     + `</div>`;
 }
 
+function _renderSugExamples(sug) {
+  const examples = Array.isArray(sug.examples) ? sug.examples : [];
+  const extras = examples.filter(e => e !== sug.text_window);
+  if (!extras.length) return '';
+  const listId   = 'sug-examples-' + sug.id;
+  const toggleId = 'sug-examples-toggle-' + sug.id;
+  const rows = extras.map(e =>
+    `<div class="sug-pattern sug-example-row">${escapeHtml(e)}</div>`
+  ).join('');
+  const n = extras.length;
+  return `<div>`
+    + `<button class="btn btn-xs sug-examples-toggle" id="${toggleId}" `
+    + `onclick="toggleSugExamples('${sug.id}')">`
+    + `show ${n} more example${n > 1 ? 's' : ''}`
+    + `</button>`
+    + `<div class="sug-examples-list" id="${listId}">${rows}</div>`
+    + `</div>`;
+}
+
+function toggleSugExamples(sugId) {
+  const list = document.getElementById('sug-examples-' + sugId);
+  const btn  = document.getElementById('sug-examples-toggle-' + sugId);
+  if (!list || !btn) return;
+  const open = list.style.display === 'block';
+  list.style.display = open ? 'none' : 'block';
+  const count = list.querySelectorAll('.sug-example-row').length;
+  btn.textContent = open
+    ? `show ${count} more example${count > 1 ? 's' : ''}`
+    : `hide examples`;
+}
+
 function openSugApply(sugId, areaType) {
   const hintArea   = document.getElementById('sug-hint-area-'   + sugId);
   const promptArea = document.getElementById('sug-prompt-area-' + sugId);
   if (areaType === 'hint') {
-    if (hintArea)   hintArea.style.display   = hintArea.style.display   === 'none' ? '' : 'none';
+    if (hintArea)   hintArea.style.display   = hintArea.style.display   === 'block' ? 'none' : 'block';
     if (promptArea) promptArea.style.display = 'none';
   } else {
-    if (promptArea) promptArea.style.display = promptArea.style.display === 'none' ? '' : 'none';
+    if (promptArea) promptArea.style.display = promptArea.style.display === 'block' ? 'none' : 'block';
     if (hintArea)   hintArea.style.display   = 'none';
   }
 }
@@ -1933,14 +1965,28 @@ async function saveSugApply(ticker, target, metric, taId, sugId) {
     });
     const d = await resp.json();
     if (d.success) {
-      if (card) {
-        const ok = document.createElement('div');
-        ok.style.cssText = 'font-size:0.72rem;color:var(--theme-success,#16a34a);margin-top:0.3rem';
-        ok.textContent = 'Saved to ' + target.replace('_', ' ');
-        card.appendChild(ok);
-      }
-      const areaEl = document.getElementById('sug-' + (target === 'ticker_hint' ? 'hint' : 'prompt') + '-area-' + sugId);
+      const areaEl = document.getElementById(
+        'sug-' + (target === 'ticker_hint' ? 'hint' : 'prompt') + '-area-' + sugId
+      );
       if (areaEl) areaEl.style.display = 'none';
+      if (card) {
+        const feedback = document.createElement('div');
+        feedback.className = 'sug-save-feedback';
+        const preview     = d.data && d.data.new_prompt_preview;
+        const savedMetric = d.data && d.data.metric;
+        let html = 'Saved to ' + target.replace('_', ' ');
+        if (preview) {
+          html += '<div class="sug-prompt-preview">'
+            + escapeHtml(preview) + (preview.length >= 300 ? '...' : '')
+            + '</div>';
+        }
+        if (target === 'metric_prompt' && savedMetric) {
+          html += ' <a class="sug-edit-link" href="/ops?tab=prompts&metric='
+            + encodeURIComponent(savedMetric) + '" target="_blank">Edit in prompt editor</a>';
+        }
+        feedback.innerHTML = html;
+        card.appendChild(feedback);
+      }
     } else {
       _sugApplyError(card, (d.error && d.error.message) || 'Save failed');
     }

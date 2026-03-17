@@ -175,9 +175,16 @@ def riot_candidate_urls(period: date) -> list[str]:
 
     RIOT changed slug families multiple times across the archive, so a single
     template is not sufficient for historical backfill.
+
+    RIOT switched from monthly production updates to quarterly reporting after
+    December 2025 (confirmed by IR boundary agent audit, 2026-03-05).
+    Returns [] for 2026+ so template-mode backfills don't attempt stale URLs.
     """
     month = _MONTH_NAMES[period.month]
     year = period.year
+    # No monthly production PRs after December 2025 — RIOT went quarterly.
+    if year >= 2026:
+        return []
     candidates: list[str] = []
     if year >= 2023:
         candidates.append(
@@ -393,8 +400,18 @@ def discovery_page_urls_for_company(company: dict) -> list[str]:
     if not ir_url:
         return []
 
+    # Agent-confirmed pagination depths (source_contract_*.json, 2026-03-05).
+    # These tickers were verified to have at most N listing pages; generating
+    # more would produce 20 extra 404 fetches per scrape run.
+    _MAX_PAGES: dict[str, int] = {
+        "MARA": 10,   # source_contract_MARA.json: max_page=10
+        "CORZ": 10,   # source_contract_CORZ.json: max_page=10
+        "WULF": 10,   # source_contract_WULF.json: max_page=10
+    }
+    max_page = _MAX_PAGES.get(ticker, 30)
+
     pages = [ir_url]
-    pages.extend(f"{ir_url}?page={page}" for page in range(2, 31))
+    pages.extend(f"{ir_url}?page={page}" for page in range(2, max_page + 1))
     return pages
 
 

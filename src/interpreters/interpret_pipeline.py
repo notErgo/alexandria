@@ -223,7 +223,11 @@ def _infer_quarterly_covering_period(report: dict) -> Optional[str]:
 
     covering_period = report.get('covering_period')
     if covering_period:
-        return covering_period
+        # Only propagate a pre-existing covering_period as a quarterly signal when it
+        # is already in quarterly format (YYYY-Qn). Monthly periods (YYYY-MM) fall
+        # through to text-based quarterly detection below.
+        if re.match(r'^\d{4}-Q[1-4]$', covering_period):
+            return covering_period
 
     # URL-based detection only applies to EDGAR 8-K shareholder letters.
     if source_type in {'edgar_8k', 'edgar_8ka'}:

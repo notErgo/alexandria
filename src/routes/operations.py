@@ -8,6 +8,7 @@ Operations panel API routes.
   POST /api/operations/interpret                     — trigger extraction for a ticker
   GET  /api/operations/interpret/<task_id>/progress  — extraction progress
   POST /api/operations/requeue-missing               — re-extract done reports missing specified metrics
+  POST /api/operations/promote-to-review             — copy existing data_points into review_queue as PENDING
   GET  /api/operations/gap-diagnosis                 — diagnose why gap query returns empty (debug)
   POST /api/operations/assign_period               — assign period to a legacy_undated file
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
@@ -415,6 +416,7 @@ def operations_extract():
         to_period = (body.get('to_period') or '').strip() or None
         extract_workers = max(1, min(int(body.get('extract_workers') or 4), 12))
         sample_n = max(0, min(int(body.get('sample') or 0), 10))
+        force_review = bool(body.get('force_review', False))
 
         # expected_granularity: explicit override, or derived from cadence.
         _cadence_grain_map = {'monthly': 'monthly', 'quarterly': 'quarterly', 'annual': 'annual'}
@@ -482,6 +484,7 @@ def operations_extract():
         _extract_workers = extract_workers
         _sample_n = sample_n
         _expected_granularity = expected_granularity
+        _force_review = force_review
 
         from routes.pipeline import (
             _EDGAR_SOURCE_TYPES,
@@ -600,7 +603,7 @@ def operations_extract():
                     grouped_reports.setdefault(report.get('ticker', '?'), []).append(report)
 
                 def _ops_run_config_factory(report_ticker: str):
-                    if not _expected_granularity and not _custom_prompt and not _model_override:
+                    if not _expected_granularity and not _custom_prompt and not _model_override and not _force_review:
                         return None
                     from miner_types import ExtractionRunConfig
                     return ExtractionRunConfig(
@@ -608,6 +611,7 @@ def operations_extract():
                         ticker=report_ticker,
                         custom_prompt_preamble=_custom_prompt,
                         model=_model_override,
+                        force_review=_force_review,
                     )
 
                 def _ops_progress_callback(c: dict) -> None:
@@ -838,6 +842,57 @@ def operations_requeue_missing():
         }})
     except Exception:
         log.error('event=requeue_missing_error route=/api/operations/requeue-missing', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+
+@bp.route('/api/operations/promote-to-review', methods=['POST'])
+def operations_promote_to_review():
+    """Copy existing data_points into review_queue as PENDING items.
+
+    Body params (all optional):
+      ticker      (str)  — restrict to one company
+      tickers     (list) — restrict to multiple companies
+      from_period (str)  — YYYY-MM lower bound (inclusive)
+      to_period   (str)  — YYYY-MM upper bound (inclusive)
+      metrics     (list) — restrict to specific metric keys
+
+    Skips analyst-owned rows and rows that already have a PENDING review entry.
+    Returns count of rows promoted.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        from app_globals import get_db
+        db = get_db()
+
+        ticker_single = (body.get('ticker') or '').strip() or None
+        tickers_list = body.get('tickers') or []
+        if ticker_single and ticker_single not in tickers_list:
+            tickers_list = [ticker_single] + list(tickers_list)
+
+        from_period = (body.get('from_period') or '').strip() or None
+        to_period = (body.get('to_period') or '').strip() or None
+        metrics = body.get('metrics') or None
+
+        total_promoted = 0
+        if tickers_list:
+            for t in tickers_list:
+                total_promoted += db.promote_data_points_to_review(
+                    ticker=t,
+                    from_period=from_period,
+                    to_period=to_period,
+                    metrics=metrics,
+                )
+        else:
+            total_promoted = db.promote_data_points_to_review(
+                ticker=None,
+                from_period=from_period,
+                to_period=to_period,
+                metrics=metrics,
+            )
+
+        return jsonify({'success': True, 'data': {'promoted': total_promoted}})
+    except Exception:
+        log.error('event=promote_to_review_error route=/api/operations/promote-to-review', exc_info=True)
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 

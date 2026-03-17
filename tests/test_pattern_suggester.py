@@ -210,6 +210,58 @@ def test_apply_to_metric_prompt():
     assert 'Look for: Bitcoin mined in [Month]: [N] BTC' in call_args[1]
 
 
+def test_cluster_passes_examples_list():
+    from interpreters.pattern_suggester import _extract_found_patterns, _cluster_patterns
+    dp_rows = [
+        {'metric': 'production_btc', 'source_snippet': '1,284 BTC mined', 'report_id': 1},
+        {'metric': 'production_btc', 'source_snippet': '2,100 BTC mined', 'report_id': 2},
+        {'metric': 'production_btc', 'source_snippet': '980 BTC mined',   'report_id': 3},
+    ]
+    hits = _extract_found_patterns(dp_rows)
+    clusters = _cluster_patterns(hits)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert 'examples' in c
+    assert isinstance(c['examples'], list)
+    assert len(c['examples']) <= 5
+    assert {'1,284 BTC mined', '2,100 BTC mined', '980 BTC mined'} == set(c['examples'])
+
+
+def test_suggested_prompt_addition_includes_examples():
+    from interpreters.pattern_suggester import _extract_found_patterns, _cluster_patterns
+    dp_rows = [
+        {'metric': 'production_btc', 'source_snippet': 'we mined 1,284 BTC in March', 'report_id': 1},
+        {'metric': 'production_btc', 'source_snippet': 'we mined 2,100 BTC in April', 'report_id': 2},
+    ]
+    hits = _extract_found_patterns(dp_rows)
+    clusters = _cluster_patterns(hits)
+    sug = clusters[0]
+    assert 'production_btc' in sug['suggested_prompt_addition']
+    assert 'mined' in sug['suggested_prompt_addition']
+    assert '\n' in sug['suggested_prompt_addition']
+
+
+def test_apply_metric_prompt_returns_preview():
+    app = _make_suggestions_app()
+    db = MagicMock()
+    db.get_company.return_value = {'ticker': 'MARA'}
+    db.get_llm_prompt.return_value = {'prompt_text': 'existing text'}
+    db.upsert_llm_prompt.return_value = None
+    with app.test_client() as client:
+        with patch('routes.suggestions.get_db', return_value=db), \
+             patch('routes.suggestions._get_valid_metrics', return_value=frozenset({'production_btc'})):
+            resp = client.post('/api/suggestions/MARA/apply', json={
+                'target': 'metric_prompt',
+                'metric': 'production_btc',
+                'append_text': 'Look for patterns like: "mined [N] BTC"',
+            })
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body['success'] is True
+    assert 'new_prompt_preview' in body['data']
+    assert 'Look for patterns like' in body['data']['new_prompt_preview']
+
+
 def test_apply_missing_append_text_400():
     """POST apply with empty append_text returns 400."""
     app = _make_suggestions_app()

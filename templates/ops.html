@@ -1720,6 +1720,10 @@ tr.is-reviewed td { opacity: 0.65; }
       <span id="pipeline-preflight-extracted"></span>
       <span id="pipeline-preflight-llm"></span>
       <span id="pipeline-preflight-keywords"></span>
+      <div id="pipeline-preflight-dead-letter" style="display:none;margin-top:0.3rem;color:#f97316">
+        <span id="pipeline-preflight-dead-letter-msg"></span>
+        &nbsp;<button class="btn btn-xs btn-secondary" onclick="resetExtractionAttempts(null)" style="font-size:0.7rem">Reset all attempt counters</button>
+      </div>
     </div>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
       <button class="btn btn-sm btn-secondary" onclick="loadPipelinePreflight()" style="font-size:0.75rem">Check Readiness</button>
@@ -2023,6 +2027,16 @@ tr.is-reviewed td { opacity: 0.65; }
           Run gap-fill after extraction
           <span style="font-size:0.72rem;color:var(--theme-text-muted)">(infers missing monthly rows from the quarterly totals just extracted)</span>
         </label>
+      </div>
+
+      <!-- Queue all for review -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">
+          <input id="extract-force-review" type="checkbox"> Queue all for review
+        </label>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">
+          Route every extracted result to the Review queue regardless of confidence. Use to audit whether extraction is working correctly.
+        </span>
       </div>
 
       <!-- Sample mode -->
@@ -2745,9 +2759,11 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Bulk controls -->
-    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
       <button id="rv-bulk-finalize" class="btn btn-sm btn-primary" disabled onclick="bulkFinalize()">Finalize Selected</button>
-      <span style="font-size:0.75rem;color:var(--theme-text-muted)">J/K navigate &bull; A approve &bull; R reject &bull; Gen generates regex from snippet</span>
+      <button id="rv-promote-btn" class="btn btn-sm btn-outline-secondary" onclick="promoteDataPointsToReview()" title="Copy accepted data_points into review queue for inspection">Load extracted for review</button>
+      <span id="rv-promote-status" style="font-size:0.75rem;color:var(--theme-text-muted)"></span>
+      <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:auto">J/K navigate &bull; A approve &bull; R reject &bull; Gen generates regex from snippet</span>
     </div>
 
     <div style="overflow-x:auto">
@@ -3853,6 +3869,7 @@ async function startExtractionRun() {
   try {
     const _granEl = document.querySelector('input[name="expected_granularity"]:checked');
     const expectedGranularity = _granEl ? _granEl.value : 'monthly';
+    const forceReview = !!document.getElementById('extract-force-review')?.checked;
     const resp = await fetch('/api/operations/interpret', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3867,6 +3884,7 @@ async function startExtractionRun() {
         extract_workers: extractWorkers,
         sample: sampleN || null,
         expected_granularity: expectedGranularity,
+        force_review: forceReview,
       }),
     });
     const data = await resp.json();
@@ -4638,6 +4656,13 @@ function renderCompanies() {
           + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
           +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerBackfill(this.getAttribute(\'data-ticker\'))">Backfill EDGAR</button>'
           + '<span id="backfill-msg-' + escapeAttr(c.ticker) + '" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>'
+          + '</div>'
+          + '<div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-top:0.35rem">'
+          + '<span style="font-size:0.72rem;color:var(--theme-text-muted)">Extraction attempts:</span>'
+          + '<button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:1px 7px"'
+          +   ' data-ticker="' + escapeAttr(c.ticker) + '" onclick="resetExtractionAttempts(this.getAttribute(\'data-ticker\'))"'
+          +   ' title="Zero extraction_attempts for pending/failed reports so they are picked up by the next extraction run">Reset attempt counters</button>'
+          + '<span style="font-size:0.72rem;color:var(--theme-text-muted)">— unblocks reports silently skipped after 5 failures</span>'
           + '</div>'
         );
       }
@@ -6078,6 +6103,32 @@ let _reviewItems = [];
 let _reviewIdx = -1;
 let _reviewExpandedIdx = -1;
 let _reviewDocsCache = {};
+
+async function promoteDataPointsToReview() {
+  const btn = document.getElementById('rv-promote-btn');
+  const statusEl = document.getElementById('rv-promote-status');
+  const ticker = (document.getElementById('rv-ticker')?.value || '').trim() || null;
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Promoting...';
+  try {
+    const body = {};
+    if (ticker) body.ticker = ticker;
+    const resp = await fetch('/api/operations/promote-to-review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) throw new Error(data.error?.message || ('HTTP ' + resp.status));
+    const n = data.data.promoted;
+    if (statusEl) statusEl.textContent = n + ' row' + (n === 1 ? '' : 's') + ' queued';
+    loadReview();
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Error: ' + String(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 async function loadReview() {
   _reviewLoaded = true;
@@ -8529,6 +8580,31 @@ async function loadPipelinePreflight() {
     if (kwEl) kwEl.innerHTML = d.keyword_count + ' keywords configured';
     if (d.pending_report_count === 0 && panel) {
       panel.innerHTML += '<div style="color:#ff9800;margin-top:0.25rem">0 pending reports — check Force re-extract to re-run LLM on already-extracted reports.</div>';
+    }
+    var dlEl = document.getElementById('pipeline-preflight-dead-letter');
+    var dlMsg = document.getElementById('pipeline-preflight-dead-letter-msg');
+    if (dlEl && dlMsg && d.dead_letter_count > 0) {
+      dlMsg.textContent = d.dead_letter_count + ' report' + (d.dead_letter_count > 1 ? 's' : '') + ' blocked by attempt cap (max 5 failures) — invisible to normal extraction runs.';
+      dlEl.style.display = '';
+    }
+  } catch (_e) {}
+}
+
+async function resetExtractionAttempts(ticker) {
+  const label = ticker || 'all companies';
+  const body = ticker ? {ticker} : {};
+  try {
+    const resp = await fetch('/api/pipeline/reset-attempts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await resp.json();
+    if (d.success) {
+      const dlEl = document.getElementById('pipeline-preflight-dead-letter');
+      if (dlEl) dlEl.style.display = 'none';
+      const msg = document.getElementById('pipeline-msg');
+      if (msg) msg.textContent = 'Reset ' + (d.data.rows_updated || 0) + ' attempt counters for ' + label + '. Re-run Check Readiness.';
     }
   } catch (_e) {}
 }

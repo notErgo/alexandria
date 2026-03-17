@@ -1477,6 +1477,7 @@ def pipeline_preflight():
         extracted_count = conn.execute(
             "SELECT COUNT(*) FROM reports WHERE extraction_status = 'done'"
         ).fetchone()[0] or 0
+    dead_letter_count = db.get_dead_letter_count()
 
     try:
         from infra.keyword_service import get_all_active_rows as _get_kw_rows
@@ -1504,6 +1505,7 @@ def pipeline_preflight():
     return jsonify({'success': True, 'data': {
         'pending_report_count': int(pending_count),
         'already_extracted_count': int(extracted_count),
+        'dead_letter_count': int(dead_letter_count),
         'llm_available': llm_available,
         'llm_backend': LLM_BACKEND,
         'ollama_model': ollama_model,
@@ -1511,6 +1513,39 @@ def pipeline_preflight():
         'companies_targeted': companies_targeted,
         'scraper_mode_skip_count': scraper_mode_skip_count,
     }})
+
+
+@bp.route('/api/pipeline/reset-attempts', methods=['POST'])
+def reset_extraction_attempts():
+    """Zero extraction_attempts for pending/failed/dead_letter reports so they are
+    eligible for extraction again.
+
+    Body (JSON):
+        ticker (str, optional): limit reset to one company; omit to reset all.
+
+    Returns count of rows updated.
+    """
+    from app_globals import get_db
+    db = get_db()
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper() or None
+
+    try:
+        if ticker:
+            company = db.get_company(ticker)
+            if company is None:
+                return jsonify({'success': False, 'error': {'code': 'TICKER_NOT_FOUND'}}), 404
+            updated = db.reset_extraction_attempts(ticker)
+        else:
+            companies = db.list_companies(active_only=False)
+            updated = sum(db.reset_extraction_attempts(c['ticker']) for c in companies)
+
+        log.info('event=reset_extraction_attempts ticker=%s rows_updated=%d',
+                 ticker or 'ALL', updated)
+        return jsonify({'success': True, 'data': {'ticker': ticker, 'rows_updated': updated}})
+    except Exception:
+        log.error('Error resetting extraction attempts', exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
 @bp.route('/api/pipeline/overnight/start', methods=['POST'])

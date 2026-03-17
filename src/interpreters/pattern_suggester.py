@@ -172,10 +172,13 @@ def _cluster_patterns(hits: list) -> list:
 
     suggestions = []
     for (metric, norm_pattern), grp in groups.items():
-        text_window = max(grp['text_windows'], key=len) if grp['text_windows'] else ''
+        text_windows_deduped = list(dict.fromkeys(grp['text_windows']))
+        text_window = max(text_windows_deduped, key=len) if text_windows_deduped else ''
+        examples = text_windows_deduped[:5]
         frequency = len(grp['text_windows'])
         report_count = len(grp['report_ids'])
         sid = _pattern_id(metric, norm_pattern)
+        example_lines = '\n'.join(f'  - "{w[:120]}"' for w in examples[:3])
         suggestions.append({
             'id': sid,
             'metric': metric,
@@ -183,13 +186,14 @@ def _cluster_patterns(hits: list) -> list:
             'pattern_type': grp['pattern_type'],
             'text_window': text_window,
             'normalized_pattern': norm_pattern,
+            'examples': examples,
             'frequency': frequency,
             'report_count': report_count,
             'suggested_hint_addition': (
                 f'Pattern observed for {metric}: "{text_window[:80]}"'
             ),
             'suggested_prompt_addition': (
-                f'Look for patterns like: "{norm_pattern}"'
+                f'Look for {metric} values near phrases like:\n{example_lines}'
             ),
         })
 
