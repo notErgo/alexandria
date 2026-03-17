@@ -1278,6 +1278,36 @@ def derive_balance_change():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@bp.route('/api/operations/derive-sales-btc', methods=['POST'])
+def derive_sales_btc_route():
+    """POST /api/operations/derive-sales-btc
+
+    Calculates missing sales_btc as prev_holdings + production - curr_holdings
+    from analyst-finalized holdings_btc and production_btc values.
+
+    Body: { "ticker": "HIVE", "dry_run": true, "overwrite": false }
+    Returns: { "derived": N, "skipped": N, "rows": [...] }
+    """
+    from app_globals import get_db as _get_db
+    from interpreters.gap_fill import derive_sales_btc
+
+    body = request.get_json(silent=True) or {}
+    ticker = (body.get('ticker') or '').strip().upper()
+    dry_run = bool(body.get('dry_run', True))
+    overwrite = bool(body.get('overwrite', False))
+
+    if not ticker:
+        return jsonify({'error': 'ticker is required'}), 400
+
+    try:
+        db = _get_db()
+        result = derive_sales_btc(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
+        return jsonify(result)
+    except Exception:
+        log.error('event=derive_sales_btc_error ticker=%s', ticker, exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @bp.route('/api/db/export')
 def db_export():
     """Copy the live SQLite database to ~/Downloads and stream it back to the browser.

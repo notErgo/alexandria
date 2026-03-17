@@ -1806,7 +1806,7 @@ async function doExtract() {
   const customPrompt = (customPromptEl && customPromptPanel && customPromptPanel.style.display !== 'none')
     ? customPromptEl.value.trim() : '';
   const btn = document.getElementById('extract-btn');
-  const statusEl = document.getElementById('miner-extract-status');
+  const statusEl = document.getElementById('extract-status');
   btn.disabled = true;
   statusEl.textContent = 'Starting…';
   try {
@@ -2113,6 +2113,68 @@ async function purgeAllFinal() {
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
     statusEl.style.color = 'var(--theme-danger)';
+  }
+}
+
+async function previewSalesBtcDerive() {
+  const statusEl = document.getElementById('sales-derive-status');
+  const previewEl = document.getElementById('sales-derive-preview');
+  const applyBtn = document.getElementById('apply-sales-derive-btn');
+  statusEl.textContent = 'Loading preview...';
+  previewEl.style.display = 'none';
+  applyBtn.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/operations/derive-sales-btc', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker: _ticker, dry_run: true}),
+    });
+    const data = await res.json();
+    const tbody = document.getElementById('sales-derive-tbody');
+    tbody.innerHTML = '';
+    data.rows.forEach(r => {
+      const tr = document.createElement('tr');
+      const isDerived = r.status === 'would_derive';
+      tr.innerHTML = `
+        <td>${r.period || ''}</td>
+        <td>${r.prev_holdings != null ? r.prev_holdings.toFixed(4) : '&mdash;'}</td>
+        <td>${r.production != null ? r.production.toFixed(4) : '&mdash;'}</td>
+        <td>${r.curr_holdings != null ? r.curr_holdings.toFixed(4) : '&mdash;'}</td>
+        <td>${isDerived ? r.value.toFixed(4) : '&mdash;'}</td>
+        <td>${r.status}${r.reason ? ` (${r.reason})` : ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    const wouldDerive = data.rows.filter(r => r.status === 'would_derive').length;
+    statusEl.textContent = `${wouldDerive} period(s) would be derived, ${data.skipped} skipped.`;
+    previewEl.style.display = wouldDerive > 0 ? '' : 'none';
+    applyBtn.style.display = wouldDerive > 0 ? '' : 'none';
+  } catch (e) {
+    statusEl.textContent = 'Preview failed.';
+  }
+}
+
+async function applySalesBtcDerive() {
+  const statusEl = document.getElementById('sales-derive-status');
+  const applyBtn = document.getElementById('apply-sales-derive-btn');
+  statusEl.textContent = 'Applying...';
+  applyBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/operations/derive-sales-btc', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker: _ticker, dry_run: false}),
+    });
+    const data = await res.json();
+    statusEl.textContent = `Done: ${data.derived} derived, ${data.skipped} skipped.`;
+    applyBtn.style.display = 'none';
+    document.getElementById('sales-derive-preview').style.display = 'none';
+    loadInterpretData(_ticker);
+  } catch (e) {
+    statusEl.textContent = 'Apply failed.';
+    applyBtn.disabled = false;
   }
 }
 

@@ -392,3 +392,65 @@ class TestDeriveNetBalanceChange:
         nbc = [f for f in finals if f['metric'] == 'net_btc_balance_change' and f['period'] == '2023-02-01']
         assert abs(nbc[0]['value'] - 999) < 0.01
         assert result['derived'] == 0
+
+
+# ── Test: derive_sales_btc ───────────────────────────────────────────────────
+
+class TestDeriveSalesBtc:
+    """derive_sales_btc: prev_holdings + production - curr_holdings."""
+
+    def _final(self, db, ticker, period, metric, value):
+        db.upsert_final_data_point(ticker, period, metric, value, unit='BTC', confidence=1.0)
+
+    def test_derives_basic_case(self, db):
+        # prev_holdings=10000, production=750, curr_holdings=10500
+        # expected sales = 10000 + 750 - 10500 = 250
+        self._final(db, 'HIVE', '2024-01-01', 'holdings_btc', 10000)
+        self._final(db, 'HIVE', '2024-02-01', 'holdings_btc', 10500)
+        self._final(db, 'HIVE', '2024-02-01', 'production_btc', 750)
+        from interpreters.gap_fill import derive_sales_btc
+        result = derive_sales_btc('HIVE', db)
+        assert result['derived'] == 1
+        rows = {r['period']: r for r in result['rows'] if r.get('status') == 'derived'}
+        assert abs(rows['2024-02-01']['value'] - 250) < 0.01
+
+    def test_skips_missing_prev_holdings(self, db):
+        # No holdings for Jan — cannot derive Feb
+        self._final(db, 'HIVE', '2024-02-01', 'holdings_btc', 10500)
+        self._final(db, 'HIVE', '2024-02-01', 'production_btc', 750)
+        from interpreters.gap_fill import derive_sales_btc
+        result = derive_sales_btc('HIVE', db)
+        assert result['derived'] == 0
+
+    def test_skips_negative_result(self, db):
+        # production=100, holdings went UP by 500 -> sales would be -400 -> skip
+        self._final(db, 'HIVE', '2024-01-01', 'holdings_btc', 10000)
+        self._final(db, 'HIVE', '2024-02-01', 'holdings_btc', 10500)
+        self._final(db, 'HIVE', '2024-02-01', 'production_btc', 100)
+        from interpreters.gap_fill import derive_sales_btc
+        result = derive_sales_btc('HIVE', db)
+        skipped = [r for r in result['rows'] if r.get('reason') == 'negative_value']
+        assert len(skipped) == 1
+        assert result['derived'] == 0
+
+    def test_dry_run_does_not_write(self, db):
+        self._final(db, 'HIVE', '2024-01-01', 'holdings_btc', 10000)
+        self._final(db, 'HIVE', '2024-02-01', 'holdings_btc', 10500)
+        self._final(db, 'HIVE', '2024-02-01', 'production_btc', 750)
+        from interpreters.gap_fill import derive_sales_btc
+        result = derive_sales_btc('HIVE', db, dry_run=True)
+        assert result['derived'] == 0
+        finals = db.get_final_data_points('HIVE')
+        assert not any(f['metric'] == 'sales_btc' for f in finals)
+
+    def test_does_not_overwrite_existing(self, db):
+        self._final(db, 'HIVE', '2024-01-01', 'holdings_btc', 10000)
+        self._final(db, 'HIVE', '2024-02-01', 'holdings_btc', 10500)
+        self._final(db, 'HIVE', '2024-02-01', 'production_btc', 750)
+        self._final(db, 'HIVE', '2024-02-01', 'sales_btc', 999)  # existing
+        from interpreters.gap_fill import derive_sales_btc
+        result = derive_sales_btc('HIVE', db, overwrite=False)
+        finals = db.get_final_data_points('HIVE')
+        sales = [f for f in finals if f['metric'] == 'sales_btc' and f['period'] == '2024-02-01']
+        assert abs(sales[0]['value'] - 999) < 0.01
+        assert result['derived'] == 0

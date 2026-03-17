@@ -653,7 +653,7 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   resize: vertical;
   min-height: 60px;
 }
-.suggestion-card {
+.sug-card {
   background: var(--theme-bg-secondary);
   border: 1px solid var(--theme-border);
   border-radius: 6px;
@@ -663,20 +663,38 @@ td.row-gap .td-period { color: var(--theme-text-muted); }
   flex-direction: column;
   gap: 0.25rem;
 }
-.suggestion-card .sug-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
+.sug-card.sug-found {
+  border-left: 3px solid var(--theme-success, #16a34a);
 }
-.suggestion-card .sug-rationale {
-  color: var(--theme-text-secondary);
+.sug-card.sug-missed {
+  border-left: 3px solid var(--theme-warning, #d97706);
+}
+.sug-pattern {
+  font-family: monospace;
   font-size: 0.78rem;
+  background: var(--theme-bg-input);
+  border-radius: 3px;
+  padding: 0.15rem 0.4rem;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
-.suggestion-card .sug-actions {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.25rem;
+.sug-apply-area {
+  display: none;
+  margin-top: 0.35rem;
+  border-top: 1px solid var(--theme-border);
+  padding-top: 0.35rem;
+}
+.sug-apply-area textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--theme-bg-input);
+  border: 1px solid var(--theme-border);
+  border-radius: 4px;
+  color: var(--theme-text-primary);
+  font-size: 0.78rem;
+  padding: 0.25rem 0.5rem;
+  resize: vertical;
+  rows: 3;
 }
 #staging-table {
   width: 100%;
@@ -1044,6 +1062,21 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
+    <!-- Pattern suggestions panel (populated after extraction) -->
+    <div id="suggestion-panel" style="display:none;margin-top:0.75rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+        <span class="interp-section-title" style="margin:0">Pattern Suggestions</span>
+        <span id="suggestion-count-badge" class="badge" style="font-size:0.72rem"></span>
+        <button class="btn btn-xs btn-secondary" style="margin-left:auto" onclick="closeSuggestionPanel()">Dismiss</button>
+      </div>
+      <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">
+        Patterns observed in extraction results. Use <strong>+ Ticker hint</strong> to add context
+        about this company, or <strong>+ Metric prompt</strong> to refine what the LLM looks for.
+        Saves are appended to the existing prompt — re-run extraction after applying.
+      </div>
+      <div id="suggestion-list" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+    </div>
+
     <!-- Projection & Export config -->
     <div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
       <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
@@ -1134,6 +1167,36 @@ tr.is-reviewed td { opacity: 0.65; }
           <tbody id="finalized-tbody">
             <tr><td colspan="7" class="md-table-empty">No finalized values.</td></tr>
           </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Auto-calculate sales BTC -->
+    <div style="margin-top:1rem">
+      <div class="interp-section-title">Auto-Calculate Sales BTC</div>
+      <div style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
+        Derives <strong>sales_btc</strong> from finalized values using:
+        prev_holdings + production &minus; curr_holdings.
+        Requires both <code>holdings_btc</code> and <code>production_btc</code> to be finalized
+        for the period, and <code>holdings_btc</code> finalized for the prior month.
+        Skips periods where the result would be negative.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="previewSalesBtcDerive()">Preview</button>
+        <button class="btn btn-primary btn-sm" id="apply-sales-derive-btn"
+                style="display:none" onclick="applySalesBtcDerive()">Apply</button>
+        <span id="sales-derive-status"
+              style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="sales-derive-preview" style="display:none;margin-top:0.5rem;overflow-x:auto">
+        <table id="sales-derive-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Prev Holdings</th><th>+ Production</th>
+              <th>- Curr Holdings</th><th>= Sales BTC</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="sales-derive-tbody"></tbody>
         </table>
       </div>
     </div>

@@ -231,3 +231,44 @@ def test_parse_html_real_sections_preserved():
     item_sections = [s for s in result.sections if s.name != 'full_text']
     assert len(item_sections) >= 1
     assert any(len(s.text) > 300 for s in item_sections)
+
+
+# ── convert_tables_to_pipe_text: column alignment ────────────────────────────
+
+def test_convert_tables_empty_cell_preserved():
+    """Empty cells must be kept so column positions are correct.
+
+    Jan cell is empty, Feb = 750.  Without column preservation the output
+    is 'Production | 750', which the LLM wrongly attributes to Jan.
+    With preservation it is 'Production |  | 750', unambiguously Feb.
+    """
+    from bs4 import BeautifulSoup
+    from parsers.annual_report_parser import convert_tables_to_pipe_text
+    html = """<table>
+      <tr><th>Metric</th><th>January</th><th>February</th></tr>
+      <tr><td>Production</td><td></td><td>750</td></tr>
+    </table>"""
+    soup = BeautifulSoup(html, 'lxml')
+    convert_tables_to_pipe_text(soup)
+    text = soup.get_text(separator='\n', strip=True)
+    # The Production row must preserve the empty Jan cell
+    assert 'Production |  | 750' in text
+
+
+def test_convert_tables_fully_blank_row_skipped():
+    """Rows where every cell is empty are dropped."""
+    from bs4 import BeautifulSoup
+    from parsers.annual_report_parser import convert_tables_to_pipe_text
+    html = """<table>
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td></td><td></td></tr>
+      <tr><td>Holdings</td><td>5000</td></tr>
+    </table>"""
+    soup = BeautifulSoup(html, 'lxml')
+    convert_tables_to_pipe_text(soup)
+    text = soup.get_text(separator='\n', strip=True)
+    # Holdings row present, fully blank row absent
+    assert 'Holdings | 5000' in text
+    # Blank row should not produce a line with only ' | '
+    lines = [l.strip() for l in text.splitlines()]
+    assert ' | ' not in lines  # no row that is *only* a pipe separator

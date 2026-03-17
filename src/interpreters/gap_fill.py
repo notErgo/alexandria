@@ -560,3 +560,118 @@ def derive_net_balance_change(
         ticker, derived, skipped, dry_run,
     )
     return {'derived': derived, 'skipped': skipped, 'rows': rows}
+
+
+def _prev_month(period: str) -> str:
+    """Return the YYYY-MM-01 string for the month preceding ``period``."""
+    y, m = int(period[:4]), int(period[5:7])
+    if m == 1:
+        return f"{y - 1}-12-01"
+    return f"{y}-{m - 1:02d}-01"
+
+
+def derive_sales_btc(
+    ticker: str,
+    db,
+    dry_run: bool = False,
+    overwrite: bool = False,
+) -> dict:
+    """Compute sales_btc = prev_holdings + production - curr_holdings.
+
+    Reads holdings_btc and production_btc from final_data_points
+    (analyst-accepted values). Only processes monthly periods (YYYY-MM-01).
+    Skips periods where the formula yields a negative value.
+
+    Args:
+        ticker: Company ticker symbol.
+        db: MinerDB instance.
+        dry_run: If True, compute but do not write.
+        overwrite: If False (default), skip periods that already have a
+            finalized sales_btc value (preserves analyst edits).
+
+    Returns:
+        dict with keys 'derived', 'skipped', 'rows'.
+    """
+    import re as _re
+    ticker = ticker.upper()
+    monthly_re = _re.compile(r'^\d{4}-\d{2}-01$')
+
+    finals = db.get_final_data_points(ticker)
+
+    holdings_by_period = {
+        f['period']: f['value']
+        for f in finals
+        if f.get('metric') == 'holdings_btc' and monthly_re.match(f.get('period', ''))
+    }
+    production_by_period = {
+        f['period']: f['value']
+        for f in finals
+        if f.get('metric') == 'production_btc' and monthly_re.match(f.get('period', ''))
+    }
+    existing_sales = {
+        f['period']
+        for f in finals
+        if f.get('metric') == 'sales_btc'
+    }
+
+    periods = sorted(production_by_period.keys())
+
+    derived = 0
+    skipped = 0
+    rows = []
+
+    for period in periods:
+        prev_period = _prev_month(period)
+        prev_h = holdings_by_period.get(prev_period)
+        curr_h = holdings_by_period.get(period)
+        prod = production_by_period[period]
+
+        if prev_h is None or curr_h is None:
+            skipped += 1
+            rows.append({'status': 'skipped', 'reason': 'missing_holdings',
+                         'ticker': ticker, 'period': period})
+            continue
+
+        value = prev_h + prod - curr_h
+
+        if value < 0:
+            skipped += 1
+            rows.append({'status': 'skipped', 'reason': 'negative_value',
+                         'ticker': ticker, 'period': period, 'value': value,
+                         'prev_holdings': prev_h, 'production': prod, 'curr_holdings': curr_h})
+            continue
+
+        if not overwrite and period in existing_sales:
+            skipped += 1
+            rows.append({'status': 'skipped', 'reason': 'already_exists',
+                         'ticker': ticker, 'period': period, 'value': value})
+            continue
+
+        rows.append({
+            'status': 'would_derive' if dry_run else 'derived',
+            'ticker': ticker, 'period': period, 'value': value,
+            'prev_period': prev_period,
+            'prev_holdings': prev_h, 'production': prod, 'curr_holdings': curr_h,
+        })
+
+        if not dry_run:
+            try:
+                db.upsert_final_data_point(
+                    ticker=ticker, period=period, metric='sales_btc',
+                    value=value, unit='BTC', confidence=1.0,
+                    source_ref='derived:holdings+production',
+                    analyst_note='auto_calculated',
+                    time_grain='monthly',
+                )
+                derived += 1
+            except Exception:
+                log.exception(
+                    "derive_sales_btc_write_error ticker=%s period=%s", ticker, period,
+                )
+                rows[-1]['status'] = 'error'
+
+    log.info(
+        "derive_sales_btc_end ticker=%s derived=%d skipped=%d dry_run=%s",
+        ticker, derived, skipped, dry_run,
+    )
+    return {'derived': derived, 'skipped': skipped, 'rows': rows}

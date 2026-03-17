@@ -49,18 +49,22 @@ def convert_tables_to_pipe_text(soup) -> None:
     """Replace HTML <table> elements with pipe-delimited plain text rows, in-place.
 
     Converts each <tr> to "cell1 | cell2 | cell3" so label-value associations
-    are preserved after get_text() flattening.  Processes tables in document
-    order; nested tables are absorbed naturally because find_all('tr') is
-    recursive — the outer conversion captures inner content before the inner
-    table tag itself is processed.
+    are preserved after get_text() flattening.  Empty cells are kept as empty
+    strings so column positions are preserved — this lets the LLM correctly
+    map values to column headers (e.g. a value in the Feb column is not
+    mis-attributed to Jan because the Jan cell was dropped).
+
+    Completely empty rows (all cells blank) are skipped.
+    Processes tables in document order; nested tables are absorbed naturally
+    because find_all('tr') is recursive.
     """
     for table in soup.find_all('table'):
         rows = []
         for row in table.find_all('tr'):
             cells = [cell.get_text(' ', strip=True) for cell in row.find_all(['td', 'th'])]
-            non_empty = [c for c in cells if c]
-            if non_empty:
-                rows.append(' | '.join(non_empty))
+            if any(cells):  # skip rows where no cells exist at all
+                if any(c for c in cells):  # skip completely blank rows
+                    rows.append(' | '.join(cells))
         if rows:
             table.replace_with('\n' + '\n'.join(rows) + '\n')
 
