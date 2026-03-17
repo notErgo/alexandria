@@ -366,7 +366,9 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
         # Strip share/print widget that prepends nav noise to extracted text.
         for junk in hive_section.select('.post-menu'):
             junk.decompose()
-        text = _re.sub(r'\s+', ' ', hive_section.get_text(separator=' ', strip=True)).strip()
+        text = hive_section.get_text(separator='\n', strip=True)
+        text = _re.sub(r'[^\S\n]+', ' ', text)
+        text = _re.sub(r'\n{3,}', '\n\n', text).strip()
         # section#news is a site-specific selector for hivedigitaltechnologies.com —
         # no generic minimum-length guard needed here.
         if text:
@@ -377,7 +379,9 @@ def html_to_plain(html: str | None, separator: str = "\n") -> str:
     # so extracting it avoids period bleed without any site-specific detection.
     article_node = soup.find('article')
     if article_node is not None:
-        text = _re.sub(r'\s+', ' ', article_node.get_text(separator=' ', strip=True)).strip()
+        text = article_node.get_text(separator='\n', strip=True)
+        text = _re.sub(r'[^\S\n]+', ' ', text)
+        text = _re.sub(r'\n{3,}', '\n\n', text).strip()
         if len(text) >= _ARTICLE_BODY_MIN_CHARS:
             return text
     return plain

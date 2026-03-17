@@ -217,7 +217,7 @@ const ReviewPanel = (function () {
       html += _esc(rawText.slice(pos, region.start));
       const attrs = [
         'class="doc-hl ' + region.cssClass + '"',
-        'style="background:' + region.color + '26;border-bottom:2px solid ' + region.color + '"',
+        'style="background:' + region.color + '40;border-bottom:2px solid ' + region.color + '"',
         'title="' + _esc(region.label) + '"',
       ];
       if (region.evidenceIndex != null) attrs.push('data-evidence-index="' + region.evidenceIndex + '"');

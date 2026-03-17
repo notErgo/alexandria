@@ -395,14 +395,14 @@ function cancelInlineEdit() {
 }
 
 async function flushInlineEdit() {
-  if (!_editingCell) return;
+  if (!_editingCell) return true;
   const input = _editingCell.td.querySelector('input');
   const val = input ? parseFloat(input.value) : NaN;
   if (isNaN(val) || val < 0) {
     cancelInlineEdit();
-    return;
+    return true;
   }
-  const { period, metric } = _editingCell;
+  const { period, metric, td, original } = _editingCell;
   _editingCell = null;
   try {
     const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/finalize`, {
@@ -418,18 +418,22 @@ async function flushInlineEdit() {
         row.metrics[metric].value = val;
         row.metrics[metric].is_finalized = true;
       }
-      showToast('Value finalized');
+      return true;
     } else {
-      showToast((body.error && body.error.message) || 'Finalize failed', true);
+      showToast((body.error && body.error.message) || 'Save failed', true);
+      return false;
     }
   } catch (e) {
-    showToast('Finalize failed', true);
+    showToast('Save failed', true);
+    return false;
   }
 }
 
 async function syncEdits() {
-  await flushInlineEdit();
-  showToast('All edits saved to database');
+  const ok = await flushInlineEdit();
+  if (ok) {
+    showToast('All edits saved to database');
+  }
 }
 
 async function acceptRow(period) {

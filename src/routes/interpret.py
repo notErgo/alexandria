@@ -188,6 +188,7 @@ def finalize(ticker: str):
         }}), 400
 
     count = 0
+    failed = 0
     for entry in values:
         try:
             db.upsert_final_data_point(
@@ -203,8 +204,14 @@ def finalize(ticker: str):
             count += 1
         except Exception:
             log.error("upsert_final_data_point failed ticker=%s entry=%r", ticker_upper, entry, exc_info=True)
+            failed += 1
 
-    log.info("event=finalize_complete ticker=%s count=%d", ticker_upper, count)
+    log.info("event=finalize_complete ticker=%s count=%d failed=%d", ticker_upper, count, failed)
+    if failed:
+        return jsonify({'success': False, 'error': {
+            'code': 'DB_WRITE_FAILED',
+            'message': f'{failed} of {count + failed} values could not be saved (database may be busy)',
+        }}), 500
     return jsonify({'success': True, 'data': {'count': count}})
 
 

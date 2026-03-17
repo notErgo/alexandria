@@ -218,6 +218,44 @@ class TestHtmlToPlain:
         assert "Bitdeer Q3 2025 Financial Results" not in result, "sidebar 2025 bleed must be excluded"
         assert "© 2026 Bitdeer" not in result, "footer copyright bleed must be excluded"
 
+    def test_article_table_rows_preserved_on_separate_lines(self):
+        """Tables inside <article> must produce newline-separated pipe rows.
+
+        Previously the article path used separator=' ' + whitespace collapse, which
+        squashed all pipe rows onto a single line.  The fix uses separator='\n'
+        with horizontal-only whitespace collapse so row boundaries survive.
+        """
+        from infra.text_utils import html_to_plain
+        html = """<html><body>
+          <nav>Skip to navigation</nav>
+          <article>
+            <p>Bitfarms Provides April 2022 Production Update.</p>
+            <p>Bitfarms Ltd. produced 411 BTC during April 2022. Deployed hashrate
+            reached 3.0 EH/s as of April 30, 2022. Total BTC holdings as of April 30,
+            2022: 4,300 BTC. The company continued to expand its operations in Paraguay
+            and diversify across multiple energy-efficient mining farms globally.</p>
+            <table>
+              <thead><tr><th>Month</th><th>BTC Earned</th><th>Hashrate</th></tr></thead>
+              <tbody>
+                <tr><td>April</td><td>269</td><td>19.9 EH/s</td></tr>
+                <tr><td>March</td><td>241</td><td>18.5 EH/s</td></tr>
+              </tbody>
+            </table>
+          </article>
+          <footer>Copyright 2022 Bitfarms</footer>
+        </body></html>"""
+        result = html_to_plain(html)
+        # Each pipe row must appear on its own line (not all merged into one)
+        lines = result.splitlines()
+        rows_with_pipe = [l for l in lines if '|' in l]
+        assert len(rows_with_pipe) >= 2, (
+            "Expected at least 2 pipe-row lines for the 2-row table, got: " + repr(result)
+        )
+        # Key table values must be findable
+        assert "269" in result
+        assert "19.9 EH/s" in result
+        assert "241" in result
+
     def test_article_tag_not_used_when_too_short(self):
         """If <article> exists but is tiny (stub/preview), fall back to full-page text."""
         from infra.text_utils import html_to_plain

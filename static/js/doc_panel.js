@@ -119,7 +119,7 @@ const DocPanel = (function () {
       html += escapeHtml(rawText.slice(pos, r.start));
       var titleAttr = escapeHtml(r.label);
       html += '<span class="doc-hl" style="background:' + r.color
-        + '28;border-bottom:2px solid ' + r.color + '" title="' + titleAttr + '">'
+        + '40;border-bottom:2px solid ' + r.color + '" title="' + titleAttr + '">'
         + escapeHtml(rawText.slice(r.start, r.end)) + '</span>';
       pos = r.end;
     }
