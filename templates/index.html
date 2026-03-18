@@ -155,7 +155,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title" data-spec-id="DE4.0"><span class="spec-id">4.0</span>Data Explorer</h1>
+<h1 class="page-title" data-spec-id="3.0" data-ui-id="3.0"><span class="spec-id">3.0</span>Data Explorer</h1>
 
 <!-- ── Pipeline status bar ─────────────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
@@ -165,7 +165,7 @@
 </div>
 
 <!-- ── Mode toggle ─────────────────────────────────────────────────────────── -->
-<div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap" data-spec-id="DE4.5">
+<div class="card" style="margin-bottom:1rem;padding:0.6rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap" data-spec-id="3.1" data-ui-id="3.1">
   <span style="font-size:0.8rem;font-weight:600;color:var(--theme-text-muted)">Mode:</span>
   <div class="mode-toggle">
     <button class="mode-btn active" id="mode-btn-datapoints" onclick="switchMode('datapoints')">Data Points</button>
@@ -180,8 +180,8 @@
 <div id="mode-a">
 
   <div class="card">
-    <form class="filter-form" id="filter-form" onsubmit="return false" data-spec-id="DE4.1">
-      <span class="spec-id">4.1</span>
+    <form class="filter-form" id="filter-form" onsubmit="return false" data-spec-id="3.2" data-ui-id="3.2">
+      <span class="spec-id">3.2</span>
       <div class="form-group">
         <label>Company</label>
         <select id="f-ticker" multiple size="4">
@@ -212,16 +212,16 @@
       <div class="form-group" style="justify-content:flex-end;flex-direction:row;gap:0.5rem;align-items:center">
         <span id="results-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
         <button class="btn btn-primary" onclick="fetchData()">Search</button>
-        <button class="btn btn-secondary" data-spec-id="DE4.3" onclick="exportCsv()">Export CSV</button>
+        <button class="btn btn-secondary" data-spec-id="3.4" data-ui-id="3.4" onclick="exportCsv()">Export CSV</button>
       </div>
     </form>
   </div>
 
   <div id="error-banner" class="error-banner" hidden></div>
 
-  <div class="card" data-spec-id="DE4.2">
+  <div class="card" data-spec-id="3.3" data-ui-id="3.3">
     <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">4.2</span>Data Points <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">3.3</span>Data Points <span class="source-badge source-badge-data">DATA</span>
     </div>
     <table id="results-table">
       <thead>
@@ -244,9 +244,9 @@
   </div>
 
   <!-- Lineage + doc panel (Mode A) -->
-  <div class="lineage-card card" data-spec-id="DE4.4">
+  <div class="lineage-card card" data-spec-id="3.5" data-ui-id="3.5">
     <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-      <span class="spec-id">4.4</span>Lineage <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">3.5</span>Lineage <span class="source-badge source-badge-data">DATA</span>
     </div>
     <div id="lineage-panel" style="font-size:0.82rem;color:var(--theme-text-muted)">Click a row to load provenance details.</div>
   </div>
@@ -328,9 +328,9 @@
   <div class="doc-browse-layout">
 
     <!-- Left: document list -->
-    <div class="doc-list-panel" data-spec-id="DE4.6">
+    <div class="doc-list-panel" data-spec-id="3.6" data-ui-id="3.6">
       <div class="doc-list-header">
-        <span><span class="spec-id" style="font-size:0.68rem">4.6</span>Documents <span class="source-badge source-badge-data">DATA</span></span>
+        <span><span class="spec-id" style="font-size:0.68rem">3.6</span>Documents <span class="source-badge source-badge-data">DATA</span></span>
         <span id="doc-list-count" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
       </div>
       <div class="doc-list-items" id="doc-list-items">
@@ -339,9 +339,9 @@
     </div>
 
     <!-- Right: document viewer -->
-    <div class="doc-viewer-panel" data-spec-id="DE4.7">
+    <div class="doc-viewer-panel" data-spec-id="3.7" data-ui-id="3.7">
       <div class="doc-viewer-header">
-        <span><span class="spec-id" style="font-size:0.68rem">4.7</span>Document Viewer <span class="source-badge source-badge-data">DATA</span></span>
+        <span><span class="spec-id" style="font-size:0.68rem">3.7</span>Document Viewer <span class="source-badge source-badge-data">DATA</span></span>
         <span id="doc-viewer-title" style="font-size:0.8rem;color:var(--theme-text-primary);font-weight:normal;text-transform:none;letter-spacing:0"></span>
       </div>
       <div class="doc-viewer-meta" id="doc-viewer-meta" style="display:none"></div>

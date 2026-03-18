@@ -41,8 +41,8 @@ const ReviewPanel = (function () {
       <div class="rp-actions" style="display:none">
         <input type="number" class="rp-corrected" placeholder="Override value (optional)" step="any">
         <input type="text" class="rp-reject-note" placeholder="Rejection note (required)">
-        <button class="rp-btn rp-btn-approve" data-spec-id="3.4">Approve</button>
-        <button class="rp-btn rp-btn-reject" data-spec-id="3.5">Reject</button>
+        <button class="rp-btn rp-btn-approve" data-spec-id="7.3.1">Approve</button>
+        <button class="rp-btn rp-btn-reject" data-spec-id="7.3.2">Reject</button>
       </div>
       <div class="rp-fill-form" style="display:none">
         <label class="rp-fill-label">Metric</label>
@@ -57,7 +57,7 @@ const ReviewPanel = (function () {
       <div class="rp-reprompt-bar" style="display:none">
         <span class="rp-hint">Highlight a value in the text below, select metric, click Re-extract:</span>
         <select class="rp-reprompt-metric"></select>
-        <button class="rp-btn rp-btn-reprompt" data-spec-id="3.6" disabled>Re-extract / LLM Reprompt</button>
+        <button class="rp-btn rp-btn-reprompt" data-spec-id="7.3.3" disabled>Re-extract / LLM Reprompt</button>
       </div>
       <label class="rp-toggle-row">
         <input type="checkbox" class="rp-keyword-toggle" checked>

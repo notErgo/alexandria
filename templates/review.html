@@ -104,7 +104,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 style="font-size:1.3rem;font-weight:600;margin:1rem 0 0.25rem" data-spec-id="R3.0"><span class="spec-id">3.0</span>Review Queue</h1>
+<h1 style="font-size:1.3rem;font-weight:600;margin:1rem 0 0.25rem" data-spec-id="7.0" data-ui-id="7.0"><span class="spec-id">7.0</span>Review Queue</h1>
 <p style="color:var(--theme-text-muted);font-size:0.85rem;margin:0">
   Extraction items requiring analyst review. Click a row to view the full document.
   <span class="kbd-hint"><kbd>J</kbd>/<kbd>K</kbd> navigate · <kbd>A</kbd> approve · <kbd>R</kbd> focus reject</span>
@@ -112,15 +112,15 @@
 
 <div class="review-layout">
   <!-- Left: item list -->
-  <div class="review-panel" data-spec-id="R3.2">
+  <div class="review-panel" data-spec-id="7.2" data-ui-id="7.2">
     <div class="panel-header">
-      <span class="spec-id">3.2</span>Pending Items <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">7.2</span>Pending Items <span class="source-badge source-badge-data">DATA</span>
       <span id="total-badge" style="font-size:0.75rem;background:var(--theme-bg-tertiary);padding:2px 8px;border-radius:10px;color:var(--theme-text-secondary)">—</span>
     </div>
 
-    <div data-spec-id="R3.1">
+    <div data-spec-id="7.2.1" data-ui-id="7.2.1">
       <div class="filter-row">
-        <span class="spec-id">3.1</span>
+        <span class="spec-id">7.2.1</span>
         <label>Status:</label>
         <select id="status-filter">
           <option value="PENDING">Pending</option>
@@ -144,7 +144,7 @@
     </div>
 
     <!-- Promote existing data_points into review queue -->
-    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem;padding:0.4rem 0">
+    <div data-spec-id="7.2.2" data-ui-id="7.2.2" style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem;padding:0.4rem 0">
       <button class="btn btn-sm btn-outline-secondary" id="btn-promote-review" title="Copy extracted data_points into review queue as PENDING for analyst inspection">
         Load extracted data for review
       </button>
@@ -157,12 +157,12 @@
     <!-- Bulk actions (shown when ≥1 checkbox checked) -->
     <div class="bulk-actions-row" id="bulk-actions-row">
       <span id="selected-count" style="font-weight:600"></span>
-      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="R3.7">Approve Selected</button>
+      <button class="btn btn-primary btn-sm" id="btn-bulk-approve" data-spec-id="7.2.3" data-ui-id="7.2.3">Approve Selected</button>
       <button class="btn btn-secondary btn-sm" id="btn-deselect-all">Deselect All</button>
       <span id="bulk-progress" style="color:var(--theme-text-muted)"></span>
     </div>
 
-    <table class="review-table" id="review-table">
+    <table class="review-table" id="review-table" data-spec-id="7.2.4" data-ui-id="7.2.4">
       <thead>
         <tr>
           <th style="width:28px"><input type="checkbox" id="select-all" title="Select all visible items"></th>
@@ -181,17 +181,17 @@
   </div>
 
   <!-- Right: document viewer (ReviewPanel) -->
-  <div class="review-panel" id="doc-panel" data-spec-id="R3.3">
-    <div class="panel-header" id="doc-panel-header"><span class="spec-id">3.3</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
-    <div style="display:none" data-spec-id="R3.4"></div>
-    <div style="display:none" data-spec-id="R3.5"></div>
-    <div style="display:none" data-spec-id="R3.6"></div>
+  <div class="review-panel" id="doc-panel" data-spec-id="7.3" data-ui-id="7.3">
+    <div class="panel-header" id="doc-panel-header"><span class="spec-id">7.3</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
+    <div style="display:none" data-spec-id="7.3.1" data-ui-id="7.3.1"></div>
+    <div style="display:none" data-spec-id="7.3.2" data-ui-id="7.3.2"></div>
+    <div style="display:none" data-spec-id="7.3.3" data-ui-id="7.3.3"></div>
     <div id="review-doc-panel"></div>
   </div>
 </div>
 
 <!-- Purge Final Data danger zone -->
-<details id="purge-details" style="margin-top:1.5rem">
+<details id="purge-details" data-spec-id="7.4" data-ui-id="7.4" style="margin-top:1.5rem">
   <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
     Purge Final Data
   </summary>
