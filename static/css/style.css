@@ -908,3 +908,74 @@ tr.row-projected .td-projected {
 .btn-sync:hover {
     background: #15664a;
 }
+
+/* ── CSV Paste Modal ─────────────────────────────────────────────────────── */
+.csv-paste-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.csv-paste-modal {
+    background: var(--theme-bg-secondary);
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    min-width: 520px;
+    max-width: 720px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.csv-paste-modal h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+    color: var(--theme-text-primary);
+}
+.csv-paste-modal textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--theme-bg-input);
+    border: 1px solid var(--theme-border);
+    border-radius: 4px;
+    color: var(--theme-text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    padding: 0.4rem 0.5rem;
+    resize: vertical;
+}
+.csv-paste-error {
+    background: rgba(239,68,68,0.12);
+    border: 1px solid var(--theme-danger);
+    border-radius: 4px;
+    color: var(--theme-danger);
+    font-size: 0.82rem;
+    padding: 0.35rem 0.6rem;
+    margin-top: 0.5rem;
+}
+.csv-paste-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+}
+.csv-paste-preview-table th,
+.csv-paste-preview-table td {
+    border: 1px solid var(--theme-border);
+    padding: 0.2rem 0.45rem;
+    text-align: right;
+}
+.csv-paste-preview-table th {
+    background: var(--theme-bg-input);
+    color: var(--theme-text-muted);
+    font-weight: 600;
+    text-align: center;
+}
+.csv-paste-preview-table td:first-child {
+    text-align: left;
+    font-weight: 600;
+    color: var(--theme-text-secondary);
+}

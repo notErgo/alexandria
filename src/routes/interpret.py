@@ -189,12 +189,15 @@ def finalize(ticker: str):
 
     count = 0
     failed = 0
+    dismissed = 0
     for entry in values:
+        period_str = str(entry['period'])
+        metric_str = str(entry['metric'])
         try:
             db.upsert_final_data_point(
                 ticker=ticker_upper,
-                period=str(entry['period']),
-                metric=str(entry['metric']),
+                period=period_str,
+                metric=metric_str,
                 value=float(entry['value']),
                 unit=str(entry.get('unit') or ''),
                 confidence=float(entry.get('confidence') or 1.0),
@@ -202,11 +205,12 @@ def finalize(ticker: str):
                 source_ref=entry.get('source_ref'),
             )
             count += 1
+            dismissed += db.dismiss_review_items_for_cell(ticker_upper, period_str, metric_str)
         except Exception:
             log.error("upsert_final_data_point failed ticker=%s entry=%r", ticker_upper, entry, exc_info=True)
             failed += 1
 
-    log.info("event=finalize_complete ticker=%s count=%d failed=%d", ticker_upper, count, failed)
+    log.info("event=finalize_complete ticker=%s count=%d failed=%d dismissed=%d", ticker_upper, count, failed, dismissed)
     if failed:
         return jsonify({'success': False, 'error': {
             'code': 'DB_WRITE_FAILED',

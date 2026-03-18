@@ -436,6 +436,211 @@ async function syncEdits() {
   }
 }
 
+// ── CSV Paste (2.5.2.2.1) ─────────────────────────────────────────────────
+let _csvPasteValues = [];
+
+function _ensureCsvPasteModals() {
+  if (document.getElementById('csv-paste-modal-step1')) return;
+  const html = `
+  <div id="csv-paste-modal-step1" class="csv-paste-modal-overlay" style="display:none">
+    <div class="csv-paste-modal">
+      <h3>Paste CSV \u2014 Step 1: Input</h3>
+      <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
+        Paste tab-separated or comma-separated data. First column is period (<code>YYYY-MM</code>).
+        Remaining column headers must be exact metric keys (e.g. <code>production_btc</code>, <code>holdings_btc</code>).
+        Empty cells are skipped.
+      </div>
+      <textarea id="csv-paste-textarea" rows="10" placeholder="Month\tproduction_btc\tholdings_btc\n2024-01\t751.2\t15220.0\n2024-02\t832.5\t"></textarea>
+      <div id="csv-paste-step1-error" class="csv-paste-error" style="display:none"></div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+        <button class="btn btn-primary btn-sm" onclick="previewCsvPaste()">Preview</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeCsvPasteModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div id="csv-paste-modal-step2" class="csv-paste-modal-overlay" style="display:none">
+    <div class="csv-paste-modal">
+      <h3>Paste CSV \u2014 Step 2: Preview</h3>
+      <div id="csv-paste-preview-summary" style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem"></div>
+      <div style="overflow-x:auto">
+        <table class="csv-paste-preview-table" id="csv-paste-preview-table">
+          <thead><tr id="csv-paste-preview-thead"></tr></thead>
+          <tbody id="csv-paste-preview-tbody"></tbody>
+        </table>
+      </div>
+      <div id="csv-paste-step2-error" class="csv-paste-error" style="display:none"></div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
+        <button class="btn btn-primary btn-sm" id="csv-paste-commit-btn" onclick="commitCsvPaste()">Commit 0 values</button>
+        <button class="btn btn-secondary btn-sm" onclick="backCsvPaste()">Back</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeCsvPasteModal()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = html;
+  Array.from(wrapper.children).forEach(function(el) { document.body.appendChild(el); });
+}
+
+function openCsvPasteModal() {
+  if (!_ticker) { showToast('Select a company first', true); return; }
+  _ensureCsvPasteModals();
+  const step1 = document.getElementById('csv-paste-modal-step1');
+  const step2 = document.getElementById('csv-paste-modal-step2');
+  const ta    = document.getElementById('csv-paste-textarea');
+  const errEl = document.getElementById('csv-paste-step1-error');
+  if (ta)    ta.value = '';
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  if (step1) step1.style.display = '';
+  if (step2) step2.style.display = 'none';
+  _csvPasteValues = [];
+  if (ta) ta.focus();
+}
+
+function closeCsvPasteModal() {
+  const step1 = document.getElementById('csv-paste-modal-step1');
+  const step2 = document.getElementById('csv-paste-modal-step2');
+  if (step1) step1.style.display = 'none';
+  if (step2) step2.style.display = 'none';
+  _csvPasteValues = [];
+}
+
+function backCsvPaste() {
+  const step1 = document.getElementById('csv-paste-modal-step1');
+  const step2 = document.getElementById('csv-paste-modal-step2');
+  if (step1) step1.style.display = '';
+  if (step2) step2.style.display = 'none';
+}
+
+function _parseCsvPaste(text) {
+  const lines = text.split('\n').map(function(l) { return l.trimEnd(); }).filter(function(l) { return l.trim() !== ''; });
+  if (lines.length < 2) {
+    return {values: [], warnings: [], errors: ['Paste at least a header row and one data row.']};
+  }
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const headers = lines[0].split(sep).map(function(h) { return h.trim(); });
+  if (headers.length < 2) {
+    return {values: [], warnings: [], errors: ['Need at least two columns: period + one metric key.']};
+  }
+  const metricCols = headers.slice(1);
+  const unknownMetrics = metricCols.filter(function(k) { return !METRICS_ORDER.includes(k); });
+  if (unknownMetrics.length > 0) {
+    return {values: [], warnings: [], errors: ['Unknown metric key' + (unknownMetrics.length > 1 ? 's' : '') + ': ' + unknownMetrics.join(', ') + '. Valid: ' + METRICS_ORDER.join(', ')]};
+  }
+  const values = [];
+  const warnings = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(sep);
+    const rawPeriod = cells[0] ? cells[0].trim() : '';
+    const periodMatch = rawPeriod.match(/^(\d{4})-(\d{2})(-\d{2})?$/);
+    if (!periodMatch) {
+      warnings.push('Row ' + (i + 1) + ': invalid period "' + rawPeriod + '", skipped.');
+      continue;
+    }
+    const period = periodMatch[1] + '-' + periodMatch[2] + '-01';
+    for (let j = 0; j < metricCols.length; j++) {
+      const rawVal = (cells[j + 1] || '').trim();
+      if (!rawVal) continue;
+      const val = parseFloat(rawVal.replace(/,/g, ''));
+      if (isNaN(val)) {
+        warnings.push('Row ' + (i + 1) + ', ' + metricCols[j] + ': "' + rawVal + '" is not a number, skipped.');
+        continue;
+      }
+      values.push({period: period, metric: metricCols[j], value: val});
+    }
+  }
+  return {values: values, warnings: warnings, errors: []};
+}
+
+function previewCsvPaste() {
+  const ta    = document.getElementById('csv-paste-textarea');
+  const errEl = document.getElementById('csv-paste-step1-error');
+  const text  = ta ? ta.value.trim() : '';
+  if (!text) {
+    if (errEl) { errEl.textContent = 'Paste some data first.'; errEl.style.display = ''; }
+    return;
+  }
+  const result = _parseCsvPaste(text);
+  if (result.errors.length > 0) {
+    if (errEl) { errEl.textContent = result.errors.join(' '); errEl.style.display = ''; }
+    return;
+  }
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  _csvPasteValues = result.values;
+
+  const periodsSet = new Set(_csvPasteValues.map(function(v) { return v.period; }));
+  const metricsSet = new Set(_csvPasteValues.map(function(v) { return v.metric; }));
+  const periods    = Array.from(periodsSet).sort().reverse();
+  const metrics    = Array.from(metricsSet);
+  const nValues    = _csvPasteValues.length;
+  const nPeriods   = periodsSet.size;
+
+  const summaryEl = document.getElementById('csv-paste-preview-summary');
+  const commitBtn = document.getElementById('csv-paste-commit-btn');
+  const thead     = document.getElementById('csv-paste-preview-thead');
+  const tbody     = document.getElementById('csv-paste-preview-tbody');
+
+  if (summaryEl) {
+    let txt = nValues + ' value' + (nValues === 1 ? '' : 's') + ' across ' + nPeriods + ' period' + (nPeriods === 1 ? '' : 's');
+    if (result.warnings.length > 0) {
+      txt += ' (' + result.warnings.length + ' skipped \u2014 ' + result.warnings.slice(0, 2).join('; ') + (result.warnings.length > 2 ? '\u2026' : '') + ')';
+    }
+    summaryEl.textContent = txt;
+  }
+  if (commitBtn) {
+    commitBtn.textContent = 'Commit ' + nValues + ' value' + (nValues === 1 ? '' : 's');
+    commitBtn.disabled = nValues === 0;
+  }
+
+  const valMap = {};
+  _csvPasteValues.forEach(function(v) { valMap[v.period + '|' + v.metric] = v.value; });
+
+  if (thead) {
+    thead.innerHTML = '<th>Period</th>' + metrics.map(function(m) { return '<th>' + escapeHtml(m) + '</th>'; }).join('');
+  }
+  if (tbody) {
+    tbody.innerHTML = periods.map(function(period) {
+      const cells = metrics.map(function(m) {
+        const v = valMap[period + '|' + m];
+        return '<td>' + (v != null ? v.toLocaleString() : '\u2014') + '</td>';
+      }).join('');
+      return '<tr><td>' + escapeHtml(period.slice(0, 7)) + '</td>' + cells + '</tr>';
+    }).join('');
+  }
+
+  document.getElementById('csv-paste-modal-step1').style.display = 'none';
+  document.getElementById('csv-paste-modal-step2').style.display = '';
+}
+
+async function commitCsvPaste() {
+  if (!_ticker || _csvPasteValues.length === 0) return;
+  const commitBtn = document.getElementById('csv-paste-commit-btn');
+  const errEl     = document.getElementById('csv-paste-step2-error');
+  if (commitBtn) commitBtn.disabled = true;
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  try {
+    const resp = await fetch('/api/interpret/' + encodeURIComponent(_ticker) + '/finalize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({values: _csvPasteValues}),
+    });
+    const body = await resp.json();
+    if (body.success) {
+      const count = body.data.count;
+      closeCsvPasteModal();
+      showToast(count + ' value' + (count === 1 ? '' : 's') + ' finalized');
+      selectCompany(_ticker);
+    } else {
+      const msg = (body.error && body.error.message) || 'Commit failed';
+      if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
+      else showToast(msg, true);
+    }
+  } catch (e) {
+    showToast('Commit failed', true);
+  } finally {
+    if (commitBtn) commitBtn.disabled = false;
+  }
+}
+
 async function acceptRow(period) {
   const row = _rows && _rows.find(function(r) { return r.period === period; });
   if (!row) return;
@@ -1088,20 +1293,22 @@ async function setMinerTableMode(mode) {
   _tableMode = mode === 'edit' ? 'edit' : 'view';
   const table = document.getElementById('timeline-table');
   if (table) table.classList.toggle('edit-mode', _tableMode === 'edit');
-  const viewBtn = document.getElementById('table-mode-view-btn');
-  const editBtn = document.getElementById('table-mode-edit-btn');
-  const addRowBtn = document.getElementById('add-row-btn');
+  const viewBtn    = document.getElementById('table-mode-view-btn');
+  const editBtn    = document.getElementById('table-mode-edit-btn');
+  const addRowBtn  = document.getElementById('add-row-btn');
   const addRowPanel = document.getElementById('add-row-panel');
-  const banner = document.getElementById('table-mode-banner');
-  const syncBtn = document.getElementById('sync-btn');
-  if (viewBtn) viewBtn.classList.toggle('active', _tableMode === 'view');
-  if (editBtn) editBtn.classList.toggle('active', _tableMode === 'edit');
-  if (addRowBtn) addRowBtn.style.display = _tableMode === 'edit' ? '' : 'none';
+  const banner     = document.getElementById('table-mode-banner');
+  const syncBtn    = document.getElementById('sync-btn');
+  const csvPasteBtn = document.getElementById('csv-paste-btn');
+  if (viewBtn)    viewBtn.classList.toggle('active', _tableMode === 'view');
+  if (editBtn)    editBtn.classList.toggle('active', _tableMode === 'edit');
+  if (addRowBtn)  addRowBtn.style.display  = _tableMode === 'edit' ? '' : 'none';
   if (addRowPanel && _tableMode === 'view') addRowPanel.style.display = 'none';
-  if (syncBtn) syncBtn.style.display = _tableMode === 'edit' ? '' : 'none';
+  if (syncBtn)    syncBtn.style.display    = _tableMode === 'edit' ? '' : 'none';
+  if (csvPasteBtn) csvPasteBtn.style.display = _tableMode === 'edit' ? '' : 'none';
   if (banner) {
     banner.textContent = _tableMode === 'edit'
-      ? 'Edit mode: click any metric cell to change it or fill an empty value. Use Add Row for a manual month.'
+      ? 'Edit mode: click any metric cell to change it or fill an empty value. Use Add Row for a manual month. Use Paste CSV to bulk-enter values.'
       : 'View mode: click a row to open its document. Use the checkbox to select rows for batch accept.';
   }
 }
@@ -2221,6 +2428,67 @@ async function applySalesBtcDerive() {
     statusEl.textContent = `Done: ${data.derived} derived, ${data.skipped} skipped.`;
     applyBtn.style.display = 'none';
     document.getElementById('sales-derive-preview').style.display = 'none';
+    loadInterpretData(_ticker);
+  } catch (e) {
+    statusEl.textContent = 'Apply failed.';
+    applyBtn.disabled = false;
+  }
+}
+
+async function previewBalanceChangeDerive() {
+  const statusEl = document.getElementById('balance-derive-status');
+  const previewEl = document.getElementById('balance-derive-preview');
+  const applyBtn = document.getElementById('apply-balance-derive-btn');
+  statusEl.textContent = 'Loading preview...';
+  previewEl.style.display = 'none';
+  applyBtn.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/operations/derive-balance-change', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker: _ticker, dry_run: true}),
+    });
+    const data = await res.json();
+    const tbody = document.getElementById('balance-derive-tbody');
+    tbody.innerHTML = '';
+    data.rows.forEach(function(r) {
+      const tr = document.createElement('tr');
+      const isDerived = r.status === 'would_derive';
+      tr.innerHTML =
+        '<td>' + (r.period || '') + '</td>' +
+        '<td>' + (r.prev_period || '&mdash;') + '</td>' +
+        '<td>' + (r.prev_holdings != null ? r.prev_holdings.toFixed(4) : '&mdash;') + '</td>' +
+        '<td>' + (r.curr_holdings != null ? r.curr_holdings.toFixed(4) : '&mdash;') + '</td>' +
+        '<td>' + (isDerived ? r.value.toFixed(4) : '&mdash;') + '</td>' +
+        '<td>' + r.status + (r.reason ? ' (' + r.reason + ')' : '') + '</td>';
+      tbody.appendChild(tr);
+    });
+    const wouldDerive = data.rows.filter(function(r) { return r.status === 'would_derive'; }).length;
+    statusEl.textContent = wouldDerive + ' period(s) would be derived, ' + data.skipped + ' skipped.';
+    previewEl.style.display = wouldDerive > 0 ? '' : 'none';
+    applyBtn.style.display = wouldDerive > 0 ? '' : 'none';
+  } catch (e) {
+    statusEl.textContent = 'Preview failed.';
+  }
+}
+
+async function applyBalanceChangeDerive() {
+  const statusEl = document.getElementById('balance-derive-status');
+  const applyBtn = document.getElementById('apply-balance-derive-btn');
+  statusEl.textContent = 'Applying...';
+  applyBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/operations/derive-balance-change', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ticker: _ticker, dry_run: false}),
+    });
+    const data = await res.json();
+    statusEl.textContent = 'Done: ' + data.derived + ' derived, ' + data.skipped + ' skipped.';
+    applyBtn.style.display = 'none';
+    document.getElementById('balance-derive-preview').style.display = 'none';
     loadInterpretData(_ticker);
   } catch (e) {
     statusEl.textContent = 'Apply failed.';

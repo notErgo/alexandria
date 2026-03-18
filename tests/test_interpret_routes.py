@@ -18,6 +18,13 @@ def app_with_company(db_with_company, monkeypatch):
     import importlib
     import run_web
     importlib.reload(run_web)
+
+    # routes/interpret uses `from app_globals import get_db` at module level.
+    # After the first test the module is cached, so monkeypatching app_globals
+    # alone does not update the stale binding — patch the route module too.
+    import routes.interpret as _interp
+    monkeypatch.setattr(_interp, 'get_db', lambda: db_with_company)
+
     app = run_web.create_app()
     app.config['TESTING'] = True
     return app
@@ -155,3 +162,50 @@ class TestFallbackMetricValidation:
         with app_with_company.test_client() as c:
             resp = c.post('/api/interpret/MARA/rerun-sec', json={})
             assert resp.status_code == 404
+
+
+class TestFinalizeDismissesReviewItems:
+    """Finalizing a cell must also dismiss pending review_queue items for that cell."""
+
+    def test_finalize_dismisses_pending_review_item(self, app_with_company, db_with_company):
+        from helpers import make_review_item
+        item_id = db_with_company.insert_review_item(
+            make_review_item(ticker='MARA', period='2024-01-01', metric='production_btc', status='PENDING')
+        )
+        with app_with_company.test_client() as c:
+            resp = c.post(
+                '/api/interpret/MARA/finalize',
+                json={'values': [{'metric': 'production_btc', 'period': '2024-01-01', 'value': 751.0}]},
+            )
+        assert resp.status_code == 200
+        item = db_with_company.get_review_item(item_id)
+        assert item['status'] == 'REJECTED', f"Expected REJECTED, got {item['status']}"
+
+    def test_finalize_does_not_dismiss_approved_review_item(self, app_with_company, db_with_company):
+        from helpers import make_review_item
+        item_id = db_with_company.insert_review_item(
+            make_review_item(ticker='MARA', period='2024-01-01', metric='production_btc', status='APPROVED')
+        )
+        with app_with_company.test_client() as c:
+            c.post(
+                '/api/interpret/MARA/finalize',
+                json={'values': [{'metric': 'production_btc', 'period': '2024-01-01', 'value': 751.0}]},
+            )
+        item = db_with_company.get_review_item(item_id)
+        assert item['status'] == 'APPROVED'
+
+    def test_finalize_only_dismisses_matching_metric(self, app_with_company, db_with_company):
+        from helpers import make_review_item
+        id_prod = db_with_company.insert_review_item(
+            make_review_item(ticker='MARA', period='2024-01-01', metric='production_btc', status='PENDING')
+        )
+        id_hold = db_with_company.insert_review_item(
+            make_review_item(ticker='MARA', period='2024-01-01', metric='holdings_btc', status='PENDING')
+        )
+        with app_with_company.test_client() as c:
+            c.post(
+                '/api/interpret/MARA/finalize',
+                json={'values': [{'metric': 'production_btc', 'period': '2024-01-01', 'value': 751.0}]},
+            )
+        assert db_with_company.get_review_item(id_prod)['status'] == 'REJECTED'
+        assert db_with_company.get_review_item(id_hold)['status'] == 'PENDING'

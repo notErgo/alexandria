@@ -814,7 +814,7 @@ tr.is-reviewed td { opacity: 0.65; }
 
 {% block content %}
 <div class="md-page">
-  <h1 class="page-title" style="margin:0" data-spec-id="MD5.0"><span class="spec-id">5.0</span>Miner Data</h1>
+  <h1 class="page-title" style="margin:0" data-spec-id="2.5.2" data-ui-id="2.5.2"><span class="spec-id">2.5.2</span>Miner Data</h1>
 
   <!-- ── Company tabs ─────────────────────────────────────────────────── -->
   <div id="company-tabs" class="md-tabs">
@@ -824,14 +824,14 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
 
   <!-- ── Source toggle strip ─────────────────────────────────────────── -->
-  <div class="source-toggle">
+  <div class="source-toggle" data-spec-id="2.5.2.1.4" data-ui-id="2.5.2.1.4">
     <button class="source-toggle-btn active" data-view="monthly" onclick="switchView('monthly')">Monthly PRs / 8-K</button>
     <button class="source-toggle-btn" data-view="sec" onclick="switchView('sec')">SEC Filings (10-Q / 10-K)</button>
     <button class="source-toggle-btn" data-view="interpret" onclick="switchView('interpret')">Interpret</button>
   </div>
 
   <!-- ── Monthly view ─────────────────────────────────────────────────── -->
-  <div id="view-monthly">
+  <div id="view-monthly" data-spec-id="2.5.2.2" data-ui-id="2.5.2.2">
   <!-- ── Upper area ──────────────────────────────────────────────────── -->
   <div class="md-upper">
 
@@ -841,12 +841,18 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Right: filters + table -->
-    <div class="md-table-panel" data-spec-id="MD5.1">
+    <div class="md-table-panel" data-spec-id="2.5.2.2" data-ui-id="2.5.2.2">
       <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
-        <span><span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span></span>
+        <span><span class="spec-id">2.5.2.2</span>Reports Table <span class="source-badge source-badge-data">DATA</span></span>
         <button id="md-promote-btn" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem" onclick="mdPromoteToReview()" title="Queue all accepted data points for this ticker into the review table">Queue for review</button>
         <span id="md-promote-status" style="font-size:0.75rem;color:var(--theme-text-muted);font-weight:400"></span>
+        <div style="margin-left:auto;display:flex;gap:0.35rem;align-items:center">
+          <button id="table-mode-view-btn" class="btn btn-secondary btn-sm active" onclick="setMinerTableMode('view')" title="View mode: click rows to open documents">View</button>
+          <button id="table-mode-edit-btn" class="btn btn-secondary btn-sm" onclick="setMinerTableMode('edit')" title="Edit mode: double-click cells to enter values">Edit</button>
+          <button id="sync-btn" class="btn btn-secondary btn-sm" style="display:none" onclick="syncEdits()">Sync Edits</button>
+        </div>
       </div>
+      <div id="table-mode-banner" style="padding:0.3rem 0.75rem;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary);border-bottom:1px solid var(--theme-border)">View mode: click a row to open its document.</div>
       <div class="md-table-filters">
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
@@ -916,7 +922,7 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /#view-monthly -->
 
   <!-- ── SEC view ────────────────────────────────────────────────────── -->
-  <div id="view-sec" style="display:none">
+  <div id="view-sec" data-spec-id="2.5.2.3" data-ui-id="2.5.2.3" style="display:none">
     <div class="md-upper">
       <div class="md-info-card" id="sec-info-card" style="font-size:0.82rem;color:var(--theme-text-secondary)">
         <div class="md-info-placeholder">Select a company to load SEC data.</div>
@@ -945,7 +951,7 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /#view-sec -->
 
   <!-- ── Interpret view ──────────────────────────────────────────────── -->
-  <div id="view-interpret" style="display:none">
+  <div id="view-interpret" data-spec-id="2.5.2.4" data-ui-id="2.5.2.4" style="display:none">
 
     <details class="extraction-guide">
       <summary>How extraction works</summary>
@@ -1004,7 +1010,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </details>
 
     <!-- Side-by-side reconciliation summary -->
-    <div>
+    <div data-spec-id="2.5.2.4.1" data-ui-id="2.5.2.4.1">
       <div class="interp-section-title">Reconciliation Summary</div>
       <div id="interp-reconcile-wrap" style="overflow-x:auto">
         <table id="interp-reconcile-table">
@@ -1022,7 +1028,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Analyst commentary -->
-    <div>
+    <div data-spec-id="2.5.2.4.2" data-ui-id="2.5.2.4.2">
       <div class="interp-section-title">Analyst Commentary</div>
       <textarea id="interp-commentary" class="interp-commentary"
         placeholder="Add context or reconciliation notes for the LLM prompt…"></textarea>
@@ -1046,7 +1052,7 @@ tr.is-reviewed td { opacity: 0.65; }
     <div id="md-extract-log" class="acq-log" style="display:none;margin-top:0.5rem"></div>
 
     <!-- Custom prompt panel (hidden by default) -->
-    <div id="custom-prompt-panel" data-spec-id="MD5.3" style="display:none;margin-top:0.5rem">
+    <div id="custom-prompt-panel" data-spec-id="2.5.2.5" data-ui-id="2.5.2.5" style="display:none;margin-top:0.5rem">
       <div style="margin-bottom:0.3rem">
         <input id="prompt-goal-input" type="text"
           placeholder="Describe what you want to extract (optional — used to generate a prompt)"
@@ -1065,7 +1071,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Pattern suggestions panel (populated after extraction) -->
-    <div id="suggestion-panel" style="display:none;margin-top:0.75rem">
+    <div id="suggestion-panel" data-spec-id="2.5.2.4.3" data-ui-id="2.5.2.4.3" style="display:none;margin-top:0.75rem">
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
         <span class="interp-section-title" style="margin:0">Pattern Suggestions</span>
         <span id="suggestion-count-badge" class="badge" style="font-size:0.72rem"></span>
@@ -1137,14 +1143,14 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
 
         <!-- LLM CSV export (unreviewed direct output) -->
-        <div data-spec-id="MD5.4">
+        <div data-spec-id="2.5.2.4.6.1" data-ui-id="2.5.2.4.6.1">
           <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
         </div>
       </div>
     </div>
 
     <!-- Staging list -->
-    <div id="staging-area" style="display:none">
+    <div id="staging-area" data-spec-id="2.5.2.4.4" data-ui-id="2.5.2.4.4" style="display:none">
       <div class="interp-section-title">Staged for Finalization</div>
       <table id="staging-table">
         <thead>
@@ -1159,7 +1165,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Already-finalized values -->
-    <div>
+    <div data-spec-id="2.5.2.4.5" data-ui-id="2.5.2.4.5">
       <div class="interp-section-title">Finalized Values</div>
       <div id="finalized-list-wrap" style="overflow-x:auto">
         <table id="finalized-table">
@@ -1174,7 +1180,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Auto-calculate sales BTC -->
-    <div style="margin-top:1rem">
+    <div data-spec-id="2.5.2.4.6" data-ui-id="2.5.2.4.6" style="margin-top:1rem">
       <div class="interp-section-title">Auto-Calculate Sales BTC</div>
       <div style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
         Derives <strong>sales_btc</strong> from finalized values using:
@@ -1203,8 +1209,37 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
+    <!-- Auto-calculate net BTC balance change -->
+    <div data-spec-id="2.5.2.4.7" data-ui-id="2.5.2.4.7" style="margin-top:1rem">
+      <div class="interp-section-title">Derive Balance Change</div>
+      <div style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
+        Derives <strong>net_btc_balance_change</strong> from finalized holdings_btc using:
+        curr_holdings &minus; prev_holdings.
+        Requires <code>holdings_btc</code> finalized for two consecutive months.
+        Skips non-consecutive gaps.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="previewBalanceChangeDerive()">Preview</button>
+        <button class="btn btn-primary btn-sm" id="apply-balance-derive-btn"
+                style="display:none" onclick="applyBalanceChangeDerive()">Apply</button>
+        <span id="balance-derive-status"
+              style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="balance-derive-preview" style="display:none;margin-top:0.5rem;overflow-x:auto">
+        <table id="balance-derive-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Prev Period</th><th>Prev Holdings</th>
+              <th>Curr Holdings</th><th>= Balance Change</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="balance-derive-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Danger zone -->
-    <details class="danger-zone">
+    <details class="danger-zone" data-spec-id="2.5.2.4.8" data-ui-id="2.5.2.4.8">
       <summary>Danger Zone</summary>
       <div class="dz-body">
         <div>
@@ -1242,9 +1277,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /#view-interpret -->
 
   <!-- ── Document viewer panel (bottom drawer) ──────────────────────── -->
-  <div id="doc-panel" data-spec-id="MD5.2">
+  <div id="doc-panel" data-spec-id="2.5.2.6" data-ui-id="2.5.2.6">
     <div class="doc-panel-header">
-      <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
+      <div id="doc-panel-title"><span class="spec-id">2.5.2.6</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
       <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem;margin-left:auto">⤢ Source</button>
       <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
     </div>
@@ -2722,6 +2757,43 @@ function switchToReviewTab(ticker, period) {
   const reviewTab = document.querySelector('[data-pane="review"]');
   if (reviewTab) reviewTab.click();
 }
+
+// ── Table mode (standalone page) ──────────────────────────────────────────
+let _tableMode = 'view';
+
+function setMinerTableMode(mode) {
+  _tableMode = mode === 'edit' ? 'edit' : 'view';
+  const table = document.getElementById('timeline-table');
+  if (table) table.classList.toggle('edit-mode', _tableMode === 'edit');
+  const viewBtn = document.getElementById('table-mode-view-btn');
+  const editBtn = document.getElementById('table-mode-edit-btn');
+  const syncBtn = document.getElementById('sync-btn');
+  const banner  = document.getElementById('table-mode-banner');
+  if (viewBtn) viewBtn.classList.toggle('active', _tableMode === 'view');
+  if (editBtn) editBtn.classList.toggle('active', _tableMode === 'edit');
+  if (syncBtn) syncBtn.style.display = _tableMode === 'edit' ? '' : 'none';
+  if (banner) {
+    banner.textContent = _tableMode === 'edit'
+      ? 'Edit mode: double-click any metric cell to change it.'
+      : 'View mode: click a row to open its document. Use the checkbox to select rows for batch accept.';
+  }
+}
+
+async function syncEdits() {
+  if (_editingCell) {
+    const input = _editingCell.td.querySelector('input');
+    const val = input ? parseFloat(input.value) : NaN;
+    if (!isNaN(val) && val >= 0) {
+      const { period, metric } = _editingCell;
+      _editingCell = null;
+      await confirmInlineEdit({stopPropagation: function(){}}, period, metric);
+      return;
+    }
+    cancelInlineEdit();
+  }
+  showToast('No pending edits');
+}
+
 
 // Restore extraction log from previous session on page load.
 _mdExtractPanel.restore({

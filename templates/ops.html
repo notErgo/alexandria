@@ -915,7 +915,7 @@ tr.is-reviewed td { opacity: 0.65; }
 
 {% block content %}
 <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
-  <h1 class="page-title" style="margin:0" data-ui-id="1.0" data-spec-id="1.0"><span class="spec-id">1.0</span>Pipeline</h1>
+  <h1 class="page-title" style="margin:0" data-ui-id="2.0" data-spec-id="2.0"><span class="spec-id">2.0</span>Pipeline</h1>
   <div id="sector-switcher" style="display:none;margin-left:0.5rem">
     <select id="sector-select" style="font-size:0.8rem;padding:0.2rem 0.4rem">
       {% for s in all_sectors %}<option value="{{ s }}"{% if s == current_sector %} selected{% endif %}>{{ s }}</option>{% endfor %}
@@ -929,19 +929,19 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <div class="ops-tabs">
-  <button class="ops-tab" data-pane="workflow" data-ui-id="0.0">Workflow</button>
-  <button class="ops-tab" data-pane="config" data-ui-id="1.1">Track Config</button>
-  <button class="ops-tab" data-pane="ingest" data-ui-id="2.0">Ingest</button>
-  <button class="ops-tab" data-pane="interpret" data-ui-id="3.0">Interpret</button>
-  <button class="ops-tab" data-pane="review" data-ui-id="4.0">Review</button>
-  <button class="ops-tab" data-pane="data" data-ui-id="5.0">Data</button>
-  <button class="ops-tab" data-pane="health" data-ui-id="7.0">Health</button>
+  <button class="ops-tab" data-pane="workflow" data-ui-id="2.1">Workflow</button>
+  <button class="ops-tab" data-pane="config" data-ui-id="2.2">Track Config</button>
+  <button class="ops-tab" data-pane="ingest" data-ui-id="2.3">Ingest</button>
+  <button class="ops-tab" data-pane="interpret" data-ui-id="2.4">Interpret</button>
+  <button class="ops-tab" data-pane="review" data-ui-id="2.5">Review</button>
+  <button class="ops-tab" data-pane="data" data-ui-id="2.6">Data</button>
+  <button class="ops-tab" data-pane="health" data-ui-id="2.7">Health</button>
 </div>
 
 <!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-workflow" data-ui-id="0.0" data-spec-id="0.0">
+<div class="ops-pane" id="pane-workflow" data-ui-id="2.1" data-spec-id="2.1">
   <div class="section-header-row" style="margin-bottom:1rem">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">0.0</span>Pipeline Workflow</h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.1</span>Pipeline Workflow</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;margin-left:auto">
       <span class="wf-legend-dot wf-critical"></span><span style="font-size:0.75rem">Critical path</span>
       <span class="wf-legend-dot wf-optional" style="margin-left:0.5rem"></span><span style="font-size:0.75rem">Optional</span>
@@ -960,26 +960,26 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <!-- ── Track Config pane ──────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-config" data-ui-id="1.1" data-spec-id="1.1">
+<div class="ops-pane" id="pane-config" data-ui-id="2.2" data-spec-id="2.2">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="1.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="companiestable" onclick="activatePipelineSubTab('config','companiestable')" data-ui-id="1.2">Companies Table <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="metricskeywords" onclick="activatePipelineSubTab('config','metricskeywords')" data-ui-id="1.3">Metrics &amp; Keywords <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="1.4">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="1.5">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="dbpurge" onclick="activatePipelineSubTab('config','dbpurge')" data-ui-id="1.6">Purge Stages <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="2.2.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="companiestable" onclick="activatePipelineSubTab('config','companiestable')" data-ui-id="2.2.2">Companies Table <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="metricskeywords" onclick="activatePipelineSubTab('config','metricskeywords')" data-ui-id="2.2.3">Metrics &amp; Keywords <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="2.2.4">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="2.2.5">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="dbpurge" onclick="activatePipelineSubTab('config','dbpurge')" data-ui-id="2.2.6">Purge Stages <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Companies (1.1) -->
-  <div class="pipeline-sub-pane active" id="spane-config-companies" data-ui-id="1.1" data-spec-id="1.1">
+  <div class="pipeline-sub-pane active" id="spane-config-companies" data-ui-id="2.2.1" data-spec-id="2.2.1">
   <div class="section-header-row">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.1</span>Companies</h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.1</span>Companies</h2>
     <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
     <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
-  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="1.1.4">
-    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">1.1.4</span>Add Company</h3>
+  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="2.2.1.1">
+    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">2.2.1.1</span>Add Company</h3>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
       <div>
         <label style="font-size:0.75rem;display:block">Ticker *</label>
@@ -1071,10 +1071,10 @@ tr.is-reviewed td { opacity: 0.65; }
 
   <details class="offpath-details" id="companies-governance-details">
     <summary><span class="offpath-label">Advanced — Scraper Governance &amp; Probe</span> <span class="offpath-desc">probe sources, apply modes</span></summary>
-  <div class="card" data-spec-id="1.1.5" style="margin-bottom:0.7rem;margin-top:0.75rem">
+  <div class="card" data-spec-id="2.2.1.2" style="margin-bottom:0.7rem;margin-top:0.75rem">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
       <h3 style="margin:0;font-size:0.9rem">
-        <span class="spec-id">1.1.5</span>Scraper Governance Probe
+        <span class="spec-id">2.2.1.2</span>Scraper Governance Probe
       </h3>
       <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
         stale days
@@ -1094,17 +1094,17 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-companies -->
 
   <!-- Sub-pane: Companies Table (1.2) -->
-  <div class="pipeline-sub-pane" id="spane-config-companiestable" data-ui-id="1.2" data-spec-id="1.2">
+  <div class="pipeline-sub-pane" id="spane-config-companiestable" data-ui-id="2.2.2" data-spec-id="2.2.2">
   <div class="section-header-row">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.2</span>Companies Table</h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.2</span>Companies Table</h2>
     <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
     <button class="btn btn-sm btn-warning" onclick="restoreCompaniesFromConfig()" title="Re-insert all companies from companies.json and re-enable auto-sync">Restore from Config</button>
     <span id="companiestable-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
 
-  <table id="companies-table" data-ui-id="1.2.1" data-spec-id="1.2.1">
+  <table id="companies-table" data-ui-id="2.2.2.1" data-spec-id="2.2.2.1">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">1.2.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
+      <span class="spec-id">2.2.2.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
     </caption>
     <thead>
       <tr>
@@ -1123,9 +1123,9 @@ tr.is-reviewed td { opacity: 0.65; }
     </tbody>
   </table>
 
-  <div class="card" style="margin:1rem 0 0.75rem" data-spec-id="1.2.3">
+  <div class="card" style="margin:1rem 0 0.75rem" data-spec-id="2.2.2.3">
     <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.2.3</span>Document Overview</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.2.3</span>Document Overview</h3>
       <button class="btn btn-sm btn-secondary" onclick="loadDocumentOverview()">Refresh</button>
       <span id="doc-overview-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
     </div>
@@ -1152,9 +1152,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
 
   <!-- Regime editor: deprecated — routes kept, UI hidden -->
-  <div id="regime-editor" style="display:none" class="card" data-ui-id="1.2.2" data-spec-id="1.2.2">
+  <div id="regime-editor" style="display:none" class="card" data-ui-id="2.2.2.2" data-spec-id="2.2.2.2">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">1.2.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">2.2.2.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
     </div>
     <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
@@ -1187,13 +1187,13 @@ tr.is-reviewed td { opacity: 0.65; }
     <summary><span class="offpath-label">Advanced — Scrape Queue &amp; Maintenance</span> <span class="offpath-desc">scrape queue, danger zone</span></summary>
 
   <!-- Scrape queue -->
-  <div style="margin-top:1rem" data-spec-id="1.2.2">
+  <div style="margin-top:1rem" data-spec-id="2.2.2.2">
     <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
-      <h2 style="font-size:1rem;margin:0"><span class="spec-id">1.2.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+      <h2 style="font-size:1rem;margin:0"><span class="spec-id">2.2.2.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
       <button class="btn btn-sm btn-primary" onclick="enqueueAllScrapeJobs()" id="scrape-all-btn">Enqueue All Tickers</button>
       <span id="scrape-all-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
     </div>
-    <table id="scrape-table" data-ui-id="1.2.2">
+    <table id="scrape-table" data-ui-id="2.2.2.2">
       <thead>
         <tr>
           <th>ID</th>
@@ -1216,17 +1216,17 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-companiestable -->
 
   <!-- Sub-pane: Metrics & Keywords (1.3) -->
-  <div class="pipeline-sub-pane" id="spane-config-metricskeywords" data-ui-id="1.3" data-spec-id="1.3">
+  <div class="pipeline-sub-pane" id="spane-config-metricskeywords" data-ui-id="2.2.3" data-spec-id="2.2.3">
   <div class="section-header-row" style="margin-bottom:0.75rem">
-    <h2 style="margin:0;font-size:1rem"><span class="spec-id">1.3</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h2>
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.3</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h2>
   </div>
   <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
     Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt and all UI dropdowns.
     Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it and deactivates its LLM prompt override.
   </p>
-  <div class="card" data-spec-id="1.3.1" style="margin-bottom:0.7rem">
+  <div class="card" data-spec-id="2.2.3.1" style="margin-bottom:0.7rem">
     <div class="section-header-row" style="margin-bottom:0.75rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.3.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.3.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
       <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
     </div>
 
@@ -1375,8 +1375,8 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-metricskeywords -->
 
   <!-- Sub-pane: Settings (1.4) -->
-  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="1.4" data-spec-id="1.4">
-    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.4</span>Settings</h2>
+  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="2.2.4" data-spec-id="2.2.4">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.4</span>Settings</h2>
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
       Runtime overrides for extraction thresholds, LLM parameters, crawl limits, and pipeline paths.
       Unset keys use hardcoded defaults. Changes take effect on the next pipeline run.
@@ -1384,9 +1384,9 @@ tr.is-reviewed td { opacity: 0.65; }
     <div id="settings-groups"></div>
 
     <!-- Ollama Concurrency (1.4.O) -->
-    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.O" data-spec-id="1.4.O">
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.1" data-spec-id="2.2.4.1">
       <div class="section-header-row" style="margin-bottom:0.75rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.O</span>Ollama Concurrency</h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.1</span>Ollama Concurrency</h3>
         <button class="btn btn-sm btn-secondary" onclick="saveOllamaSettings()" style="margin-left:auto">Save</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem">
@@ -1417,7 +1417,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- llama-server Config (1.4.L) -->
-    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.L">
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.5">
       <div class="section-header-row" style="margin-bottom:0.75rem">
         <h3 style="margin:0;font-size:0.9rem">llama-server Config</h3>
         <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.75rem">Changes take effect on next server restart</span>
@@ -1501,14 +1501,14 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Metric Rules (1.4.R) — tune after first extraction cycle -->
-    <div class="card" style="margin-top:1.5rem" data-ui-id="1.4.R" data-spec-id="1.4.R" data-spec-id-alias="1.4.1"><span data-spec-id="1.4.1" style="display:none"></span>
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.4" data-spec-id="2.2.4.4"><span data-spec-id="2.2.4.4.1" style="display:none"></span>
       <div class="section-header-row" style="margin-bottom:0.5rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.R</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.4</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
         <button class="btn btn-sm btn-secondary" onclick="syncMetricRules()" style="margin-left:auto">Sync to metric_schema</button>
         <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:0.5rem">Refresh</button>
       </div>
-      <table id="rules-table" data-spec-id="1.4.1" style="width:100%;font-size:0.82rem">
+      <table id="rules-table" data-spec-id="2.2.4.4.1" style="width:100%;font-size:0.82rem">
         <thead>
           <tr>
             <th data-sort="metric" style="text-align:left">Metric</th>
@@ -1542,8 +1542,8 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-settings -->
 
   <!-- Sub-pane: Crawl Setup (1.5) -->
-  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="1.5" data-spec-id="1.5">
-    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.5</span>Crawl Setup</h2>
+  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="2.2.5" data-spec-id="2.2.5">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.5</span>Crawl Setup</h2>
     <div class="card" style="background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
       <p style="margin:0 0 0.75rem;font-size:0.85rem;line-height:1.6">
         The LLM crawl provider, model selection, and prompt editor are available inline in
@@ -1555,8 +1555,8 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-config-crawlsetup -->
 
   <!-- Sub-pane: Database Purge Controls (1.6) -->
-  <div class="pipeline-sub-pane" id="spane-config-dbpurge" data-ui-id="1.6" data-spec-id="1.6">
-    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">1.6</span>Data Management</h2>
+  <div class="pipeline-sub-pane" id="spane-config-dbpurge" data-ui-id="2.2.6" data-spec-id="2.2.6">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.6</span>Data Management</h2>
 
     <!-- Export Database -->
     <div class="card" style="margin-bottom:1.25rem">
@@ -1654,12 +1654,12 @@ tr.is-reviewed td { opacity: 0.65; }
 </div><!-- /pane-config -->
 
 <!-- ── Ingest pane ─────────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-ingest" data-ui-id="2.0" data-spec-id="2.0">
+<div class="ops-pane" id="pane-ingest" data-ui-id="2.3" data-spec-id="2.3">
 
   <!-- Run Full Pipeline — automated end-to-end run -->
-  <div class="card" style="margin-bottom:1.25rem;border-left:3px solid var(--theme-accent)" data-ui-id="2.0.1" data-spec-id="2.0.1">
+  <div class="card" style="margin-bottom:1.25rem;border-left:3px solid var(--theme-accent)" data-ui-id="2.3.1" data-spec-id="2.3.1">
     <div class="section-header-row" style="margin-bottom:0.4rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.0</span>Run Full Pipeline</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>Run Full Pipeline</h3>
       <span style="font-size:0.72rem;font-weight:600;color:var(--theme-text-muted);text-transform:uppercase;letter-spacing:0.04em">Automated</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.5rem;line-height:1.5">
@@ -1736,16 +1736,16 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
 
   <!-- Shared ticker selector — selection applies to EDGAR fetch and LLM crawl -->
-  <div data-spec-id="2.2.1" style="margin-bottom:1rem">
+  <div data-spec-id="2.3.2" style="margin-bottom:1rem">
     <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Select companies</div>
-    <div id="crawl-ticker-selector" data-spec-id="1.5.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+    <div id="crawl-ticker-selector" data-spec-id="2.2.5.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
     <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">Selection applies to EDGAR fetch and LLM crawl. IR scrape and archive ingest always run for all configured companies.</div>
   </div>
 
   <!-- Step 1 — SEC EDGAR [CRITICAL] -->
-  <div class="card" style="margin-bottom:1rem" data-ui-id="2.1" data-spec-id="2.1">
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.3.3" data-spec-id="2.3.3">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.1</span>SEC EDGAR Filings</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.3</span>SEC EDGAR Filings</h3>
       <span class="wf-path-badge wf-critical">Critical</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
@@ -1766,9 +1766,9 @@ tr.is-reviewed td { opacity: 0.65; }
     <summary><span class="offpath-label">Optional Sources</span> <span class="offpath-desc">IR press releases, LLM-directed crawl</span></summary>
 
   <!-- Step 2 — IR Press Releases [OPTIONAL] -->
-  <div class="card" style="margin-bottom:1rem;margin-top:0.75rem" data-ui-id="2.1.1" data-spec-id="2.1.1">
+  <div class="card" style="margin-bottom:1rem;margin-top:0.75rem" data-ui-id="2.3.4" data-spec-id="2.3.4">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.1.1</span>IR Press Releases &amp; Archive</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.4</span>IR Press Releases &amp; Archive</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
@@ -1777,11 +1777,11 @@ tr.is-reviewed td { opacity: 0.65; }
       <strong>Local Archive</strong> ingests pre-downloaded PDFs and HTML files from the archive folder.
       Monthly press releases often carry the most precise per-month production figures.
     </p>
-    <div class="acq-actions" data-spec-id="2.1.4">
+    <div class="acq-actions" data-spec-id="2.3.4.1">
       <button class="btn btn-sm btn-secondary" onclick="scanManifest()">Scan Archive Files</button>
       <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Ingest Local Archive</button>
       <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
-      <span data-spec-id="2.1.5"><button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button></span>
+      <span data-spec-id="2.3.4.2"><button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button></span>
       <button class="btn btn-sm btn-secondary" onclick="loadIngest()">Refresh</button>
     </div>
   </div>
@@ -1793,9 +1793,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
 
   <!-- Step 3 — LLM-Directed Crawl [OPTIONAL] -->
-  <div class="card" style="margin-bottom:1rem" data-ui-id="2.2" data-spec-id="2.2">
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.3.5" data-spec-id="2.3.5">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2</span>LLM-Directed Crawl</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.5</span>LLM-Directed Crawl</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
     </div>
     <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.5">
@@ -1803,7 +1803,7 @@ tr.is-reviewed td { opacity: 0.65; }
       The bitcoin activity start date from Step 1 is automatically injected as a lower bound — run EDGAR first.
       Review the prompt below before launching; it is loaded from a per-ticker file or the master template.
     </p>
-    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="1.5.2" data-spec-id="1.5.2">
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="2.2.5.2" data-spec-id="2.2.5.2">
       <div>
         <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
         <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
@@ -1821,7 +1821,7 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
       </div>
     </div>
-    <div data-spec-id="1.5.3" style="margin-bottom:0.75rem">
+    <div data-spec-id="2.2.5.3" style="margin-bottom:0.75rem">
       <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">
         Crawl prompt (editable before launch — select a single ticker above to load its custom prompt)
         <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
@@ -1834,8 +1834,8 @@ tr.is-reviewed td { opacity: 0.65; }
       <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Start Crawl (All)</button>
       <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop Crawl</button>
     </div>
-    <div id="research-grid" data-ui-id="2.2.2" data-spec-id="2.2.2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
-    <div id="research-log-panel" data-ui-id="2.2.3" data-spec-id="2.2.3" style="display:none;margin-top:0.5rem">
+    <div id="research-grid" data-ui-id="2.3.5.1" data-spec-id="2.3.5.1" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
+    <div id="research-log-panel" data-ui-id="2.3.5.2" data-spec-id="2.3.5.2" style="display:none;margin-top:0.5rem">
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
         <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
         <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
@@ -1849,9 +1849,9 @@ tr.is-reviewed td { opacity: 0.65; }
     <summary><span class="offpath-label">Pipeline Health</span> <span class="offpath-desc">document counts, extraction backlog, scraper config</span></summary>
 
   <!-- Step 4 — Ingest Status [OPTIONAL] -->
-  <div class="card" data-ui-id="2.3" data-spec-id="2.3">
+  <div class="card" data-ui-id="2.3.6" data-spec-id="2.3.6">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>Ingest Status</h3>
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.6</span>Ingest Status</h3>
       <span class="wf-path-badge wf-optional">Optional</span>
       <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()" style="margin-left:auto">Refresh</button>
       <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
@@ -1860,10 +1860,10 @@ tr.is-reviewed td { opacity: 0.65; }
       Document counts, extraction backlog, and scraper config health per company.
       Check here if extraction results are sparse — grey cells in the Data Explorer mean no document was ingested for that period.
     </p>
-    <div id="pipe-summary" data-spec-id="2.3.1" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
+    <div id="pipe-summary" data-spec-id="2.3.6.1" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
     <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
     <div style="overflow-x:auto">
-      <table id="pipeline-table" data-ui-id="2.3.2" data-spec-id="2.3.2">
+      <table id="pipeline-table" data-ui-id="2.3.6.2" data-spec-id="2.3.6.2">
         <thead>
           <tr>
             <th>Ticker</th>
@@ -1889,19 +1889,19 @@ tr.is-reviewed td { opacity: 0.65; }
 </div><!-- /pane-ingest -->
 
 <!-- ── Interpret pane ──────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-interpret" data-ui-id="3.0" data-spec-id="3.0">
+<div class="ops-pane" id="pane-interpret" data-ui-id="2.4" data-spec-id="2.4">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="3.1">Extract <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="3.2">QC <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="2.4.1">Extract <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="2.4.2">QC <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Extract (3.1) -->
-  <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="3.1" data-spec-id="3.1">
+  <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="2.4.1" data-spec-id="2.4.1">
 
     <!-- Prompt preview — review before running extraction -->
-    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.4.P" data-spec-id="1.4.P">
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="2.2.4.2" data-spec-id="2.2.4.2">
       <div class="section-header-row" style="margin-bottom:0.5rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.P</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.2</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Assembled prompt the LLM receives — verify before running extraction</span>
         <button class="btn btn-sm btn-secondary" onclick="loadPromptPreview()" style="margin-left:auto">Refresh</button>
       </div>
@@ -1928,9 +1928,9 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Prompt Editor — per-metric DB override -->
-    <div class="card" style="margin-bottom:1.25rem" data-ui-id="1.4.E" data-spec-id="1.4.E">
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="2.2.4.3" data-spec-id="2.2.4.3">
       <div class="section-header-row" style="margin-bottom:0.6rem">
-        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">1.4.E</span>Prompt Editor</h3>
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.3</span>Prompt Editor</h3>
         <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Edit and save a DB override for any metric — takes effect immediately on the next extraction run</span>
       </div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
@@ -1974,8 +1974,8 @@ tr.is-reviewed td { opacity: 0.65; }
       </div>
     </div>
 
-    <div class="acq-section-label"><span class="spec-id">3.1.1</span>LLM Extraction</div>
-    <div class="acq-panel" data-ui-id="3.1.1" data-spec-id="3.1.1">
+    <div class="acq-section-label"><span class="spec-id">2.4.1.1</span>LLM Extraction</div>
+    <div class="acq-panel" data-ui-id="2.4.1.1" data-spec-id="2.4.1.1">
       <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.3rem"></div>
       <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.75rem">
         Leave empty to run all active companies. Multi-select runs only the selected tickers.
@@ -2099,8 +2099,8 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Re-extract gap months (3.1.2) -->
-    <div class="acq-section-label" style="margin-top:1.25rem"><span class="spec-id">3.1.2</span>Re-extract Gap Months</div>
-    <div class="acq-panel" data-ui-id="3.1.2" data-spec-id="3.1.2">
+    <div class="acq-section-label" style="margin-top:1.25rem"><span class="spec-id">2.4.1.2</span>Re-extract Gap Months</div>
+    <div class="acq-panel" data-ui-id="2.4.1.2" data-spec-id="2.4.1.2">
       <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.55">
         Finds already-ingested documents that completed extraction but are missing data for the
         selected metrics, then re-sends only those documents to the LLM.
@@ -2108,7 +2108,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <code>reports</code> table.
         Analyst-protected rows (<code>analyst</code>, <code>review_approved</code>,
         <code>review_edited</code>) are never overwritten.
-        Use <span class="spec-id-inline">3.1.1</span> when you want to re-run extraction over a
+        Use <span class="spec-id-inline">2.4.1.1</span> when you want to re-run extraction over a
         date window; use this panel when targeted metric-level gaps need backfilling.
       </p>
 
@@ -2137,9 +2137,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-interpret-extract -->
 
   <!-- Sub-pane: QC (3.2) -->
-  <div class="pipeline-sub-pane" id="spane-interpret-qc" data-ui-id="3.2" data-spec-id="3.2">
+  <div class="pipeline-sub-pane" id="spane-interpret-qc" data-ui-id="2.4.2" data-spec-id="2.4.2">
     <div class="section-header-row">
-      <h3 style="font-size:0.9rem;margin:0"><span class="spec-id">3.2</span>QC Snapshots</h3>
+      <h3 style="font-size:0.9rem;margin:0"><span class="spec-id">2.4.2</span>QC Snapshots</h3>
       <button class="btn btn-sm btn-secondary" onclick="captureQCSnapshot()">Capture Snapshot</button>
       <span id="qc-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
     </div>
@@ -2168,16 +2168,16 @@ tr.is-reviewed td { opacity: 0.65; }
 </div><!-- /pane-interpret -->
 
 <!-- ── Data pane ───────────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-data" data-ui-id="5.0" data-spec-id="5.0">
+<div class="ops-pane" id="pane-data" data-ui-id="2.6" data-spec-id="2.6">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="2.6.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="2.6.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
     <button class="pipeline-sub-tab" data-spane="documents" onclick="activatePipelineSubTab('data','documents');loadDocuments()">Documents <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Explorer (5.1) -->
-  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="5.1" data-spec-id="5.1">
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="5.1.1">
+  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="2.6.1" data-spec-id="2.6.1">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.6.1.1">
     <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <select id="ex-state">
       <option value="">All states</option>
@@ -2215,18 +2215,18 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
   <div class="explorer-wrap">
     <div class="explorer-grid-scroll">
-      <div id="explorer-grid" data-ui-id="5.1.2" data-spec-id="5.1.2">
+      <div id="explorer-grid" data-ui-id="2.6.1.2" data-spec-id="2.6.1.2">
         <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-          <span class="spec-id">5.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
+          <span class="spec-id">2.6.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
         </div>
         <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
       </div>
     </div>
-    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="5.1.3" data-spec-id="5.1.3">
-      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">5.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
+    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.6.1.3" data-spec-id="2.6.1.3">
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.6.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
-      <div class="cell-actions" id="cell-actions" data-spec-id="5.1.5"></div>
-      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="5.1.4" data-spec-id="5.1.4">
+      <div class="cell-actions" id="cell-actions" data-spec-id="2.6.1.5"></div>
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.6.1.4" data-spec-id="2.6.1.4">
         <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
@@ -2236,7 +2236,7 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
         <div id="cell-save-error" style="color:var(--theme-danger);font-size:0.75rem;margin-top:0.3rem"></div>
       </div>
-      <div id="cell-reextract-panel" style="display:none" data-ui-id="5.1.6" data-spec-id="5.1.6">
+      <div id="cell-reextract-panel" style="display:none" data-ui-id="2.6.1.6" data-spec-id="2.6.1.6">
         <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
         <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
         <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
@@ -2251,8 +2251,8 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-data-explorer -->
 
   <!-- Sub-pane: Registry (5.2) -->
-  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="5.2" data-spec-id="5.2">
-  <div class="registry-filters" data-ui-id="5.2.1" data-spec-id="5.2.1">
+  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="2.6.2" data-spec-id="2.6.2">
+  <div class="registry-filters" data-ui-id="2.6.2.1" data-spec-id="2.6.2.1">
     <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <input id="reg-period" type="month" placeholder="Period">
     <select id="reg-doc-type">
@@ -2275,9 +2275,9 @@ tr.is-reviewed td { opacity: 0.65; }
     <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
     <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
-  <table id="registry-table" data-ui-id="5.2.2" data-spec-id="5.2.2">
+  <table id="registry-table" data-ui-id="2.6.2.2" data-spec-id="2.6.2.2">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">5.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">2.6.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
     </caption>
     <thead>
       <tr>
@@ -2345,15 +2345,15 @@ tr.is-reviewed td { opacity: 0.65; }
 </div><!-- /pane-data -->
 
 <!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-review" data-ui-id="4.0" data-spec-id="4.0">
+<div class="ops-pane" id="pane-review" data-ui-id="2.5" data-spec-id="2.5">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="4.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="4.0">Miner Timeline <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="4.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="2.5.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="2.5.2">Miner Timeline <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="2.5.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
-  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="4.0" data-spec-id="4.0">
+  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="2.5.2" data-spec-id="2.5.2">
 
 <!-- How this works — pipeline explanation -->
 <details style="margin-bottom:1rem;border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem 0.75rem">
@@ -2416,7 +2416,7 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <div class="md-page">
-  <h1 class="page-title" style="margin:0" data-spec-id="MD5.0"><span class="spec-id">5.0</span>Miner Data</h1>
+  <h1 class="page-title" style="margin:0" data-spec-id="2.5.2"><span class="spec-id">2.5.2</span>Miner Data</h1>
 
   <!-- ── Company tabs ─────────────────────────────────────────────────── -->
   <div id="company-tabs" class="md-tabs">
@@ -2443,9 +2443,9 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <!-- Right: filters + table -->
-    <div class="md-table-panel" id="miner-review-table-panel" data-spec-id="MD5.1">
+    <div class="md-table-panel" id="miner-review-table-panel" data-spec-id="2.5.2.2">
       <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
-        <span class="spec-id">5.1</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
+        <span class="spec-id">2.5.2.2</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
       </div>
       <div class="md-table-filters">
         <div class="md-mode-toggle">
@@ -2453,6 +2453,7 @@ tr.is-reviewed td { opacity: 0.65; }
           <button class="btn btn-secondary btn-sm" id="table-mode-edit-btn" onclick="setMinerTableMode('edit')">Edit</button>
         </div>
         <button class="btn btn-secondary btn-sm" id="add-row-btn" onclick="toggleAddRowPanel()" style="display:none">Add Row</button>
+        <button class="btn btn-secondary btn-sm" id="csv-paste-btn" onclick="openCsvPasteModal()" style="display:none" data-ui-id="2.5.2.2.1">Paste CSV</button>
         <button id="sync-btn" class="btn-sync" onclick="syncEdits()" style="display:none">Sync</button>
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
@@ -2724,9 +2725,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-review-miner -->
 
   <!-- Sub-pane: Review Queue (4.1) -->
-  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="4.1" data-spec-id="4.1">
+  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="2.5.1" data-spec-id="2.5.1">
     <div class="section-header-row" style="margin-bottom:0.75rem">
-      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.5.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
     </div>
 
     <!-- Filter bar -->
@@ -2767,7 +2768,7 @@ tr.is-reviewed td { opacity: 0.65; }
     </div>
 
     <div style="overflow-x:auto">
-      <table class="review-table" id="review-table" data-ui-id="4.1.2" data-spec-id="4.1.2">
+      <table class="review-table" id="review-table" data-ui-id="2.5.1.4" data-spec-id="2.5.1.4">
         <thead>
           <tr>
             <th>Docs</th>
@@ -2839,9 +2840,9 @@ tr.is-reviewed td { opacity: 0.65; }
   </div><!-- /spane-review-queue -->
 
   <!-- Sub-pane: Highlight Dictionary (4.3) -->
-  <div class="pipeline-sub-pane" id="spane-review-highlight" data-ui-id="4.3" data-spec-id="4.3">
+  <div class="pipeline-sub-pane" id="spane-review-highlight" data-ui-id="2.5.3" data-spec-id="2.5.3">
     <div class="section-header-row" style="margin-bottom:0.5rem">
-      <h2 style="margin:0;font-size:1rem"><span class="spec-id">4.3</span>Highlight Dictionary <span class="source-badge source-badge-config">CONFIG</span></h2>
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.5.3</span>Highlight Dictionary <span class="source-badge source-badge-config">CONFIG</span></h2>
     </div>
     <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
       Terms highlighted in source document viewers (Explorer and Review). No effect on extraction — for readability only.
@@ -2862,8 +2863,8 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <!-- ── Interrogate pane (6.0) ─────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-interrogate" data-ui-id="6.0" data-spec-id="6.0">
-  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">6.0</span>Interrogate</h2>
+<div class="ops-pane" id="pane-interrogate" data-ui-id="2.8" data-spec-id="2.8">
+  <h2 style="font-size:1rem;margin:0 0 0.5rem"><span class="spec-id">2.8</span>Interrogate</h2>
   <p style="font-size:0.85rem;color:var(--theme-text-muted);margin:0 0 1rem">
     Natural language queries against the extracted dataset. Spec ID 6.0 reserved — implementation pending.
   </p>
@@ -2873,7 +2874,7 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <!-- ── Health pane (7.0) ─────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-health" data-ui-id="7.0">
+<div class="ops-pane" id="pane-health" data-ui-id="2.7">
   <div class="section-header-row" style="margin-bottom:0.75rem">
     <h2 style="font-size:1rem;margin:0">Ticker Health Checks</h2>
     <button class="btn btn-sm btn-secondary" onclick="loadHealthTab(true)" id="health-refresh-btn">Refresh</button>
@@ -2903,9 +2904,9 @@ tr.is-reviewed td { opacity: 0.65; }
 </div>
 
 <!-- ── Document viewer panel (fixed bottom drawer, outside all ops-panes) ── -->
-<div id="doc-panel" data-spec-id="MD5.2" data-path="critical">
+<div id="doc-panel" data-spec-id="2.5.2.6" data-path="critical">
   <div class="doc-panel-header">
-    <div id="doc-panel-title"><span class="spec-id">5.2</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
+    <div id="doc-panel-title"><span class="spec-id">2.5.2.6</span><span id="doc-panel-title-text">Document Viewer</span> <span class="source-badge source-badge-data">DATA</span></div>
     <button class="btn btn-secondary btn-sm" id="open-new-tab-btn" onclick="openInNewTab()" title="Open original source URL" style="font-size:0.8rem;padding:0.2rem 0.5rem">⤢ Source</button>
     <button class="doc-panel-close" onclick="closeDocPanel()" title="Close (Esc)">✕</button>
   </div>
@@ -6002,7 +6003,7 @@ async function loadCellDetail(ticker, period, metric) {
   const editBtn = document.createElement('button');
   editBtn.className = 'btn btn-sm btn-secondary';
   editBtn.textContent = 'Edit Value';
-  editBtn.setAttribute('data-ui-id', '2.3.4');
+  editBtn.setAttribute('data-ui-id', '2.6.1.4');
   editBtn.onclick = function() {
     document.getElementById('cell-save-value').value = d.value != null ? d.value : '';
     document.getElementById('cell-save-form').style.display = '';
@@ -6012,14 +6013,14 @@ async function loadCellDetail(ticker, period, metric) {
   const gapBtn = document.createElement('button');
   gapBtn.className = 'btn btn-sm btn-secondary';
   gapBtn.textContent = 'Mark Gap';
-  gapBtn.setAttribute('data-ui-id', '2.3.5');
+  gapBtn.setAttribute('data-ui-id', '2.6.1.5');
   gapBtn.onclick = function() { submitMarkGap(); };
   actEl.appendChild(gapBtn);
 
   const reexBtn = document.createElement('button');
   reexBtn.className = 'btn btn-sm btn-secondary';
   reexBtn.textContent = 'Re-extract';
-  reexBtn.setAttribute('data-ui-id', '2.3.6');
+  reexBtn.setAttribute('data-ui-id', '2.6.1.6');
   reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
   actEl.appendChild(reexBtn);
 

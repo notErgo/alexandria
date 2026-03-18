@@ -5191,6 +5191,22 @@ class MinerDB:
                 (note, datetime.now(timezone.utc).isoformat(), id),
             )
 
+    def dismiss_review_items_for_cell(
+        self, ticker: str, period: str, metric: str, note: str = 'superseded_by_analyst_finalize'
+    ) -> int:
+        """Reject all PENDING review_queue items for a specific ticker/period/metric cell.
+
+        Returns the number of rows updated.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """UPDATE review_queue
+                   SET status='REJECTED', reviewer_note=?, reviewed_at=?
+                   WHERE ticker=? AND period=? AND metric=? AND status='PENDING'""",
+                (note, datetime.now(timezone.utc).isoformat(), ticker, period, metric),
+            )
+            return cursor.rowcount
+
     def edit_review_item(self, id: int, corrected_value: float, note: str) -> dict:
         with self._get_connection() as conn:
             row = conn.execute(

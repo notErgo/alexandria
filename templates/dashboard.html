@@ -74,7 +74,7 @@
   background: rgba(249,115,22,0.12);
   color: var(--theme-warning);
 }
-.chart-container { width: 100%; height: 260px; }
+.chart-container { width: 100%; height: 338px; }
 
 /* Loading / error states */
 #dashboard-content { min-height: 200px; }
@@ -88,10 +88,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-title" data-spec-id="DB6.0"><span class="spec-id">6.0</span>Dashboard</div>
+<div class="page-title" data-spec-id="5.0" data-ui-id="5.0"><span class="spec-id">5.0</span>Dashboard</div>
 
 <!-- View toggle -->
-<div style="display:flex;gap:0.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap;">
+<div data-spec-id="5.1.1" data-ui-id="5.1.1" style="display:flex;gap:0.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap;">
   <button id="btn-overview" class="btn btn-primary btn-sm" onclick="setView('overview')">Overview</button>
   <button id="btn-stacked" class="btn btn-secondary btn-sm" onclick="setView('stacked')">Stacked Bar</button>
   <button id="btn-timeseries" class="btn btn-secondary btn-sm" onclick="setView('timeseries')">Timeseries</button>
@@ -132,18 +132,18 @@
       </select>
     </div>
   </div>
-  <div class="card" style="padding:1rem;" data-spec-id="DB6.1">
+  <div class="card" style="padding:1rem;" data-spec-id="5.1" data-ui-id="5.1">
     <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.5rem">
-      <span class="spec-id">6.1</span>Metric Panels <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">5.1</span>Metric Panels <span class="source-badge source-badge-data">DATA</span>
     </div>
-    <div id="stacked-chart" style="width:100%;height:420px;"></div>
+    <div id="stacked-chart" style="width:100%;height:546px;"></div>
   </div>
 </div>
 
 <!-- ── Timeseries panel (existing) ─────────────────────── -->
 <div id="timeseries-panel" style="display:none;">
   <!-- Filter bar -->
-  <div class="card filter-bar" id="filter-bar">
+  <div class="card filter-bar" id="filter-bar" data-spec-id="5.1.2" data-ui-id="5.1.2">
     <div class="filter-section">
       <label>Companies</label>
       <div class="ticker-checks" id="ticker-checks">
@@ -171,7 +171,7 @@
     </div>
   </div>
   <!-- Dashboard panels injected here -->
-  <div id="dashboard-content" data-spec-id="DB6.1">
+  <div id="dashboard-content" data-spec-id="5.1" data-ui-id="5.1">
     <div class="empty-state">Loading…</div>
   </div>
 </div>
@@ -307,13 +307,14 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
 
   const panel = document.createElement('div');
   panel.className = 'card metric-panel';
-  panel.setAttribute('data-spec-id', '6.1');
+  panel.setAttribute('data-spec-id', '5.1');
+  panel.setAttribute('data-ui-id', '5.1');
 
   // Panel header
   const header = document.createElement('div');
   header.className = 'panel-header';
   const h2 = document.createElement('h2');
-  h2.innerHTML = '<span class="spec-id">6.1</span>' + escapeHtml(label + ' (' + unit + ')') + ' <span class="source-badge source-badge-data">DATA</span>';
+  h2.innerHTML = '<span class="spec-id">5.1</span>' + escapeHtml(label + ' (' + unit + ')') + ' <span class="source-badge source-badge-data">DATA</span>';
   header.appendChild(h2);
 
   // Completeness badges
