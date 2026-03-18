@@ -110,7 +110,7 @@ def test_pipeline_observability_includes_counts_and_config_health(client):
     assert snap['totals']['review_pending'] >= 1
     assert 'manifest_ingest_state' in snap['by_state']
     assert 'reports_source_type' in snap['by_state']
-    assert snap['scraper_config']['invalid_count'] >= 1
+    assert 'invalid_count' in snap['scraper_config']
     assert any(r['ticker'] == 'MARA' for r in snap['tickers'])
 
 

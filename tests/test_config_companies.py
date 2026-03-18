@@ -9,10 +9,6 @@ def _valid_entry(**kwargs):
         'name': 'Test Corp',
         'tier': 1,
         'active': True,
-        'scraper_mode': 'rss',
-        'rss_url': 'https://example.com/rss',
-        'url_template': None,
-        'skip_reason': None,
         'filing_regime': 'domestic',
         'fiscal_year_end_month': 12,
     }
@@ -46,32 +42,6 @@ class TestValidateCompaniesConfig:
         # bool is a subclass of int in Python; True == 1 passes range check without explicit guard
         errors = validate_companies_config([_valid_entry(fiscal_year_end_month=True)])
         assert any('fiscal_year_end_month' in e for e in errors)
-
-    def test_unknown_scraper_mode(self):
-        errors = validate_companies_config([_valid_entry(scraper_mode='magic')])
-        assert any('scraper_mode' in e for e in errors)
-
-    def test_rss_mode_requires_rss_url(self):
-        errors = validate_companies_config([_valid_entry(scraper_mode='rss', rss_url=None)])
-        assert any('rss_url' in e for e in errors)
-
-    def test_template_mode_requires_url_template(self):
-        errors = validate_companies_config([
-            _valid_entry(scraper_mode='template', url_template=None)
-        ])
-        assert any('url_template' in e for e in errors)
-
-    def test_discovery_mode_requires_ir_url(self):
-        errors = validate_companies_config([
-            _valid_entry(scraper_mode='discovery', rss_url=None, ir_url=None)
-        ])
-        assert any('ir_url' in e for e in errors)
-
-    def test_skip_mode_requires_skip_reason(self):
-        errors = validate_companies_config([
-            _valid_entry(scraper_mode='skip', skip_reason=None, active=False)
-        ])
-        assert any('skip_reason' in e for e in errors)
 
     def test_unknown_filing_regime(self):
         errors = validate_companies_config([_valid_entry(filing_regime='alien')])

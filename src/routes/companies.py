@@ -8,7 +8,6 @@ from pathlib import Path
 import requests
 from flask import Blueprint, jsonify, request
 
-from config import _VALID_SCRAPER_MODES
 from orchestration import (
     _expand_template_url,
     _probe_candidate_url,
@@ -72,27 +71,6 @@ def _parse_optional_start_date(body: dict) -> tuple[str | None, str | None]:
         return None, 'pr_start_date year must be between 2009 and 2100'
     return txt[:10], None
 
-
-def _validate_mode_requirements(mode: str, fields: dict) -> str | None:
-    if mode == 'rss':
-        has_rss = bool(fields.get('rss_url') or fields.get('prnewswire_url') or fields.get('globenewswire_url'))
-        if not has_rss:
-            return "rss mode requires rss_url or aggregator feed URL (prnewswire_url/globenewswire_url)"
-    if mode == 'template':
-        if not fields.get('url_template'):
-            return "template mode requires non-empty url_template"
-        if not fields.get('pr_start_date'):
-            return "template mode requires pr_start_date"
-    if mode == 'discovery':
-        if not fields.get('ir_url'):
-            return "discovery mode requires non-empty ir_url"
-        if not fields.get('pr_start_date'):
-            return "discovery mode requires pr_start_date"
-    if mode == 'index' and not fields.get('ir_url'):
-        return "index mode requires non-empty ir_url"
-    if mode == 'playwright' and not fields.get('ir_url'):
-        return "playwright mode requires non-empty ir_url"
-    return None
 
 
 @bp.route('/api/companies')
@@ -311,14 +289,10 @@ def create_company():
     ticker = body.get('ticker', '').strip().upper()
     name = body.get('name', '').strip()
     sector = body.get('sector', 'BTC-miners').strip()
-    scraper_mode = body.get('scraper_mode', 'skip').strip().lower()
     reporting_cadence = (body.get('reporting_cadence') or 'monthly').strip().lower()
     ir_url = _normalize_optional_text(body, 'ir_url') or ''
-    rss_url = _normalize_optional_text(body, 'rss_url')
     prnewswire_url = _normalize_optional_text(body, 'prnewswire_url')
     globenewswire_url = _normalize_optional_text(body, 'globenewswire_url')
-    url_template = _normalize_optional_text(body, 'url_template')
-    skip_reason = _normalize_optional_text(body, 'skip_reason')
     sandbox_note = _normalize_optional_text(body, 'sandbox_note')
     pr_start_date, year_err = _parse_optional_start_date(body)
 
@@ -326,41 +300,22 @@ def create_company():
         return jsonify({'success': False, 'error': {'message': 'ticker required (max 10 chars)'}}), 400
     if not name or len(name) > 100:
         return jsonify({'success': False, 'error': {'message': 'name required (max 100 chars)'}}), 400
-    if scraper_mode not in _VALID_SCRAPER_MODES:
-        return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
     if reporting_cadence not in ('monthly', 'quarterly', 'annual'):
         return jsonify({'success': False, 'error': {'message': "reporting_cadence must be 'monthly', 'quarterly', or 'annual'"}}), 400
     if year_err:
         return jsonify({'success': False, 'error': {'message': year_err}}), 400
 
-    field_map = {
-        'ir_url': ir_url,
-        'rss_url': rss_url,
-        'prnewswire_url': prnewswire_url,
-        'globenewswire_url': globenewswire_url,
-        'url_template': url_template,
-        'pr_start_date': pr_start_date,
-        'skip_reason': skip_reason,
-    }
-    mode_err = _validate_mode_requirements(scraper_mode, field_map)
-    if mode_err:
-        return jsonify({'success': False, 'error': {'message': mode_err}}), 400
-
     try:
         company = db.add_company(
             ticker=ticker, name=name, sector=sector,
-            scraper_mode=scraper_mode,
             reporting_cadence=reporting_cadence,
             ir_url=ir_url,
             pr_base_url=body.get('pr_base_url'),
             cik=body.get('cik'),
             scraper_issues_log=body.get('scraper_issues_log', ''),
-            rss_url=rss_url,
             prnewswire_url=prnewswire_url,
             globenewswire_url=globenewswire_url,
-            url_template=url_template,
             pr_start_date=pr_start_date,
-            skip_reason=skip_reason,
             sandbox_note=sandbox_note,
         )
     except sqlite3.IntegrityError:
@@ -487,9 +442,9 @@ def update_company(ticker):
         return jsonify({'success': False, 'error': {'message': f'Company {ticker!r} not found'}}), 404
     body = request.get_json(silent=True) or {}
     allowed = {
-        'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
-        'rss_url', 'prnewswire_url', 'globenewswire_url',
-        'url_template', 'pr_start_date', 'skip_reason', 'sandbox_note',
+        'name', 'ir_url', 'pr_base_url', 'scraper_issues_log', 'cik', 'sector',
+        'prnewswire_url', 'globenewswire_url',
+        'pr_start_date', 'sandbox_note',
         'active', 'btc_first_filing_date', 'reporting_cadence',
     }
     _VALID_REPORTING_CADENCES = ('monthly', 'quarterly', 'annual')
@@ -500,14 +455,9 @@ def update_company(ticker):
         new_active = bool(kwargs.pop('active'))
         kwargs['active'] = 1 if new_active else 0
     for key in ('name', 'ir_url', 'pr_base_url', 'scraper_issues_log', 'cik', 'sector',
-                'rss_url', 'prnewswire_url', 'globenewswire_url', 'url_template',
-                'skip_reason', 'sandbox_note'):
+                'prnewswire_url', 'globenewswire_url', 'sandbox_note'):
         if key in kwargs:
             kwargs[key] = _normalize_optional_text(kwargs, key)
-    if 'scraper_mode' in kwargs:
-        kwargs['scraper_mode'] = str(kwargs['scraper_mode']).strip().lower()
-    if 'scraper_mode' in kwargs and kwargs['scraper_mode'] not in _VALID_SCRAPER_MODES:
-        return jsonify({'success': False, 'error': {'message': f'scraper_mode must be one of {sorted(_VALID_SCRAPER_MODES)}'}}), 400
     if 'pr_start_date' in kwargs:
         date_val, year_err = _parse_optional_start_date(kwargs)
         if year_err:
@@ -529,21 +479,6 @@ def update_company(ticker):
             kwargs['btc_first_filing_date'] = raw_date
         else:
             kwargs['btc_first_filing_date'] = None  # clear → re-enables auto-detect
-
-    existing = db.get_company(ticker) or {}
-    effective_mode = (kwargs.get('scraper_mode') or existing.get('scraper_mode') or 'skip').strip().lower()
-    mode_fields = {
-        'ir_url': kwargs.get('ir_url', existing.get('ir_url')),
-        'rss_url': kwargs.get('rss_url', existing.get('rss_url')),
-        'prnewswire_url': kwargs.get('prnewswire_url', existing.get('prnewswire_url')),
-        'globenewswire_url': kwargs.get('globenewswire_url', existing.get('globenewswire_url')),
-        'url_template': kwargs.get('url_template', existing.get('url_template')),
-        'pr_start_date': kwargs.get('pr_start_date', existing.get('pr_start_date')),
-        'skip_reason': kwargs.get('skip_reason', existing.get('skip_reason')),
-    }
-    mode_err = _validate_mode_requirements(effective_mode, mode_fields)
-    if mode_err:
-        return jsonify({'success': False, 'error': {'message': mode_err}}), 400
 
     try:
         company = db.update_company_config(ticker, **kwargs)

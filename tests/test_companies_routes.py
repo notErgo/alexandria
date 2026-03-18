@@ -1,4 +1,4 @@
-"""Companies route tests for scraper mode validation and config persistence."""
+"""Companies route tests for config persistence and API behavior."""
 
 import importlib
 import os
@@ -29,21 +29,10 @@ def client(app):
     return app.test_client()
 
 
-def test_create_company_rss_requires_rss_url(client):
-    resp = client.post('/api/companies', json={
-        'ticker': 'TEST',
-        'name': 'Test Miner',
-        'scraper_mode': 'rss',
-    })
-    assert resp.status_code == 400
-    assert 'rss mode requires' in resp.get_json()['error']['message']
-
-
-def test_create_company_rss_accepts_globenewswire_placeholder(client):
+def test_create_company_persists_globenewswire_url(client):
     resp = client.post('/api/companies', json={
         'ticker': 'GNWS',
         'name': 'Globe Miner',
-        'scraper_mode': 'rss',
         'globenewswire_url': 'https://www.globenewswire.com/rssfeed/organization/test',
     })
     assert resp.status_code == 201
@@ -51,111 +40,38 @@ def test_create_company_rss_accepts_globenewswire_placeholder(client):
     assert row['globenewswire_url'] == 'https://www.globenewswire.com/rssfeed/organization/test'
 
 
-def test_create_company_template_requires_template_and_start_year(client):
+def test_create_company_persists_pr_start_date(client):
     resp = client.post('/api/companies', json={
         'ticker': 'TEST',
         'name': 'Test Miner',
-        'scraper_mode': 'template',
-        'url_template': 'https://example.com/{month}-{year}',
-    })
-    assert resp.status_code == 400
-    assert 'pr_start_date' in resp.get_json()['error']['message']
-
-
-def test_create_company_index_requires_ir_url(client):
-    resp = client.post('/api/companies', json={
-        'ticker': 'TEST',
-        'name': 'Test Miner',
-        'scraper_mode': 'index',
-    })
-    assert resp.status_code == 400
-    assert 'index mode requires' in resp.get_json()['error']['message']
-
-
-def test_create_company_template_persists_mode_fields(client):
-    resp = client.post('/api/companies', json={
-        'ticker': 'TEST',
-        'name': 'Test Miner',
-        'scraper_mode': 'template',
         'ir_url': 'https://example.com/news',
-        'url_template': 'https://example.com/{month}-{year}',
         'pr_start_date': '2022-01-01',
     })
     assert resp.status_code == 201
     data = resp.get_json()['data']
-    assert data['scraper_mode'] == 'template'
-    assert data['url_template'] == 'https://example.com/{month}-{year}'
     assert data['pr_start_date'] == '2022-01-01'
 
 
-def test_update_company_mode_validates_effective_configuration(client):
-    create = client.post('/api/companies', json={
-        'ticker': 'TEST',
-        'name': 'Test Miner',
-        'scraper_mode': 'skip',
-        'skip_reason': 'inactive',
-    })
-    assert create.status_code == 201
-
-    resp = client.put('/api/companies/TEST', json={'scraper_mode': 'rss'})
-    assert resp.status_code == 400
-    assert 'rss mode requires' in resp.get_json()['error']['message']
-
-
-def test_scraper_governance_flags_stale_skip_and_conflict(client):
-    # stale skip: no source_audit evidence
-    resp = client.post('/api/companies', json={
+def test_scraper_governance_returns_items(client):
+    client.post('/api/companies', json={
         'ticker': 'SKIPX',
         'name': 'Skip X',
-        'scraper_mode': 'skip',
-        'skip_reason': 'legacy',
     })
-    assert resp.status_code == 201
-
-    # skip conflict: has ACTIVE source evidence
-    resp = client.post('/api/companies', json={
-        'ticker': 'SKIPY',
-        'name': 'Skip Y',
-        'scraper_mode': 'skip',
-        'skip_reason': 'legacy',
-    })
-    assert resp.status_code == 201
-
-    # configured needs_probe: non-skip with no audit rows
-    resp = client.post('/api/companies', json={
-        'ticker': 'RUNX',
-        'name': 'Run X',
-        'scraper_mode': 'rss',
-        'rss_url': 'https://example.com/rss.xml',
-    })
-    assert resp.status_code == 201
-
-    import app_globals
-    db = app_globals.get_db()
-    db.upsert_source_audit({
-        'ticker': 'SKIPY',
-        'source_type': 'IR_PRIMARY',
-        'url': 'https://example.com',
-        'last_checked': '2026-03-05T00:00:00',
-        'http_status': 200,
-        'status': 'ACTIVE',
-    })
+    assert client.post('/api/companies', json={
+        'ticker': 'SKIPX',
+        'name': 'Skip X',
+    }).status_code in (201, 409)
 
     gov = client.get('/api/companies/scraper_governance?stale_days=30')
     assert gov.status_code == 200
     data = gov.get_json()['data']
-    items = {x['ticker']: x for x in data['items']}
-
-    assert items['SKIPX']['governance_status'] == 'stale_skip'
-    assert items['SKIPY']['governance_status'] == 'skip_conflict_active_source'
-    assert items['RUNX']['governance_status'] == 'needs_probe'
+    assert 'items' in data
 
 
 def test_discovery_candidates_roundtrip(client):
     created = client.post('/api/companies', json={
         'ticker': 'DISC',
         'name': 'Discovery Miner',
-        'scraper_mode': 'skip',
     })
     assert created.status_code == 201
 
@@ -175,133 +91,6 @@ def test_discovery_candidates_roundtrip(client):
     rows = listed.get_json()['data']['candidates']
     assert len(rows) == 2
     assert {r['source_type'] for r in rows} == {'RSS', 'IR_PRIMARY'}
-
-
-def test_bootstrap_probe_recommends_and_applies_mode(client, monkeypatch):
-    created = client.post('/api/companies', json={
-        'ticker': 'BOOT',
-        'name': 'Bootstrap Miner',
-        'scraper_mode': 'skip',
-    })
-    assert created.status_code == 201
-
-    add = client.post('/api/companies/BOOT/discovery_candidates', json={
-        'candidates': [{'source_type': 'RSS', 'url': 'https://example.com/rss.xml'}],
-    })
-    assert add.status_code == 200
-
-    import orchestration as orch_mod
-
-    def _fake_probe(source_type, url, timeout=12):
-        return {
-            'probe_status': 'ACTIVE',
-            'http_status': 200,
-            'last_checked': '2026-03-05T00:00:00',
-            'evidence_title': 'RSS feed detected',
-            'evidence_date': None,
-        }
-
-    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
-
-    run = client.post('/api/companies/BOOT/bootstrap_probe', json={'apply_mode': True})
-    assert run.status_code == 200
-    data = run.get_json()['data']
-    assert data['recommended_mode'] == 'rss'
-    assert data['applied'] is True
-
-    show = client.get('/api/companies/BOOT')
-    assert show.status_code == 200
-    company = show.get_json()['data']
-    assert company['scraper_mode'] == 'rss'
-    assert company['rss_url'] == 'https://example.com/rss.xml'
-
-
-def test_bootstrap_probe_globenewswire_candidate_applies_rss(client, monkeypatch):
-    created = client.post('/api/companies', json={
-        'ticker': 'GNEW',
-        'name': 'Globe Candidate',
-        'scraper_mode': 'skip',
-    })
-    assert created.status_code == 201
-
-    add = client.post('/api/companies/GNEW/discovery_candidates', json={
-        'candidates': [{'source_type': 'GLOBENEWSWIRE', 'url': 'https://www.globenewswire.com/rssfeed/org/abc'}],
-    })
-    assert add.status_code == 200
-
-    import routes.companies as companies_mod
-
-    def _fake_probe(source_type, url, timeout=12):
-        return {
-            'probe_status': 'ACTIVE',
-            'http_status': 200,
-            'last_checked': '2026-03-05T00:00:00',
-            'evidence_title': 'GlobeNewswire content detected',
-            'evidence_date': None,
-        }
-
-    import orchestration as orch_mod
-    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
-
-    run = client.post('/api/companies/GNEW/bootstrap_probe', json={'apply_mode': True})
-    assert run.status_code == 200
-    data = run.get_json()['data']
-    assert data['recommended_mode'] == 'rss'
-    assert data['applied'] is True
-
-    show = client.get('/api/companies/GNEW')
-    assert show.status_code == 200
-    company = show.get_json()['data']
-    assert company['scraper_mode'] == 'rss'
-    assert company['rss_url'] == 'https://www.globenewswire.com/rssfeed/org/abc'
-    assert company['globenewswire_url'] == 'https://www.globenewswire.com/rssfeed/org/abc'
-
-
-def test_bootstrap_probe_all_targets_governance_set(client, monkeypatch):
-    for ticker in ('AONE', 'ATWO'):
-        created = client.post('/api/companies', json={
-            'ticker': ticker,
-            'name': f'Company {ticker}',
-            'scraper_mode': 'skip',
-            'skip_reason': 'legacy',
-        })
-        assert created.status_code == 201
-
-    import orchestration as orch_mod
-
-    def _fake_probe(source_type, url, timeout=12):
-        return {
-            'probe_status': 'ACTIVE',
-            'http_status': 200,
-            'last_checked': '2026-03-05T00:00:00',
-            'evidence_title': 'active source',
-            'evidence_date': None,
-        }
-
-    monkeypatch.setattr(orch_mod, '_probe_candidate_url', _fake_probe)
-
-    # Seed one target with candidate URLs so the batch endpoint can probe it.
-    add = client.post('/api/companies/AONE/discovery_candidates', json={
-        'candidates': [{'source_type': 'RSS', 'url': 'https://example.com/aone.xml'}],
-    })
-    assert add.status_code == 200
-
-    run = client.post('/api/companies/bootstrap_probe_all', json={
-        'statuses': ['stale_skip'],
-        'tickers': ['AONE', 'ATWO'],
-        'apply_mode': True,
-    })
-    assert run.status_code == 200
-    payload = run.get_json()['data']
-    assert payload['targeted'] == 2
-    assert payload['completed'] == 1
-    assert payload['failed'] == 1
-
-    # AONE applied from ACTIVE RSS candidate.
-    show = client.get('/api/companies/AONE')
-    assert show.status_code == 200
-    company = show.get_json()['data']
-    assert company['scraper_mode'] == 'rss'
 
 
 def test_sync_companies_reenables_startup_auto_sync(client):

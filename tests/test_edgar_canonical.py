@@ -107,24 +107,19 @@ class TestPipelineDefaultExcludesIR:
 
 class TestScrapeWorkerEDGAROnly:
 
-    def test_execute_scrape_calls_ir_then_edgar(self, db_with_active_company):
-        """_execute_scrape calls IRScraper then EdgarConnector when scraper_mode is set."""
+    def test_execute_scrape_calls_edgar(self, db_with_active_company):
+        """_execute_scrape calls EdgarConnector. IR scraping has been removed."""
         from scrapers.scrape_worker import ScrapeWorker
 
-        # db_with_active_company fixture sets scraper_mode='rss'
         job = db_with_active_company.enqueue_scrape_job('MARA', 'historic')
         worker = ScrapeWorker(db_with_active_company)
 
-        mock_ir_inst = MagicMock()
-        with patch('scrapers.ir_scraper.IRScraper', return_value=mock_ir_inst) as mock_ir_cls:
-            with patch('scrapers.edgar_connector.EdgarConnector') as mock_edgar_cls:
-                mock_edgar = MagicMock()
-                mock_edgar_cls.return_value = mock_edgar
-                mock_edgar.fetch_all_filings.return_value = None
-                worker._execute_scrape(job)
+        with patch('scrapers.edgar_connector.EdgarConnector') as mock_edgar_cls:
+            mock_edgar = MagicMock()
+            mock_edgar_cls.return_value = mock_edgar
+            mock_edgar.fetch_all_filings.return_value = None
+            worker._execute_scrape(job)
 
-        mock_ir_cls.assert_called_once()
-        mock_ir_inst.scrape_company.assert_called_once()
         mock_edgar.fetch_all_filings.assert_called_once()
 
     def test_execute_scrape_skip_mode_skips_ir(self, db_with_active_company):

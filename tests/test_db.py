@@ -64,56 +64,22 @@ class TestCompanyCRUD:
         companies = db.get_companies()
         assert len([x for x in companies if x['ticker'] == 'XTEST']) == 1
 
-    def test_sync_companies_prefers_scraper_mode_over_legacy_scrape_mode(self, tmp_path):
+    def test_sync_companies_always_sets_scraper_mode_skip(self, tmp_path):
         db = MinerDB(str(tmp_path / 'test.db'))
         config_path = tmp_path / 'companies.json'
         config_path.write_text(json.dumps([
             {
                 'ticker': 'ZZZZ',
-                'name': 'Mode Priority Co',
+                'name': 'Mode Test Co',
                 'tier': 2,
                 'ir_url': 'https://example.com/investors',
                 'active': True,
-                'scrape_mode': 'skip',
-                'scraper_mode': 'rss',
-                'rss_url': 'https://example.com/feed.xml',
             }
         ]))
         db.sync_companies_from_config(str(config_path))
         company = db.get_company('ZZZZ')
         assert company is not None
-        assert company['scraper_mode'] == 'rss'
-
-    def test_sync_companies_does_not_overwrite_existing_mode_from_legacy_key(self, tmp_path):
-        db = MinerDB(str(tmp_path / 'test.db'))
-        config_path = tmp_path / 'companies.json'
-        config_path.write_text(json.dumps([
-            {
-                'ticker': 'ZZZZ',
-                'name': 'Mode Sticky Co',
-                'tier': 2,
-                'ir_url': 'https://example.com/investors',
-                'active': True,
-                'scraper_mode': 'rss',
-                'rss_url': 'https://example.com/feed.xml',
-            }
-        ]))
-        db.sync_companies_from_config(str(config_path))
-        assert db.get_company('ZZZZ')['scraper_mode'] == 'rss'
-
-        # Legacy scrape_mode in old config should not clobber the existing mode.
-        config_path.write_text(json.dumps([
-            {
-                'ticker': 'ZZZZ',
-                'name': 'Mode Sticky Co',
-                'tier': 2,
-                'ir_url': 'https://example.com/investors',
-                'active': True,
-                'scrape_mode': 'skip',
-            }
-        ]))
-        db.sync_companies_from_config(str(config_path))
-        assert db.get_company('ZZZZ')['scraper_mode'] == 'rss'
+        assert company['scraper_mode'] == 'skip'
 
 
 class TestReportCRUD:
@@ -441,9 +407,8 @@ class TestCompanyScraperFields:
         assert company['last_scrape_at'] == '2026-01-01'
 
     def test_update_company_config(self, db_with_company):
-        db_with_company.update_company_config('MARA', scraper_mode='rss', sector='BTC-miners')
+        db_with_company.update_company_config('MARA', sector='BTC-miners')
         company = db_with_company.get_company('MARA')
-        assert company['scraper_mode'] == 'rss'
         assert company['sector'] == 'BTC-miners'
 
     def test_add_company_creates_new_row(self, db):
@@ -452,7 +417,7 @@ class TestCompanyScraperFields:
         db.add_company(
             ticker='TESTX', name='Test Company', tier=2,
             ir_url='https://example.com/ir',
-            sector='BTC-miners', scraper_mode='skip',
+            sector='BTC-miners',
         )
         company = db.get_company('TESTX')
         assert company is not None

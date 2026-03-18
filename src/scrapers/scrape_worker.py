@@ -73,18 +73,16 @@ class ScrapeWorker(threading.Thread):
         return True
 
     def _execute_scrape(self, job: dict) -> None:
-        """Full ingest (IR + EDGAR) for one queued scrape job.
+        """EDGAR ingest for one queued scrape job.
 
-        Stage 1: IR press releases via IRScraper.scrape_company() — skipped if
-                 scraper_mode is 'skip' or missing.
-        Stage 2: EDGAR filings via EdgarConnector.fetch_all_filings() — skipped
-                 if the company has no CIK.
+        IR press release scraping has been removed — EDGAR is the canonical ingest
+        source. Stage 2 fetches EDGAR filings and is skipped only if the company
+        has no CIK.
 
         Updates company scraper_status to 'running' before scraping, then
         'ok' or 'error' on completion.
         """
         import requests as _req
-        from scrapers.ir_scraper import IRScraper
         from scrapers.edgar_connector import EdgarConnector
         from datetime import date
 
@@ -97,24 +95,7 @@ class ScrapeWorker(threading.Thread):
         try:
             session = _req.Session()
 
-            # Stage 1 — IR press releases
-            scraper_mode = company.get('scraper_mode') or company.get('scrape_mode', 'skip')
-            if scraper_mode and scraper_mode != 'skip':
-                log.info(
-                    "event=ir_scrape_start ticker=%s mode=%s",
-                    ticker, scraper_mode,
-                )
-                ir = IRScraper(db=self._db, session=session)
-                ir_summary = ir.scrape_company(company)
-                if ir_summary and ir_summary.errors > 0 and ir_summary.reports_ingested == 0:
-                    raise RuntimeError(
-                        f"{ticker} IR scrape completed with {ir_summary.errors} error(s) and 0 reports ingested"
-                    )
-                log.info("event=ir_scrape_end ticker=%s", ticker)
-            else:
-                log.info("event=ir_scrape_skip ticker=%s reason=mode=%s", ticker, scraper_mode)
-
-            # Stage 2 — EDGAR filings
+            # EDGAR filings
             cik = company.get('cik')
             if cik:
                 log.info("event=edgar_fetch_start ticker=%s cik=%s", ticker, cik)

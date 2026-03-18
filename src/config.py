@@ -50,16 +50,12 @@ ALL_ARCHIVE_TICKERS: List[str] = sorted([
 ])
 
 
-_VALID_SCRAPER_MODES: frozenset = frozenset({
-    'rss', 'template', 'index', 'discovery', 'skip', 'playwright', 'drupal_year',
-})
-
 _VALID_FILING_REGIMES: frozenset = frozenset({
     'domestic', 'canadian', 'foreign',
 })
 
 _COMPANY_REQUIRED_FIELDS: tuple = (
-    'ticker', 'name', 'tier', 'active', 'scraper_mode',
+    'ticker', 'name', 'tier', 'active',
     'filing_regime', 'fiscal_year_end_month',
 )
 
@@ -94,21 +90,6 @@ def validate_companies_config(companies: List[dict] = None) -> List[str]:
         fye = c.get('fiscal_year_end_month')
         if not isinstance(fye, int) or isinstance(fye, bool) or not (1 <= fye <= 12):
             errors.append(f'{label}: fiscal_year_end_month must be int 1-12, got {fye!r}')
-
-        mode = c.get('scraper_mode')
-        if mode not in _VALID_SCRAPER_MODES:
-            errors.append(
-                f'{label}: unknown scraper_mode {mode!r}'
-                f' (valid: {sorted(_VALID_SCRAPER_MODES)})'
-            )
-        elif mode == 'rss' and not c.get('rss_url'):
-            errors.append(f'{label}: scraper_mode="rss" requires rss_url')
-        elif mode == 'template' and not c.get('url_template'):
-            errors.append(f'{label}: scraper_mode="template" requires url_template')
-        elif mode == 'discovery' and not c.get('ir_url'):
-            errors.append(f'{label}: scraper_mode="discovery" requires ir_url')
-        elif mode == 'skip' and not c.get('skip_reason'):
-            errors.append(f'{label}: scraper_mode="skip" requires skip_reason')
 
         regime = c.get('filing_regime')
         if regime not in _VALID_FILING_REGIMES:

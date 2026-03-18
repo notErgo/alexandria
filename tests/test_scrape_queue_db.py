@@ -51,8 +51,8 @@ class TestScrapeQueueDB:
         jobs = db_with_active_company.get_pending_scrape_jobs()
         assert any(j['id'] == job['id'] for j in jobs)
 
-    def test_scrape_mode_skip_is_rejected(self, db):
-        # MARA is synced from companies.json on DB init; set scraper_mode to skip.
-        db.update_company_config('MARA', scraper_mode='skip')
-        with pytest.raises(ValueError, match='skip'):
-            db.enqueue_scrape_job('MARA', 'historic')
+    def test_enqueue_scrape_job_is_accepted(self, db):
+        # All companies can be enqueued regardless of mode; EDGAR is always attempted.
+        job = db.enqueue_scrape_job('MARA', 'historic')
+        assert job['ticker'] == 'MARA'
+        assert job['status'] == 'pending'

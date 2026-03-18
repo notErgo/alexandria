@@ -1047,7 +1047,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
         probe_timeout = int(config.get('probe_timeout_seconds', 12))
         if probe_skip and not requested_tickers:
             all_companies = db.get_companies(active_only=True)
-            skip_candidates = [c['ticker'] for c in all_companies if (c.get('scraper_mode') or 'skip') == 'skip']
+            skip_candidates = [c['ticker'] for c in all_companies]
             _event(db, run_id, 'bootstrap_probe', 'stage_start', candidates=len(skip_candidates))
             for t in skip_candidates:
                 if _is_cancelled(run_id):
@@ -1083,7 +1083,7 @@ def _execute_overnight_run(run_id: int, config: dict, requested_tickers: list[st
                 targets.append(t)
         else:
             companies = db.get_companies(active_only=True)
-            targets = [c['ticker'] for c in companies if (c.get('scraper_mode') or 'skip') != 'skip']
+            targets = [c['ticker'] for c in companies]
 
         for t in targets:
             db.upsert_pipeline_run_ticker(run_id, t, targeted=1)
@@ -1489,13 +1489,8 @@ def pipeline_preflight():
     try:
         companies = db.list_companies(active_only=True)
         companies_targeted = len(companies)
-        scraper_mode_skip_count = sum(
-            1 for c in companies
-            if (c.get('scraper_mode') or c.get('scrape_mode') or '') == 'skip'
-        )
     except Exception:
         companies_targeted = 0
-        scraper_mode_skip_count = 0
 
     warmup = warm_ollama_for_extraction(db=db, reason='preflight_check', force=False)
     llm_available = bool(warmup.get('warmed'))
@@ -1511,7 +1506,6 @@ def pipeline_preflight():
         'ollama_model': ollama_model,
         'keyword_count': keyword_count,
         'companies_targeted': companies_targeted,
-        'scraper_mode_skip_count': scraper_mode_skip_count,
     }})
 
 

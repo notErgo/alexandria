@@ -52,25 +52,23 @@ class TestScrapeWorker:
         result = worker._process_one()
         assert result is False
 
-    def test_execute_scrape_raises_when_ir_summary_all_errors(self, db_with_active_company):
-        """_execute_scrape raises RuntimeError when IR scrape returns only errors and 0 reports."""
+    def test_execute_scrape_only_runs_edgar(self, db_with_active_company):
+        """_execute_scrape calls EdgarConnector. IR scraping has been removed."""
         from scrapers.scrape_worker import ScrapeWorker
-        from miner_types import IngestSummary
 
-        db_with_active_company.update_company_scraper_fields('MARA', scraper_mode='rss')
         worker = ScrapeWorker(db_with_active_company)
 
-        failing_summary = IngestSummary(reports_ingested=0, errors=1)
-
-        with patch('scrapers.ir_scraper.IRScraper') as MockIR, \
-             patch('scrapers.edgar_connector.EdgarConnector'):
-            MockIR.return_value.scrape_company.return_value = failing_summary
+        with patch('scrapers.edgar_connector.EdgarConnector') as MockEdgar:
+            mock_edgar = MagicMock()
+            MockEdgar.return_value = mock_edgar
+            mock_edgar.fetch_all_filings.return_value = None
             job = {'ticker': 'MARA'}
-            with pytest.raises(RuntimeError, match="1 error"):
-                worker._execute_scrape(job)
+            worker._execute_scrape(job)
+
+        mock_edgar.fetch_all_filings.assert_called_once()
 
         company = db_with_active_company.get_company('MARA')
-        assert company['scraper_status'] == 'error'
+        assert company['scraper_status'] == 'ok'
 
     def test_execute_scrape_ok_when_partial_errors(self, db_with_active_company):
         """_execute_scrape completes normally when some reports were ingested despite errors."""

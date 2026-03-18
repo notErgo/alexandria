@@ -2647,12 +2647,9 @@ class MinerDB:
                 if not ticker:
                     continue
                 existing = conn.execute(
-                    "SELECT ticker, scraper_mode, cik FROM companies WHERE ticker = ?",
+                    "SELECT ticker, cik FROM companies WHERE ticker = ?",
                     (ticker,),
                 ).fetchone()
-
-                canonical_mode = c.get('scraper_mode')
-                legacy_mode = c.get('scrape_mode')
 
                 if existing is None:
                     if not insert_new:
@@ -2661,14 +2658,14 @@ class MinerDB:
                     conn.execute(
                         """INSERT INTO companies
                            (ticker, name, tier, ir_url, pr_base_url, cik, active,
-                            rss_url, url_template, pr_start_date, skip_reason, sandbox_note,
+                            pr_start_date, sandbox_note,
                             scraper_mode, sector, scraper_issues_log, scraper_status,
                             prnewswire_url, globenewswire_url,
                             filing_regime, fiscal_year_end_month, reporting_cadence)
                            VALUES
                            (:ticker,:name,:tier,:ir_url,:pr_base_url,:cik,:active,
-                            :rss_url,:url_template,:pr_start_date,:skip_reason,:sandbox_note,
-                            :scraper_mode,:sector,'','never_run',
+                            :pr_start_date,:sandbox_note,
+                            'skip',:sector,'','never_run',
                             :prnewswire_url,:globenewswire_url,
                             :filing_regime,:fiscal_year_end_month,:reporting_cadence)""",
                         {
@@ -2679,12 +2676,8 @@ class MinerDB:
                             'pr_base_url':          c.get('pr_base_url'),
                             'cik':                  c.get('cik'),
                             'active':               1 if c.get('active', True) else 0,
-                            'rss_url':              c.get('rss_url'),
-                            'url_template':         c.get('url_template'),
                             'pr_start_date':        c.get('pr_start_date'),
-                            'skip_reason':          c.get('skip_reason'),
                             'sandbox_note':         c.get('sandbox_note'),
-                            'scraper_mode':         canonical_mode or legacy_mode or 'skip',
                             'sector':               c.get('sector', 'BTC-miners'),
                             'prnewswire_url':       c.get('prnewswire_url'),
                             'globenewswire_url':    c.get('globenewswire_url'),
@@ -2700,10 +2693,8 @@ class MinerDB:
                         """UPDATE companies SET
                            name=:name, tier=:tier, ir_url=:ir_url, pr_base_url=:pr_base_url,
                            cik=:cik, active=:active,
-                           rss_url=:rss_url, url_template=:url_template,
-                           pr_start_date=:pr_start_date, skip_reason=:skip_reason,
-                           sandbox_note=:sandbox_note,
-                           scraper_mode=:scraper_mode, sector=:sector,
+                           pr_start_date=:pr_start_date, sandbox_note=:sandbox_note,
+                           scraper_mode='skip', sector=:sector,
                            prnewswire_url=:prnewswire_url, globenewswire_url=:globenewswire_url,
                            filing_regime=:filing_regime,
                            fiscal_year_end_month=:fiscal_year_end_month,
@@ -2717,15 +2708,8 @@ class MinerDB:
                             'pr_base_url':          c.get('pr_base_url'),
                             'cik':                  c.get('cik'),
                             'active':               1 if c.get('active', True) else 0,
-                            'rss_url':              c.get('rss_url'),
-                            'url_template':         c.get('url_template'),
                             'pr_start_date':        c.get('pr_start_date'),
-                            'skip_reason':          c.get('skip_reason'),
                             'sandbox_note':         c.get('sandbox_note'),
-                            # For existing rows, only canonical "scraper_mode" may overwrite.
-                            # Legacy "scrape_mode" is treated as seed-only to avoid reverting
-                            # analyst-updated modes from old config files.
-                            'scraper_mode':         (canonical_mode if canonical_mode is not None else existing['scraper_mode']) or 'skip',
                             'sector':               c.get('sector', 'BTC-miners'),
                             'prnewswire_url':       c.get('prnewswire_url'),
                             'globenewswire_url':    c.get('globenewswire_url'),
@@ -6915,8 +6899,8 @@ class MinerDB:
     def update_company_config(self, ticker: str, **kwargs) -> dict:
         """Update editable company fields. Returns updated company dict."""
         allowed = {
-            'name', 'ir_url', 'pr_base_url', 'scraper_mode', 'scraper_issues_log', 'cik', 'sector',
-            'rss_url', 'url_template', 'pr_start_date', 'skip_reason', 'sandbox_note',
+            'name', 'ir_url', 'pr_base_url', 'scraper_issues_log', 'cik', 'sector',
+            'pr_start_date', 'sandbox_note',
             'prnewswire_url', 'globenewswire_url', 'btc_first_filing_date', 'reporting_cadence',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
@@ -7011,11 +6995,10 @@ class MinerDB:
 
     def add_company(
         self, ticker: str, name: str, tier: int = 2, ir_url: str = '',
-        sector: str = 'BTC-miners', scraper_mode: str = 'skip',
+        sector: str = 'BTC-miners',
         pr_base_url: str = None, cik: str = None,
         scraper_issues_log: str = '', active: int = 1,
-        rss_url: str = None, url_template: str = None,
-        pr_start_date: str = None, skip_reason: str = None,
+        pr_start_date: str = None,
         sandbox_note: str = None,
         prnewswire_url: str = None, globenewswire_url: str = None,
         reporting_cadence: str = 'monthly',
@@ -7025,12 +7008,12 @@ class MinerDB:
             conn.execute(
                 """INSERT INTO companies
                    (ticker, name, tier, ir_url, pr_base_url, cik, active, sector, scraper_mode, scraper_issues_log,
-                    rss_url, url_template, pr_start_date, skip_reason, sandbox_note,
+                    pr_start_date, sandbox_note,
                     prnewswire_url, globenewswire_url, reporting_cadence)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?)""",
                 (ticker, name, tier, ir_url, pr_base_url, cik, active,
-                 sector, scraper_mode, scraper_issues_log,
-                 rss_url, url_template, pr_start_date, skip_reason, sandbox_note,
+                 sector, scraper_issues_log,
+                 pr_start_date, sandbox_note,
                  prnewswire_url, globenewswire_url, reporting_cadence),
             )
         return self.get_company(ticker)

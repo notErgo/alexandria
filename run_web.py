@@ -234,13 +234,12 @@ if __name__ == '__main__':
     try:
         _never_run = [
             c for c in _db.get_all_companies(active_only=True)
-            if c.get('scraper_mode', 'skip') != 'skip'
-            and c.get('scraper_status', 'never_run') == 'never_run'
+            if c.get('scraper_status', 'never_run') == 'never_run'
         ]
         for _co in _never_run:
             try:
                 _db.enqueue_scrape_job(_co['ticker'], 'historic')
-                log.info("Auto-enqueued first scrape for %s (mode=%s)", _co['ticker'], _co['scraper_mode'])
+                log.info("Auto-enqueued first scrape for %s", _co['ticker'])
             except ValueError:
                 pass  # job already pending — ignore
         if _never_run:
