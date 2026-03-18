@@ -157,6 +157,36 @@ def infer_period_from_text(text: str) -> Optional[date]:
     return None
 
 
+def _infer_body_period_strict(text: str, title_period: Optional[date] = None) -> Optional[date]:
+    """
+    Scan for a reporting-period phrase that differs from the title-inferred period.
+
+    Uses only _TEXT_PERIOD_PATTERNS[0] and [1] (never bare "Month YYYY"). For each
+    pattern, iterates all matches in the first 3000 chars and returns the first date
+    that differs from title_period. This prevents a title like
+    "March 2025 Mining Update" from blocking detection of "During February 2025" in
+    the body, even though "March 2025 Mining" also matches pattern[1].
+
+    title_period: the period already inferred from the filename or PR title; matches
+    equal to this value are skipped. Pass None to return the first match regardless.
+
+    Returns None if no qualifying match is found, leaving the caller's period unchanged.
+    """
+    sample = text[:3000]
+    for pattern in _TEXT_PERIOD_PATTERNS[:2]:
+        for m in pattern.finditer(sample):
+            month = MONTH_MAP.get(m.group(1).lower())
+            if not month:
+                continue
+            try:
+                d = date(int(m.group(2)), month, 1)
+            except ValueError:
+                continue
+            if title_period is None or d != title_period:
+                return d
+    return None
+
+
 def extract_quarterly_months(text: str) -> list:
     """
     Find all month+year references in a quarterly filing's full text.
@@ -377,9 +407,12 @@ class ArchiveIngestor:
                     log.warning("Could not infer period from %s", file_path.name)
                     continue
 
-                # Phase 1: correct temporal offset using body text
+                # Phase 1: correct temporal offset using body text.
+                # Uses _infer_body_period_strict (patterns 0+1 only) so that the
+                # announcement-month reference in the document title does not
+                # shadow the actual reporting-period phrase in the body prose.
                 period = filename_period
-                text_period = infer_period_from_text(text)
+                text_period = _infer_body_period_strict(text, filename_period)
                 if text_period is not None and text_period != period:
                     delta_months = abs(
                         (period.year - text_period.year) * 12

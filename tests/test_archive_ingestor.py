@@ -5,6 +5,7 @@ import pytest
 from datetime import date
 from pathlib import Path
 from scrapers.archive_ingestor import (
+    _infer_body_period_strict,
     infer_period_from_filename,
     infer_period_from_text,
     infer_ticker_from_path,
@@ -558,3 +559,46 @@ class TestParseEdgarHit:
             f"Companies without a CIK must document the reason in skip_reason: "
             f"{missing_cik_no_reason}"
         )
+
+
+class TestInferBodyPeriodStrict:
+    """_infer_body_period_strict only matches high-specificity phrases, not bare Month YYYY."""
+
+    def test_matches_for_the_month_of_phrase(self):
+        text = "TeraWulf Announces March 2025 Mining Update. For the month of February 2025, the company mined 200 BTC."
+        assert _infer_body_period_strict(text) == date(2025, 2, 1)
+
+    def test_matches_during_phrase(self):
+        text = "TeraWulf Announces March 2025 Mining Update. During February 2025, we achieved record production."
+        assert _infer_body_period_strict(text) == date(2025, 2, 1)
+
+    def test_matches_month_production_phrase(self):
+        text = "HIVE Digital Reports March 2025 Update. February 2025 production totalled 150 BTC."
+        assert _infer_body_period_strict(text) == date(2025, 2, 1)
+
+    def test_matches_month_mining_phrase(self):
+        text = "March 2025 Operational Update. February 2025 mining results are detailed below."
+        assert _infer_body_period_strict(text) == date(2025, 2, 1)
+
+    def test_returns_none_for_bare_month_only(self):
+        # Bare "February 2025" with no qualifying phrase -> strict mode returns None
+        text = "In this report we discuss February 2025 highlights."
+        assert _infer_body_period_strict(text) is None
+
+    def test_returns_none_when_no_period_in_body(self):
+        text = "The company had strong operational results this quarter."
+        assert _infer_body_period_strict(text) is None
+
+    def test_announcement_month_skipped_when_title_period_passed(self):
+        # "March 2025 Mining" matches pattern[1], but equals title_period -> skipped -> None
+        text = "TeraWulf Announces March 2025 Mining Update."
+        assert _infer_body_period_strict(text, title_period=date(2025, 3, 1)) is None
+
+    def test_announcement_month_returned_when_no_title_period(self):
+        # Without title_period context, first qualifying match is returned
+        text = "TeraWulf Announces March 2025 Mining Update."
+        assert _infer_body_period_strict(text, title_period=None) == date(2025, 3, 1)
+
+    def test_in_phrase_matches(self):
+        text = "March 2025 Update. Results for in February 2025 are summarised here."
+        assert _infer_body_period_strict(text) == date(2025, 2, 1)

@@ -314,6 +314,42 @@ def infer_period_from_text(text: str) -> Optional[date]:
     return infer_period_from_pr_title(normalized)
 
 
+def _apply_body_period_correction(
+    title_period: date,
+    raw_text: str,
+    ticker: str,
+    label: str,
+    fetch_strategy: str,
+) -> tuple:
+    """Cross-check title-inferred period against body text; override if they differ by <=2 months.
+
+    Some companies title press releases with the announcement month while the body
+    reports on the prior month (e.g. "March 2025 Mining Update" covers February data).
+    This mirrors the correction in archive_ingestor.py (Phase 1 offset correction).
+
+    Uses archive_ingestor.infer_period_from_text which applies ordered patterns
+    ("for the month of" > "Month YYYY production" > bare "Month YYYY"), so it
+    correctly prefers the explicit reporting-period phrase over the announcement-month
+    reference that typically appears first in the document.
+
+    Returns (period: date, period_str: str).
+    """
+    from scrapers.archive_ingestor import _infer_body_period_strict
+    body_period = _infer_body_period_strict(raw_text[:3000], title_period)
+    if body_period is not None and body_period != title_period:
+        delta = abs(
+            (title_period.year - body_period.year) * 12
+            + (title_period.month - body_period.month)
+        )
+        if delta <= 2:
+            log.info(
+                "%s [%s]: period offset corrected title=%s body=%s (%s)",
+                ticker, fetch_strategy, title_period, body_period, label,
+            )
+            title_period = body_period
+    return title_period, title_period.strftime("%Y-%m-%d")
+
+
 def infer_published_date_from_html(html_text: str) -> Optional[str]:
     """Best-effort published-date extractor for discovery-fetched IR pages."""
     soup = BeautifulSoup(html_text, "lxml")
@@ -1167,6 +1203,9 @@ class IRScraper:
                     continue
 
                 html_fields = make_html_report_fields(page.text)
+                period, period_str = _apply_body_period_correction(
+                    period, html_fields["raw_text"], ticker, item["title"], "rss"
+                )
                 content_hash = simhash_text(html_fields["raw_text"][:5000])
                 dupes = self.db.find_near_duplicates(content_hash, ticker)
                 if dupes:
@@ -1732,7 +1771,9 @@ class IRScraper:
                         log.debug("Skipping PR before pr_start_date year=%d: %s %s", start_year, ticker, title)
                         continue
 
-                    period_str = period.strftime("%Y-%m-%d")
+                    period, period_str = _apply_body_period_correction(
+                        period, html_fields["raw_text"], ticker, title, "index"
+                    )
                     content_hash = simhash_text(html_fields["raw_text"][:5000])
                     # Near-duplicate check is intentionally skipped in index mode.
                     # URL-based dedup (_claim_url) is sufficient here: each entry on the

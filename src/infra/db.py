@@ -4184,6 +4184,12 @@ class MinerDB:
                 count = conn.execute(
                     "SELECT COUNT(*) FROM data_points WHERE ticker = ?", (ticker,)
                 ).fetchone()[0]
+                # Nullify FK references in review_queue before deleting data_points
+                conn.execute(
+                    "UPDATE review_queue SET data_point_id = NULL"
+                    " WHERE data_point_id IN (SELECT id FROM data_points WHERE ticker = ?)",
+                    (ticker,),
+                )
                 conn.execute("DELETE FROM data_points WHERE ticker = ?", (ticker,))
                 conn.execute(
                     "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"
@@ -4191,6 +4197,7 @@ class MinerDB:
                 )
             else:
                 count = conn.execute("SELECT COUNT(*) FROM data_points").fetchone()[0]
+                conn.execute("UPDATE review_queue SET data_point_id = NULL")
                 conn.execute("DELETE FROM data_points")
                 conn.execute(
                     "UPDATE reports SET extracted_at = NULL, extraction_status = 'pending'"

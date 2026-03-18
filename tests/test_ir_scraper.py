@@ -6,6 +6,7 @@ from scrapers.ir_scraper import (
     _CURL_CFFI_DOMAINS,
     _JS_RENDERED_DOMAINS,
     _playwright_collect_all_pages,
+    _apply_body_period_correction,
     candidate_urls_for_period,
     cleanspark_candidate_urls,
     discovery_links_from_html,
@@ -1714,3 +1715,53 @@ class TestDomainRouting:
         assert len(links) == 1
         assert "/news-release-details/" in links[0][1]
         assert links[0][2] == date(2025, 1, 1)
+
+
+class TestApplyBodyPeriodCorrection:
+    """_apply_body_period_correction: body text overrides title period when off by <=2 months."""
+
+    def test_wulf_style_one_month_offset_corrected(self):
+        # Title says March, body says "for the month of February 2025" -> February wins
+        title_period = date(2025, 3, 1)
+        body = "TeraWulf Announces March 2025 Mining Update. For the month of February 2025, the company mined 200 BTC."
+        result_period, result_str = _apply_body_period_correction(title_period, body, "WULF", "TeraWulf Announces March 2025 Mining Update", "rss")
+        assert result_period == date(2025, 2, 1)
+        assert result_str == "2025-02-01"
+
+    def test_no_correction_when_body_matches_title(self):
+        # MARA-style: title and body both say February
+        title_period = date(2025, 2, 1)
+        body = "MARA Holdings Reports February 2025 Production. During February 2025, the company produced 890 BTC."
+        result_period, result_str = _apply_body_period_correction(title_period, body, "MARA", "MARA Reports February 2025", "rss")
+        assert result_period == date(2025, 2, 1)
+        assert result_str == "2025-02-01"
+
+    def test_no_correction_when_body_has_no_period(self):
+        # Body text has no recognizable month+year -> title period preserved
+        title_period = date(2025, 3, 1)
+        body = "The company had strong operational results this quarter."
+        result_period, result_str = _apply_body_period_correction(title_period, body, "WULF", "March 2025 Update", "rss")
+        assert result_period == date(2025, 3, 1)
+        assert result_str == "2025-03-01"
+
+    def test_no_correction_when_delta_exceeds_two_months(self):
+        # Body says 6 months prior -> suspicious, do not override
+        title_period = date(2025, 3, 1)
+        body = "Highlights from September 2024 operations."
+        result_period, _ = _apply_body_period_correction(title_period, body, "WULF", "March 2025 Update", "rss")
+        assert result_period == date(2025, 3, 1)
+
+    def test_two_month_delta_is_corrected(self):
+        # Delta == 2 is within threshold
+        title_period = date(2025, 3, 1)
+        body = "For the month of January 2025, the company achieved record hashrate."
+        result_period, _ = _apply_body_period_correction(title_period, body, "HIVE", "March 2025 Update", "index")
+        assert result_period == date(2025, 1, 1)
+
+    def test_hive_index_style_one_month_offset(self):
+        # HIVE index mode: title says March, body reports February
+        title_period = date(2025, 3, 1)
+        body = "HIVE Digital Technologies February 2025 production results: 100 BTC mined during February 2025."
+        result_period, result_str = _apply_body_period_correction(title_period, body, "HIVE", "HIVE Digital Reports March 2025 Bitcoin Production", "index")
+        assert result_period == date(2025, 2, 1)
+        assert result_str == "2025-02-01"
