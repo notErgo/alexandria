@@ -97,12 +97,6 @@
           "label": "Re-extract Gap Months",
           "nav": {"tab": "interpret", "sub_tab": "extract"},
           "note": "Targeted requeue for missing metrics after the main run; does not scrape new documents."
-        },
-        {
-          "spec_id": "2.4.2",
-          "label": "Capture QC Snapshot",
-          "nav": {"tab": "interpret", "sub_tab": "qc"},
-          "note": "Track agreement and coverage quality over time after prompt or rule changes."
         }
       ]
     },
@@ -137,28 +131,28 @@
       "tab": "data",
       "steps": [
         {
-          "spec_id": "5.1.2",
-          "label": "Scan Coverage Heatmap",
-          "nav": {"tab": "data", "sub_tab": "explorer"},
-          "note": "Coverage states show where documents exist, where review is pending, and where explicit gaps were marked."
+          "spec_id": "DE4.2",
+          "label": "Search Data Points",
+          "nav": {"tab": "data", "sub_tab": "datapoints"},
+          "note": "Filter extracted values by company, metric, period, and confidence to verify coverage and spot anomalies."
         },
         {
-          "spec_id": "5.1.3",
-          "label": "Inspect Cell Detail",
-          "nav": {"tab": "data", "sub_tab": "explorer"},
-          "note": "Open cell detail to verify provenance and trigger save, gap, or re-extract actions."
+          "spec_id": "DE4.3",
+          "label": "Review Results Table",
+          "nav": {"tab": "data", "sub_tab": "datapoints"},
+          "note": "Inspect extraction method, confidence, and source snippet for each data point."
+        },
+        {
+          "spec_id": "DE4.5",
+          "label": "Inspect Lineage",
+          "nav": {"tab": "data", "sub_tab": "datapoints"},
+          "note": "Click a row to load full provenance: report date, source type, URL, and source snippet."
         },
         {
           "spec_id": "5.2.2",
           "label": "Browse Registry",
           "nav": {"tab": "data", "sub_tab": "registry"},
           "note": "Registry is the fastest way to diagnose missing, malformed, or unprocessed source documents."
-        },
-        {
-          "spec_id": "5.3",
-          "label": "Inspect Documents",
-          "nav": {"tab": "data", "sub_tab": "documents"},
-          "note": "Search the document list directly when validating a source row or tracing a parse/extract issue."
         }
       ]
     },

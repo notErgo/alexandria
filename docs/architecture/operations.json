@@ -154,13 +154,12 @@
       "id": "analyst_cell_save",
       "name": "Analyst edit (cell save)",
       "trigger": {"method": "POST", "path": "/api/explorer/cell/{ticker}/{period}/{metric}/save"},
-      "components": ["5.1.4", "5.1.3"],
+      "components": [],
+      "note": "Explorer heatmap UI removed from ops (5.1 retired). API remains accessible for diagnostic tooling.",
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "5.1.4", "action": "POST fetch with edited numeric value"},
-        {"step": 2, "layer": "route",    "file": "src/routes/explorer.py", "fn": "explorer_cell_save"},
-        {"step": 3, "layer": "db_read",  "file": "src/infra/db.py",        "fn": "query_data_points", "reads": ["data_points"], "note": "write-guard check: reject if existing row is analyst-protected"},
-        {"step": 4, "layer": "db_write", "file": "src/infra/db.py",        "fn": "insert_data_point", "writes": ["data_points"], "note": "extraction_method='analyst_edited' or 'manual'"},
-        {"step": 5, "layer": "frontend", "spec_id": "5.1.3", "action": "refresh cell detail panel"}
+        {"step": 1, "layer": "route",    "file": "src/routes/explorer.py", "fn": "explorer_cell_save"},
+        {"step": 2, "layer": "db_read",  "file": "src/infra/db.py",        "fn": "query_data_points", "reads": ["data_points"], "note": "write-guard check: reject if existing row is analyst-protected"},
+        {"step": 3, "layer": "db_write", "file": "src/infra/db.py",        "fn": "insert_data_point", "writes": ["data_points"], "note": "extraction_method='analyst_edited' or 'manual'"}
       ],
       "ssot_write": "data_points",
       "write_guard_checked": true,
@@ -170,12 +169,11 @@
       "id": "mark_gap",
       "name": "Mark cell as explicit gap",
       "trigger": {"method": "POST", "path": "/api/explorer/cell/{ticker}/{period}/{metric}/gap"},
-      "components": ["5.1.5", "5.1.2"],
+      "components": [],
+      "note": "Explorer heatmap UI removed from ops (5.1 retired). API remains accessible for diagnostic tooling.",
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "5.1.5", "action": "POST fetch"},
-        {"step": 2, "layer": "route",    "file": "src/routes/explorer.py", "fn": "explorer_cell_gap"},
-        {"step": 3, "layer": "db_write", "file": "src/infra/db.py",        "fn": "insert_data_point", "writes": ["data_points"], "note": "extraction_method='analyst_gap', value=0.0"},
-        {"step": 4, "layer": "frontend", "spec_id": "5.1.2", "action": "re-render heatmap cell as explicit gap state"}
+        {"step": 1, "layer": "route",    "file": "src/routes/explorer.py", "fn": "explorer_cell_gap"},
+        {"step": 2, "layer": "db_write", "file": "src/infra/db.py",        "fn": "insert_data_point", "writes": ["data_points"], "note": "extraction_method='analyst_gap', value=0.0"}
       ],
       "ssot_write": "data_points",
       "postcondition": "data_points row with extraction_method='analyst_gap'; cell renders as explicit gap, not missing period"
@@ -184,12 +182,11 @@
       "id": "reextract_cell",
       "name": "Re-extract selection (regex only)",
       "trigger": {"method": "POST", "path": "/api/explorer/reextract"},
-      "components": ["5.1.6", "5.1.2"],
+      "components": [],
+      "note": "Explorer heatmap UI removed from ops (5.1 retired). API remains accessible for diagnostic tooling.",
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "5.1.6", "action": "POST fetch with selection text + ticker + period"},
-        {"step": 2, "layer": "route",    "file": "src/routes/explorer.py",              "fn": "explorer_reextract"},
-        {"step": 3, "layer": "worker",   "file": "src/interpreters/interpret_pipeline.py", "fn": "extract_report", "reads": ["reports", "document_chunks"], "writes": ["data_points", "review_queue"]},
-        {"step": 4, "layer": "frontend", "spec_id": "5.1.2", "action": "refresh heatmap cell"}
+        {"step": 1, "layer": "route",    "file": "src/routes/explorer.py",              "fn": "explorer_reextract"},
+        {"step": 2, "layer": "worker",   "file": "src/interpreters/interpret_pipeline.py", "fn": "extract_report", "reads": ["reports", "document_chunks"], "writes": ["data_points", "review_queue"]}
       ],
       "ssot_write": "data_points",
       "precondition": "write_guard checked in interpret_pipeline — analyst rows not overwritten",
@@ -518,19 +515,6 @@
       "postcondition": "global and per-ticker pipeline counters render in the ingest status workspace"
     },
     {
-      "id": "view_qc_summary",
-      "name": "View QC snapshots and summary",
-      "trigger": {"method": "GET", "path": "/api/qc/summary"},
-      "components": ["2.4.2"],
-      "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "2.4.2", "action": "GET fetch QC snapshots"},
-        {"step": 2, "layer": "route", "file": "src/routes/qc.py", "fn": "qc_summary"},
-        {"step": 3, "layer": "db_read", "file": "src/infra/db.py", "fn": "get_qc_snapshots", "reads": ["qc_snapshots"]}
-      ],
-      "ssot_write": null,
-      "postcondition": "stored QC snapshots render in the interpret QC sub-pane"
-    },
-    {
       "id": "view_review_queue",
       "name": "View review queue",
       "trigger": {"method": "GET", "path": "/api/review"},
@@ -589,9 +573,9 @@
       "id": "list_documents",
       "name": "List ingested documents",
       "trigger": {"method": "GET", "path": "/api/data/documents"},
-      "components": ["5.3"],
+      "components": ["DE4.6"],
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "5.3", "action": "GET search document list"},
+        {"step": 1, "layer": "frontend", "spec_id": "DE4.6", "action": "GET search document list"},
         {"step": 2, "layer": "route", "file": "src/routes/data_points.py", "fn": "get_documents"},
         {"step": 3, "layer": "db_read", "file": "src/infra/db.py", "fn": "search_reports", "reads": ["reports"]}
       ],
@@ -602,9 +586,9 @@
       "id": "open_document",
       "name": "Open ingested document",
       "trigger": {"method": "GET", "path": "/api/data/document/{id}"},
-      "components": ["5.3"],
+      "components": ["DE4.7"],
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "5.3", "action": "GET open a selected document"},
+        {"step": 1, "layer": "frontend", "spec_id": "DE4.7", "action": "GET open a selected document"},
         {"step": 2, "layer": "route", "file": "src/routes/data_points.py", "fn": "get_document"},
         {"step": 3, "layer": "db_read", "file": "src/infra/db.py", "fn": "get_report", "reads": ["reports"]},
         {"step": 4, "layer": "db_read", "file": "src/infra/db.py", "fn": "get_data_points_by_report", "reads": ["data_points"]},

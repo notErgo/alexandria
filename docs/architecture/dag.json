@@ -74,28 +74,134 @@
       "notes": "lazy init + threading.Lock; all imports deferred to first call" },
 
     { "id": "routes.benchmark",               "layer": 5, "path": "src/routes/benchmark.py" },
-    { "id": "routes.companies",               "layer": 5, "path": "src/routes/companies.py" },
+    { "id": "routes.companies",               "layer": 5, "path": "src/routes/companies.py",
+      "endpoints": [
+        {
+          "id": "companies.list",
+          "method": "GET",
+          "path": "/api/companies",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        }
+      ]
+    },
     { "id": "routes.config",                  "layer": 5, "path": "src/routes/config.py" },
-    { "id": "routes.coverage",                "layer": 5, "path": "src/routes/coverage.py" },
+    { "id": "routes.coverage",                "layer": 5, "path": "src/routes/coverage.py",
+      "endpoints": [
+        {
+          "id": "coverage.summary",
+          "method": "GET",
+          "path": "/api/coverage/summary",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"],
+          "data_keys": ["total_reports"]
+        }
+      ]
+    },
     { "id": "routes.crawl",                   "layer": 5, "path": "src/routes/crawl.py" },
     { "id": "routes.dashboard",               "layer": 5, "path": "src/routes/dashboard.py" },
-    { "id": "routes.data_points",             "layer": 5, "path": "src/routes/data_points.py" },
+    { "id": "routes.data_points",             "layer": 5, "path": "src/routes/data_points.py",
+      "endpoints": [
+        {
+          "id": "data_points.list",
+          "method": "GET",
+          "path": "/api/data",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        },
+        {
+          "id": "data_points.scorecard",
+          "method": "GET",
+          "path": "/api/scorecard",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        }
+      ]
+    },
     { "id": "routes.diagnostics",             "layer": 5, "path": "src/routes/diagnostics.py" },
-    { "id": "routes.explorer",                "layer": 5, "path": "src/routes/explorer.py" },
+    { "id": "routes.explorer",                "layer": 5, "path": "src/routes/explorer.py",
+      "endpoints": [
+        {
+          "id": "explorer.grid",
+          "method": "GET",
+          "path": "/api/explorer/grid",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        }
+      ]
+    },
     { "id": "routes.facilities",              "layer": 5, "path": "src/routes/facilities.py" },
     { "id": "routes.interpret",               "layer": 5, "path": "src/routes/interpret.py" },
     { "id": "routes.llm_prompts",             "layer": 5, "path": "src/routes/llm_prompts.py" },
     { "id": "routes.metric_rules",            "layer": 5, "path": "src/routes/metric_rules.py" },
-    { "id": "routes.miner",                   "layer": 5, "path": "src/routes/miner.py" },
+    { "id": "routes.miner",                   "layer": 5, "path": "src/routes/miner.py",
+      "endpoints": [
+        {
+          "id": "miner.timeline.monthly",
+          "method": "GET",
+          "path": "/api/miner/{ticker}/timeline",
+          "smoke_params": {"ticker": "MARA", "source": "monthly"},
+          "expected_status": 200,
+          "response_keys": ["success", "data"],
+          "data_keys": ["rows", "metric_keys", "stats"],
+          "spec_ids": ["2.5.2"]
+        },
+        {
+          "id": "miner.timeline.sec",
+          "method": "GET",
+          "path": "/api/miner/{ticker}/timeline",
+          "smoke_params": {"ticker": "MARA", "source": "sec"},
+          "expected_status": 200,
+          "response_keys": ["success", "data"],
+          "data_keys": ["rows", "metric_keys", "stats"],
+          "spec_ids": ["2.5.2.2"]
+        }
+      ]
+    },
     { "id": "routes.operations",              "layer": 5, "path": "src/routes/operations.py",
-      "notes": "imports routes.reports and routes.companies — same-layer coupling" },
+      "notes": "imports routes.reports and routes.companies — same-layer coupling",
+      "endpoints": [
+        {
+          "id": "operations.queue",
+          "method": "GET",
+          "path": "/api/operations/queue",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        },
+        {
+          "id": "operations.pipeline_observability",
+          "method": "GET",
+          "path": "/api/operations/pipeline_observability",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"]
+        }
+      ]
+    },
     { "id": "routes.pipeline",                "layer": 5, "path": "src/routes/pipeline.py",
       "notes": "routes.companies coupling resolved (probe helpers moved to orchestration); routes.reports coupling documented; imports scrapers.llm_crawler directly (skips L2-L4, documented)" },
-    { "id": "routes.qc",                      "layer": 5, "path": "src/routes/qc.py" },
     { "id": "routes.regime",                  "layer": 5, "path": "src/routes/regime.py" },
     { "id": "routes.reports",                 "layer": 5, "path": "src/routes/reports.py" },
     { "id": "routes.review",                  "layer": 5, "path": "src/routes/review.py",
-      "notes": "directly imports interpreters.llm_interpreter — bypasses app_globals boundary" },
+      "notes": "directly imports interpreters.llm_interpreter — bypasses app_globals boundary",
+      "endpoints": [
+        {
+          "id": "review.list",
+          "method": "GET",
+          "path": "/api/review",
+          "smoke_params": {},
+          "expected_status": 200,
+          "response_keys": ["success", "data"],
+          "data_keys": ["items", "total"]
+        }
+      ]
+    },
     { "id": "routes.scrape",                  "layer": 5, "path": "src/routes/scrape.py" },
     { "id": "routes.themes",                  "layer": 5, "path": "src/routes/themes.py" },
     { "id": "routes.timeseries",              "layer": 5, "path": "src/routes/timeseries.py" }
@@ -215,7 +321,6 @@
     { "from": "routes.pipeline",                "to": "routes.reports",
       "status": "documented",
       "notes": "same-layer coupling — _run_ir_ingest/_run_edgar_ingest use reports-layer progress tracking; defer extraction to dedicated phase" },
-    { "from": "routes.qc",                       "to": "app_globals" },
     { "from": "routes.regime",                   "to": "app_globals" },
     { "from": "routes.reports",                 "to": "app_globals" },
     { "from": "routes.reports",                 "to": "config" },
@@ -239,6 +344,19 @@
     { "from": "routes.review",                  "to": "interpreters.llm_interpreter",
       "notes": "direct interpreter import — bypasses app_globals boundary" },
     { "from": "routes.scrape",                   "to": "app_globals" },
-    { "from": "routes.timeseries",               "to": "app_globals" }
+    { "from": "routes.timeseries",               "to": "app_globals" },
+
+    { "from": "routes.scrape",   "to": "routes.reports",
+      "symbols": ["run_auto_extract"],
+      "policy": "permitted",
+      "notes": "auto-extract chaining: scrape triggers extraction via reports.run_auto_extract" },
+    { "from": "routes.reports",  "to": "routes.pipeline",
+      "symbols": ["run_extraction_phase"],
+      "policy": "permitted",
+      "notes": "auto-extract chaining: run_auto_extract delegates to pipeline.run_extraction_phase" },
+    { "from": "routes.operations", "to": "routes.pipeline",
+      "symbols": ["build_extraction_batch_backfill", "run_extraction_phase"],
+      "policy": "permitted",
+      "notes": "manual extract: operations uses pipeline batch builder and extraction phase runner" }
   ]
 }

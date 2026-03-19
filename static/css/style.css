@@ -929,3 +929,8 @@ body.dev-no-tips .info-bubble { display: none !important; }
     font-weight: 600;
     color: var(--theme-text-secondary);
 }
+
+/* ── DE4.x data points lineage panel (ops + data-explorer) ──────────────── */
+.lineage-card {
+    margin-top: 1rem;
+}

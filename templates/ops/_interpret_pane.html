@@ -1,12 +1,7 @@
 <!-- ── Interpret pane ──────────────────────────────────────────────────── -->
 <div class="ops-pane" id="pane-interpret" data-ui-id="2.4" data-spec-id="2.4">
-  <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="2.4.1" data-spec-id="2.4.1">Extract <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="2.4.2" data-spec-id="2.4.2">QC <span class="wf-path-badge wf-optional">Optional</span></button>
-  </div>
 
-  <!-- Sub-pane: Extract (3.1) -->
-  <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="2.4.1" data-spec-id="2.4.1">
+  <div data-ui-id="2.4.1" data-spec-id="2.4.1">
 
     <!-- Prompt preview — review before running extraction -->
     <div class="card" style="margin-bottom:1.25rem" data-ui-id="2.2.4.2" data-spec-id="2.2.4.2">
@@ -244,35 +239,5 @@
       <div id="gap-reextract-log" class="acq-log" style="display:none"></div>
       <div id="gap-diagnosis-out" style="display:none;margin-top:0.75rem;font-size:0.78rem;background:var(--theme-surface-alt,rgba(0,0,0,0.15));padding:0.6rem 0.75rem;border-radius:4px;white-space:pre-wrap;font-family:ui-monospace,monospace;line-height:1.45"></div>
     </div>
-  </div><!-- /spane-interpret-extract -->
-
-  <!-- Sub-pane: QC (3.2) -->
-  <div class="pipeline-sub-pane" id="spane-interpret-qc" data-ui-id="2.4.2" data-spec-id="2.4.2">
-    <div class="section-header-row">
-      <h3 style="font-size:0.9rem;margin:0"><span class="spec-id">2.4.2</span>QC Snapshots</h3>
-      <button class="btn btn-sm btn-secondary" onclick="captureQCSnapshot()">Capture Snapshot</button>
-      <span id="qc-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
-    </div>
-    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.5rem">
-      Captures precision/recall metrics for the current extraction state.
-    </p>
-    <div id="qc-table-wrap" style="overflow-x:auto">
-      <table style="width:100%;font-size:0.8rem;border-collapse:collapse">
-        <thead>
-          <tr style="border-bottom:1px solid var(--theme-border)">
-            <th style="text-align:left;padding:0.2rem 0.5rem">Date</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Auto-accepted</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Approved</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Rejected</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Edited</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Precision est.</th>
-            <th style="text-align:right;padding:0.2rem 0.5rem">Recall est.</th>
-          </tr>
-        </thead>
-        <tbody id="qc-table-body">
-          <tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div><!-- /spane-interpret-qc -->
+  </div><!-- /data-spec-id=2.4.1 -->
 </div><!-- /pane-interpret -->

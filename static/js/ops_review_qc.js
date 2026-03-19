@@ -361,47 +361,8 @@ function highlightReviewRow(rows) {
   if (rows[_reviewIdx]) rows[_reviewIdx].scrollIntoView({ block: 'nearest' });
 }
 
-// ── QC / Pipeline tab ─────────────────────────────────────────────────────────
+// ── Pipeline tab ───────────────────────────────────────────────────────────────
 let _pipelinePollTimer = null;
-
-async function captureQCSnapshot() {
-  document.getElementById('qc-msg').textContent = 'Capturing…';
-  try {
-    const resp = await fetch('/api/qc/snapshot', {method: 'POST'});
-    const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error?.message || 'Failed');
-    document.getElementById('qc-msg').textContent = 'Snapshot captured.';
-    await _loadQCTable();
-  } catch (err) {
-    document.getElementById('qc-msg').textContent = 'Error: ' + String(err);
-  }
-}
-
-async function _loadQCTable() {
-  try {
-    const resp = await fetch('/api/qc/summary');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const rows = data.data || [];
-    const tbody = document.getElementById('qc-table-body');
-    if (!tbody) return;
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">No snapshots yet. Click "Capture Snapshot" to create the first one.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rows.map(function(r) {
-      return '<tr>' +
-        '<td style="padding:0.2rem 0.5rem">' + escapeHtml(r.run_date || '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.auto_accepted ?? '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_approved ?? '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_rejected ?? '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.review_edited ?? '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.precision_est != null ? (r.precision_est * 100).toFixed(1) + '%' : '') + '</td>' +
-        '<td style="text-align:right;padding:0.2rem 0.5rem">' + (r.recall_est != null ? (r.recall_est * 100).toFixed(1) + '%' : '') + '</td>' +
-        '</tr>';
-    }).join('');
-  } catch (_e) {}
-}
 
 let _pipelineRunId = null;
 let _pipelineEventOffset = 0;
@@ -915,7 +876,7 @@ function renderMinerChart() {
   window._origSelectCompanyForChart = _origSelectCompany;
   // Patch is applied after DOMContentLoaded so selectCompany is defined
   document.addEventListener('DOMContentLoaded', function() {
-    // No-op: selectCompany is in miner_data.js and already updates _rows.
+    // No-op: selectCompany is in review_timeline.js and already updates _rows.
     // renderMinerChart reads _rows directly; callers invoke showChartView which calls renderMinerChart.
   });
 })();
@@ -1145,4 +1106,3 @@ _gapReextractPanel.restore({
     if (statusEl) statusEl.textContent = '(restored) error: ' + (p.error_message || 'failed');
   },
 });
-

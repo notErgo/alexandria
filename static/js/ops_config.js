@@ -82,7 +82,7 @@ async function _pollAcquireTask(taskId, source) {
         showToast((source === 'all' ? 'Scrape All' : 'Acquire ' + source.toUpperCase()) + ' complete');
         loadPipelineObservability();
         if (_registryLoaded) loadRegistry();
-        if (_explorerLoaded) loadExplorer();
+
         if (_reviewLoaded) loadReview();
       } else {
         const msg = p.message || 'Task failed';
@@ -210,7 +210,7 @@ async function _pollExtractionRun(taskId, ticker, panelOverride) {
           await _runGapFillAfterExtraction(window._extractTicker || '');
         }
         loadPipelineObservability();
-        if (_explorerLoaded) loadExplorer();
+
         if (_reviewLoaded) loadReview();
         if (window._minerDataBooted && typeof selectCompany === 'function' && typeof _ticker !== 'undefined' && _ticker) selectCompany(_ticker);
       },

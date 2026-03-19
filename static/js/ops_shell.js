@@ -15,7 +15,7 @@ document.addEventListener('keydown', function(e) {
 const VALID_TABS = ['workflow', 'config', 'ingest', 'interpret', 'review', 'data', 'interrogate', 'health'];
 const TAB_ALIASES = {
   companies: 'config', rules: 'config', settings: 'config', research: 'ingest',
-  registry: 'data', explorer: 'data', qc: 'interpret', guide: 'workflow',
+  registry: 'data', explorer: 'data', guide: 'workflow',
 };
 let _activeTab = null;
 
@@ -46,10 +46,10 @@ function activateTab(name) {
   }
   if (name === 'review') { if (!_reviewLoaded) loadReview(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!window._minerDataBooted) { window._minerDataBooted = true; if (typeof boot === 'function') boot(); } }
 
-  if (name === 'data') { if (!_registryLoaded) loadRegistry(); if (!_metricsLoaded) loadExplorerMetrics(); if (!_keywordDictionary) loadKeywordDictionaryOptions(); if (!_explorerLoaded) loadExplorer(); }
+  if (name === 'data') { if (!_registryLoaded) loadRegistry(); deInitCompanySelect(); deInitMetricSelect(); }
   if (name === 'ingest') { loadIngest(); loadPipelineObservability(); loadCrawlOllamaModels(); }
   if (name === 'health') { loadHealthTab(false); }
-  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadQCTable(); _loadGapMetrics(); loadInterpretMetricToggles(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
+  if (name === 'interpret') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); _loadGapMetrics(); loadInterpretMetricToggles(); if (_companiesLoaded) { _renderInterpretTickerBar(); _renderGapTickerBar(); } else loadCompanies().then(function() { _renderInterpretTickerBar(); _renderGapTickerBar(); }); }
 }
 
 // ── Pipeline sub-tab routing ─────────────────────────────────────────────────
@@ -69,7 +69,6 @@ function activatePipelineSubTab(pane, name) {
   if (pane === 'config' && name === 'dbpurge') { loadManagementInventory(); }
   if (pane === 'review' && name === 'miner' && !window._minerDataBooted) { window._minerDataBooted = true; boot(); }
   if (pane === 'interpret' && name === 'extract') { loadOllamaModels(); loadPromptPreview(); pePopulateMetrics(); onSourceDocsChange(); }
-  if (pane === 'interpret' && name === 'qc') _loadQCTable();
 }
 
 // Tab button click — event delegation wired once (Anti-pattern #25)
@@ -83,12 +82,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // Read initial tab from URL params (also handles redirects from /coverage, /operations)
   const params = new URLSearchParams(window.location.search);
   const tab = params.get('tab') || 'workflow';
-  // Pre-apply state filter from redirect (e.g. /review → /ops?tab=data&state=review_pending)
-  const stateParam = params.get('state');
-  if (stateParam) {
-    const sel = document.getElementById('ex-state');
-    if (sel) sel.value = stateParam;
-  }
   activateTab(tab);
 
   makeSortable('companies-table');

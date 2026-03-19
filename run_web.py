@@ -9,6 +9,7 @@ import os
 import sys
 import signal
 import subprocess
+from pathlib import Path
 
 # Add src/ to path so imports resolve without package installation
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -17,7 +18,8 @@ from infra.logging_config import setup_logging
 setup_logging()
 
 import logging
-from flask import Flask, render_template, jsonify, request, redirect
+from flask import Flask, render_template, jsonify, request, redirect, send_from_directory
+from infra.simple_markdown import render_markdown
 
 from config import FLASK_PORT, FLASK_HOST, FLASK_DEBUG, validate_companies_config
 
@@ -48,7 +50,6 @@ from routes.regime import bp as regime_bp
 from routes.explorer import bp as explorer_bp
 from routes.metric_rules import bp as metric_rules_bp
 from routes.pipeline import bp as pipeline_bp
-from routes.qc import bp as qc_bp
 from routes.crawl import bp as crawl_bp
 from routes.interpret import bp as interpret_bp
 from routes.suggestions import bp as suggestions_bp
@@ -108,10 +109,14 @@ def create_app() -> Flask:
     app.register_blueprint(explorer_bp)
     app.register_blueprint(metric_rules_bp)
     app.register_blueprint(pipeline_bp)
-    app.register_blueprint(qc_bp)
     app.register_blueprint(crawl_bp)
     app.register_blueprint(interpret_bp)
     app.register_blueprint(suggestions_bp)
+
+    @app.route('/docs/architecture/<path:filename>')
+    def serve_docs_architecture(filename):
+        docs_dir = os.path.join(os.path.dirname(__file__), 'docs', 'architecture')
+        return send_from_directory(docs_dir, filename)
 
     @app.errorhandler(404)
     def not_found(e):
@@ -188,6 +193,12 @@ def create_app() -> Flask:
     @app.route('/review')
     def review_page():
         return render_template('review.html')
+
+    @app.route('/ui-spec')
+    def ui_spec_page():
+        spec_path = Path(os.path.dirname(__file__)) / 'UI_SPEC.md'
+        spec_text = spec_path.read_text(encoding='utf-8')
+        return render_template('ui_spec.html', spec_text=spec_text, spec_html=render_markdown(spec_text))
 
     @app.route('/miner-data')
     def miner_data_page():
