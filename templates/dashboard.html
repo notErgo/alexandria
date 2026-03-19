@@ -51,17 +51,18 @@
 .metric-panel { margin-bottom: 1.5rem; }
 .panel-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 .panel-header h2 {
   font-size: 1rem;
   font-weight: 600;
   color: var(--theme-text-primary);
 }
-.completeness-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.completeness-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; min-width: 0; overflow: hidden; }
 .completeness-badge {
   font-size: 0.68rem;
   padding: 0.1rem 0.4rem;
@@ -313,7 +314,7 @@ function _buildEchartsSeries(sortedSeries, allTickers, timeSpine) {
 function _buildChartOption(sorted, timeSpine, allTickers, unit) {
   return {
     backgroundColor: 'transparent',
-    grid: { left: 60, right: 72, top: 28, bottom: 36 },
+    grid: { left: 60, right: 72, top: 12, bottom: 72 },
     tooltip: {
       trigger: 'axis',
       formatter: function(params) {
@@ -336,9 +337,10 @@ function _buildChartOption(sorted, timeSpine, allTickers, unit) {
       },
     },
     legend: {
-      top: 4,
-      right: 80,
-      textStyle: { fontSize: 11 },
+      bottom: 4,
+      left: 'center',
+      orient: 'horizontal',
+      textStyle: { fontSize: 11, color: '#000' },
       data: sorted.map(function(s) { return s.ticker; }).concat(['Total']),
     },
     xAxis: {
@@ -347,6 +349,7 @@ function _buildChartOption(sorted, timeSpine, allTickers, unit) {
       axisLabel: {
         fontSize: 10,
         rotate: 30,
+        color: '#000',
         interval: function(idx, val) {
           return val.endsWith('-01') || val.endsWith('-06') || idx === 0;
         },
@@ -355,15 +358,16 @@ function _buildChartOption(sorted, timeSpine, allTickers, unit) {
     yAxis: [
       {
         type: 'value',
+        axisLabel: { fontSize: 10, color: '#000' },
         splitLine: {
           show: true,
-          lineStyle: { color: 'rgba(200,200,200,0.09)', type: 'solid' },
+          lineStyle: { color: 'rgba(0,0,0,0.18)', type: 'solid' },
         },
       },
       {
         type: 'value',
         position: 'right',
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: 10, color: '#000' },
         splitLine: { show: false },
       },
     ],
@@ -380,6 +384,22 @@ function onSortChange(metric, mode) {
   var sorted = _sortedSeries(info.metricObj.series, mode);
   chart.clear();
   chart.setOption(_buildChartOption(sorted, info.timeSpine, info.allTickers, info.metricObj.unit));
+}
+
+// ── Metric label from key ─────────────────────────────────────────────────
+// Derives a clean display title from the metric key.
+// Trailing unit tokens (btc, eh, pct, usd) are capitalised and wrapped in parens.
+// e.g. production_btc → "Production (BTC)", hashrate_eh → "Hashrate (EH/s)"
+const _UNIT_TOKENS = { btc: 'BTC', eh: 'EH/s', pct: '%', usd: 'USD' };
+function _metricLabel(metricKey) {
+  var parts = metricKey.split('_');
+  var last  = parts[parts.length - 1].toLowerCase();
+  var unit  = _UNIT_TOKENS[last];
+  var words = unit ? parts.slice(0, -1) : parts;
+  var title = words.map(function(w) {
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+  return unit ? title + ' (' + unit + ')' : title;
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────
@@ -410,20 +430,8 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   const header = document.createElement('div');
   header.className = 'panel-header';
   const h2 = document.createElement('h2');
-  h2.innerHTML = '<span class="spec-id">5.1</span>' + escapeHtml(label + ' (' + unit + ')') + ' <span class="source-badge source-badge-data">DATA</span>';
+  h2.innerHTML = '<span class="spec-id">5.1</span>' + escapeHtml(_metricLabel(metric)) + ' <span class="source-badge source-badge-data">DATA</span>';
   header.appendChild(h2);
-
-  // Completeness badges
-  const badgesEl = document.createElement('div');
-  badgesEl.className = 'completeness-badges';
-  series.forEach(function(s) {
-    const pct = Math.round(s.completeness * 100);
-    const badge = document.createElement('span');
-    badge.className = 'completeness-badge' + (pct < 50 ? ' low' : '');
-    badge.textContent = s.ticker + ' ' + pct + '%';
-    badgesEl.appendChild(badge);
-  });
-  header.appendChild(badgesEl);
 
   // Sort select
   var sortSel = document.createElement('select');
@@ -443,11 +451,10 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
     sortSel.appendChild(o);
   });
   sortSel.onchange = function() { onSortChange(metric, this.value); };
-  header.appendChild(sortSel);
 
   var dlBtn = document.createElement('button');
   dlBtn.className = 'btn btn-secondary btn-sm';
-  dlBtn.style.cssText = 'font-size:0.72rem;padding:2px 8px;margin-left:auto;';
+  dlBtn.style.cssText = 'font-size:0.72rem;padding:2px 8px;';
   dlBtn.textContent = 'CSV';
   dlBtn.onclick = function() {
     var p = new URLSearchParams();
@@ -459,7 +466,13 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
     if (to)   p.set('to_period', to);
     window.location.href = '/api/export.csv?' + p.toString();
   };
-  header.appendChild(dlBtn);
+
+  // Keep sort + CSV together on the right so they never wrap independently
+  var rightControls = document.createElement('div');
+  rightControls.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-left:auto;flex-shrink:0;';
+  rightControls.appendChild(sortSel);
+  rightControls.appendChild(dlBtn);
+  header.appendChild(rightControls);
 
   panel.appendChild(header);
 
