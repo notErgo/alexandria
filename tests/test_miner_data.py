@@ -252,6 +252,61 @@ class TestMinerTimeline:
         resp = app_with_mara.get('/api/miner/mara/timeline')
         assert resp.status_code == 200
 
+    def test_sec_timeline_sorts_quarterly_and_annual_periods(self, app):
+        """SEC mode must support quarterly/annual periods without relying on scorecard helpers."""
+        import app_globals
+        db = app_globals._db
+        db.insert_company(MARA_COMPANY)
+
+        db.upsert_data_point_quarterly({
+            'report_id': None,
+            'ticker': 'MARA',
+            'period': '2024-FY',
+            'metric': 'production_btc',
+            'value': 10000.0,
+            'unit': 'BTC',
+            'confidence': 0.92,
+            'extraction_method': 'llm_quarterly',
+            'source_period_type': 'annual',
+            'covering_period': '2024-FY',
+            'covering_report_id': None,
+            'time_grain': 'annual',
+        })
+        db.upsert_data_point_quarterly({
+            'report_id': None,
+            'ticker': 'MARA',
+            'period': '2024-Q3',
+            'metric': 'production_btc',
+            'value': 2400.0,
+            'unit': 'BTC',
+            'confidence': 0.92,
+            'extraction_method': 'llm_quarterly',
+            'source_period_type': 'quarterly',
+            'covering_period': '2024-Q3',
+            'covering_report_id': None,
+            'time_grain': 'quarterly',
+        })
+        db.upsert_data_point_quarterly({
+            'report_id': None,
+            'ticker': 'MARA',
+            'period': '2024-Q1',
+            'metric': 'production_btc',
+            'value': 2100.0,
+            'unit': 'BTC',
+            'confidence': 0.92,
+            'extraction_method': 'llm_quarterly',
+            'source_period_type': 'quarterly',
+            'covering_period': '2024-Q1',
+            'covering_report_id': None,
+            'time_grain': 'quarterly',
+        })
+
+        resp = app.get('/api/miner/MARA/timeline?source=sec')
+        assert resp.status_code == 200
+        body = json.loads(resp.data)
+        assert body['success'] is True
+        assert [row['period'] for row in body['data']['rows']] == ['2024-FY', '2024-Q3', '2024-Q1']
+
 
 # ── TestMinerAnalysis ─────────────────────────────────────────────────────────
 

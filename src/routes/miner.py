@@ -7,6 +7,7 @@ Endpoints:
 """
 import logging
 import math
+import re
 from flask import Blueprint, jsonify, request, Response
 
 from app_globals import get_db
@@ -94,6 +95,9 @@ METRIC_UNITS = {
 }
 
 _KEYWORD_COLOR_RANKS = {1: 'orange', 2: 'blue', 3: 'green'}
+_MONTHLY_PERIOD_RE = re.compile(r'^(\d{4})-(\d{2})-\d{2}$')
+_QUARTERLY_PERIOD_RE = re.compile(r'^(\d{4})-Q([1-4])$')
+_ANNUAL_PERIOD_RE = re.compile(r'^(\d{4})-FY$')
 
 
 def _metric_keyword_rows(db, metric: str) -> list[dict]:
@@ -152,6 +156,24 @@ def _report_document_title(db, report_id: int | None, report_row: dict | None = 
         except Exception:
             pass
     return extract_document_title(raw_html, raw_text)
+
+
+def _period_sort_key(period: str) -> tuple[int, int, int]:
+    """Sort monthly, quarterly, and annual periods in chronological order."""
+    monthly = _MONTHLY_PERIOD_RE.match(period or '')
+    if monthly:
+        return (int(monthly.group(1)), int(monthly.group(2)), 0)
+
+    quarterly = _QUARTERLY_PERIOD_RE.match(period or '')
+    if quarterly:
+        quarter = int(quarterly.group(2))
+        return (int(quarterly.group(1)), quarter * 3, 0)
+
+    annual = _ANNUAL_PERIOD_RE.match(period or '')
+    if annual:
+        return (int(annual.group(1)), 12, 1)
+
+    return (0, 0, 0)
 
 
 def _build_monthly_spine(min_period: str, max_period: str) -> list:
@@ -254,8 +276,7 @@ def get_miner_timeline(ticker: str):
                 limit=100000,
             )
 
-        import re as _re
-        _QUARTERLY_PERIOD_RE = _re.compile(r'^\d{4}-(Q\d|FY)$')
+        quarterly_or_annual_period_re = re.compile(r'^\d{4}-(Q\d|FY)$')
 
         # Build finalized lookup with period normalization matching the source mode.
         # Keyed by (normalized_period, metric) so is_finalized matches the pivot keys.
@@ -313,7 +334,7 @@ def get_miner_timeline(ticker: str):
         pending_rq = db.get_review_items(ticker=ticker_upper, status='PENDING', limit=100000)
         for rq in pending_rq:
             rq_period = rq.get('period') or ''
-            is_quarterly_period = bool(_QUARTERLY_PERIOD_RE.match(rq_period))
+            is_quarterly_period = bool(quarterly_or_annual_period_re.match(rq_period))
             if source == 'sec' and not is_quarterly_period:
                 continue
             if source == 'monthly' and is_quarterly_period:
@@ -526,7 +547,6 @@ def get_miner_timeline(ticker: str):
             })
 
         # Sort descending (most recent first)
-        from routes.data_points import _period_sort_key
         rows.sort(key=lambda r: _period_sort_key(r['period']), reverse=True)
 
         total_periods = len(spine)
