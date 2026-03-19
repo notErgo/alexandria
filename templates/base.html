@@ -34,15 +34,27 @@
       font-size: 12px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       line-height: 1.25;
-      white-space: nowrap;
+      white-space: normal;
       display: none;
       max-width: min(90vw, 680px);
       overflow: hidden;
       text-overflow: ellipsis;
+      word-break: break-word;
     }
     .ui-inspector-highlight {
       outline: 2px solid rgba(59, 130, 246, 0.8) !important;
       outline-offset: 1px;
+    }
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-left: auto;
+    }
+    .nav-toggle-active {
+      background: var(--theme-accent) !important;
+      color: #fff !important;
+      border-color: var(--theme-accent) !important;
     }
   </style>
   {% block styles %}{% endblock %}
@@ -61,9 +73,15 @@
   <a href="/ops">Operations</a>
   <a href="/ops?tab=review">Miner Data <span id="nav-review-badge" class="nav-badge" style="display:none"></span></a>
   <a href="/data-explorer">Data Explorer</a>
+  <a href="/ui-spec">UI Spec</a>
   <a href="/diagnostics">Diagnostics</a>
   <a href="/dashboard">Dashboard</a>
-  <button class="btn btn-secondary btn-sm" onclick="toggleTheme()" style="margin-left:auto">Toggle Theme</button>
+  <span class="nav-controls">
+    <button id="nav-dev-mode-btn" class="btn btn-secondary btn-sm" onclick="toggleDevMode()" title="Cycle path filter: All / Critical / +Optional">Dev</button>
+    <button id="nav-spec-ids-btn" class="btn btn-secondary btn-sm" onclick="toggleSpecIds()" title="Toggle visible UI spec numbers">Spec IDs</button>
+    <button id="nav-inspect-btn" class="btn btn-secondary btn-sm" onclick="toggleInspect()" title="Toggle UI inspector hover highlight and tooltip">Inspect</button>
+    <button class="btn btn-secondary btn-sm" onclick="toggleTheme()">Toggle Theme</button>
+  </span>
 </nav>
 
 <div class="container">
@@ -97,6 +115,36 @@ function infoBubble(tip, extra) {
   return '<span class="info-bubble' + (extra ? ' ' + extra : '') + '" tabindex="0" data-tip="' + escapeAttr(tip) + '">?</span>';
 }
 
+const _DEV_STATES = ['all', 'critical', 'critical+optional'];
+const _DEV_LABELS = { all: 'Dev', critical: 'Critical', 'critical+optional': '+Optional' };
+const _DEV_BODY_CLASSES = {
+  all: [],
+  critical: ['path-filter-critical'],
+  'critical+optional': ['path-filter-critical-optional'],
+};
+let _devPathState = 'all';
+let _uiSpecPathMap = null;
+const _titleCache = new Map();
+
+function resolveSpecId(el) {
+  let node = el;
+  while (node && node !== document.documentElement) {
+    if (node.nodeType === 1 && node.hasAttribute('data-spec-id')) {
+      return node.getAttribute('data-spec-id');
+    }
+    node = node.parentElement;
+  }
+  return '';
+}
+
+function syncSpecIds(root) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll('.spec-id').forEach(function(el) {
+    const specId = resolveSpecId(el);
+    if (specId) el.textContent = specId;
+  });
+}
+
 function escapeHtml(str) {
   if (str == null) return '';
   const div = document.createElement('div');
@@ -108,6 +156,68 @@ function escapeHtml(str) {
 // cannot break out of a quoted attribute (Anti-pattern #26).
 function escapeAttr(str) {
   return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function loadUiSpecPaths() {
+  if (_uiSpecPathMap) return _uiSpecPathMap;
+  try {
+    const resp = await fetch('/static/data/ui_spec.json');
+    const spec = await resp.json();
+    _uiSpecPathMap = {};
+    (spec.components || []).forEach(function(component) {
+      if (component.id && component.path && component.path !== 'n/a') {
+        _uiSpecPathMap[component.id] = component.path;
+      }
+    });
+  } catch (_e) {
+    _uiSpecPathMap = {};
+  }
+  return _uiSpecPathMap;
+}
+
+async function applyDataPaths() {
+  const pathMap = await loadUiSpecPaths();
+  ['data-spec-id', 'data-ui-id'].forEach(function(attr) {
+    document.querySelectorAll('[' + attr + ']').forEach(function(el) {
+      const path = pathMap[el.getAttribute(attr)];
+      if (path) el.setAttribute('data-path', path);
+    });
+  });
+}
+
+function suppressTitles() {
+  document.querySelectorAll('[title]').forEach(function(el) {
+    if (!_titleCache.has(el)) _titleCache.set(el, el.getAttribute('title'));
+    el.removeAttribute('title');
+  });
+}
+
+function restoreTitles() {
+  _titleCache.forEach(function(val, el) {
+    if (document.contains(el)) el.setAttribute('title', val);
+  });
+  _titleCache.clear();
+}
+
+function applyDevState() {
+  const body = document.body;
+  const btn = document.getElementById('nav-dev-mode-btn');
+  const isDevOn = _devPathState !== 'all';
+  body.classList.remove('path-filter-critical', 'path-filter-critical-optional', 'dev-no-tips');
+  (_DEV_BODY_CLASSES[_devPathState] || []).forEach(function(cls) { body.classList.add(cls); });
+  if (isDevOn) body.classList.add('dev-no-tips');
+  if (isDevOn) suppressTitles(); else restoreTitles();
+  if (btn) {
+    btn.textContent = _DEV_LABELS[_devPathState] || 'Dev';
+    btn.classList.toggle('nav-toggle-active', isDevOn);
+  }
+  try { localStorage.setItem('dev_path_state', _devPathState); } catch (_e) {}
+}
+
+function toggleDevMode() {
+  const idx = _DEV_STATES.indexOf(_devPathState);
+  _devPathState = _DEV_STATES[(idx + 1) % _DEV_STATES.length];
+  applyDevState();
 }
 
 // Standard Hermeneutic sortable table utility.
@@ -157,6 +267,7 @@ function makeSortable(tableId) {
   let byId = {};
   let chip = null;
   let highlighted = null;
+  let observer = null;
 
   function ensureChip() {
     if (chip) return chip;
@@ -177,22 +288,35 @@ function makeSortable(tableId) {
   function hideChip() {
     if (!chip) return;
     chip.style.display = 'none';
-    chip.textContent = '';
+    chip.innerHTML = '';
+  }
+
+  function renderInspectorHtml(id, meta) {
+    const lines = [];
+    lines.push(id + (meta.name ? ' · ' + meta.name : ''));
+    if (meta.source) lines.push('source: ' + meta.source);
+    if (meta.path && meta.path !== 'n/a') lines.push('path: ' + meta.path);
+    if (meta.route) lines.push('route: ' + meta.route);
+    if (meta.template) lines.push('template: ' + meta.template);
+    if (Array.isArray(meta.api_endpoints) && meta.api_endpoints.length) {
+      lines.push('api: ' + meta.api_endpoints.join(', '));
+    }
+    return lines.map(escapeHtml).join('<br>');
   }
 
   function onHover(e) {
-    if (document.body.classList.contains('no-dev-mode')) {
+    if (document.body.classList.contains('ui-inspector-off')) {
       clearHighlight();
       hideChip();
       return;
     }
-    const el = e.target.closest('[data-ui-id]');
+    const el = e.target.closest('[data-spec-id], [data-ui-id]');
     if (!el) {
       clearHighlight();
       hideChip();
       return;
     }
-    const id = el.getAttribute('data-ui-id');
+    const id = el.getAttribute('data-spec-id') || el.getAttribute('data-ui-id');
     if (!id) return;
 
     if (highlighted !== el) {
@@ -202,12 +326,8 @@ function makeSortable(tableId) {
     }
 
     const meta = byId[id] || {};
-    const text = id
-      + (meta.name ? ' · ' + meta.name : '')
-      + (meta.source ? ' · ' + meta.source : '');
-
     const badge = ensureChip();
-    badge.textContent = text;
+    badge.innerHTML = renderInspectorHtml(id, meta);
     badge.style.display = 'block';
     badge.style.left = (e.clientX + 14) + 'px';
     badge.style.top = (e.clientY + 14) + 'px';
@@ -224,33 +344,83 @@ function makeSortable(tableId) {
       .catch(function() {});
   }
 
-  function applyDevMode(on) {
-    document.body.classList.toggle('no-dev-mode', !on);
+  function applyInspectorEnabled(on) {
+    document.body.classList.toggle('ui-inspector-off', !on);
     if (chip) chip.style.display = on ? '' : 'none';
-    if (!on) clearHighlight();
+    if (!on) {
+      clearHighlight();
+      hideChip();
+    }
   }
+
+  window.setInspectorEnabled = function(on) {
+    applyInspectorEnabled(!!on);
+    try { localStorage.setItem('uiInspectorEnabled', on ? 'true' : 'false'); } catch (_e) {}
+    const btn = document.getElementById('nav-inspect-btn');
+    if (btn) btn.classList.toggle('nav-toggle-active', !!on);
+  };
 
   document.addEventListener('DOMContentLoaded', function() {
     ensureChip();
     loadSpec();
+    syncSpecIds(document);
+    observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          if (node.matches && node.matches('.spec-id')) syncSpecIds(node.parentElement || node);
+          else if (node.querySelector && node.querySelector('.spec-id')) syncSpecIds(node);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('mousemove', onHover, true);
     document.addEventListener('scroll', function() { hideChip(); clearHighlight(); }, true);
-    // Apply saved dev mode state (default OFF)
-    applyDevMode(localStorage.getItem('devMode') === 'true');
+    const saved = localStorage.getItem('uiInspectorEnabled');
+    const legacy = localStorage.getItem('devMode');
+    const enabled = saved == null ? legacy === 'true' : saved === 'true';
+    window.setInspectorEnabled(enabled);
   });
 })();
 
-// ── Dev Mode toggle ──────────────────────────────────────────────────────────
-function toggleDevMode() {
-  const on = document.body.classList.contains('no-dev-mode');
-  document.body.classList.toggle('no-dev-mode', !on);
-  localStorage.setItem('devMode', on ? 'true' : 'false');
+function setSpecIdsVisible(on) {
+  document.body.classList.toggle('hide-spec-ids', !on);
+  try { localStorage.setItem('uiSpecIdsVisible', on ? 'true' : 'false'); } catch (_e) {}
+  const btn = document.getElementById('nav-spec-ids-btn');
+  if (btn) btn.classList.toggle('nav-toggle-active', !!on);
 }
+
+function toggleSpecIds() {
+  setSpecIdsVisible(document.body.classList.contains('hide-spec-ids'));
+}
+
+function toggleInspect() {
+  window.setInspectorEnabled(document.body.classList.contains('ui-inspector-off'));
+}
+
 document.addEventListener('keydown', function(e) {
   if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
     e.preventDefault();
     toggleDevMode();
   }
+  if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+    e.preventDefault();
+    toggleInspect();
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+    e.preventDefault();
+    toggleSpecIds();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  applyDataPaths().finally(function() {
+    const savedDevState = localStorage.getItem('dev_path_state');
+    if (_DEV_STATES.includes(savedDevState)) _devPathState = savedDevState;
+    applyDevState();
+  });
+  const saved = localStorage.getItem('uiSpecIdsVisible');
+  setSpecIdsVisible(saved === 'true');
 });
 
 </script>

@@ -547,6 +547,7 @@ tr:hover td { background: rgba(255,255,255,0.03); }
 .wf-step-header { display: flex; gap: 0.45rem; align-items: center; margin-bottom: 0.25rem; flex-wrap: wrap; }
 .wf-step-label { font-size: 0.84rem; font-weight: 600; }
 .wf-step-desc { font-size: 0.78rem; color: var(--theme-text-secondary); margin: 0 0 0.2rem; }
+.wf-step-meta { font-size: 0.72rem; color: var(--theme-text-muted); margin: 0 0 0.2rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .wf-step-note { font-size: 0.74rem; color: var(--theme-text-muted); margin: 0; border-left: 2px solid var(--theme-border); padding-left: 0.5rem; }
 .wf-specid { font-size: 0.68rem; color: var(--theme-text-muted); font-family: monospace; margin-left: auto; }
 .wf-go-btn { margin-left: 0.3rem; flex-shrink: 0; }
@@ -685,8 +686,7 @@ tr:hover td { background: rgba(255,255,255,0.03); }
   max-width: min(90vw, 640px);
   overflow: hidden;
 }
-body.no-dev-mode .dev-tooltip,
-body.no-dev-mode .spec-id { display: none !important; }
+body.hide-spec-ids .spec-id { display: none !important; }
 
 /* ── Dev-mode path filtering (driven by data-path attributes set from ui_spec.json) ── */
 
@@ -709,9 +709,6 @@ body.path-filter-critical-optional .ops-tab[data-path="later"] { display: none !
 
 /* Dev-mode tooltip suppression: hide info-bubble elements */
 body.dev-no-tips .info-bubble { display: none !important; }
-
-/* Dev button visual state */
-#dev-mode-btn.path-active { background: var(--theme-accent); color: #fff; border-color: var(--theme-accent); }
 
 /* Metric keyword chips (1.5.1 combined table) */
 .kw-chip {

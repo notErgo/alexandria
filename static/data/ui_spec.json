@@ -18,7 +18,8 @@
     },
     {
       "id": "1.1",
-      "name": "Scorecard table",
+      "name": "Monthly scorecard table",
+      "description": "Compact landing-page sector summary built from finalized monthly holdings, production, and sales stats.",
       "source": "DATA",
       "path": "critical",
       "template": "landing.html",
@@ -40,11 +41,13 @@
       "name": "Workflow tab",
       "source": "n/a",
       "path": "n/a",
-      "template": "ops.html"
+      "template": "ops.html",
+      "display_only": true
     },
     {
       "id": "2.2",
       "name": "Track Config tab",
+      "description": "Define tracked companies, metric schema, prompt settings, and crawl configuration before ingest.",
       "source": "n/a",
       "path": "n/a",
       "template": "ops.html",
@@ -61,6 +64,7 @@
     {
       "id": "2.2.1.1",
       "name": "Add Company form + bulk paste",
+      "description": "Create tracked companies and seed the minimum runtime metadata needed for ingest and extraction.",
       "source": "n/a",
       "path": "critical",
       "template": "ops.html",
@@ -86,6 +90,7 @@
     {
       "id": "2.2.2.1",
       "name": "Companies table",
+      "description": "Live company registry for cadence, BTC anchor dates, and scrape-mode fields used by downstream ingest.",
       "source": "CONFIG",
       "path": "critical",
       "template": "ops.html",
@@ -124,6 +129,7 @@
     {
       "id": "2.2.3.1",
       "name": "Metrics & Keywords table + add form",
+      "description": "Canonical metric schema and keyword definitions used by prompts, filters, and review tooling.",
       "source": "CONFIG",
       "path": "optional",
       "template": "ops.html",
@@ -151,6 +157,7 @@
     {
       "id": "2.2.4.2",
       "name": "Rendered Prompt Preview card",
+      "description": "Shows the fully assembled extraction prompt with the current metric, keyword, and ticker context.",
       "source": "n/a",
       "path": "critical",
       "template": "ops.html",
@@ -170,6 +177,7 @@
     {
       "id": "2.2.4.4",
       "name": "Metric Rules card",
+      "description": "Per-metric agreement and range thresholds used to tune extraction confidence after real data is available.",
       "source": "CONFIG",
       "path": "later",
       "template": "ops.html",
@@ -198,6 +206,7 @@
     {
       "id": "2.2.5",
       "name": "Track Config > Crawl Setup sub-tab",
+      "description": "Configure crawl-provider behavior and prompt inputs when default ticker discovery is insufficient.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html",
@@ -245,6 +254,7 @@
     {
       "id": "2.3",
       "name": "Ingest tab",
+      "description": "Acquire source documents from EDGAR, IR, archive, and crawl flows before interpretation.",
       "source": "n/a",
       "path": "n/a",
       "template": "ops.html",
@@ -269,6 +279,7 @@
     {
       "id": "2.3.3",
       "name": "Ingest > SEC EDGAR filings card",
+      "description": "Pull SEC filings for tracked companies, including quarterly and event-driven source coverage.",
       "source": "n/a",
       "path": "critical",
       "template": "ops.html",
@@ -280,6 +291,7 @@
     {
       "id": "2.3.4",
       "name": "Ingest > IR press releases & archive card",
+      "description": "Fetch investor-relations releases and archive pages that often contain the freshest monthly operating stats.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html",
@@ -312,6 +324,7 @@
     {
       "id": "2.3.5",
       "name": "Ingest > LLM-Directed Crawl card",
+      "description": "Targeted crawl flow for tickers whose IR structures or archive coverage need guided discovery.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html"
@@ -352,6 +365,7 @@
     {
       "id": "2.3.6.2",
       "name": "Pipeline observability table",
+      "description": "Per-ticker ingest and extraction health snapshot for diagnosing sparse or stalled coverage.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html",
@@ -362,6 +376,7 @@
     {
       "id": "2.4",
       "name": "Interpret tab",
+      "description": "Run extraction and quality-control passes against documents already ingested into the system.",
       "source": "n/a",
       "path": "n/a",
       "template": "ops.html",
@@ -378,6 +393,7 @@
     {
       "id": "2.4.1.1",
       "name": "LLM extraction panel",
+      "description": "Primary extract-run control surface for executing model-based interpretation over stored documents.",
       "source": "n/a",
       "path": "critical",
       "template": "ops.html",
@@ -388,6 +404,7 @@
     {
       "id": "2.4.1.2",
       "name": "Re-extract gap months panel",
+      "description": "Targeted requeue flow for metrics still missing after the main extraction run.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html",
@@ -396,6 +413,7 @@
     {
       "id": "2.4.2",
       "name": "Interpret > QC sub-pane",
+      "description": "Capture and review quality snapshots for extraction agreement, coverage, and backlog.",
       "source": "n/a",
       "path": "optional",
       "template": "ops.html",
@@ -407,6 +425,7 @@
     {
       "id": "2.5",
       "name": "Review tab",
+      "description": "Analyst review surfaces for queue-based approval and timeline-based document inspection.",
       "source": "n/a",
       "path": "n/a",
       "template": "ops.html",
@@ -450,6 +469,7 @@
     {
       "id": "2.5.1.4",
       "name": "Review table",
+      "description": "Queue of extraction candidates awaiting analyst approval, rejection, or follow-up review.",
       "source": "DATA",
       "path": "critical",
       "template": "ops.html",
@@ -508,6 +528,7 @@
     {
       "id": "2.5.2.2",
       "name": "Monthly PRs/8-K table view",
+      "description": "Canonical monthly miner timeline showing accepted values period by period for the selected company.",
       "source": "DATA",
       "path": "critical",
       "template": "ops.html",
@@ -594,6 +615,7 @@
     {
       "id": "2.5.2.6",
       "name": "Document viewer panel",
+      "description": "Shared document evidence drawer used while reviewing timelines and manifest-linked sources.",
       "source": "DATA",
       "path": "critical",
       "template": "ops.html",
@@ -612,6 +634,7 @@
     {
       "id": "5.0",
       "name": "Data tab",
+      "description": "Analyst exploration surface for validated data, document registry, and direct remediation actions.",
       "source": "n/a",
       "path": "n/a",
       "template": "ops.html",
@@ -636,6 +659,7 @@
     {
       "id": "5.1.2",
       "name": "Explorer coverage heatmap",
+      "description": "Coverage grid for period-by-period validation, showing where data exists, is pending, or needs remediation.",
       "source": "DATA",
       "path": "critical",
       "template": "ops.html",
@@ -646,6 +670,7 @@
     {
       "id": "5.1.3",
       "name": "Cell detail panel",
+      "description": "Drill-in panel for provenance, current value state, and remediation actions on a selected coverage cell.",
       "source": "DATA",
       "path": "critical",
       "template": "ops.html",
@@ -694,6 +719,7 @@
     {
       "id": "5.3",
       "name": "Data > Documents sub-tab",
+      "description": "Search and open stored document rows directly when tracing evidence or parse/extract issues.",
       "source": "DATA",
       "path": "optional",
       "template": "ops.html",
@@ -713,6 +739,7 @@
     {
       "id": "5.2.2",
       "name": "Registry table",
+      "description": "Manifest-oriented inventory of source documents with parse and extraction status for diagnostics.",
       "source": "DATA",
       "path": "optional",
       "template": "ops.html",
@@ -731,6 +758,7 @@
     {
       "id": "2.8",
       "name": "Interrogate tab",
+      "description": "Reserved workspace for future natural-language analysis over the validated miner dataset.",
       "source": "n/a",
       "path": "later",
       "template": "ops.html",

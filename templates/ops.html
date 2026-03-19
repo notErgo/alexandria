@@ -118,7 +118,7 @@ mark.doc-snippet-hl { background: #f59e0b44; border-bottom: 2px solid #f59e0b; c
 .badge-status-final    { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600; background:#22c55e1a; color:#22c55e; }
 .badge-status-rejected { display:inline-block; padding:1px 7px; border-radius:9px; font-size:0.7rem; font-weight:600; background:#ef44440d; color:#ef4444; }
 
-/* ── Miner Data (inlined from miner_data.html) ─────────────────────────────── */
+/* ── Review Timeline (inlined from the legacy miner data surface) ─────────── */
 /* ── Page layout ─────────────────────────────────────────────────────────── */
 .md-page {
   display: flex;
@@ -923,8 +923,6 @@ tr.is-reviewed td { opacity: 0.65; }
   </div>
   <span style="margin-left:auto;display:flex;gap:0.4rem;align-items:center">
     <button id="help-btn" class="btn btn-sm btn-secondary" onclick="toggleHelp()" title="Pipeline guide">?</button>
-    <button id="inspect-btn" class="btn btn-sm btn-secondary" onclick="toggleInspect()" title="Toggle UI inspector hover highlight and tooltip">Inspect</button>
-    <button id="dev-mode-btn" class="btn btn-sm btn-secondary" onclick="toggleDevMode()" title="Cycle path filter: All / Critical / +Optional (Ctrl+Shift+D)">Dev</button>
   </span>
 </div>
 
@@ -1281,7 +1279,7 @@ tr.is-reviewed td { opacity: 0.65; }
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script src="/static/js/doc_panel.js"></script>
 <script src="/static/js/review_panel.js"></script>
-<script src="/static/js/miner_data.js"></script>
+<script src="/static/js/review_timeline.js"></script>
 <script src="/static/js/log_panel.js"></script>
 <script src="/static/js/ops_shell.js"></script>
 <script src="/static/js/ops_workflow.js"></script>

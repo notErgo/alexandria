@@ -3,6 +3,7 @@ import csv
 import io
 import logging
 import re
+from statistics import fmean
 
 from flask import Blueprint, jsonify, request, make_response, g
 
@@ -18,6 +19,21 @@ _VALID_METRICS_FALLBACK = frozenset({
     'mining_mw', 'ai_hpc_mw', 'hpc_revenue_usd', 'gpu_count',
 })
 _PERIOD_RE = re.compile(r'^\d{4}-\d{2}$')
+_MONTHLY_PERIOD_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_SCORECARD_METRIC_ORDER = (
+    'holdings_btc',
+    'production_btc',
+    'sales_btc',
+)
+_SCORECARD_STAT_DEFS = {
+    'holdings_btc': ('last',),
+    'production_btc': ('last', 'avg_6m'),
+    'sales_btc': ('last', 'avg_6m'),
+}
+_STAT_LABELS = {
+    'last': 'Last',
+    'avg_6m': '6M Avg',
+}
 
 
 def _get_valid_metrics(db) -> frozenset:
@@ -442,107 +458,132 @@ def export_csv():
     return response
 
 
-def _period_sort_key(period: str) -> tuple:
-    """Convert a period string to a (year, month) tuple for correct cross-type sorting.
+def _is_monthly_period(period: str) -> bool:
+    return bool(_MONTHLY_PERIOD_RE.match(period or ''))
 
-    Monthly  '2025-01-01' → (2025, 1)
-    Quarterly '2025-Q3'   → (2025, 9)   end-month of the quarter
-    Annual    '2024-FY'   → (2024, 12)
-    """
-    import re as _re
+
+def _format_scorecard_period(period: str | None) -> str | None:
     if not period:
-        return (0, 0)
-    m = _re.match(r'^(\d{4})-(\d{2})-\d{2}$', period)
-    if m:
-        return (int(m.group(1)), int(m.group(2)))
-    q = _re.match(r'^(\d{4})-Q(\d)$', period)
-    if q:
-        return (int(q.group(1)), int(q.group(2)) * 3)
-    fy = _re.match(r'^(\d{4})-FY$', period)
-    if fy:
-        return (int(fy.group(1)), 12)
-    return (0, 0)
+        return None
+    match = re.match(r'^(\d{4})-(\d{2})-\d{2}$', period)
+    if not match:
+        return period
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return f"{month_names[int(match.group(2)) - 1]} {match.group(1)}"
 
 
-def _latest_per_metric(dps: list, metrics: list) -> dict:
-    """Return {metric: dp_dict} keeping the most recent period per metric."""
-    best = {}
-    for dp in dps:
-        m = dp.get('metric')
-        if m not in metrics:
-            continue
-        if m not in best or _period_sort_key(dp['period']) > _period_sort_key(best[m]['period']):
-            best[m] = dp
-    return best
+def _scorecard_last_cell(rows: list[dict]) -> dict | None:
+    if not rows:
+        return None
+    row = rows[-1]
+    return {
+        'value': row.get('value'),
+        'period': row.get('period'),
+        'period_display': _format_scorecard_period(row.get('period')),
+        'confidence': row.get('confidence'),
+        'is_finalized': True,
+        'stat': 'last',
+    }
 
 
-def _is_sec_period(period: str) -> bool:
-    """Return True for quarterly (YYYY-Qn) or annual (YYYY-FY) periods."""
-    import re as _re
-    return bool(_re.match(r'^\d{4}-Q\d$', period or '') or
-                _re.match(r'^\d{4}-FY$', period or ''))
+def _scorecard_avg_cell(rows: list[dict], sample_size: int = 6) -> dict | None:
+    if not rows:
+        return None
+    window = rows[-sample_size:]
+    if not window:
+        return None
+    return {
+        'value': fmean(r.get('value') for r in window),
+        'period_start': window[0].get('period'),
+        'period_end': window[-1].get('period'),
+        'period_display': (
+            f"{_format_scorecard_period(window[0].get('period'))} to "
+            f"{_format_scorecard_period(window[-1].get('period'))}"
+        ),
+        'sample_size': len(window),
+        'is_average': True,
+        'is_finalized': True,
+        'stat': 'avg_6m',
+    }
 
 
 @bp.route('/api/scorecard')
 def scorecard():
-    """Return latest finalized monthly and SEC value per metric per company.
-
-    Only surfaces values that have been explicitly accepted into final_data_points
-    (review_approved, review_edited, or analyst-finalized). Unreviewed raw
-    data_points are never shown on the dashboard.
-
-    Response shape:
-      data.companies[ticker] = {
-        name, scraper_status,
-        monthly: { metric: {value, period, confidence, is_finalized} | null },
-        sec:     { metric: {value, period, confidence, is_finalized} | null },
-      }
-    """
+    """Return scorecard-ready monthly stats for holdings, production, and sales."""
     from app_globals import get_db
     db = get_db()
     try:
         _schema_rows = db.get_metric_schema('BTC-miners', active_only=False)
-        SCORECARD_METRICS = [
-            r['key'] for r in _schema_rows
-            if r.get('show_on_scorecard', 1)
+        schema_rows = [
+            r for r in _schema_rows
+            if r.get('show_on_scorecard', 1) and r['key'] in _SCORECARD_METRIC_ORDER
         ]
     except Exception:
-        SCORECARD_METRICS = [
-            'production_btc', 'sales_btc', 'hashrate_eh',
-            'holdings_btc', 'unrestricted_holdings',
+        schema_rows = [
+            {'key': 'holdings_btc', 'label': 'BTC Holdings (Total)', 'unit': 'BTC'},
+            {'key': 'production_btc', 'label': 'BTC Produced', 'unit': 'BTC'},
+            {'key': 'sales_btc', 'label': 'BTC Sold', 'unit': 'BTC'},
         ]
+    schema_by_key = {row['key']: row for row in schema_rows}
+    metrics = [key for key in _SCORECARD_METRIC_ORDER if key in schema_by_key]
+
+    groups = []
+    columns = []
+    for metric in metrics:
+        metric_row = schema_by_key[metric]
+        stat_keys = _SCORECARD_STAT_DEFS[metric]
+        groups.append({
+            'key': metric,
+            'label': metric_row.get('label') or metric,
+            'unit': metric_row.get('unit') or '',
+            'colspan': len(stat_keys),
+        })
+        for stat in stat_keys:
+            columns.append({
+                'key': f'{metric}:{stat}',
+                'metric': metric,
+                'group_key': metric,
+                'group_label': metric_row.get('label') or metric,
+                'unit': metric_row.get('unit') or '',
+                'stat': stat,
+                'label': _STAT_LABELS[stat] if len(stat_keys) > 1 else (metric_row.get('label') or metric),
+            })
+
     companies = db.get_companies(active_only=False)
     result = {}
     for company in companies:
         ticker = company['ticker']
-
         finals = db.get_final_data_points(ticker)
-        final_monthly = _latest_per_metric(
-            [f for f in finals if not _is_sec_period(f['period'])], SCORECARD_METRICS
-        )
-        final_sec = _latest_per_metric(
-            [f for f in finals if _is_sec_period(f['period'])], SCORECARD_METRICS
-        )
+        monthly_finals = [f for f in finals if _is_monthly_period(f.get('period'))]
 
-        def _cell(dp):
-            if dp is None:
-                return None
-            return {
-                'value':              dp.get('value'),
-                'period':             dp.get('period'),
-                'confidence':         dp.get('confidence'),
-                'source_period_type': dp.get('source_period_type'),
-                'is_finalized':       True,
-            }
+        metric_rows = {metric: [] for metric in metrics}
+        for row in monthly_finals:
+            metric = row.get('metric')
+            if metric in metric_rows:
+                metric_rows[metric].append(row)
+        for rows in metric_rows.values():
+            rows.sort(key=lambda row: row.get('period') or '')
+
+        cells = {}
+        for metric in metrics:
+            rows = metric_rows[metric]
+            cells[f'{metric}:last'] = _scorecard_last_cell(rows)
+            if 'avg_6m' in _SCORECARD_STAT_DEFS[metric]:
+                cells[f'{metric}:avg_6m'] = _scorecard_avg_cell(rows)
 
         result[ticker] = {
             'name':           company.get('name'),
             'scraper_status': company.get('scraper_status'),
-            'monthly': {m: _cell(final_monthly.get(m)) for m in SCORECARD_METRICS},
-            'sec':     {m: _cell(final_sec.get(m))     for m in SCORECARD_METRICS},
+            'cells': cells,
         }
 
-    return jsonify({'success': True, 'data': {'companies': result, 'metrics': SCORECARD_METRICS}})
+    return jsonify({'success': True, 'data': {
+        'companies': result,
+        'metrics': metrics,
+        'groups': groups,
+        'columns': columns,
+    }})
 
 
 def _run_purge_request(*, route_label: str, allowed_modes: set[str], default_mode: str, body: dict | None = None):

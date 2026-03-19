@@ -7,7 +7,7 @@
       "docs/architecture/dag.json",
       "cli.py"
     ],
-    "input_hash": "bcb2a6bd0b1bd91e5f5d31ef03fcd8f99d5d60b7488899ef719c9c333780e02b"
+    "input_hash": "754d89d62ed69db5241de620870b2cb5f69aad7e0f75fd62852f99b679d6d707"
   },
   "note": "Derived mapping from ui_spec.json -> operations.json -> dag.json. dag.json remains UI-agnostic.",
   "components": [
@@ -26,7 +26,7 @@
     },
     {
       "id": "1.1",
-      "name": "Scorecard table",
+      "name": "Monthly scorecard table",
       "template": "landing.html",
       "status": "active",
       "display_only": false,
@@ -57,85 +57,13 @@
       "name": "Workflow tab",
       "template": "ops.html",
       "status": "canonical",
-      "display_only": false,
+      "display_only": true,
       "api_endpoints": [],
-      "operations": [
-        {
-          "id": "ingest_edgar",
-          "name": "Ingest EDGAR filings",
-          "route_nodes": [
-            "routes.reports"
-          ],
-          "direct_dag_nodes": [
-            "interpreters.interpret_pipeline",
-            "routes.reports",
-            "scrapers.edgar_connector"
-          ],
-          "reachable_dag_nodes": [
-            "app_globals",
-            "config",
-            "coverage_bridge",
-            "infra.db",
-            "infra.ollama_warmup",
-            "infra.text_utils",
-            "interpreters.confidence",
-            "interpreters.context_window",
-            "interpreters.interpret_pipeline",
-            "interpreters.llm_interpreter",
-            "interpreters.llm_prompt_builder",
-            "interpreters.outlier",
-            "interpreters.report_text",
-            "interpreters.result_router",
-            "miner_types",
-            "orchestration",
-            "parsers.annual_report_parser",
-            "parsers.press_release_parser",
-            "scrapers.archive_ingestor",
-            "scrapers.dedup",
-            "scrapers.edgar_connector",
-            "scrapers.fetch_policy",
-            "scrapers.html_downloader",
-            "scrapers.ir_scraper",
-            "scrapers.scrape_worker"
-          ]
-        }
-      ],
-      "route_nodes": [
-        "routes.reports"
-      ],
-      "direct_dag_nodes": [
-        "interpreters.interpret_pipeline",
-        "routes.reports",
-        "scrapers.edgar_connector"
-      ],
-      "reachable_dag_nodes": [
-        "app_globals",
-        "config",
-        "coverage_bridge",
-        "infra.db",
-        "infra.ollama_warmup",
-        "infra.text_utils",
-        "interpreters.confidence",
-        "interpreters.context_window",
-        "interpreters.interpret_pipeline",
-        "interpreters.llm_interpreter",
-        "interpreters.llm_prompt_builder",
-        "interpreters.outlier",
-        "interpreters.report_text",
-        "interpreters.result_router",
-        "miner_types",
-        "orchestration",
-        "parsers.annual_report_parser",
-        "parsers.press_release_parser",
-        "scrapers.archive_ingestor",
-        "scrapers.dedup",
-        "scrapers.edgar_connector",
-        "scrapers.fetch_policy",
-        "scrapers.html_downloader",
-        "scrapers.ir_scraper",
-        "scrapers.scrape_worker"
-      ],
-      "coverage_status": "operation_traced"
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
     },
     {
       "id": "2.2",

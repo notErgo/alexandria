@@ -263,9 +263,9 @@
       "id": "ingest_edgar",
       "name": "Ingest EDGAR filings",
       "trigger": {"method": "POST", "path": "/api/ingest/edgar"},
-      "components": ["2.1", "2.3.3"],
+      "components": ["2.3.3"],
       "dag": [
-        {"step": 1, "layer": "frontend", "spec_id": "2.1", "action": "POST fetch with optional auto_extract flag"},
+        {"step": 1, "layer": "frontend", "spec_id": "2.3.3", "action": "POST fetch with optional auto_extract flag"},
         {"step": 2, "layer": "route",    "file": "src/routes/reports.py",            "fn": "ingest_edgar"},
         {"step": 3, "layer": "worker",   "file": "src/scrapers/edgar_connector.py",  "fn": "fetch_all_filings", "writes": ["reports"]},
         {"step": 4, "layer": "worker",   "file": "src/interpreters/interpret_pipeline.py", "fn": "extract_report",

@@ -1,145 +1,133 @@
 {
-  "version": "1.0",
-  "description": "Linear pipeline definition. Each step references a spec_id from ui_spec.json. path: critical | optional | later.",
+  "version": "2.0",
+  "description": "Pipeline workflow ordering. This file owns stage order, navigation targets, and workflow notes. Component labels, descriptions, paths, and routes are enriched at render time from ui_spec.json and operations.json.",
   "path_legend": {
     "critical": "Must complete before the pipeline can advance to the next stage.",
     "optional": "Improves results or observability but the pipeline runs without it.",
-    "later": "Do after the first full pipeline cycle. Reduces review burden and increases confidence in future extractions."
+    "later": "Do after the first full pipeline cycle. Reduces review burden and increases confidence in future runs."
   },
   "stages": [
     {
-      "spec_id": "1.0",
+      "spec_id": "2.2",
       "label": "Track Config",
       "tab": "config",
-      "description": "Define which companies to track and how the pipeline is configured. Steps here are prerequisites for ingestion.",
       "steps": [
         {
-          "spec_id": "1.1",
+          "spec_id": "2.2.1.1",
           "label": "Add Companies",
           "nav": {"tab": "config", "sub_tab": "companies"},
-          "path": "critical",
-          "description": "Add at least one company. Provide a CIK for EDGAR filing access and an IR URL for press release scraping.",
-          "note": "Without a CIK the pipeline cannot acquire SEC filings. Without an IR URL the LLM crawl has no seed."
+          "note": "Seed tracked companies before ingest. CIK drives EDGAR coverage; IR configuration drives release discovery."
         },
         {
-          "spec_id": "1.1.6",
-          "label": "Add Search Keywords",
-          "nav": {"tab": "config", "sub_tab": "companies"},
-          "path": "critical",
-          "description": "Add active keywords that gate EDGAR 8-K discovery and are injected into every LLM extraction prompt.",
-          "note": "Without keywords EDGAR returns noise and the LLM has no anchor terms. Populate before any ingest or extraction run."
+          "spec_id": "2.2.2.1",
+          "label": "Set Company Runtime Fields",
+          "nav": {"tab": "config", "sub_tab": "companiestable"},
+          "note": "Confirm reporting cadence, BTC anchor date, and company-level scrape settings before ingest."
         },
         {
-          "spec_id": "1.3",
-          "label": "Settings",
+          "spec_id": "2.2.3.1",
+          "label": "Review Metrics & Keywords",
+          "nav": {"tab": "config", "sub_tab": "metricskeywords"},
+          "note": "Metric schema and keyword phrases are the extraction SSOT for prompts, filters, and downstream review surfaces."
+        },
+        {
+          "spec_id": "2.2.4.2",
+          "label": "Verify Prompt Preview",
+          "nav": {"tab": "interpret", "sub_tab": "extract"},
+          "note": "Validate the assembled prompt on the live extract surface before the first run or after prompt changes."
+        },
+        {
+          "spec_id": "2.2.4.4",
+          "label": "Tune Metric Rules",
           "nav": {"tab": "config", "sub_tab": "settings"},
-          "path": "optional",
-          "description": "LLM provider and model, confidence thresholds, context window size, crawl limits.",
-          "note": "Defaults are production-ready. Adjust after seeing first extraction results if agreement rates are low."
+          "note": "Threshold tuning is a later-stage refinement after the first extraction cycle produces real data."
         },
         {
-          "spec_id": "1.4",
-          "label": "Crawl Setup",
+          "spec_id": "2.2.5",
+          "label": "Adjust Crawl Setup",
           "nav": {"tab": "config", "sub_tab": "crawlsetup"},
-          "path": "optional",
-          "description": "Customize the LLM crawl prompt per ticker. The default prompt covers production_btc, hodl_btc, and sold_btc.",
-          "note": "Only needed if a company uses unusual terminology not covered by the default prompt."
+          "note": "Use only when default crawl prompts or provider settings are not sufficient for a ticker."
         }
       ]
     },
     {
-      "spec_id": "2.0",
+      "spec_id": "2.3",
       "label": "Ingest",
       "tab": "ingest",
-      "description": "Fetch raw documents from EDGAR and IR press release sources. Nothing can be extracted until documents exist.",
       "steps": [
         {
-          "spec_id": "2.1",
-          "label": "EDGAR Acquire",
-          "nav": {"tab": "ingest", "sub_tab": "scrape"},
-          "path": "critical",
-          "description": "Pull SEC filings (8-K, 10-Q, 10-K, 20-F) for all tracked companies with a CIK.",
-          "note": "The earliest bitcoin mention date from EDGAR is automatically injected into the LLM crawl prompt as a lower bound. Run EDGAR first."
+          "spec_id": "2.3.3",
+          "label": "Ingest EDGAR Filings",
+          "nav": {"tab": "ingest"},
+          "note": "SEC filings establish broad source coverage and often supply quarter-end context missing from monthly PRs."
         },
         {
-          "spec_id": "2.2",
-          "label": "LLM Crawl (IR press releases)",
-          "nav": {"tab": "ingest", "sub_tab": "crawl"},
-          "path": "optional",
-          "description": "LLM-directed crawl of IR press release pages. Supplements EDGAR with monthly production announcements that do not appear in filings.",
-          "note": "Monthly press releases often contain the most precise production figures. EDGAR 10-Q/10-K filings cover quarterly data only."
+          "spec_id": "2.3.4",
+          "label": "Ingest IR Press Releases & Archive",
+          "nav": {"tab": "ingest"},
+          "note": "Monthly production releases and archive pages often contain the freshest monthly production and holdings values."
         },
         {
-          "spec_id": "2.3",
-          "label": "Ingest Status",
-          "nav": {"tab": "ingest", "sub_tab": "status"},
-          "path": "optional",
-          "description": "Pipeline observability: document counts, extraction backlog, config health per company.",
-          "note": "Check here if extraction results are unexpectedly sparse — it may indicate a scraper config problem."
+          "spec_id": "2.3.5",
+          "label": "Run LLM-Directed Crawl",
+          "nav": {"tab": "ingest"},
+          "note": "Use crawl when ticker-specific IR structures or missing archive coverage need targeted discovery."
+        },
+        {
+          "spec_id": "2.3.6.2",
+          "label": "Check Pipeline Observability",
+          "nav": {"tab": "ingest"},
+          "note": "Use the observability table to confirm document counts, extraction backlog, and configuration health before interpret."
         }
       ]
     },
     {
-      "spec_id": "3.0",
+      "spec_id": "2.4",
       "label": "Interpret",
       "tab": "interpret",
-      "description": "Run LLM + regex extraction on all ingested documents. The LLM runs unconditionally; regex provides corroboration.",
       "steps": [
         {
-          "spec_id": "1.3.P",
-          "label": "Verify Prompt",
+          "spec_id": "2.4.1.1",
+          "label": "Run Extraction",
           "nav": {"tab": "interpret", "sub_tab": "extract"},
-          "path": "critical",
-          "description": "Review the assembled LLM prompt before running extraction. Confirms active keywords, company context hint, and per-metric instructions are correct.",
-          "note": "The prompt is assembled from: active keywords (1.1.6) + per-metric instructions (llm_prompts table) + company context hint. Refresh with a ticker selected to see the full context injection."
+          "note": "This is the primary extraction run across already-ingested documents."
         },
         {
-          "spec_id": "3.1",
-          "label": "Extract",
+          "spec_id": "2.4.1.2",
+          "label": "Re-extract Gap Months",
           "nav": {"tab": "interpret", "sub_tab": "extract"},
-          "path": "critical",
-          "description": "LLM extracts values from every stored document. When LLM and regex agree, the result auto-accepts to data_points. When only LLM fires, the item routes to Review Queue for analyst decision.",
-          "note": "No regex patterns are required to run extraction. Patterns only increase the auto-accept rate."
+          "note": "Targeted requeue for missing metrics after the main run; does not scrape new documents."
         },
         {
-          "spec_id": "3.2",
-          "label": "QC Snapshot",
+          "spec_id": "2.4.2",
+          "label": "Capture QC Snapshot",
           "nav": {"tab": "interpret", "sub_tab": "qc"},
-          "path": "optional",
-          "description": "Capture a pipeline health snapshot: agreement rate, review queue depth, extraction coverage per company.",
-          "note": "Take a snapshot before and after adding regex patterns to measure the improvement in auto-accept rate."
+          "note": "Track agreement and coverage quality over time after prompt or rule changes."
         }
       ]
     },
     {
-      "spec_id": "4.0",
+      "spec_id": "2.5",
       "label": "Review",
       "tab": "review",
-      "description": "Analyst approves or rejects LLM-only extraction candidates. Approved items enter data_points.",
       "steps": [
         {
-          "spec_id": "4.2",
-          "label": "Review Queue",
-          "nav": {"tab": "review"},
-          "path": "critical",
-          "description": "Approve or reject each LLM-only candidate. A rejected item is excluded permanently. Undecided items stay pending.",
-          "note": "Use J/K to navigate, A to approve, R to reject. Bulk approve is available for high-confidence batches."
+          "spec_id": "2.5.1.4",
+          "label": "Work the Review Queue",
+          "nav": {"tab": "review", "sub_tab": "queue"},
+          "note": "Approve or reject queued extraction candidates that need analyst intervention."
         },
         {
-          "spec_id": "4.3",
-          "label": "Review Exceptions",
-          "nav": {"tab": "review"},
-          "path": "later",
-          "description": "Review low-confidence and outlier candidates, correct or reject them, and use the final analyst decisions to tune LLM prompts and metric rules.",
-          "note": "Regex patterns are now used only as a gate for monthly documents and are no longer part of analyst workflow."
+          "spec_id": "2.5.2.2",
+          "label": "Inspect Miner Timeline",
+          "nav": {"tab": "review", "sub_tab": "miner"},
+          "note": "Review company-by-company monthly output in the canonical timeline workflow."
         },
         {
-          "spec_id": "1.2",
-          "label": "Tune Metric Rules (thresholds + valid ranges)",
-          "nav": {"tab": "config", "sub_tab": "rules"},
-          "path": "later",
-          "description": "After observing real extraction results, adjust agreement thresholds and outlier detection ranges per metric. Default values are conservative and safe for a first run.",
-          "note": "Only change these if you see correct values being flagged as outliers, or if incorrect values are auto-accepting. Requires at least 6 months of data to tune meaningfully."
+          "spec_id": "2.5.2.6",
+          "label": "Open Document Viewer",
+          "nav": {"tab": "review", "sub_tab": "miner"},
+          "note": "Use the shared document viewer to inspect source evidence while reviewing or validating a period."
         }
       ]
     },
@@ -147,39 +135,56 @@
       "spec_id": "5.0",
       "label": "Data",
       "tab": "data",
-      "description": "Explore and validate the verified dataset. Identify coverage gaps and trigger re-extraction.",
       "steps": [
         {
-          "spec_id": "5.1",
-          "label": "Coverage Explorer",
+          "spec_id": "5.1.2",
+          "label": "Scan Coverage Heatmap",
           "nav": {"tab": "data", "sub_tab": "explorer"},
-          "path": "critical",
-          "description": "Heatmap showing data coverage by company and month. Seven states: data present, gap sentinel, pending review, no document, low confidence, analyst edit, quarterly.",
-          "note": "Grey cells mean no document was ingested for that period. White cells mean a document exists but extraction found nothing. These require different remediation."
+          "note": "Coverage states show where documents exist, where review is pending, and where explicit gaps were marked."
         },
         {
-          "spec_id": "5.2",
-          "label": "Document Registry",
+          "spec_id": "5.1.3",
+          "label": "Inspect Cell Detail",
+          "nav": {"tab": "data", "sub_tab": "explorer"},
+          "note": "Open cell detail to verify provenance and trigger save, gap, or re-extract actions."
+        },
+        {
+          "spec_id": "5.2.2",
+          "label": "Browse Registry",
           "nav": {"tab": "data", "sub_tab": "registry"},
-          "path": "optional",
-          "description": "Browse all ingested documents with source type, parse quality, and extraction status. Filter by ticker, period, or source type.",
-          "note": "Use this to diagnose parse failures (e.g. PDF that failed to render) or to identify documents that were ingested but never extracted."
+          "note": "Registry is the fastest way to diagnose missing, malformed, or unprocessed source documents."
+        },
+        {
+          "spec_id": "5.3",
+          "label": "Inspect Documents",
+          "nav": {"tab": "data", "sub_tab": "documents"},
+          "note": "Search the document list directly when validating a source row or tracing a parse/extract issue."
         }
       ]
     },
     {
-      "spec_id": "6.0",
-      "label": "Interrogate",
-      "tab": "interrogate",
-      "description": "Natural language queries and analysis against the verified dataset.",
+      "spec_id": "1.1",
+      "label": "Scorecard",
+      "nav": {"route": "/"},
       "steps": [
         {
-          "spec_id": "6.0",
-          "label": "Interrogate",
+          "spec_id": "1.1",
+          "label": "Review Monthly Scorecard",
+          "nav": {"route": "/"},
+          "note": "The scorecard is the compact output surface for finalized monthly holdings, production, and sales stats."
+        }
+      ]
+    },
+    {
+      "spec_id": "2.8",
+      "label": "Interrogate",
+      "tab": "interrogate",
+      "steps": [
+        {
+          "spec_id": "2.8",
+          "label": "Interrogate Dataset",
           "nav": {"tab": "interrogate"},
-          "path": "later",
-          "description": "LLM-powered time-series analysis. Ask questions directly against the extracted dataset.",
-          "note": "Requires sufficient data coverage before results are meaningful. Recommended minimum: 12 months of data for at least 5 companies."
+          "note": "Reserved for future natural-language analysis over the verified dataset."
         }
       ]
     }

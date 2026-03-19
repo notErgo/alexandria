@@ -191,7 +191,7 @@ class TestPurgeEndpoint:
 
 
 class TestScorecardSSOT:
-    """Scorecard metrics list must be derived from metric_schema, not hardcoded."""
+    """Scorecard response should stay aligned with schema metadata and finalized monthly data."""
 
     @pytest.fixture
     def scorecard_app(self, db_with_company):
@@ -206,24 +206,16 @@ class TestScorecardSSOT:
             yield flask_app
         app_globals._db = None
 
-    def test_scorecard_derives_metrics_from_schema(self, scorecard_app, db_with_company):
-        """A metric added to metric_schema must appear in the scorecard metrics list."""
-        # Add a novel metric not in the old hardcoded SCORECARD_METRICS list
-        db_with_company.add_analyst_metric(
-            key='test_novel_metric_xyz', label='Test Novel Metric', unit='BTC', sector='BTC-miners'
-        )
+    def test_scorecard_limits_metrics_to_monthly_core_set(self, scorecard_app, db_with_company):
         with scorecard_app.test_client() as c:
             resp = c.get('/api/scorecard')
         assert resp.status_code == 200
         data = resp.get_json()
         metrics = data['data']['metrics']
-        assert 'test_novel_metric_xyz' in metrics, (
-            "Metric added to metric_schema must appear in scorecard metrics list"
-        )
+        assert metrics == ['holdings_btc', 'production_btc', 'sales_btc']
 
     def test_scorecard_excludes_non_scorecard_metrics(self, scorecard_app, db_with_company):
-        """Metric with show_on_scorecard=0 must be absent from scorecard metrics list."""
-        # Set show_on_scorecard=0 on production_btc
+        """Metric with show_on_scorecard=0 must be absent from the scorecard metrics list."""
         with db_with_company._get_connection() as conn:
             conn.execute(
                 "UPDATE metric_schema SET show_on_scorecard = 0 WHERE key = 'production_btc'"
@@ -236,3 +228,35 @@ class TestScorecardSSOT:
         assert 'production_btc' not in metrics, (
             "Metric with show_on_scorecard=0 must be excluded from scorecard metrics list"
         )
+
+    def test_scorecard_uses_schema_labels_and_computes_6m_averages(self, scorecard_app, db_with_company):
+        with db_with_company._get_connection() as conn:
+            conn.execute(
+                "UPDATE metric_schema SET label = 'Treasury BTC' WHERE key = 'holdings_btc'"
+            )
+
+        for period, value in [
+            ('2024-01-01', 100.0),
+            ('2024-02-01', 110.0),
+            ('2024-03-01', 120.0),
+            ('2024-04-01', 130.0),
+            ('2024-05-01', 140.0),
+            ('2024-06-01', 150.0),
+        ]:
+            db_with_company.upsert_final_data_point('MARA', period, 'production_btc', value, unit='BTC')
+        db_with_company.upsert_final_data_point('MARA', '2024-06-01', 'holdings_btc', 1000.0, unit='BTC')
+        db_with_company.upsert_final_data_point('MARA', '2024-06-01', 'sales_btc', 25.0, unit='BTC')
+        db_with_company.upsert_final_data_point('MARA', '2024-Q1', 'production_btc', 999.0, unit='BTC')
+
+        with scorecard_app.test_client() as c:
+            resp = c.get('/api/scorecard')
+
+        assert resp.status_code == 200
+        body = resp.get_json()['data']
+        assert body['groups'][0]['label'] == 'Treasury BTC'
+
+        mara = body['companies']['MARA']
+        assert mara['cells']['holdings_btc:last']['value'] == 1000.0
+        assert mara['cells']['production_btc:last']['value'] == 150.0
+        assert mara['cells']['production_btc:avg_6m']['value'] == 125.0
+        assert mara['cells']['production_btc:avg_6m']['period_display'] == 'Jan 2024 to Jun 2024'
