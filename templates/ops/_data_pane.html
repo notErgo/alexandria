@@ -1,14 +1,14 @@
 <!-- ── Data pane ───────────────────────────────────────────────────────── -->
-<div class="ops-pane" id="pane-data" data-ui-id="2.6" data-spec-id="2.6">
+<div class="ops-pane" id="pane-data" data-ui-id="5.0" data-spec-id="5.0">
   <div class="pipeline-sub-tabs">
-    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="2.6.1" data-spec-id="2.6.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
-    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="2.6.2" data-spec-id="2.6.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
-    <button class="pipeline-sub-tab" data-spane="documents" onclick="activatePipelineSubTab('data','documents');loadDocuments()" data-ui-id="2.6.3" data-spec-id="2.6.3">Documents <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="5.1" data-spec-id="5.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="5.2" data-spec-id="5.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="documents" onclick="activatePipelineSubTab('data','documents');loadDocuments()" data-ui-id="5.3" data-spec-id="5.3">Documents <span class="wf-path-badge wf-optional">Optional</span></button>
   </div>
 
   <!-- Sub-pane: Explorer (5.1) -->
-  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="2.6.1" data-spec-id="2.6.1">
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.6.1.1">
+  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="5.1" data-spec-id="5.1">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="5.1.1">
     <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <select id="ex-state">
       <option value="">All states</option>
@@ -46,18 +46,18 @@
   </div>
   <div class="explorer-wrap">
     <div class="explorer-grid-scroll">
-      <div id="explorer-grid" data-ui-id="2.6.1.2" data-spec-id="2.6.1.2">
+      <div id="explorer-grid" data-ui-id="5.1.2" data-spec-id="5.1.2">
         <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-          <span class="spec-id">2.6.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
+          <span class="spec-id">5.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
         </div>
         <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
       </div>
     </div>
-    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.6.1.3" data-spec-id="2.6.1.3">
-      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.6.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
+    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="5.1.3" data-spec-id="5.1.3">
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">5.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
       <div id="cell-detail-rows"></div>
-      <div class="cell-actions" id="cell-actions" data-spec-id="2.6.1.5"></div>
-      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.6.1.4" data-spec-id="2.6.1.4">
+      <div class="cell-actions" id="cell-actions" data-spec-id="5.1.5"></div>
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="5.1.4" data-spec-id="5.1.4">
         <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
@@ -67,7 +67,7 @@
         </div>
         <div id="cell-save-error" style="color:var(--theme-danger);font-size:0.75rem;margin-top:0.3rem"></div>
       </div>
-      <div id="cell-reextract-panel" style="display:none" data-ui-id="2.6.1.6" data-spec-id="2.6.1.6">
+      <div id="cell-reextract-panel" style="display:none" data-ui-id="5.1.6" data-spec-id="5.1.6">
         <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
         <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
         <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
@@ -82,8 +82,8 @@
   </div><!-- /spane-data-explorer -->
 
   <!-- Sub-pane: Registry (5.2) -->
-  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="2.6.2" data-spec-id="2.6.2">
-  <div class="registry-filters" data-ui-id="2.6.2.1" data-spec-id="2.6.2.1">
+  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="5.2" data-spec-id="5.2">
+  <div class="registry-filters" data-ui-id="5.2.1" data-spec-id="5.2.1">
     <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <input id="reg-period" type="month" placeholder="Period">
     <select id="reg-doc-type">
@@ -106,9 +106,9 @@
     <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
     <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
   </div>
-  <table id="registry-table" data-ui-id="2.6.2.2" data-spec-id="2.6.2.2">
+  <table id="registry-table" data-ui-id="5.2.2" data-spec-id="5.2.2">
     <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
-      <span class="spec-id">2.6.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
+      <span class="spec-id">5.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
     </caption>
     <thead>
       <tr>
@@ -136,7 +136,7 @@
   </div><!-- /spane-data-registry -->
 
   <!-- Sub-pane: Documents -->
-  <div class="pipeline-sub-pane" id="spane-data-documents" data-ui-id="2.6.3" data-spec-id="2.6.3">
+  <div class="pipeline-sub-pane" id="spane-data-documents" data-ui-id="5.3" data-spec-id="5.3">
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
     <input id="doc-ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
     <select id="doc-ex-source">

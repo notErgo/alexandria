@@ -39,17 +39,17 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="page-title" data-spec-id="4.0" data-ui-id="4.0"><span class="spec-id">4.0</span>Extraction Diagnostics</h1>
+<h1 class="page-title" data-spec-id="8.0" data-ui-id="8.0"><span class="spec-id">8.0</span>Extraction Diagnostics</h1>
 
 <div id="loading">Loading diagnostics…</div>
 
-<div id="diag-content" hidden data-spec-id="4.1" data-ui-id="4.1">
+<div id="diag-content" hidden data-spec-id="8.1" data-ui-id="8.1">
   <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
-    <span class="spec-id">4.1</span>Diagnostic Output <span class="source-badge source-badge-data">DATA</span>
+    <span class="spec-id">8.1</span>Diagnostic Output <span class="source-badge source-badge-data">DATA</span>
   </div>
 
   <!-- Row 1: Coverage heatmap — full width -->
-  <div class="chart-panel" data-spec-id="4.1.1" data-ui-id="4.1.1" style="margin-top:1.25rem">
+  <div class="chart-panel" data-spec-id="8.1.1" data-ui-id="8.1.1" style="margin-top:1.25rem">
     <h2>Metric Coverage</h2>
     <p class="subtitle">Number of periods with extracted data per ticker × metric. Dark = more periods.</p>
     <div id="chart-coverage" class="echarts-box" style="height:320px"></div>
@@ -57,12 +57,12 @@
 
   <!-- Row 2: Pattern usage + Confidence distribution -->
   <div class="diag-grid-2">
-    <div class="chart-panel" data-spec-id="4.1.2" data-ui-id="4.1.2">
+    <div class="chart-panel" data-spec-id="8.1.2" data-ui-id="8.1.2">
       <h2>Pattern Usage</h2>
       <p class="subtitle">How many extractions each regex pattern produced. Hover for avg confidence.</p>
       <div id="chart-patterns" class="echarts-box" style="height:320px"></div>
     </div>
-    <div class="chart-panel" data-spec-id="4.1.3" data-ui-id="4.1.3">
+    <div class="chart-panel" data-spec-id="8.1.3" data-ui-id="8.1.3">
       <h2>Confidence Distribution</h2>
       <p class="subtitle">Accepted extractions (≥ 0.75) vs. pending review (&lt; 0.75).</p>
       <div id="chart-confidence" class="echarts-box" style="height:320px"></div>
@@ -70,7 +70,7 @@
   </div>
 
   <!-- Row 3: Keyword frequency — full width -->
-  <div class="chart-panel" data-spec-id="4.1.4" data-ui-id="4.1.4" style="margin-top:1.25rem">
+  <div class="chart-panel" data-spec-id="8.1.4" data-ui-id="8.1.4" style="margin-top:1.25rem">
     <h2>Keyword Frequency in Source Snippets</h2>
     <p class="subtitle">Most common words adjacent to extracted values across all source documents. Stopwords removed.</p>
     <div style="margin-bottom:0.75rem">

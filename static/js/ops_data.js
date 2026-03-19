@@ -548,7 +548,7 @@ async function loadCellDetail(ticker, period, metric) {
   const editBtn = document.createElement('button');
   editBtn.className = 'btn btn-sm btn-secondary';
   editBtn.textContent = 'Edit Value';
-  editBtn.setAttribute('data-ui-id', '2.6.1.4');
+  editBtn.setAttribute('data-ui-id', '5.1.4');
   editBtn.onclick = function() {
     document.getElementById('cell-save-value').value = d.value != null ? d.value : '';
     document.getElementById('cell-save-form').style.display = '';
@@ -558,14 +558,14 @@ async function loadCellDetail(ticker, period, metric) {
   const gapBtn = document.createElement('button');
   gapBtn.className = 'btn btn-sm btn-secondary';
   gapBtn.textContent = 'Mark Gap';
-  gapBtn.setAttribute('data-ui-id', '2.6.1.5');
+  gapBtn.setAttribute('data-ui-id', '5.1.5');
   gapBtn.onclick = function() { submitMarkGap(); };
   actEl.appendChild(gapBtn);
 
   const reexBtn = document.createElement('button');
   reexBtn.className = 'btn btn-sm btn-secondary';
   reexBtn.textContent = 'Re-extract';
-  reexBtn.setAttribute('data-ui-id', '2.6.1.6');
+  reexBtn.setAttribute('data-ui-id', '5.1.6');
   reexBtn.onclick = function() { document.getElementById('cell-reextract-panel').style.display = ''; };
   actEl.appendChild(reexBtn);
 

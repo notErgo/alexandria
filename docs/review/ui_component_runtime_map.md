@@ -49,7 +49,7 @@ Reason:
 
 - the `2.5.2.*` review-timeline components that are actually present in `/ops` now point to `ops.html`
 - visible `/ops` tabs and sub-tabs now have matching `data-spec-id` coverage
-- the Data/Documents sub-tab is now tracked as component `2.6.3`
+- the Data/Documents sub-tab is now tracked as component `5.3`
 - `python3 scripts/ui_component_map.py` now reports:
   - no `ops.html` UI-only gaps
   - no extra untracked spec anchors

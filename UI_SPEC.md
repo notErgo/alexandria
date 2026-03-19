@@ -208,10 +208,17 @@ Sub-tabs: **Explorer** (5.1) · **Registry** (5.2) · **Documents**.
 
 | ID    | Component | Source | API endpoint(s) | Script(s) |
 |-------|-----------|--------|-----------------|-----------|
-| 5.1   | Coverage heatmap (Explorer) | DATA | `GET /api/explorer/grid` | `coverage_logic.py`; 9-state cells; cell click opens detail panel |
-| 5.1.1 | Cell detail panel | DATA | `GET /api/explorer/cell/<ticker>/<period>/<metric>` | Save, Gap, Re-extract per-cell actions |
-| 5.1.2 | Period pipeline trace panel | DATA | `GET /api/coverage/period_trace?ticker=X&period=Y` | Shows why an empty cell is empty (no doc / keyword-gated / LLM_EMPTY / pending). `cell_state` field is the canonical 9-state value. |
-| 5.2   | Registry table | DATA | `GET /api/registry` | `ManifestScanner`; `POST /api/manifest/scan` to trigger; columns: parse quality, extraction status, char count, scan-keywords button |
+| 5.1   | Explorer sub-tab | n/a | — | Container for filter bar, heatmap, and cell actions |
+| 5.1.1 | Explorer filter bar | n/a | — | Ticker/state/metric/month filter controls |
+| 5.1.2 | Coverage heatmap | DATA | `GET /api/explorer/grid` | `coverage_logic.py`; 9-state cells; cell click opens detail panel |
+| 5.1.3 | Cell detail panel | DATA | `GET /api/explorer/cell/<ticker>/<period>/<metric>` | Detail drawer for a selected cell |
+| 5.1.4 | Cell save action | n/a | `POST /api/explorer/cell/<ticker>/<period>/<metric>/save` | Analyst override for a selected cell |
+| 5.1.5 | Cell gap action | n/a | `POST /api/explorer/cell/<ticker>/<period>/<metric>/gap` | Explicitly mark a missing value as a gap |
+| 5.1.6 | Re-extract action | n/a | `POST /api/explorer/reextract` | Re-run extraction from pasted source text for a selected cell |
+| 5.2   | Registry sub-tab | n/a | — | Asset manifest search and maintenance view |
+| 5.2.1 | Registry filter bar | n/a | — | Ticker/period/doc-type/extraction filters |
+| 5.2.2 | Registry table | DATA | `GET /api/registry` | `ManifestScanner`; `POST /api/manifest/scan` to trigger; columns: parse quality, extraction status, char count, scan-keywords button |
+| 5.3   | Documents sub-tab | DATA | `GET /api/data/documents` · `GET /api/data/document/<id>` | Search and inspect document rows with metric columns |
 
 ---
 

@@ -90,12 +90,12 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-title" data-spec-id="5.0" data-ui-id="5.0"><span class="spec-id">5.0</span>Dashboard</div>
+<div class="page-title" data-spec-id="6.0" data-ui-id="6.0"><span class="spec-id">6.0</span>Dashboard</div>
 
 <!-- ── Timeseries panel ───────────────────────────────────── -->
-<div id="timeseries-panel" data-spec-id="5.1.1" data-ui-id="5.1.1">
+<div id="timeseries-panel" data-spec-id="6.1.1" data-ui-id="6.1.1">
   <!-- Filter bar -->
-  <div class="card filter-bar" id="filter-bar" data-spec-id="5.1.2" data-ui-id="5.1.2">
+  <div class="card filter-bar" id="filter-bar" data-spec-id="6.1.2" data-ui-id="6.1.2">
     <div class="filter-section">
       <label>Companies</label>
       <div class="ticker-checks" id="ticker-checks">
@@ -123,7 +123,7 @@
     </div>
   </div>
   <!-- Dashboard panels injected here -->
-  <div id="dashboard-content" data-spec-id="5.1" data-ui-id="5.1">
+  <div id="dashboard-content" data-spec-id="6.1" data-ui-id="6.1">
     <div class="empty-state">Loading…</div>
   </div>
 </div>
@@ -430,7 +430,7 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   const header = document.createElement('div');
   header.className = 'panel-header';
   const h2 = document.createElement('h2');
-  h2.innerHTML = '<span class="spec-id">5.1</span>' + escapeHtml(_metricLabel(metric)) + ' <span class="source-badge source-badge-data">DATA</span>';
+  h2.innerHTML = '<span class="spec-id">6.1</span>' + escapeHtml(_metricLabel(metric)) + ' <span class="source-badge source-badge-data">DATA</span>';
   header.appendChild(h2);
 
   // Sort select
