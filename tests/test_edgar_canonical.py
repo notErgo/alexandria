@@ -5,6 +5,7 @@ and PASS after.
 """
 import importlib
 import os
+from scripts.template_source import load_template_source
 import sys
 
 import pytest
@@ -334,14 +335,8 @@ class TestCLIIRDeprecationWarning:
 # ── TestOpsUIDefaults ─────────────────────────────────────────────────────────
 
 class TestOpsUIDefaults:
-
-    OPS_HTML = os.path.join(
-        os.path.dirname(__file__), '..', 'templates', 'ops.html'
-    )
-
     def _get_ops_html(self) -> str:
-        with open(self.OPS_HTML, encoding='utf-8') as f:
-            return f.read()
+        return load_template_source('ops.html')
 
     def test_pipeline_include_ir_checkbox_checked_by_default(self):
         """The pipeline-include-ir checkbox must have the 'checked' attribute."""

@@ -6,12 +6,12 @@ Coverage dashboard API routes.
   GET  /api/coverage/assets/<ticker>/<period> — cell detail
   GET  /api/coverage/period_trace   — pipeline trace for a (ticker, period) pair
   POST /api/manifest/scan           — scan archive directory
-  GET  /coverage                    — render coverage.html
+  GET  /coverage                    — redirect to /ops?tab=registry
 """
 import logging
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, render_template, redirect
+from flask import Blueprint, jsonify, request, redirect
 
 log = logging.getLogger('miners.routes.coverage')
 

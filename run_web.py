@@ -191,6 +191,7 @@ def create_app() -> Flask:
 
     @app.route('/miner-data')
     def miner_data_page():
+        # Canonical miner timeline lives inside /ops review pane.
         return redirect('/ops?tab=review', code=302)
 
     @app.route('/company/<ticker>')

@@ -14,7 +14,7 @@ Operations panel API routes.
   GET  /api/operations/manifest/<id>/preview       — serve raw file content for inline viewer
   POST /api/operations/manifest/<id>/detect_period — infer period via rules + LLM fallback
   GET  /api/db/export                              — copy live DB to ~/Downloads and stream the file
-  GET  /operations                                 — render operations.html
+  GET  /operations                                 — redirect to /ops?tab=companies
 """
 import logging
 import random as _random
@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from textwrap import dedent
 
-from flask import Blueprint, jsonify, request, render_template, Response, redirect
+from flask import Blueprint, jsonify, request, Response, redirect
 from config import MONTHLY_EXTRACTION_SOURCE_TYPES
 
 log = logging.getLogger('miners.routes.operations')
@@ -1297,69 +1297,6 @@ def gap_fill():
         return jsonify({'error': str(exc)}), 400
     except Exception:
         log.error('event=gap_fill_error ticker=%s', ticker, exc_info=True)
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@bp.route('/api/operations/derive-balance-change', methods=['POST'])
-def derive_balance_change():
-    """POST /api/operations/derive-balance-change — compute net_btc_balance_change from holdings_btc.
-
-    Reads analyst-finalized holdings_btc values from final_data_points and
-    writes MoM deltas back into final_data_points as net_btc_balance_change.
-    Only consecutive monthly periods (1-month gap) are processed.
-
-    Body:
-      { "ticker": "MARA", "dry_run": false, "overwrite": true }
-
-    Returns: { "derived": N, "skipped": N, "rows": [...] }
-    """
-    from app_globals import get_db as _get_db
-    from interpreters.gap_fill import derive_net_balance_change
-
-    body = request.get_json(silent=True) or {}
-    ticker = (body.get('ticker') or '').strip().upper()
-    dry_run = bool(body.get('dry_run', False))
-    overwrite = bool(body.get('overwrite', True))
-
-    if not ticker:
-        return jsonify({'error': 'ticker is required'}), 400
-
-    try:
-        db = _get_db()
-        result = derive_net_balance_change(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
-        return jsonify(result)
-    except Exception:
-        log.error('event=derive_balance_change_error ticker=%s', ticker, exc_info=True)
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@bp.route('/api/operations/derive-sales-btc', methods=['POST'])
-def derive_sales_btc_route():
-    """POST /api/operations/derive-sales-btc
-
-    Calculates missing sales_btc as prev_holdings + production - curr_holdings
-    from analyst-finalized holdings_btc and production_btc values.
-
-    Body: { "ticker": "HIVE", "dry_run": true, "overwrite": false }
-    Returns: { "derived": N, "skipped": N, "rows": [...] }
-    """
-    from app_globals import get_db as _get_db
-    from interpreters.gap_fill import derive_sales_btc
-
-    body = request.get_json(silent=True) or {}
-    ticker = (body.get('ticker') or '').strip().upper()
-    dry_run = bool(body.get('dry_run', True))
-    overwrite = bool(body.get('overwrite', False))
-
-    if not ticker:
-        return jsonify({'error': 'ticker is required'}), 400
-
-    try:
-        db = _get_db()
-        result = derive_sales_btc(ticker=ticker, db=db, dry_run=dry_run, overwrite=overwrite)
-        return jsonify(result)
-    except Exception:
-        log.error('event=derive_sales_btc_error ticker=%s', ticker, exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 

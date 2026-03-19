@@ -1,0 +1,20 @@
+<!-- ── Workflow pane (0.0) ────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-workflow" data-ui-id="2.1" data-spec-id="2.1">
+  <div class="section-header-row" style="margin-bottom:1rem">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.1</span>Pipeline Workflow</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-left:auto">
+      <span class="wf-legend-dot wf-critical"></span><span style="font-size:0.75rem">Critical path</span>
+      <span class="wf-legend-dot wf-optional" style="margin-left:0.5rem"></span><span style="font-size:0.75rem">Optional</span>
+      <span class="wf-legend-dot wf-later" style="margin-left:0.5rem"></span><span style="font-size:0.75rem">Do later</span>
+    </div>
+  </div>
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1.25rem">
+    End-to-end pipeline steps in dependency order. Each step links to the relevant tab.
+    Critical path steps must complete before the next stage. Optional steps enhance results.
+    Later steps close the feedback loop — do them after the first full cycle.
+  </p>
+  <div id="workflow-stages"></div>
+  <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:1.5rem">
+    Driven by <code>static/data/workflow_spec.json</code>. Update that file to reflect spec changes — no template edits needed.
+  </p>
+</div>

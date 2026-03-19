@@ -1,0 +1,693 @@
+<!-- ── Track Config pane ──────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-config" data-ui-id="2.2" data-spec-id="2.2">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="companies" onclick="activatePipelineSubTab('config','companies')" data-ui-id="2.2.1" data-spec-id="2.2.1">Companies <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="companiestable" onclick="activatePipelineSubTab('config','companiestable')" data-ui-id="2.2.2" data-spec-id="2.2.2">Companies Table <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="metricskeywords" onclick="activatePipelineSubTab('config','metricskeywords')" data-ui-id="2.2.3" data-spec-id="2.2.3">Metrics &amp; Keywords <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="settings" onclick="activatePipelineSubTab('config','settings')" data-ui-id="2.2.4" data-spec-id="2.2.4">Settings <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="crawlsetup" onclick="activatePipelineSubTab('config','crawlsetup')" data-ui-id="2.2.5" data-spec-id="2.2.5">Crawl Setup <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="dbpurge" onclick="activatePipelineSubTab('config','dbpurge')" data-ui-id="2.2.6" data-spec-id="2.2.6">Purge Stages <span class="wf-path-badge wf-optional">Optional</span></button>
+  </div>
+
+  <!-- Sub-pane: Companies (1.1) -->
+  <div class="pipeline-sub-pane active" id="spane-config-companies" data-ui-id="2.2.1" data-spec-id="2.2.1">
+  <div class="section-header-row">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.1</span>Companies</h2>
+    <button class="btn btn-sm btn-primary" onclick="openAddCompany()">+ Add</button>
+    <span id="companies-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <div id="add-company-form" class="card" style="display:none;margin-bottom:1rem" data-spec-id="2.2.1.1">
+    <h3 style="font-size:0.9rem;margin:0 0 0.5rem"><span class="spec-id">2.2.1.1</span>Add Company</h3>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <label style="font-size:0.75rem;display:block">Ticker *</label>
+        <input id="ac-ticker" type="text" maxlength="10" style="width:80px" placeholder="MARA">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Name *</label>
+        <input id="ac-name" type="text" maxlength="100" style="width:200px" placeholder="Marathon Digital Holdings">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Sector</label>
+        <input id="ac-sector" type="text" value="BTC-miners" style="width:100px">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Scraper Mode</label>
+        <select id="ac-mode" onchange="onAddCompanyModeChange()">
+          <option value="skip">skip</option>
+          <option value="rss">rss</option>
+          <option value="index">index</option>
+          <option value="template">template</option>
+          <option value="playwright">playwright</option>
+        </select>
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">IR URL</label>
+        <input id="ac-ir-url" type="text" style="width:260px" placeholder="https://investor.example.com/news">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">CIK (EDGAR)</label>
+        <input id="ac-cik" type="text" maxlength="20" style="width:140px" placeholder="1507605">
+      </div>
+      <div style="min-width:320px">
+        <label style="font-size:0.75rem;display:block">Description</label>
+        <input id="ac-description" type="text" maxlength="500" style="width:320px" placeholder="Optional analyst note">
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">RSS URL</label>
+        <input id="ac-rss-url" type="text" style="width:260px" placeholder="https://investor.example.com/rss">
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">PRNewswire URL</label>
+        <input id="ac-prnewswire-url" type="text" style="width:260px" placeholder="https://www.prnewswire.com/...">
+      </div>
+      <div style="min-width:260px">
+        <label style="font-size:0.75rem;display:block">GlobeNewswire URL</label>
+        <input id="ac-globenewswire-url" type="text" style="width:260px" placeholder="https://www.globenewswire.com/rssfeed/...">
+      </div>
+      <div style="min-width:310px">
+        <label style="font-size:0.75rem;display:block">Template URL</label>
+        <input id="ac-url-template" type="text" style="width:310px" placeholder="https://site/{month}-{year}-production-update">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">PR Start Date</label>
+        <input id="ac-pr-start-date" type="date" style="width:160px">
+      </div>
+      <div style="min-width:320px">
+        <label style="font-size:0.75rem;display:block">Skip Reason</label>
+        <input id="ac-skip-reason" type="text" style="width:320px" placeholder="Quarterly-only reporting since 2025">
+      </div>
+      <div>
+        <label style="font-size:0.75rem;display:block">Reporting Cadence</label>
+        <select id="ac-reporting-cadence" style="font-size:0.8rem">
+          <option value="monthly" selected>monthly</option>
+          <option value="quarterly">quarterly</option>
+          <option value="annual">annual</option>
+        </select>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="submitAddCompany()">Save</button>
+      <button class="btn btn-sm btn-secondary" onclick="document.getElementById('add-company-form').style.display='none'">Cancel</button>
+    </div>
+    <div id="ac-mode-help" style="font-size:0.75rem;color:var(--theme-text-muted);margin-top:0.45rem"></div>
+    <div id="ac-error" style="color:var(--theme-danger);font-size:0.8rem;margin-top:0.4rem"></div>
+    <div style="margin-top:0.8rem;padding-top:0.7rem;border-top:1px solid var(--theme-border)">
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.35rem">Bulk Paste (TSV/CSV)</div>
+      <div style="font-size:0.74rem;color:var(--theme-text-muted);margin-bottom:0.35rem">
+        Paste spreadsheet rows with header columns such as:
+        <code>Ticker, Name, Investor Relations Base URL, CIK (EDGAR), Description, PR Newswire, GlobeNewswire</code>
+      </div>
+      <textarea id="ac-bulk-text" rows="7" style="width:100%;font-family:ui-monospace,monospace;font-size:0.74rem"
+        placeholder="Ticker\tName\tInvestor Relations Base URL\tCIK (EDGAR)\tDescription\tPR Newswire\tGlobeNewswire"></textarea>
+      <div style="display:flex;gap:0.45rem;align-items:center;flex-wrap:wrap;margin-top:0.45rem">
+        <button class="btn btn-sm btn-secondary" onclick="previewBulkCompanyPaste()">Preview Parse</button>
+        <button class="btn btn-sm btn-primary" onclick="submitBulkCompanies()">Import Rows</button>
+        <span id="ac-bulk-msg" style="font-size:0.76rem;color:var(--theme-text-muted)"></span>
+      </div>
+      <div id="ac-bulk-preview" style="margin-top:0.45rem;font-size:0.74rem;color:var(--theme-text-secondary)"></div>
+    </div>
+  </div>
+
+  <details class="offpath-details" id="companies-governance-details">
+    <summary><span class="offpath-label">Advanced — Scraper Governance &amp; Probe</span> <span class="offpath-desc">probe sources, apply modes</span></summary>
+  <div class="card" data-spec-id="2.2.1.2" style="margin-bottom:0.7rem;margin-top:0.75rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.45rem;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:0.9rem">
+        <span class="spec-id">2.2.1.2</span>Scraper Governance Probe
+      </h3>
+      <label style="font-size:0.78rem;color:var(--theme-text-muted);display:flex;align-items:center;gap:4px">
+        stale days
+        <input id="gov-stale-days" type="number" min="1" max="365" value="30" style="width:64px">
+      </label>
+      <button class="btn btn-sm btn-secondary" onclick="loadScraperGovernance()">Refresh Governance</button>
+      <button class="btn btn-sm btn-secondary" onclick="runGovernanceBootstrapAll(false)">Probe Targets</button>
+      <button class="btn btn-sm btn-primary" onclick="runGovernanceBootstrapAll(true)">Probe + Apply Modes</button>
+      <span id="gov-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="gov-summary" style="font-size:0.78rem;color:var(--theme-text-secondary)">
+      Governance not loaded yet.
+    </div>
+  </div>
+  </details><!-- /companies-governance-details -->
+
+  </div><!-- /spane-config-companies -->
+
+  <!-- Sub-pane: Companies Table (1.2) -->
+  <div class="pipeline-sub-pane" id="spane-config-companiestable" data-ui-id="2.2.2" data-spec-id="2.2.2">
+  <div class="section-header-row">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.2</span>Companies Table</h2>
+    <button class="btn btn-sm btn-secondary" onclick="syncCompanyConfig()" title="Re-sync from companies.json">Sync Config</button>
+    <button class="btn btn-sm btn-warning" onclick="restoreCompaniesFromConfig()" title="Re-insert all companies from companies.json and re-enable auto-sync">Restore from Config</button>
+    <span id="companiestable-msg" style="font-size:0.8rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+
+  <table id="companies-table" data-ui-id="2.2.2.1" data-spec-id="2.2.2.1">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">2.2.2.1</span>Companies Table <span class="source-badge source-badge-config">CONFIG</span>
+    </caption>
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="name">Name</th>
+        <th>Mode</th>
+        <th>PR Start</th>
+        <th>IR / Feed URLs</th>
+        <th>Status</th>
+        <th>Last Scrape</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="companies-tbody">
+      <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <div class="card" style="margin:1rem 0 0.75rem" data-spec-id="2.2.2.3">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.2.3</span>Document Overview</h3>
+      <button class="btn btn-sm btn-secondary" onclick="loadDocumentOverview()">Refresh</button>
+      <span id="doc-overview-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <table id="doc-overview-table" style="font-size:0.78rem">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th title="Total reports in DB">Total</th>
+          <th title="extraction_status=done">Done</th>
+          <th title="extraction_status=pending">Pending</th>
+          <th title="extraction_status=keyword_gated">Gated</th>
+          <th title="extraction_status=failed">Failed</th>
+          <th title="source_type=ir_press_release">IR</th>
+          <th title="source_type LIKE edgar_%">EDGAR</th>
+          <th title="source_type LIKE archive_%">Archive</th>
+          <th title="Accepted data points">Data Pts</th>
+          <th title="review_queue pending">Queue</th>
+        </tr>
+      </thead>
+      <tbody id="doc-overview-tbody">
+        <tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Regime editor: deprecated — routes kept, UI hidden -->
+  <div id="regime-editor" style="display:none" class="card" data-ui-id="2.2.2.2" data-spec-id="2.2.2.2">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 id="regime-editor-title" style="margin:0;font-size:0.85rem"><span class="spec-id">2.2.2.2</span><span id="regime-editor-title-text">Regime windows</span> <span class="source-badge source-badge-config">CONFIG</span></h3>
+      <button class="btn btn-sm btn-secondary" onclick="closeRegimeEditor()">Close</button>
+    </div>
+    <div id="regime-tags" style="margin-top:0.5rem;min-height:24px"></div>
+    <div class="regime-form" style="margin-top:0.5rem">
+      <div>
+        <label style="font-size:0.72rem;display:block">Cadence</label>
+        <select id="rw-cadence">
+          <option value="monthly">monthly</option>
+          <option value="quarterly">quarterly</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Start date</label>
+        <input id="rw-start" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">End date (optional)</label>
+        <input id="rw-end" type="date">
+      </div>
+      <div>
+        <label style="font-size:0.72rem;display:block">Notes</label>
+        <input id="rw-notes" type="text" style="width:160px" placeholder="">
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="addRegimeWindow()">Add Window</button>
+    </div>
+    <div id="rw-error" style="color:var(--theme-danger);font-size:0.78rem;margin-top:0.3rem"></div>
+  </div>
+
+  <details class="offpath-details" id="companies-ops-details">
+    <summary><span class="offpath-label">Advanced — Scrape Queue &amp; Maintenance</span> <span class="offpath-desc">scrape queue, danger zone</span></summary>
+
+  <!-- Scrape queue -->
+  <div style="margin-top:1rem" data-spec-id="2.2.2.2">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
+      <h2 style="font-size:1rem;margin:0"><span class="spec-id">2.2.2.2</span>Scrape Queue <span class="source-badge source-badge-data">DATA</span></h2>
+      <button class="btn btn-sm btn-primary" onclick="enqueueAllScrapeJobs()" id="scrape-all-btn">Enqueue All Tickers</button>
+      <span id="scrape-all-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <table id="scrape-table" data-ui-id="2.2.2.2" data-spec-id="2.2.2.2">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th data-sort="ticker">Ticker</th>
+          <th>Type</th>
+          <th data-sort="status">Status</th>
+          <th>Queued</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="scrape-tbody">
+        <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  </details><!-- /companies-ops-details -->
+  </div><!-- /spane-config-companiestable -->
+
+  <!-- Sub-pane: Metrics & Keywords (1.3) -->
+  <div class="pipeline-sub-pane" id="spane-config-metricskeywords" data-ui-id="2.2.3" data-spec-id="2.2.3">
+  <div class="section-header-row" style="margin-bottom:0.75rem">
+    <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.2.3</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h2>
+  </div>
+  <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+    Single source of truth for all tracked metrics. Active metrics feed the LLM extraction prompt and all UI dropdowns.
+    Deactivating hides a metric from all surfaces without losing its data. Deleting permanently removes it and deactivates its LLM prompt override.
+  </p>
+  <div class="card" data-spec-id="2.2.3.1" style="margin-bottom:0.7rem">
+    <div class="section-header-row" style="margin-bottom:0.75rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.3.1</span>Metrics &amp; Keywords <span class="source-badge source-badge-config">SSOT</span></h3>
+      <button class="btn btn-sm btn-secondary" onclick="loadMetricSchemaTable()" style="margin-left:auto">Refresh</button>
+    </div>
+
+    <!-- Bulk paste -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:0.73rem;color:var(--theme-text-muted);margin-bottom:6px;line-height:1.6">
+        Paste from spreadsheet &mdash; <strong>Key&nbsp;&nbsp;Label&nbsp;&nbsp;Unit&nbsp;&nbsp;Pattern&nbsp;&nbsp;Keywords(pipe-separated)</strong>.
+        Creates metric if missing, adds all pipe-separated keywords.
+        Or use keyword-only format: <code style="font-size:0.71rem">metric_key, phrase[, exclude_terms]</code>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:flex-start">
+        <textarea id="kw-bulk-paste" rows="3"
+          placeholder="Key&#9;Label&#9;Unit&#9;Pattern&#9;Keywords&#10;production_btc&#9;Production&#9;BTC&#9;&#9;bitcoin mined|btc produced|self-mined"
+          style="flex:1;font-family:monospace;font-size:0.78rem;padding:4px 6px;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:0.3rem;flex-shrink:0">
+          <button class="btn btn-sm btn-primary" onclick="submitBulkKeywords()" style="white-space:nowrap">Add All</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('kw-bulk-paste').value=''" style="white-space:nowrap">Clear</button>
+        </div>
+      </div>
+      <div id="kw-bulk-status" style="font-size:0.75rem;margin-top:4px;display:none"></div>
+    </div>
+
+    <!-- Combined table -->
+    <table id="metric-schema-table" style="width:100%;font-size:0.82rem;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:1px solid var(--theme-border)">
+          <th style="text-align:left;padding:3px 6px;white-space:nowrap">Key</th>
+          <th style="text-align:left;padding:3px 6px">Label</th>
+          <th style="text-align:left;padding:3px 6px;width:70px">Unit</th>
+          <th style="text-align:left;padding:3px 6px;width:80px">Group</th>
+          <th style="text-align:left;padding:3px 6px">Keywords</th>
+          <th style="text-align:center;padding:3px 4px;width:50px">Active</th>
+          <th style="text-align:left;padding:3px 4px;width:60px"></th>
+        </tr>
+      </thead>
+      <tbody id="metric-schema-tbody">
+        <tr><td colspan="7" style="color:var(--theme-text-muted);padding:6px">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--theme-border)">
+      <h4 style="font-size:0.85rem;margin:0 0 0.5rem">Add metric</h4>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Key <span style="color:var(--theme-text-muted)">(no spaces)</span></label>
+          <input id="ms-add-key" type="text" placeholder="my_metric" style="font-size:0.82rem;padding:3px 6px;width:140px">
+        </div>
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Label</label>
+          <input id="ms-add-label" type="text" placeholder="My Metric" style="font-size:0.82rem;padding:3px 6px;width:160px">
+        </div>
+        <div>
+          <label style="font-size:0.75rem;display:block;margin-bottom:2px">Unit</label>
+          <input id="ms-add-unit" type="text" placeholder="BTC" style="font-size:0.82rem;padding:3px 6px;width:80px">
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="addMetricSchema()">Add</button>
+      </div>
+      <div id="ms-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Snippet Analysis & Examples card ────────────────────────────────── -->
+  <div class="ops-card" id="card-metric-examples" style="margin-top:1rem">
+    <div class="ops-card-header">
+      <span>Snippet Analysis &amp; Examples</span>
+    </div>
+    <div class="ops-card-body">
+      <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+        Mine historical source snippets to discover high-frequency extraction patterns,
+        then save them as few-shot examples injected into the LLM prompt.
+      </p>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div>
+          <label class="field-label">Metric</label>
+          <select id="ex-metric-select" style="font-size:0.82rem;padding:3px 6px">
+            <option value="">-- loading --</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Ticker (optional)</label>
+          <input id="ex-ticker-input" type="text" placeholder="MARA"
+                 style="font-size:0.82rem;padding:3px 6px;width:80px">
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="analyzeSnippets()">Analyze Snippets</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadExamplesForMetric()">Load Examples</button>
+      </div>
+
+      <!-- Analysis results -->
+      <div id="ex-analysis-results" style="display:none;margin-bottom:1rem">
+        <h4 style="font-size:0.82rem;margin:0 0 0.5rem">Analysis results</h4>
+        <div class="example-analysis-grid">
+          <div>
+            <strong style="font-size:0.78rem">Table patterns</strong>
+            <div id="ex-table-rows"></div>
+          </div>
+          <div>
+            <strong style="font-size:0.78rem">Prose patterns</strong>
+            <div id="ex-prose-ngrams"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stored examples -->
+      <div id="ex-stored-section" style="display:none">
+        <h4 style="font-size:0.82rem;margin:0 0 0.5rem">Stored examples
+          <span id="ex-count-badge" class="frequency-badge">0</span>
+        </h4>
+        <table id="ex-stored-table" style="width:100%;font-size:0.78rem;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:1px solid var(--theme-border)">
+              <th style="text-align:left;padding:2px 6px">Ticker</th>
+              <th style="text-align:left;padding:2px 6px">Snippet</th>
+              <th style="text-align:left;padding:2px 6px">Label</th>
+              <th style="text-align:left;padding:2px 6px">Active</th>
+              <th style="padding:2px 6px">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ex-stored-tbody"></tbody>
+        </table>
+
+        <!-- Add example form -->
+        <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--theme-border)">
+          <h5 style="font-size:0.78rem;margin:0 0 0.4rem">Add example</h5>
+          <div style="display:flex;gap:0.5rem;align-items:flex-start;flex-wrap:wrap">
+            <textarea id="ex-add-snippet" rows="2" placeholder="Paste snippet text here"
+                      style="font-size:0.78rem;padding:3px 6px;width:280px;resize:vertical"></textarea>
+            <div style="display:flex;flex-direction:column;gap:0.3rem">
+              <input id="ex-add-label" type="text" placeholder="Label (optional)"
+                     style="font-size:0.78rem;padding:3px 6px;width:140px">
+              <select id="ex-add-source-type" style="font-size:0.78rem;padding:3px 6px">
+                <option value="">source_type</option>
+                <option value="table_row">table_row</option>
+                <option value="prose">prose</option>
+                <option value="manual">manual</option>
+              </select>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="addExampleManual()">Add Example</button>
+          </div>
+          <div id="ex-add-error" style="font-size:0.75rem;color:var(--theme-danger);margin-top:4px;display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div><!-- /spane-config-metricskeywords -->
+
+  <!-- Sub-pane: Settings (1.4) -->
+  <div class="pipeline-sub-pane" id="spane-config-settings" data-ui-id="2.2.4" data-spec-id="2.2.4">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.4</span>Settings</h2>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 1rem">
+      Runtime overrides for extraction thresholds, LLM parameters, crawl limits, and pipeline paths.
+      Unset keys use hardcoded defaults. Changes take effect on the next pipeline run.
+    </p>
+    <div id="settings-groups"></div>
+
+    <!-- Ollama Concurrency (1.4.O) -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.1" data-spec-id="2.2.4.1">
+      <div class="section-header-row" style="margin-bottom:0.75rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.1</span>Ollama Concurrency</h3>
+        <button class="btn btn-sm btn-secondary" onclick="saveOllamaSettings()" style="margin-left:auto">Save</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem">
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Extract Workers (default)</label>
+          <input id="ollama-num-parallel" type="number" min="1" max="16" step="1"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">Max parallel LLM workers per pipeline run. Takes effect immediately.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Keep Alive</label>
+          <input id="ollama-keep-alive" type="text" placeholder="2h"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">How long Ollama holds the model in VRAM between calls (e.g. 2h, 30m, -1). Takes effect immediately.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Max Loaded Models</label>
+          <input id="ollama-max-loaded-models" type="number" min="1" max="10" step="1"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.25rem 0 0">Max simultaneous models in VRAM. Requires Ollama restart.</p>
+          <div style="margin-top:0.4rem">
+            <label style="font-size:0.72rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Apply with:</label>
+            <code id="ollama-serve-cmd" style="font-size:0.72rem;background:var(--theme-bg-primary);padding:0.2rem 0.4rem;border-radius:3px;border:1px solid var(--theme-border);display:inline-block">OLLAMA_MAX_LOADED_MODELS=3 ollama serve</code>
+          </div>
+        </div>
+      </div>
+      <div id="ollama-settings-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.5rem;min-height:1.2em"></div>
+    </div>
+
+    <!-- llama-server Config (1.4.L) -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.5" data-spec-id="2.2.4.5">
+      <div class="section-header-row" style="margin-bottom:0.75rem">
+        <h3 style="margin:0;font-size:0.9rem">llama-server Config</h3>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:0.75rem">Changes take effect on next server restart</span>
+        <button class="btn btn-sm btn-secondary" onclick="saveLlamaServerSettings()" style="margin-left:auto">Save</button>
+        <button class="btn btn-sm btn-secondary" onclick="copyLlamaCommand()" style="margin-left:0.5rem">Copy start command</button>
+      </div>
+      <div style="margin-bottom:0.75rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Model path</label>
+        <input id="llama-model-path" type="text" placeholder="~/.ollama/models/blobs/sha256-..."
+          style="width:100%;font-size:0.78rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary);box-sizing:border-box">
+        <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Full path to the GGUF model file passed to --model.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:0.75rem">
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Parallel slots (--parallel)</label>
+          <input id="llama-parallel" type="number" min="1" max="32" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Also updates Extract Workers. Sweet spot: 8 for 7B on M4 Pro (50GB unified memory).</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Context size (--ctx-size)</label>
+          <input id="llama-ctx-size" type="number" min="512" max="131072" step="512"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Total KV cache divided across all slots. With 8 parallel slots, 65536 gives 8192 tokens/slot — enough for all extraction prompts.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Max tokens (--n-predict)</label>
+          <input id="llama-n-predict" type="number" min="64" max="4096" step="64"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Max generated tokens per response. 768 is enough for batch JSON.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Batch size (--batch-size)</label>
+          <input id="llama-batch-size" type="number" min="128" max="16384" step="128"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Prompt eval batch size. Larger = faster prefill. 4096 is optimal.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">CPU threads (--threads)</label>
+          <input id="llama-threads" type="number" min="1" max="32" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">CPU threads for tokenization. With full GPU offload (-ngl 99), 4 is optimal.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Port (--port)</label>
+          <input id="llama-port" type="number" min="1024" max="65535" step="1"
+            style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Also update OLLAMA_BASE_URL in launch.sh if changed.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">KV cache type K (--cache-type-k)</label>
+          <select id="llama-cache-type-k"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+            <option value="f16">f16 (full)</option>
+            <option value="q8_0">q8_0 (half RAM)</option>
+            <option value="q4_0">q4_0 (quarter RAM)</option>
+          </select>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">q8_0 halves KV cache memory with near-zero quality loss.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">KV cache type V (--cache-type-v)</label>
+          <select id="llama-cache-type-v"
+            style="width:7rem;font-size:0.82rem;padding:0.24rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+            <option value="f16">f16 (full)</option>
+            <option value="q8_0">q8_0 (half RAM)</option>
+            <option value="q4_0">q4_0 (quarter RAM)</option>
+          </select>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.2rem 0 0">Match cache-type-k for consistency.</p>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:block;margin-bottom:0.25rem">Flash attention (--flash-attn)</label>
+          <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input id="llama-flash-attn" type="checkbox" style="width:1rem;height:1rem">
+            <span style="font-size:0.82rem;color:var(--theme-text-primary)">Enabled</span>
+          </label>
+          <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0.4rem 0 0">Metal fused attention kernel. ~20% speedup on M-series. Recommended on.</p>
+        </div>
+      </div>
+      <div id="llama-cmd-preview" style="font-size:0.72rem;background:var(--theme-bg-primary);padding:0.4rem 0.6rem;border-radius:4px;border:1px solid var(--theme-border);font-family:monospace;white-space:pre-wrap;word-break:break-all;margin-bottom:0.5rem;display:none"></div>
+      <div id="llama-settings-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.25rem;min-height:1.2em"></div>
+    </div>
+
+    <!-- Metric Rules (1.4.R) — tune after first extraction cycle -->
+    <div class="card" style="margin-top:1.5rem" data-ui-id="2.2.4.4" data-spec-id="2.2.4.4"><span data-spec-id="2.2.4.4.1" style="display:none"></span>
+      <div class="section-header-row" style="margin-bottom:0.5rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.4</span>Metric Rules <span class="source-badge source-badge-config">CONFIG</span></h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Tune after first extraction cycle</span>
+        <button class="btn btn-sm btn-secondary" onclick="syncMetricRules()" style="margin-left:auto">Sync to metric_schema</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadMetricRules()" style="margin-left:0.5rem">Refresh</button>
+      </div>
+      <table id="rules-table" data-spec-id="2.2.4.4.1" style="width:100%;font-size:0.82rem">
+        <thead>
+          <tr>
+            <th data-sort="metric" style="text-align:left">Metric</th>
+            <th data-sort="agreement_threshold" data-sort-type="num" style="text-align:left">Agree Threshold</th>
+            <th data-sort="outlier_threshold" data-sort-type="num" style="text-align:left">Outlier Threshold</th>
+            <th data-sort="outlier_min_history" data-sort-type="num" style="text-align:left">Min History</th>
+            <th data-sort="valid_range_min" data-sort-type="num" style="text-align:left">Range Min</th>
+            <th data-sort="valid_range_max" data-sort-type="num" style="text-align:left">Range Max</th>
+            <th style="text-align:left">Enabled</th>
+            <th style="text-align:left">Action</th>
+          </tr>
+        </thead>
+        <tbody id="rules-tbody">
+          <tr><td colspan="8" style="color:var(--theme-text-muted)">Loading...</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.75rem">
+        Agree Threshold: max fractional difference for LLM/regex auto-accept (default 0.02 = 2%).
+        Outlier Threshold: max deviation from trailing average before routing to review.
+        Valid Range: values outside min/max are discarded before confidence scoring.
+        Defaults are safe — only adjust after observing real extraction results.
+      </p>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
+      <p style="margin:0;font-size:0.85rem;color:var(--theme-text-secondary)">
+        Prompt preview has moved to <strong>Interpret &rarr; Extract</strong> — review and verify the assembled LLM prompt immediately before running extraction.
+      </p>
+      <button class="btn btn-sm btn-secondary" style="margin-top:0.5rem" onclick="activateTab('interpret');activatePipelineSubTab('interpret','extract')">Go to Interpret</button>
+    </div>
+  </div><!-- /spane-config-settings -->
+
+  <!-- Sub-pane: Crawl Setup (1.5) -->
+  <div class="pipeline-sub-pane" id="spane-config-crawlsetup" data-ui-id="2.2.5" data-spec-id="2.2.5">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.5</span>Crawl Setup</h2>
+    <div class="card" style="background:var(--theme-bg-secondary);border-left:3px solid var(--theme-accent)">
+      <p style="margin:0 0 0.75rem;font-size:0.85rem;line-height:1.6">
+        The LLM crawl provider, model selection, and prompt editor are available inline in
+        <strong>Ingest &rarr; Step 3 — LLM-Directed Crawl</strong>.
+        Select a single ticker there to load its per-ticker prompt, review or edit it, then launch the crawl from the same screen.
+      </p>
+      <button class="btn btn-sm btn-secondary" onclick="activateTab('ingest')">Go to Ingest</button>
+    </div>
+  </div><!-- /spane-config-crawlsetup -->
+
+  <!-- Sub-pane: Database Purge Controls (1.6) -->
+  <div class="pipeline-sub-pane" id="spane-config-dbpurge" data-ui-id="2.2.6" data-spec-id="2.2.6">
+    <h2 style="font-size:1rem;margin:0 0 0.75rem"><span class="spec-id">2.2.6</span>Data Management</h2>
+
+    <!-- Export Database -->
+    <div class="card" style="margin-bottom:1.25rem">
+      <div style="font-weight:700;margin-bottom:0.25rem">Export Database</div>
+      <div style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.6rem">
+        Downloads a consistent SQLite snapshot. Safe to run at any time.
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <a id="db-export-link" href="/api/db/export" class="btn btn-sm btn-secondary"
+           onclick="dbExportClick(event)">Download DB</a>
+        <span id="db-export-status" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+    <!-- Inventory + batch controls -->
+    <div class="card" style="margin-bottom:1.25rem">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+        <div style="font-weight:700">Inventory</div>
+        <select id="dm-scope" style="font-size:0.82rem;padding:3px 7px" onchange="onManagementScopeChange()">
+          <option value="">All companies</option>
+        </select>
+        <select id="dm-stage" style="font-size:0.82rem;padding:3px 7px" onchange="onManagementStageChange()">
+          <option value="review_queue">Review queue</option>
+          <option value="final">Final values</option>
+          <option value="review_and_final">Review + Final</option>
+          <option value="scrape">Scraped sources</option>
+          <option value="all">Everything</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="loadManagementInventory()">Refresh</button>
+        <span id="dm-inventory-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+      </div>
+
+      <table style="font-size:0.78rem;width:100%;margin-bottom:0.75rem">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th title="All stored reports">Reports</th>
+            <th title="Accepted data points">Data pts</th>
+            <th title="Review queue PENDING items">Review pending</th>
+            <th title="Final values">Final</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="dm-inventory-tbody">
+          <tr><td colspan="6" style="text-align:center;color:var(--theme-text-muted)">Click Refresh to load.</td></tr>
+        </tbody>
+      </table>
+
+      <!-- Ingestion batch section (review_queue stage only) -->
+      <div id="dm-batch-section" style="display:none;border-top:1px solid var(--theme-border);padding-top:0.75rem">
+        <div style="font-weight:600;margin-bottom:0.5rem;font-size:0.82rem">Ingestion Batches
+          <span style="font-weight:400;color:var(--theme-text-muted)">(PENDING rows grouped by ingest date)</span>
+        </div>
+        <table style="font-size:0.78rem;width:100%;margin-bottom:0.6rem">
+          <thead>
+            <tr>
+              <th>Batch date</th>
+              <th>Ticker</th>
+              <th>Items</th>
+              <th title="How many of these are also in final_data_points">In final</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dm-batch-tbody">
+            <tr><td colspan="5" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+        <div id="dm-batch-global-row" style="display:none;margin-top:0.25rem"></div>
+      </div>
+    </div>
+
+    <!-- Danger zone: full hard-delete -->
+    <div class="card">
+      <div style="font-weight:700;color:var(--theme-danger);margin-bottom:0.35rem">Danger Zone</div>
+      <p style="font-size:0.78rem;color:var(--theme-text-secondary);margin:0 0 0.75rem">
+        Hard-delete: removes company config, all scraped sources, review queue, and finalized values.
+        Only for full resets.
+      </p>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem">Reason:</label>
+        <input id="all-purge-reason" type="text" maxlength="240" placeholder="e.g. full baseline reset"
+               style="width:320px;font-size:0.82rem;padding:3px 7px">
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.78rem">Type&nbsp;<code>DELETE_ALL_GLOBAL</code>&nbsp;to confirm:</label>
+        <input id="all-purge-confirm-input" type="text" maxlength="24" placeholder="DELETE_ALL_GLOBAL"
+               style="width:165px;font-size:0.82rem;padding:3px 7px" oninput="allPurgeOnInput()">
+        <button id="all-purge-btn" class="btn btn-sm btn-danger" onclick="executeAllPurge()" disabled>Delete ALL</button>
+        <span id="all-purge-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+      </div>
+    </div>
+
+  </div><!-- /spane-config-dbpurge -->
+
+</div><!-- /pane-config -->

@@ -1,0 +1,3698 @@
+{
+  "metadata": {
+    "generator_version": "2026-03-19.2",
+    "input_files": [
+      "static/data/ui_spec.json",
+      "docs/architecture/operations.json",
+      "docs/architecture/dag.json",
+      "cli.py"
+    ],
+    "input_hash": "408ec33de818cd43d6c19c170a8cfd23fa41e66fabadd7ae02e9cf0e783fc863"
+  },
+  "note": "Reverse mapping from DAG nodes back to UI, operation, CLI, worker, test, and docs references.",
+  "nodes": [
+    {
+      "id": "miner_types",
+      "path": "src/miner_types.py",
+      "layer": 0,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.4.3",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.6"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3"
+      ],
+      "operation_ids": [
+        "approve_review",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_llm_prompts",
+        "preview_manifest_document",
+        "reject_review",
+        "reset_llm_prompt",
+        "run_extraction",
+        "update_llm_prompt",
+        "view_pipeline_observability",
+        "view_review_queue"
+      ],
+      "incoming_edges": [
+        "coverage_bridge",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.table_interpreter",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.manifest_scanner"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [
+        "extract"
+      ],
+      "cli_handlers": [
+        "cmd_extract"
+      ],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_backfill.py",
+        "tests/test_context_window.py",
+        "tests/test_coverage_bridge.py",
+        "tests/test_coverage_routes.py",
+        "tests/test_document_parser.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_ingest_worker_pool.py",
+        "tests/test_interpret_pipeline.py",
+        "tests/test_interpret_status_transitions.py",
+        "tests/test_llm_interpreter.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_quarterly_extraction.py",
+        "tests/test_report_metric_verdict.py",
+        "tests/test_reports_routes.py",
+        "tests/test_result_router.py",
+        "tests/test_review_provenance.py",
+        "tests/test_scrape_worker.py",
+        "tests/test_time_grain.py",
+        "tests/test_types.py",
+        "tests/test_worker_pool.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "config",
+      "path": "src/config.py",
+      "layer": 0,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "4.1",
+        "4.1.1",
+        "4.1.2",
+        "4.1.3",
+        "4.1.4",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "app_globals",
+        "coverage_bridge",
+        "infra.ollama_warmup",
+        "interpreters.broad_interpreter",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "routes.companies",
+        "routes.coverage",
+        "routes.diagnostics",
+        "routes.interpret",
+        "routes.metric_rules",
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports",
+        "scrapers.archive_ingestor",
+        "scrapers.edgar_connector",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.manifest_scanner",
+        "scrapers.observer_swarm",
+        "scrapers.primitive_registry"
+      ],
+      "incoming_route_edges": [
+        "routes.companies",
+        "routes.coverage",
+        "routes.diagnostics",
+        "routes.interpret",
+        "routes.metric_rules",
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_backfill.py",
+        "tests/test_companies_routes.py",
+        "tests/test_config_companies.py",
+        "tests/test_config_routes.py",
+        "tests/test_context_window.py",
+        "tests/test_coverage_bridge.py",
+        "tests/test_coverage_routes.py",
+        "tests/test_crawl_routes.py",
+        "tests/test_csv_export_v2.py",
+        "tests/test_data_explorer.py",
+        "tests/test_data_points.py",
+        "tests/test_data_purge_route.py",
+        "tests/test_db.py",
+        "tests/test_db_sync.py",
+        "tests/test_document_diagnostic.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_edgar_connector_v2.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_facilities_routes.py",
+        "tests/test_ingest_raw_route.py",
+        "tests/test_ingest_worker_pool.py",
+        "tests/test_interpret_pipeline.py",
+        "tests/test_interpret_routes.py",
+        "tests/test_ir_scraper.py",
+        "tests/test_keyword_pipeline.py",
+        "tests/test_keywords.py",
+        "tests/test_llm_crawler.py",
+        "tests/test_llm_interpreter.py",
+        "tests/test_llm_prompt_routes.py",
+        "tests/test_logging_policy.py",
+        "tests/test_metric_examples.py",
+        "tests/test_migration_v3.py",
+        "tests/test_migrations.py",
+        "tests/test_migrations_v7.py",
+        "tests/test_miner_data.py",
+        "tests/test_observer_swarm.py",
+        "tests/test_operations_routes.py",
+        "tests/test_outlier_detection.py",
+        "tests/test_pattern_suggester.py",
+        "tests/test_period_trace.py",
+        "tests/test_pipeline_backfill_mode.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_qc.py",
+        "tests/test_quarterly_batch_response_parsing.py",
+        "tests/test_reaudit.py",
+        "tests/test_regime_db.py",
+        "tests/test_report_metric_verdict.py",
+        "tests/test_reports_auto_extract.py",
+        "tests/test_reports_routes.py",
+        "tests/test_result_router.py",
+        "tests/test_review_filter.py",
+        "tests/test_review_routes.py",
+        "tests/test_routes_data_points.py",
+        "tests/test_routes_review.py",
+        "tests/test_run_extraction_phase.py",
+        "tests/test_schema_v15.py",
+        "tests/test_source_type_display.py",
+        "tests/test_ssot_metrics.py",
+        "tests/test_stacked_bar.py",
+        "tests/test_time_grain.py",
+        "tests/test_ui_spec.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/architecture/operations.json",
+        "docs/feature_glossary.md",
+        "docs/miner_lifecycle_coverage_scout_spec.md",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md",
+        "docs/user_guide.md"
+      ]
+    },
+    {
+      "id": "period_utils",
+      "path": "src/period_utils.py",
+      "layer": 0,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_period_utils.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "coverage_logic",
+      "path": "src/coverage_logic.py",
+      "layer": 0,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "analyst_cell_save",
+        "browse_registry",
+        "mark_gap",
+        "reextract_cell"
+      ],
+      "incoming_edges": [
+        "routes.explorer"
+      ],
+      "incoming_route_edges": [
+        "routes.explorer"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_coverage_logic.py",
+        "tests/test_manifest_db.py",
+        "tests/test_period_trace.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/feature_glossary.md",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "infra.db",
+      "path": "src/infra/db.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "app_globals",
+        "scrapers.observer_swarm",
+        "scrapers.scrape_worker"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/conftest.py",
+        "tests/test_backfill.py",
+        "tests/test_companies_routes.py",
+        "tests/test_config_routes.py",
+        "tests/test_coverage_routes.py",
+        "tests/test_crawl_context.py",
+        "tests/test_csv_export_v2.py",
+        "tests/test_data_purge_route.py",
+        "tests/test_db.py",
+        "tests/test_db_delete_report.py",
+        "tests/test_db_migrate_v18.py",
+        "tests/test_db_review.py",
+        "tests/test_db_review_approve.py",
+        "tests/test_db_sync.py",
+        "tests/test_db_validation.py",
+        "tests/test_dedup.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_facilities.py",
+        "tests/test_facilities_routes.py",
+        "tests/test_ingest_raw_route.py",
+        "tests/test_ir_dedup_url.py",
+        "tests/test_keywords.py",
+        "tests/test_llm_prompt_routes.py",
+        "tests/test_metric_examples.py",
+        "tests/test_metric_schema_active.py",
+        "tests/test_migration_v3.py",
+        "tests/test_migrations.py",
+        "tests/test_miner_data.py",
+        "tests/test_operations_routes.py",
+        "tests/test_period_trace.py",
+        "tests/test_pipeline_backfill_mode.py",
+        "tests/test_pipeline_extraction_gate.py",
+        "tests/test_pipeline_ordering.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_qc.py",
+        "tests/test_reaudit.py",
+        "tests/test_report_metric_verdict.py",
+        "tests/test_reports_auto_extract.py",
+        "tests/test_reports_routes.py",
+        "tests/test_review_provenance.py",
+        "tests/test_run_extraction_phase.py",
+        "tests/test_schema_v15.py",
+        "tests/test_stacked_bar.py",
+        "tests/test_text_utils.py",
+        "tests/test_worker_pool.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "infra.text_utils",
+      "path": "src/infra/text_utils.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline",
+        "interpreters.report_text",
+        "scrapers.ir_scraper",
+        "scrapers.observer_swarm"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_text_utils.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "infra.logging_config",
+      "path": "src/infra/logging_config.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "infra.ollama_warmup",
+      "path": "src/infra/ollama_warmup.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_pipeline_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.dedup",
+      "path": "src/scrapers/dedup.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "scrapers.ir_scraper"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_dedup.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.fetch_policy",
+      "path": "src/scrapers/fetch_policy.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "scrapers.edgar_connector",
+        "scrapers.ir_scraper"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_fetch_policy.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.source_contract",
+      "path": "src/scrapers/source_contract.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [
+        "scrapers.observer_swarm"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_source_contract.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.crawl_context",
+      "path": "src/scrapers/crawl_context.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_crawl_context.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.llm_crawler",
+      "path": "src/scrapers/llm_crawler.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.3.5",
+        "2.3.5.1"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "view_crawl_status"
+      ],
+      "incoming_edges": [
+        "routes.pipeline"
+      ],
+      "incoming_route_edges": [
+        "routes.pipeline"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_crawl_routes.py",
+        "tests/test_llm_crawler.py",
+        "tests/test_review_maps.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/dag_ui_reverse_trace.md",
+        "docs/review/ui_dag_trace_map.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "analysis.coverage",
+      "path": "src/analysis/coverage.py",
+      "layer": 1,
+      "route_paths": [],
+      "status": "cli_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [
+        "diagnose"
+      ],
+      "cli_handlers": [
+        "cmd_diagnose"
+      ],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_diagnose.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "parsers.annual_report_parser",
+      "path": "src/parsers/annual_report_parser.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "parsers.document_parser",
+        "parsers.press_release_parser"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_document_parser.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "parsers.press_release_parser",
+      "path": "src/parsers/press_release_parser.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "parsers.document_parser",
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_document_parser.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "parsers.document_parser",
+      "path": "src/parsers/document_parser.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "interpreters.unit_normalizer",
+      "path": "src/interpreters/unit_normalizer.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [
+        "interpreters.table_interpreter"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_unit_normalizer.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "interpreters.confidence",
+      "path": "src/interpreters/confidence.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.4.3",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.6"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3"
+      ],
+      "operation_ids": [
+        "approve_review",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_llm_prompts",
+        "preview_manifest_document",
+        "reject_review",
+        "reset_llm_prompt",
+        "run_extraction",
+        "update_llm_prompt",
+        "view_pipeline_observability",
+        "view_review_queue"
+      ],
+      "incoming_edges": [
+        "interpreters.llm_interpreter",
+        "interpreters.table_interpreter"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_confidence.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.context_window",
+      "path": "src/interpreters/context_window.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_context_window.py",
+        "tests/test_edgar_regime_routing.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.outlier",
+      "path": "src/interpreters/outlier.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline",
+        "interpreters.result_router"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_outlier_detection.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.report_text",
+      "path": "src/interpreters/report_text.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline",
+        "interpreters.result_router"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.result_router",
+      "path": "src/interpreters/result_router.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_report_metric_verdict.py",
+        "tests/test_result_router.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.llm_prompt_builder",
+      "path": "src/interpreters/llm_prompt_builder.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.4.3",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.6"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3"
+      ],
+      "operation_ids": [
+        "approve_review",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_llm_prompts",
+        "preview_manifest_document",
+        "reject_review",
+        "reset_llm_prompt",
+        "run_extraction",
+        "update_llm_prompt",
+        "view_pipeline_observability",
+        "view_review_queue"
+      ],
+      "incoming_edges": [
+        "interpreters.llm_interpreter"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.table_interpreter",
+      "path": "src/interpreters/table_interpreter.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_table_extractor.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "interpreters.llm_interpreter",
+      "path": "src/interpreters/llm_interpreter.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.4.3",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.5",
+        "2.5.2.6"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3"
+      ],
+      "operation_ids": [
+        "approve_review",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_llm_prompts",
+        "preview_manifest_document",
+        "reject_review",
+        "reset_llm_prompt",
+        "run_extraction",
+        "update_llm_prompt",
+        "view_pipeline_observability",
+        "view_review_queue"
+      ],
+      "incoming_edges": [
+        "interpreters.interpret_pipeline",
+        "routes.config",
+        "routes.llm_prompts",
+        "routes.review"
+      ],
+      "incoming_route_edges": [
+        "routes.config",
+        "routes.llm_prompts",
+        "routes.review"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_interpret_pipeline.py",
+        "tests/test_llm_interpreter.py",
+        "tests/test_metric_examples.py",
+        "tests/test_prompt_lookup_chain.py",
+        "tests/test_quarterly_batch_response_parsing.py",
+        "tests/test_quarterly_extraction.py",
+        "tests/test_review_routes.py",
+        "tests/test_time_grain.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_component_runtime_map.md",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.broad_interpreter",
+      "path": "src/interpreters/broad_interpreter.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "cli_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [
+        "broad_extract"
+      ],
+      "cli_handlers": [
+        "cmd_broad_extract"
+      ],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "interpreters.interpret_pipeline",
+      "path": "src/interpreters/interpret_pipeline.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "reextract_cell",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.operations",
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "cli_commands": [
+        "extract"
+      ],
+      "cli_handlers": [
+        "cmd_extract"
+      ],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_interpret_pipeline.py",
+        "tests/test_interpret_status_transitions.py",
+        "tests/test_logging_policy.py",
+        "tests/test_metric_rules_pipeline.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_production_gate.py",
+        "tests/test_quarterly_extraction.py",
+        "tests/test_report_metric_verdict.py",
+        "tests/test_review_provenance.py",
+        "tests/test_time_grain.py",
+        "tests/test_worker_pool.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_component_runtime_map.md",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "interpreters.gap_fill",
+      "path": "src/interpreters/gap_fill.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "cli_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [
+        "derive-balance-change",
+        "gap-fill"
+      ],
+      "cli_handlers": [
+        "cmd_derive_balance_change",
+        "cmd_gap_fill"
+      ],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_gap_fill.py",
+        "tests/test_ssot_metrics.py",
+        "tests/test_time_grain.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_component_runtime_map.md",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.archive_ingestor",
+      "path": "src/scrapers/archive_ingestor.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.operations",
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.operations",
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_html_downloader.py",
+        "tests/test_new_scrapers.py",
+        "tests/test_pipeline_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.manifest_scanner",
+      "path": "src/scrapers/manifest_scanner.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "protected_route_dependency",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [
+        "routes.coverage"
+      ],
+      "incoming_route_edges": [
+        "routes.coverage"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_manifest_scanner.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "scrapers.ir_scraper",
+      "path": "src/scrapers/ir_scraper.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "routes.reports",
+        "scrapers.observer_swarm",
+        "scrapers.scrape_worker"
+      ],
+      "incoming_route_edges": [
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_drupal_year_scraper.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_ir_dedup_url.py",
+        "tests/test_ir_scraper.py",
+        "tests/test_ir_scraper_playwright.py",
+        "tests/test_new_scrapers.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_reports_routes.py",
+        "tests/test_scrape_worker.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.edgar_connector",
+      "path": "src/scrapers/edgar_connector.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "routes.reports",
+        "scrapers.scrape_worker"
+      ],
+      "incoming_route_edges": [
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": true,
+      "test_refs": [
+        "tests/test_archive_ingestor.py",
+        "tests/test_backfill.py",
+        "tests/test_edgar_6k_exhibit_resolution.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_edgar_connector.py",
+        "tests/test_edgar_connector_v2.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_scrape_worker.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.html_downloader",
+      "path": "src/scrapers/html_downloader.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_html_downloader.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "scrapers.edgar_context_builder",
+      "path": "src/scrapers/edgar_context_builder.py",
+      "layer": 2,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_edgar_context_builder.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.primitive_registry",
+      "path": "src/scrapers/primitive_registry.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [
+        "scrapers.observer_swarm",
+        "scrapers.primitive_feedback"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_primitive_registry.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.primitive_feedback",
+      "path": "src/scrapers/primitive_feedback.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [
+        "scrapers.observer_swarm"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_primitive_feedback.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.observer_swarm",
+      "path": "src/scrapers/observer_swarm.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_observer_swarm.py",
+        "tests/test_text_utils.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "scrapers.scrape_worker",
+      "path": "src/scrapers/scrape_worker.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "app_globals"
+      ],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_edgar_canonical.py",
+        "tests/test_logging_policy.py",
+        "tests/test_scrape_worker.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "orchestration",
+      "path": "src/orchestration.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.pipeline",
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_orchestration.py",
+        "tests/test_pipeline_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/miner_lifecycle_coverage_scout_spec.md",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "coverage_bridge",
+      "path": "src/coverage_bridge.py",
+      "layer": 3,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.reports"
+      ],
+      "incoming_route_edges": [
+        "routes.reports"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_coverage_bridge.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "app_globals",
+      "path": "src/app_globals.py",
+      "layer": 4,
+      "route_paths": [],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.2.2",
+        "2.2.2.3",
+        "2.2.3.1",
+        "2.2.4.3",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.2.5.3",
+        "2.2.6",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.5",
+        "2.3.5.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.4.2",
+        "2.5.1",
+        "2.5.1.4",
+        "2.5.2.2.1",
+        "2.5.2.5",
+        "2.5.2.6",
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2",
+        "2.6.3"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.1",
+        "6.2",
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3",
+        "7.4"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "analyst_cell_save",
+        "approve_review",
+        "browse_registry",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "finalize_review_values",
+        "generate_extraction_prompt",
+        "get_llm_prompt",
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "list_companies",
+        "list_documents",
+        "list_llm_prompts",
+        "list_metric_schema",
+        "mark_gap",
+        "open_document",
+        "preview_manifest_document",
+        "purge_reset",
+        "purge_scrape_stage",
+        "reextract_cell",
+        "reject_review",
+        "reset_llm_prompt",
+        "restore_companies",
+        "run_extraction",
+        "update_llm_prompt",
+        "update_metric_schema",
+        "view_crawl_prompt",
+        "view_crawl_status",
+        "view_pipeline_observability",
+        "view_qc_summary",
+        "view_review_queue",
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [
+        "routes.benchmark",
+        "routes.companies",
+        "routes.config",
+        "routes.coverage",
+        "routes.crawl",
+        "routes.dashboard",
+        "routes.data_points",
+        "routes.explorer",
+        "routes.facilities",
+        "routes.interpret",
+        "routes.llm_prompts",
+        "routes.metric_rules",
+        "routes.miner",
+        "routes.operations",
+        "routes.pipeline",
+        "routes.qc",
+        "routes.regime",
+        "routes.reports",
+        "routes.review",
+        "routes.scrape",
+        "routes.timeseries"
+      ],
+      "incoming_route_edges": [
+        "routes.benchmark",
+        "routes.companies",
+        "routes.config",
+        "routes.coverage",
+        "routes.crawl",
+        "routes.dashboard",
+        "routes.data_points",
+        "routes.explorer",
+        "routes.facilities",
+        "routes.interpret",
+        "routes.llm_prompts",
+        "routes.metric_rules",
+        "routes.miner",
+        "routes.operations",
+        "routes.pipeline",
+        "routes.qc",
+        "routes.regime",
+        "routes.reports",
+        "routes.review",
+        "routes.scrape",
+        "routes.timeseries"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_backfill.py",
+        "tests/test_companies_routes.py",
+        "tests/test_config_routes.py",
+        "tests/test_coverage_routes.py",
+        "tests/test_csv_export_v2.py",
+        "tests/test_data_explorer.py",
+        "tests/test_data_points.py",
+        "tests/test_data_purge_route.py",
+        "tests/test_document_diagnostic.py",
+        "tests/test_edgar_canonical.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_facilities_routes.py",
+        "tests/test_ingest_raw_route.py",
+        "tests/test_interpret_routes.py",
+        "tests/test_keywords.py",
+        "tests/test_llm_prompt_routes.py",
+        "tests/test_metric_examples.py",
+        "tests/test_miner_data.py",
+        "tests/test_operations_routes.py",
+        "tests/test_period_trace.py",
+        "tests/test_pipeline_backfill_mode.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_reaudit.py",
+        "tests/test_report_metric_verdict.py",
+        "tests/test_reports_auto_extract.py",
+        "tests/test_reports_routes.py",
+        "tests/test_review_filter.py",
+        "tests/test_review_provenance.py",
+        "tests/test_review_routes.py",
+        "tests/test_routes_data_points.py",
+        "tests/test_routes_review.py",
+        "tests/test_stacked_bar.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.benchmark",
+      "path": "src/routes/benchmark.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/benchmark/runs",
+        "/api/benchmark/summary"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.companies",
+      "path": "src/routes/companies.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/companies",
+        "/api/companies",
+        "/api/companies/<ticker>",
+        "/api/companies/<ticker>",
+        "/api/companies/<ticker>",
+        "/api/companies/<ticker>/bootstrap_probe",
+        "/api/companies/<ticker>/detect_btc_anchor",
+        "/api/companies/<ticker>/discovery_candidates",
+        "/api/companies/<ticker>/discovery_candidates",
+        "/api/companies/bootstrap_probe_all",
+        "/api/companies/scraper_governance",
+        "/api/companies/sync",
+        "/api/companies/sync/restore",
+        "/api/metric_keywords",
+        "/api/metric_schema",
+        "/api/metric_schema",
+        "/api/metric_schema/<metric_key>/examples",
+        "/api/metric_schema/<metric_key>/examples",
+        "/api/metric_schema/<metric_key>/examples/<example_id>",
+        "/api/metric_schema/<metric_key>/examples/<example_id>",
+        "/api/metric_schema/<metric_key>/keywords",
+        "/api/metric_schema/<metric_key>/keywords",
+        "/api/metric_schema/<metric_key>/keywords/<kw_id>",
+        "/api/metric_schema/<metric_key>/keywords/<kw_id>",
+        "/api/metric_schema/<metric_key>/snippet_analysis",
+        "/api/metric_schema/<row_id>",
+        "/api/metric_schema/<row_id>"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.2.1.1",
+        "2.2.2",
+        "2.2.2.1",
+        "2.2.3.1",
+        "2.2.4.4",
+        "2.2.4.4.1",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [
+        "6.1"
+      ],
+      "operation_ids": [
+        "add_metric_schema",
+        "create_company",
+        "delete_metric_schema",
+        "detect_btc_anchor",
+        "list_companies",
+        "list_metric_schema",
+        "preview_manifest_document",
+        "restore_companies",
+        "run_extraction",
+        "update_metric_schema",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.operations"
+      ],
+      "incoming_route_edges": [
+        "routes.operations"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.config",
+      "path": "src/routes/config.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/config",
+        "/api/config/<key>",
+        "/api/config/<key>/default",
+        "/api/config/defaults",
+        "/api/config/hints",
+        "/api/config/hints/<ticker>",
+        "/api/config/hints/<ticker>",
+        "/api/config/keyword_dictionary",
+        "/api/config/keyword_dictionary",
+        "/api/ollama/models"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.coverage",
+      "path": "src/routes/coverage.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/coverage/assets/<ticker>/<period>",
+        "/api/coverage/grid",
+        "/api/coverage/period_trace",
+        "/api/coverage/summary",
+        "/api/manifest/scan",
+        "/coverage"
+      ],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_coverage_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.crawl",
+      "path": "src/routes/crawl.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/crawl/<task_id>/progress",
+        "/api/crawl/prompt/<ticker>",
+        "/api/crawl/start",
+        "/api/crawl/status",
+        "/api/crawl/stop"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.2.5.3",
+        "2.3.5",
+        "2.3.5.1"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "view_crawl_prompt",
+        "view_crawl_status"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_crawl_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.dashboard",
+      "path": "src/routes/dashboard.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/dashboard/stacked"
+      ],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_stacked_bar.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.data_points",
+      "path": "src/routes/data_points.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/data",
+        "/api/data/document/<report_id>",
+        "/api/data/documents",
+        "/api/data/documents/<report_id>/keywords",
+        "/api/data/lineage",
+        "/api/data/management-inventory",
+        "/api/data/purge",
+        "/api/delete/all",
+        "/api/delete/scrape",
+        "/api/export.csv",
+        "/api/scorecard"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.2.2.3",
+        "2.2.6",
+        "2.6.3"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [
+        "1.1",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "3.7",
+        "6.2"
+      ],
+      "operation_ids": [
+        "list_documents",
+        "open_document",
+        "purge_reset",
+        "purge_scrape_stage"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_data_explorer.py",
+        "tests/test_data_points.py",
+        "tests/test_document_diagnostic.py",
+        "tests/test_ssot_metrics.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.diagnostics",
+      "path": "src/routes/diagnostics.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/diagnostics"
+      ],
+      "status": "display_only_ref",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [
+        "4.1",
+        "4.1.1",
+        "4.1.2",
+        "4.1.3",
+        "4.1.4"
+      ],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_ssot_metrics.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.explorer",
+      "path": "src/routes/explorer.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/documents",
+        "/api/explorer/cell/<ticker>/<period>/<metric>",
+        "/api/explorer/cell/<ticker>/<period>/<metric>/gap",
+        "/api/explorer/cell/<ticker>/<period>/<metric>/save",
+        "/api/explorer/grid",
+        "/api/explorer/reextract",
+        "/api/registry"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.6.1.2",
+        "2.6.1.3",
+        "2.6.1.4",
+        "2.6.1.5",
+        "2.6.1.6",
+        "2.6.2",
+        "2.6.2.2"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "analyst_cell_save",
+        "browse_registry",
+        "mark_gap",
+        "reextract_cell"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.facilities",
+      "path": "src/routes/facilities.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/btc_loans",
+        "/api/btc_loans",
+        "/api/facilities",
+        "/api/facilities",
+        "/api/source_audit",
+        "/api/source_audit"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.interpret",
+      "path": "src/routes/interpret.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/delete/final",
+        "/api/interpret/<ticker>/final",
+        "/api/interpret/<ticker>/final",
+        "/api/interpret/<ticker>/finalize",
+        "/api/interpret/<ticker>/generate_prompt",
+        "/api/interpret/<ticker>/reviewed",
+        "/api/interpret/<ticker>/reviewed",
+        "/api/interpret/<ticker>/reviewed/all",
+        "/api/interpret/final/purge"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.5.2.2.1",
+        "2.5.2.5"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.4"
+      ],
+      "operation_ids": [
+        "finalize_review_values",
+        "generate_extraction_prompt"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_interpret_routes.py",
+        "tests/test_ssot_metrics.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.llm_prompts",
+      "path": "src/routes/llm_prompts.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/llm_prompts",
+        "/api/llm_prompts/<metric>",
+        "/api/llm_prompts/<metric>",
+        "/api/llm_prompts/<metric>",
+        "/api/llm_prompts/preview"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.2.4.3"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "get_llm_prompt",
+        "list_llm_prompts",
+        "reset_llm_prompt",
+        "update_llm_prompt"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.metric_rules",
+      "path": "src/routes/metric_rules.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/metric_rules",
+        "/api/metric_rules",
+        "/api/metric_rules/<metric>",
+        "/api/metric_rules/<metric>",
+        "/api/metric_rules/<metric>",
+        "/api/metric_rules/sync"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.miner",
+      "path": "src/routes/miner.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/metrics",
+        "/api/miner/<ticker>/<period>/<metric>/fill",
+        "/api/miner/<ticker>/<period>/analysis",
+        "/api/miner/<ticker>/<period>/raw-source",
+        "/api/miner/<ticker>/<period>/raw-text",
+        "/api/miner/<ticker>/<period>/reports",
+        "/api/miner/<ticker>/coverage_summary",
+        "/api/miner/<ticker>/timeline"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.operations",
+      "path": "src/routes/operations.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/db/export",
+        "/api/delete/scrape/ticker",
+        "/api/operations/assign_period",
+        "/api/operations/gap-diagnosis",
+        "/api/operations/gap-fill",
+        "/api/operations/interpret",
+        "/api/operations/interpret/<task_id>/progress",
+        "/api/operations/manifest/<manifest_id>/detect_period",
+        "/api/operations/manifest/<manifest_id>/preview",
+        "/api/operations/observer_swarm/<task_id>/status",
+        "/api/operations/observer_swarm/start",
+        "/api/operations/pipeline_observability",
+        "/api/operations/promote-to-review",
+        "/api/operations/purge_ticker",
+        "/api/operations/queue",
+        "/api/operations/requeue-missing",
+        "/operations"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_operations_routes.py",
+        "tests/test_pipeline_backfill_mode.py",
+        "tests/test_pipeline_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "routes.pipeline",
+      "path": "src/routes/pipeline.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/pipeline/overnight/<run_id>/apply_modes",
+        "/api/pipeline/overnight/<run_id>/cancel",
+        "/api/pipeline/overnight/<run_id>/events",
+        "/api/pipeline/overnight/<run_id>/status",
+        "/api/pipeline/overnight/latest",
+        "/api/pipeline/overnight/start",
+        "/api/pipeline/preflight",
+        "/api/pipeline/reset-attempts"
+      ],
+      "status": "needs_manual_review",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_edgar_canonical.py",
+        "tests/test_operations_routes.py",
+        "tests/test_pipeline_backfill_mode.py",
+        "tests/test_pipeline_extraction_gate.py",
+        "tests/test_pipeline_ordering.py",
+        "tests/test_pipeline_routes.py",
+        "tests/test_reports_auto_extract.py",
+        "tests/test_reports_routes.py",
+        "tests/test_run_extraction_phase.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/unreachable_modules.md"
+      ]
+    },
+    {
+      "id": "routes.qc",
+      "path": "src/routes/qc.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/qc/reset_orphaned",
+        "/api/qc/snapshot",
+        "/api/qc/summary",
+        "/api/qc/ticker_history",
+        "/api/qc/ticker_report"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.4.2"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "view_qc_summary"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_qc.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.regime",
+      "path": "src/routes/regime.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/regime/<ticker>",
+        "/api/regime/<ticker>",
+        "/api/regime/<ticker>/<window_id>"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.reports",
+      "path": "src/routes/reports.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/ingest/<task_id>/progress",
+        "/api/ingest/all",
+        "/api/ingest/archive",
+        "/api/ingest/backfill_raw_html",
+        "/api/ingest/edgar",
+        "/api/ingest/edgar/bridge",
+        "/api/ingest/edgar/refetch_8k",
+        "/api/ingest/edgar/refetch_xbrl",
+        "/api/ingest/html-download",
+        "/api/ingest/ir",
+        "/api/ingest/raw",
+        "/api/ingest/reaudit"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.1",
+        "2.3.3",
+        "2.3.4",
+        "2.3.4.1",
+        "2.3.4.2",
+        "2.3.6",
+        "2.3.6.2",
+        "2.4.1.1",
+        "2.5.2.6"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "ingest_all_sources",
+        "ingest_archive",
+        "ingest_edgar",
+        "ingest_ir",
+        "preview_manifest_document",
+        "run_extraction",
+        "view_pipeline_observability"
+      ],
+      "incoming_edges": [
+        "routes.operations",
+        "routes.pipeline"
+      ],
+      "incoming_route_edges": [
+        "routes.operations",
+        "routes.pipeline"
+      ],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_edgar_canonical.py",
+        "tests/test_edgar_regime_routing.py",
+        "tests/test_reaudit.py",
+        "tests/test_reports_auto_extract.py",
+        "tests/test_reports_routes.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.review",
+      "path": "src/routes/review.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/delete/review",
+        "/api/review",
+        "/api/review/<item_id>/approve",
+        "/api/review/<item_id>/document",
+        "/api/review/<item_id>/no_data",
+        "/api/review/<item_id>/reextract",
+        "/api/review/<item_id>/reject",
+        "/api/review/batch-delete",
+        "/api/review/batch-finalize",
+        "/api/review/batches",
+        "/api/review/purge",
+        "/api/review/reextract_selection"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.5.1",
+        "2.5.1.4"
+      ],
+      "standalone_components": [
+        "7.2.4",
+        "7.3.1",
+        "7.3.2"
+      ],
+      "legacy_components": [],
+      "display_only_components": [
+        "7.2",
+        "7.2.3",
+        "7.3",
+        "7.3.3"
+      ],
+      "operation_ids": [
+        "approve_review",
+        "reject_review",
+        "view_review_queue"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_report_metric_verdict.py",
+        "tests/test_review_provenance.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/README.md",
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.scrape",
+      "path": "src/routes/scrape.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/backfill/<task_id>/progress",
+        "/api/backfill/<ticker>",
+        "/api/scrape/queue",
+        "/api/scrape/queue/<job_id>",
+        "/api/scrape/trigger-all",
+        "/api/scrape/trigger/<ticker>"
+      ],
+      "status": "canonical",
+      "canonical_components": [
+        "2.2.2.2"
+      ],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [
+        "view_scrape_queue"
+      ],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [
+        "tests/test_backfill.py"
+      ],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json",
+        "docs/review/ui_dag_trace_map.json"
+      ]
+    },
+    {
+      "id": "routes.themes",
+      "path": "src/routes/themes.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/themes"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    },
+    {
+      "id": "routes.timeseries",
+      "path": "src/routes/timeseries.py",
+      "layer": 5,
+      "route_paths": [
+        "/api/timeseries",
+        "/api/timeseries/fill",
+        "/api/timeseries/suggest"
+      ],
+      "status": "doc_only",
+      "canonical_components": [],
+      "standalone_components": [],
+      "legacy_components": [],
+      "display_only_components": [],
+      "operation_ids": [],
+      "incoming_edges": [],
+      "incoming_route_edges": [],
+      "cli_commands": [],
+      "cli_handlers": [],
+      "worker_reachable": false,
+      "test_refs": [],
+      "doc_refs": [
+        "docs/architecture/dag.dot",
+        "docs/architecture/dag.json",
+        "docs/review/dag_ui_reverse_trace.json"
+      ]
+    }
+  ]
+}

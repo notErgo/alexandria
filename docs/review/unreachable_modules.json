@@ -1,0 +1,115 @@
+{
+  "generated_from": "python3 scripts/check_dag.py",
+  "note": "Current-state classification of DAG-unreachable modules. This is a review artifact, not a source-of-truth contract.",
+  "modules": [
+    {
+      "module": "analysis.coverage",
+      "disposition": "keep",
+      "runtime_refs": ["cli.py"],
+      "script_refs": ["scripts/generate_report.py"],
+      "test_refs": ["tests/test_diagnose.py"],
+      "reason": "Used by CLI diagnose flow and report generation; unreachable only because DAG models route reachability."
+    },
+    {
+      "module": "infra.logging_config",
+      "disposition": "keep",
+      "runtime_refs": ["run_web.py", "cli.py"],
+      "script_refs": [
+        "scripts/backfill_ir.py",
+        "scripts/backfill_edgar.py",
+        "scripts/run_edgar_all.py",
+        "scripts/generate_report.py"
+      ],
+      "test_refs": [],
+      "reason": "Entry-point and maintenance logging support outside DAG scope."
+    },
+    {
+      "module": "interpreters.broad_interpreter",
+      "disposition": "keep",
+      "runtime_refs": ["cli.py"],
+      "script_refs": [],
+      "test_refs": [],
+      "reason": "Imported by CLI broad extraction path."
+    },
+    {
+      "module": "interpreters.gap_fill",
+      "disposition": "reintegrate in DAG",
+      "runtime_refs": ["src/routes/pipeline.py", "src/routes/operations.py"],
+      "script_refs": [],
+      "test_refs": ["tests/test_gap_fill.py"],
+      "reason": "Active runtime module missed because imports are function-local."
+    },
+    {
+      "module": "interpreters.table_interpreter",
+      "disposition": "keep, script/test scoped",
+      "runtime_refs": [],
+      "script_refs": [],
+      "test_refs": ["tests/test_table_extractor.py", "tests/test_archive_ingestor.py"],
+      "reason": "Test-backed extraction utility; not currently wired into live product paths."
+    },
+    {
+      "module": "interpreters.unit_normalizer",
+      "disposition": "keep, script/test scoped",
+      "runtime_refs": ["src/interpreters/table_interpreter.py"],
+      "script_refs": [],
+      "test_refs": ["tests/test_unit_normalizer.py"],
+      "reason": "Dependency of table_interpreter; should be reviewed together."
+    },
+    {
+      "module": "parsers.document_parser",
+      "disposition": "delete candidate",
+      "runtime_refs": [],
+      "script_refs": [],
+      "test_refs": [],
+      "reason": "No current runtime, script, or test references; only docs/contracts mention it."
+    },
+    {
+      "module": "scrapers.crawl_context",
+      "disposition": "reintegrate in DAG",
+      "runtime_refs": ["src/scrapers/llm_crawler.py"],
+      "script_refs": [],
+      "test_refs": ["tests/test_crawl_context.py"],
+      "reason": "Live crawler dependency missed by route-only reachability model."
+    },
+    {
+      "module": "scrapers.edgar_context_builder",
+      "disposition": "delete candidate",
+      "runtime_refs": [],
+      "script_refs": [],
+      "test_refs": ["tests/test_edgar_context_builder.py"],
+      "reason": "Test-only helper with no current runtime or script integration."
+    },
+    {
+      "module": "scrapers.observer_swarm",
+      "disposition": "reintegrate in DAG",
+      "runtime_refs": ["src/routes/operations.py"],
+      "script_refs": ["scripts/run_observer_swarm.py", "scripts/run_scout_worker.py"],
+      "test_refs": ["tests/test_observer_swarm.py", "tests/test_text_utils.py"],
+      "reason": "Active runtime and script subsystem; current unreachable status is a graph modeling gap."
+    },
+    {
+      "module": "scrapers.primitive_feedback",
+      "disposition": "keep",
+      "runtime_refs": ["src/scrapers/observer_swarm.py"],
+      "script_refs": ["scripts/run_primitive_feedback_loop.py"],
+      "test_refs": ["tests/test_primitive_feedback.py"],
+      "reason": "Observer-swarm support module with active upstream use."
+    },
+    {
+      "module": "scrapers.primitive_registry",
+      "disposition": "keep",
+      "runtime_refs": ["src/scrapers/observer_swarm.py", "src/scrapers/primitive_feedback.py"],
+      "script_refs": [],
+      "test_refs": ["tests/test_primitive_registry.py"],
+      "reason": "Active registry dependency for observer-swarm and primitive feedback."
+    },
+    {
+      "module": "scrapers.source_contract",
+      "disposition": "keep",
+      "runtime_refs": ["src/scrapers/observer_swarm.py"],
+      "script_refs": ["scripts/gen_crawl_prompts.py", "scripts/run_primitive_feedback_loop.py"],
+      "test_refs": ["tests/test_source_contract.py", "tests/test_gen_crawl_prompts.py"],
+      "reason": "Active contract layer for observer-swarm artifacts and prompt generation."
+    }
+  ]
+}

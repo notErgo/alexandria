@@ -1,0 +1,234 @@
+<!-- ── Ingest pane ─────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-ingest" data-ui-id="2.3" data-spec-id="2.3">
+
+  <!-- Run Full Pipeline — automated end-to-end run -->
+  <div class="card" style="margin-bottom:1.25rem;border-left:3px solid var(--theme-accent)" data-ui-id="2.3.1" data-spec-id="2.3.1">
+    <div class="section-header-row" style="margin-bottom:0.4rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3</span>Run Full Pipeline</h3>
+      <span style="font-size:0.72rem;font-weight:600;color:var(--theme-text-muted);text-transform:uppercase;letter-spacing:0.04em">Automated</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.5rem;line-height:1.5">
+      Runs the following steps automatically for all active companies with a configured scraper:
+    </p>
+    <ol style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;padding-left:1.4rem;line-height:1.9">
+      <li>Probe each company IR source for reachability</li>
+      <li>Enqueue live IR scrape jobs (via configured scraper mode: RSS, index page, etc.)</li>
+      <li>Fetch new EDGAR filings (8-K, 10-Q, 10-K, 20-F) for all companies with a CIK</li>
+      <li>Ingest IR press releases from the local archive folder</li>
+      <li>Run LLM + regex extraction on all unextracted documents</li>
+    </ol>
+    <p style="font-size:0.72rem;color:var(--theme-text-muted);margin:0 0 0.65rem;line-height:1.4">
+      LLM-directed crawl is included when the checkbox below is ticked — it runs after EDGAR and IR ingest, before extraction.
+      Leave it unchecked for faster runs when crawl-sourced documents are not needed.
+      After this pipeline completes, review disagreements in the <strong>Review</strong> tab.
+    </p>
+    <div style="margin-bottom:0.65rem">
+      <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Ticker scope</div>
+      <div id="pipeline-ticker-selector" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">
+        Leave empty to run all active companies. Selection scopes IR ingest, EDGAR ingest, optional crawl, and extraction.
+      </div>
+    </div>
+    <div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-include-ir" type="checkbox" checked>
+        Include IR (deprecated — EDGAR is canonical)
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-include-crawl" type="checkbox">
+        Include LLM crawl (slow — navigates IR + wire services autonomously)
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-probe-skip" type="checkbox">
+        Probe &amp; apply skip-mode companies (required first run after purge)
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+        <input id="pipeline-force-reextract" type="checkbox">
+        Force re-extract (re-run LLM on all ingested reports, including already extracted)
+      </label>
+    </div>
+    <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+        <span>IR workers</span>
+        <input id="pipeline-ir-workers" type="number" min="1" max="12" step="1" value="2" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+      </label>
+      <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+        <span>Extract workers</span>
+        <input id="pipeline-extract-workers" type="number" min="1" max="16" step="1" value="8" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+      </label>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
+        Tune IR scrape concurrency and per-ticker LLM extraction. Results still commit oldest-to-newest.
+      </div>
+    </div>
+    <div id="pipeline-preflight-panel" style="display:none;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary,#1a1a2e);border:1px solid var(--theme-border,#333);border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;line-height:1.7">
+      <span id="pipeline-preflight-pending"></span>
+      <span id="pipeline-preflight-extracted"></span>
+      <span id="pipeline-preflight-llm"></span>
+      <span id="pipeline-preflight-keywords"></span>
+      <div id="pipeline-preflight-dead-letter" style="display:none;margin-top:0.3rem;color:#f97316">
+        <span id="pipeline-preflight-dead-letter-msg"></span>
+        &nbsp;<button class="btn btn-xs btn-secondary" onclick="resetExtractionAttempts(null)" style="font-size:0.7rem">Reset all attempt counters</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelinePreflight()" style="font-size:0.75rem">Check Readiness</button>
+      <button class="btn btn-sm btn-primary" onclick="runFullPipeline()">Run Full Pipeline</button>
+      <button id="pipeline-cancel-btn" class="btn btn-sm btn-danger" onclick="cancelPipeline()" style="display:none">Cancel</button>
+      <span id="pipeline-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <div id="pipeline-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-top:0.35rem"></div>
+    <div id="pipeline-log" class="acq-log" style="display:none;max-height:400px;margin-top:0.5rem"></div>
+  </div>
+
+  <!-- Shared ticker selector — selection applies to EDGAR fetch and LLM crawl -->
+  <div data-spec-id="2.3.2" style="margin-bottom:1rem">
+    <div style="font-size:0.75rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.04em">Select companies</div>
+    <div id="crawl-ticker-selector" data-spec-id="2.2.5.1" style="display:flex;gap:0.3rem;flex-wrap:wrap"></div>
+    <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.3rem">Selection applies to EDGAR fetch and LLM crawl. IR scrape and archive ingest always run for all configured companies.</div>
+  </div>
+
+  <!-- Step 1 — SEC EDGAR [CRITICAL] -->
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.3.3" data-spec-id="2.3.3">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.3</span>SEC EDGAR Filings</h3>
+      <span class="wf-path-badge wf-critical">Critical</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Pulls 8-K, 10-Q, 10-K, and 20-F filings directly from EDGAR for all companies with a CIK configured.
+      Run this first — the earliest bitcoin mention date is automatically extracted and injected into the LLM crawl prompt as a lower bound so the crawl does not search before mining began.
+    </p>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-primary" onclick="triggerAcquireEdgar(false)">Fetch Selected</button>
+      <button class="btn btn-sm btn-secondary" onclick="triggerAcquireEdgar(true)">Fetch All Tickers</button>
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+        <input id="acq-auto-extract" type="checkbox" checked>
+        Auto-run extraction after fetch
+      </label>
+    </div>
+  </div>
+
+  <details class="offpath-details" id="ingest-optional-sources">
+    <summary><span class="offpath-label">Optional Sources</span> <span class="offpath-desc">IR press releases, LLM-directed crawl</span></summary>
+
+  <!-- Step 2 — IR Press Releases [OPTIONAL] -->
+  <div class="card" style="margin-bottom:1rem;margin-top:0.75rem" data-ui-id="2.3.4" data-spec-id="2.3.4">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.4</span>IR Press Releases &amp; Archive</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Supplements EDGAR with monthly production announcements. Two sources:
+      <strong>Live IR</strong> scrapes company investor-relations pages directly.
+      <strong>Local Archive</strong> ingests pre-downloaded PDFs and HTML files from the archive folder.
+      Monthly press releases often carry the most precise per-month production figures.
+    </p>
+    <div class="acq-actions" data-spec-id="2.3.4.1">
+      <button class="btn btn-sm btn-secondary" onclick="scanManifest()">Scan Archive Files</button>
+      <button class="btn btn-sm btn-secondary" data-acq-source="archive" onclick="triggerAcquire('archive')">Ingest Local Archive</button>
+      <button class="btn btn-sm btn-secondary" data-acq-source="ir" onclick="triggerAcquire('ir')">Scrape Live IR Pages</button>
+      <span data-spec-id="2.3.4.2"><button class="btn btn-sm btn-secondary" data-acq-source="all" onclick="triggerScrapeAll()">Run All Sources</button></span>
+      <button class="btn btn-sm btn-secondary" onclick="loadIngest()">Refresh</button>
+    </div>
+  </div>
+
+  <!-- Shared acquire status + log — updated by all Step 1 and Step 2 operations -->
+  <div style="margin-bottom:1rem">
+    <div id="acq-status" class="acq-status">Idle</div>
+    <div id="acq-log" class="acq-log" style="display:none"></div>
+  </div>
+
+  <!-- Step 3 — LLM-Directed Crawl [OPTIONAL] -->
+  <div class="card" style="margin-bottom:1rem" data-ui-id="2.3.5" data-spec-id="2.3.5">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.5</span>LLM-Directed Crawl</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.5">
+      An LLM navigates IR and wire-service pages autonomously to discover production announcements.
+      The bitcoin activity start date from Step 1 is automatically injected as a lower bound — run EDGAR first.
+      Review the prompt below before launching; it is loaded from a per-ticker file or the master template.
+    </p>
+    <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.6rem" data-ui-id="2.2.5.2" data-spec-id="2.2.5.2">
+      <div>
+        <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Provider</label>
+        <select id="crawl-provider" style="font-size:0.85rem;padding:0.2rem 0.4rem" onchange="onCrawlProviderChange()">
+          <option value="ollama" selected>Local (Ollama)</option>
+          <option value="anthropic">Anthropic API</option>
+        </select>
+      </div>
+      <div id="crawl-model-wrap">
+        <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">Model</label>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+          <select id="crawl-model" style="font-size:0.85rem;padding:0.2rem 0.4rem;min-width:200px" onchange="saveOllamaModel(this.value)" title="Selecting a model saves it as the global default (shared with Interpret)">
+            <option value="">Loading models…</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="loadCrawlOllamaModels()" title="Reload model list">&#8635;</button>
+        </div>
+      </div>
+    </div>
+    <div data-spec-id="2.2.5.3" style="margin-bottom:0.75rem">
+      <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.25rem">
+        Crawl prompt (editable before launch — select a single ticker above to load its custom prompt)
+        <span id="crawl-prompt-source" style="font-weight:400;color:var(--theme-text-muted);margin-left:0.4rem"></span>
+      </label>
+      <textarea id="crawl-prompt-editor" rows="8" class="prompt-editor"
+        placeholder="Select a single ticker above to load its crawl prompt..."></textarea>
+    </div>
+    <div class="acq-actions">
+      <button class="btn btn-sm btn-primary" onclick="startCrawlSelected()">Start Crawl (Selected)</button>
+      <button class="btn btn-sm btn-secondary" onclick="startCrawlAll()">Start Crawl (All)</button>
+      <button id="crawl-stop-btn" class="btn btn-sm btn-danger" onclick="stopCrawl()" style="display:none">Stop Crawl</button>
+    </div>
+    <div id="research-grid" data-ui-id="2.3.5.1" data-spec-id="2.3.5.1" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;margin-bottom:0.25rem"></div>
+    <div id="research-log-panel" data-ui-id="2.3.5.2" data-spec-id="2.3.5.2" style="display:none;margin-top:0.5rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+        <span id="research-log-ticker" style="font-weight:600;font-size:0.9rem"></span>
+        <button class="btn btn-sm btn-secondary" onclick="closeResearchLog()">Close</button>
+      </div>
+      <div id="research-log" style="font-family:monospace;font-size:0.72rem;line-height:1.5;max-height:260px;overflow-y:auto;background:var(--theme-bg-tertiary);border:1px solid var(--theme-border);padding:0.5rem;border-radius:4px"></div>
+    </div>
+  </div>
+  </details><!-- /ingest-optional-sources -->
+
+  <details class="offpath-details" id="ingest-pipeline-health">
+    <summary><span class="offpath-label">Pipeline Health</span> <span class="offpath-desc">document counts, extraction backlog, scraper config</span></summary>
+
+  <!-- Step 4 — Ingest Status [OPTIONAL] -->
+  <div class="card" data-ui-id="2.3.6" data-spec-id="2.3.6">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.3.6</span>Ingest Status</h3>
+      <span class="wf-path-badge wf-optional">Optional</span>
+      <button class="btn btn-sm btn-secondary" onclick="loadPipelineObservability()" style="margin-left:auto">Refresh</button>
+      <span id="pipe-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.6rem;line-height:1.5">
+      Document counts, extraction backlog, and scraper config health per company.
+      Check here if extraction results are sparse — grey cells in the Data Explorer mean no document was ingested for that period.
+    </p>
+    <div id="pipe-summary" data-spec-id="2.3.6.1" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.45rem">Loading pipeline state…</div>
+    <div id="pipe-scraper-health" style="font-size:0.78rem;color:var(--theme-text-secondary);margin-bottom:0.55rem"></div>
+    <div style="overflow-x:auto">
+      <table id="pipeline-table" data-ui-id="2.3.6.2" data-spec-id="2.3.6.2">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Mode</th>
+            <th>Manifest</th>
+            <th>Reports</th>
+            <th>Unextracted</th>
+            <th>Data Points</th>
+            <th>Review Pending</th>
+            <th>Config</th>
+          </tr>
+        </thead>
+        <tbody id="pipeline-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  </details><!-- /ingest-pipeline-health -->
+
+  <span id="ingest-msg" style="font-size:0.8rem;color:var(--theme-text-muted);display:block;margin-top:0.75rem"></span>
+</div><!-- /pane-ingest -->

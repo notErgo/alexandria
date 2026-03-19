@@ -6,6 +6,7 @@ import json
 import re
 import ast
 from pathlib import Path
+from scripts.template_source import load_template_source
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,22 +22,21 @@ REQUIRED_COMPONENT_IDS = {
     "1.1",
     "2.0",
     "2.1",
-    "2.1.1",
-    "2.1.4",
-    "2.1.5",
     "2.2",
     "2.2.2",
     "2.3",
     "2.3.2",
-    "3.0",
-    "3.1",
-    "3.2",
+    "2.4",
+    "2.5",
+    "2.5.1",
+    "2.5.2",
+    "2.6",
+    "2.6.1",
     "5.0",
-    "5.1",
-    "5.2",
+    "5.1.2",
     "6.0",
-    "MD5.3",
-    "MD5.4",
+    "7.0",
+    "7.3",
 }
 
 
@@ -45,11 +45,23 @@ def load_spec() -> dict:
         return json.load(f)
 
 
+def load_pipeline_ui_params() -> dict[str, str]:
+    text = (ROOT / "src" / "routes" / "pipeline.py").read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    for node in tree.body:
+        if not isinstance(node, ast.AnnAssign):
+            continue
+        if not isinstance(node.target, ast.Name) or node.target.id != "PIPELINE_UI_PARAMS":
+            continue
+        return ast.literal_eval(node.value)
+    raise AssertionError("PIPELINE_UI_PARAMS not found in src/routes/pipeline.py")
+
+
 def anchors_in_template(template_name: str) -> set[str]:
-    path = TEMPLATES_DIR / template_name
-    if not path.exists():
+    try:
+        text = load_template_source(template_name)
+    except FileNotFoundError:
         return set()
-    text = path.read_text(encoding="utf-8")
     return set(re.findall(r'data-spec-id="([^"]+)"', text))
 
 
@@ -213,33 +225,15 @@ class TestUiSpec:
         missing = REQUIRED_COMPONENT_IDS - spec_ids
         assert not missing, f"REQUIRED IDs not in spec: {missing}"
 
-    def test_dag_spec_ids_are_valid(self):
-        """All spec_ids values in dag.json must exist in ui_spec.json."""
-        dag_file = ROOT / "docs" / "architecture" / "dag.json"
-        if not dag_file.exists():
-            import pytest
-            pytest.skip("dag.json not found")
-        dag = json.loads(dag_file.read_text(encoding="utf-8"))
-        spec_ids = {c["id"] for c in load_spec()["components"]}
-        invalid = []
-        for node in dag.get("nodes", []):
-            for sid in node.get("spec_ids", []):
-                if sid not in spec_ids:
-                    invalid.append(f"dag node '{node['id']}' has spec_id '{sid}' not in ui_spec.json")
-        assert not invalid, "\n".join(invalid)
-
     def test_pipeline_ui_params_wired(self):
         """Every entry in pipeline.PIPELINE_UI_PARAMS must have a matching
         element id in ops.html.  This catches backend params that were added
         but never exposed in the UI (the 'include_crawl dead-end' class of bug).
         """
-        import sys
-        sys.path.insert(0, str(ROOT / 'src'))
-        from routes.pipeline import PIPELINE_UI_PARAMS
-
-        ops_html = (TEMPLATES_DIR / 'ops.html').read_text(encoding='utf-8')
+        pipeline_ui_params = load_pipeline_ui_params()
+        ops_html = load_template_source('ops.html')
         missing = []
-        for param, element_id in PIPELINE_UI_PARAMS.items():
+        for param, element_id in pipeline_ui_params.items():
             if f'id="{element_id}"' not in ops_html:
                 missing.append(
                     f"pipeline param '{param}' expects element id='{element_id}' in ops.html — not found"
@@ -338,11 +332,11 @@ class TestUiSpec:
             template = comp.get("template")
             if not template:
                 continue
-            path = TEMPLATES_DIR / template
-            if not path.exists():
+            try:
+                text = load_template_source(template)
+            except FileNotFoundError:
                 missing.append(f"{comp_id} template missing: {template}")
                 continue
-            text = path.read_text(encoding="utf-8")
             expected_class = f"source-badge-{source.lower()}"
             pattern = rf'{re.escape(comp_id)}(.|\n){{0,350}}{re.escape(expected_class)}'
             if not re.search(pattern, text):

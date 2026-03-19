@@ -6,7 +6,7 @@ Exported:
 """
 import logging
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Optional
 
 log = logging.getLogger('miners.interpreters.qc_check')
@@ -45,7 +45,7 @@ def run_ticker_health_check(db, ticker: str, months: int = 24) -> dict:
     """
     from interpreters.outlier import detect_outlier
 
-    generated_at = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+    generated_at = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # ── Check 1: Outlier scan ────────────────────────────────────────────────
     outliers = []

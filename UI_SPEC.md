@@ -228,17 +228,25 @@ Template: `index.html`
 
 ---
 
-## MD5.0  `/miner-data`  — Miner Data Page
+## 2.5.2  `/ops?tab=review`  — Review Timeline
 
-Template: `miner_data.html`.
+Canonical template: `ops.html`.
 
-| ID      | Component | Source | API endpoint(s) | Script(s) |
-|---------|-----------|--------|-----------------|-----------|
-| MD5.1   | Company selector + month timeline table | DATA | `GET /api/miner/<ticker>/timeline` | Per-company monthly data grid; method badges; inline cell edit |
-| MD5.2   | Doc panel | DATA | `GET /api/operations/manifest/<id>/preview` | `doc_panel.js` |
-| MD5.3   | Interpret sub-view | DATA | `GET /api/miner/<ticker>/sec` · `GET /api/miner/<ticker>/interpret` | Reconciliation summary, analyst commentary, LLM reprompt, finalize staging |
-| MD5.3.1 | Start extraction | DATA | `POST /api/operations/interpret` · `GET /api/operations/interpret/<id>/progress` | `doExtract()` in `miner_data.js`; source scope (IR+SEC / IR only / SEC only) |
-| MD5.4   | LLM CSV export (unreviewed) | DATA | `GET /api/export_llm_csv?ticker=X` | Direct LLM output — not validated by agreement engine |
+Legacy note: `/miner-data` and `miner_data.html` still exist as a legacy review surface, but the
+canonical runtime entry point is the Review tab on `/ops`.
+
+| ID | Component | Source | API endpoint(s) | Script(s) |
+|----|-----------|--------|-----------------|-----------|
+| 2.5.2 | Review > Miner Timeline sub-tab | n/a | — | `ops.html` review pane |
+| 2.5.2.1 | Controls bar | n/a | — | Company selector + view toggles |
+| 2.5.2.2 | Monthly PRs / 8-K table view | DATA | `GET /api/miner/<ticker>/timeline` | Monthly review table; inline edit; CSV paste |
+| 2.5.2.3 | SEC filings table view | DATA | `GET /api/miner/<ticker>/sec` | Quarterly / annual SEC-only track |
+| 2.5.2.4 | Interpret view | n/a | `GET /api/miner/<ticker>/interpret` | Reconciliation summary, analyst commentary, LLM reprompt, finalize staging |
+| 2.5.2.5 | Custom prompt panel | n/a | `POST /api/operations/interpret` · `GET /api/interpret/<ticker>/generate_prompt` | Prompt override before extraction |
+| 2.5.2.6 | Document viewer panel | DATA | `GET /api/operations/manifest/<id>/preview` | `doc_panel.js` |
+
+Legacy-only review controls previously kept on `miner_data.html` were removed in the cleanup pass on
+2026-03-19. The remaining canonical review controls are tracked under `2.5.2.1` through `2.5.2.6`.
 
 ---
 

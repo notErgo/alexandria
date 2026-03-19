@@ -1,0 +1,278 @@
+<!-- ── Interpret pane ──────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-interpret" data-ui-id="2.4" data-spec-id="2.4">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="extract" onclick="activatePipelineSubTab('interpret','extract')" data-ui-id="2.4.1" data-spec-id="2.4.1">Extract <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="qc" onclick="activatePipelineSubTab('interpret','qc')" data-ui-id="2.4.2" data-spec-id="2.4.2">QC <span class="wf-path-badge wf-optional">Optional</span></button>
+  </div>
+
+  <!-- Sub-pane: Extract (3.1) -->
+  <div class="pipeline-sub-pane active" id="spane-interpret-extract" data-ui-id="2.4.1" data-spec-id="2.4.1">
+
+    <!-- Prompt preview — review before running extraction -->
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="2.2.4.2" data-spec-id="2.2.4.2">
+      <div class="section-header-row" style="margin-bottom:0.5rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.2</span>Prompt Preview <span class="wf-path-badge wf-critical">Critical</span></h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Assembled prompt the LLM receives — verify before running extraction</span>
+        <button class="btn btn-sm btn-secondary" onclick="loadPromptPreview()" style="margin-left:auto">Refresh</button>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600">Ticker hint</label>
+        <select id="prompt-preview-ticker" style="font-size:0.82rem;padding:0.15rem 0.3rem">
+          <option value="">(none)</option>
+        </select>
+        <label style="font-size:0.78rem;font-weight:600;margin-left:0.75rem">Period type</label>
+        <select id="prompt-preview-period-type" style="font-size:0.82rem;padding:0.15rem 0.3rem" onchange="loadPromptPreview()">
+          <option value="monthly">Monthly (press release / 8-K)</option>
+          <option value="quarterly">Quarterly (10-Q)</option>
+          <option value="annual">Annual (10-K)</option>
+        </select>
+        <span style="font-size:0.76rem;color:var(--theme-text-muted)">Select a ticker to inject its company context hint.</span>
+      </div>
+      <textarea id="prompt-preview-text" rows="14" readonly
+        style="width:100%;font-family:ui-monospace,monospace;font-size:0.72rem;line-height:1.5;resize:vertical;background:var(--theme-bg-tertiary);border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem;color:var(--theme-text-secondary)"
+        placeholder="Click Refresh to render the current prompt…"></textarea>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.4rem">
+        Active keywords from Track Config &rarr; Companies are injected automatically.
+        Use the Prompt Editor below to override per-metric prompts before running extraction.
+      </p>
+    </div>
+
+    <!-- Prompt Editor — per-metric DB override -->
+    <div class="card" style="margin-bottom:1.25rem" data-ui-id="2.2.4.3" data-spec-id="2.2.4.3">
+      <div class="section-header-row" style="margin-bottom:0.6rem">
+        <h3 style="margin:0;font-size:0.9rem"><span class="spec-id">2.2.4.3</span>Prompt Editor</h3>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.5rem">Edit and save a DB override for any metric — takes effect immediately on the next extraction run</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.6rem">
+        <label style="font-size:0.78rem;font-weight:600">Metric</label>
+        <select id="pe-metric-select" style="font-size:0.82rem;padding:0.2rem 0.4rem;min-width:200px" onchange="peLoadPrompt()">
+          <option value="">Loading…</option>
+        </select>
+        <span id="pe-source-label" style="font-size:0.72rem;padding:2px 7px;border-radius:3px;display:none"></span>
+        <span id="pe-updated-at" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
+        <button class="btn btn-sm btn-secondary" style="margin-left:auto" onclick="peResetPrompt()" id="pe-reset-btn" title="Remove DB override and revert to hardcoded default" disabled>Reset to default</button>
+      </div>
+      <textarea id="pe-prompt-text" rows="8"
+        style="width:100%;font-family:ui-monospace,monospace;font-size:0.72rem;line-height:1.5;resize:vertical;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem;color:var(--theme-text-primary);overflow-y:hidden"
+        placeholder="Select a metric to load its prompt…" spellcheck="false"
+        oninput="peAutoResize(this)"></textarea>
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+        <button class="btn btn-sm btn-primary" onclick="peSavePrompt()" id="pe-save-btn" disabled>Save override</button>
+        <span id="pe-char-count" style="font-size:0.72rem;color:var(--theme-text-muted)"></span>
+        <span id="pe-save-msg" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+      </div>
+      <p style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.5rem;margin-bottom:0">
+        <strong>How prompts are resolved at runtime (lookup order):</strong>
+        (1) <code>llm_prompts</code> override (this form, <code>active=1</code>) — highest priority, takes effect on next extraction without restart.
+        (2) <code>metric_schema.prompt_instructions</code> — edit inline via the Prompt button in the metric table above.
+        (3) Built-in hardcoded default in <code>llm_interpreter.py</code> — used when neither of the above is set.
+        "Reset to default" sets <code>active=0</code> on the DB row; tier 2 or 3 then applies.
+      </p>
+    </div>
+
+    <div id="interpret-metric-toggles-panel" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+        <span style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary)">Active Metrics</span>
+        <button class="btn btn-sm btn-secondary" onclick="loadInterpretMetricToggles(true)"
+                style="padding:1px 8px;font-size:0.72rem">Refresh</button>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted);margin-left:auto">
+          Active metrics are included in every extraction run.
+        </span>
+      </div>
+      <div id="interpret-metric-toggles" style="display:flex;flex-wrap:wrap;gap:0.3rem 0.5rem">
+        <span style="font-size:0.78rem;color:var(--theme-text-muted)">Loading...</span>
+      </div>
+    </div>
+
+    <div class="acq-section-label"><span class="spec-id">2.4.1.1</span>LLM Extraction</div>
+    <div class="acq-panel" data-ui-id="2.4.1.1" data-spec-id="2.4.1.1">
+      <div id="interpret-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.3rem"></div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.75rem">
+        Leave empty to run all active companies. Multi-select runs only the selected tickers.
+      </div>
+
+      <!-- Source docs + interpretation date window -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Source docs</label>
+        <select id="extract-cadence" style="font-size:0.82rem;padding:0.2rem 0.4rem" onchange="onSourceDocsChange()" title="Which document types to process">
+          <option value="all">All types</option>
+          <option value="monthly">Press releases only  (monthly → monthly rows directly)</option>
+          <option value="sec">10-Q + 10-K filings  (SEC → needs gap-fill for monthly)</option>
+          <option value="quarterly">10-Q filings only  (quarterly → needs gap-fill for monthly)</option>
+          <option value="annual">10-K filings only  (annual → needs gap-fill for monthly)</option>
+        </select>
+        <span style="font-size:0.78rem;font-weight:600;white-space:nowrap;margin-left:0.5rem">Interpret Date Window</span>
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">From</label>
+        <input id="extract-from" type="date"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:145px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">To</label>
+        <input id="extract-to" type="date"
+          style="font-size:0.82rem;padding:0.2rem 0.4rem;width:145px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">Blank = unbounded on that side</span>
+      </div>
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem;line-height:1.45">
+        Filters which stored documents already present in <code>reports</code> are sent to the LLM for interpretation.
+        This control does not scrape or ingest missing source documents; run an ingest path first if the report is not yet stored.
+        Bounds are inclusive: <code>report_date &gt;= From</code> and <code>report_date &lt;= To</code>.
+      </div>
+
+      <!-- Expected granularity selector -->
+      <div class="form-group" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Expected granularity</label>
+        <div class="btn-group" role="group" id="granularity-selector">
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-monthly" value="monthly" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary btn-sm" for="gran-monthly">Monthly</label>
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-quarterly" value="quarterly" autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="gran-quarterly">Quarterly</label>
+          <input type="radio" class="btn-check" name="expected_granularity" id="gran-annual" value="annual" autocomplete="off">
+          <label class="btn btn-outline-secondary btn-sm" for="gran-annual">Annual</label>
+        </div>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">LLM results with a different period scope are rejected at write time</span>
+      </div>
+
+      <!-- Gap-fill option — shown when source includes 10-Q or 10-K -->
+      <div id="extract-gapfill-row" style="display:none;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-muted)">
+          <input id="extract-auto-gapfill" type="checkbox" checked>
+          Run gap-fill after extraction
+          <span style="font-size:0.72rem;color:var(--theme-text-muted)">(infers missing monthly rows from the quarterly totals just extracted)</span>
+        </label>
+      </div>
+
+      <!-- Queue all for review -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">
+          <input id="extract-force-review" type="checkbox"> Queue all for review
+        </label>
+        <span style="font-size:0.72rem;color:var(--theme-text-muted)">
+          Route every extracted result to the Review queue regardless of confidence. Use to audit whether extraction is working correctly.
+        </span>
+      </div>
+
+      <!-- Sample mode -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">
+          <input id="extract-sample-enabled" type="checkbox" onchange="toggleSampleMode()"> Sample mode
+        </label>
+        <span id="extract-sample-controls" style="display:none;gap:0.4rem;align-items:center;flex-wrap:wrap">
+          <input id="extract-sample-n" type="number" min="1" max="10" value="5"
+            style="font-size:0.82rem;padding:0.2rem 0.4rem;width:60px;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)">
+          <span style="font-size:0.78rem;color:var(--theme-text-muted)">
+            docs (max 10) — random pick for prompt iteration.
+            Only the periods covered by the sampled docs are overwritten;
+            all other existing data points are untouched. No implicit purge.
+          </span>
+        </span>
+      </div>
+
+      <div style="display:flex;gap:0.9rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.55rem">
+        <label style="font-size:0.78rem;color:var(--theme-text-secondary);display:flex;flex-direction:column;gap:0.25rem">
+          <span>Extract workers</span>
+          <input id="interpret-extract-workers" type="number" min="1" max="16" step="1" value="8" style="width:6rem;font-size:0.82rem;padding:0.24rem 0.4rem">
+        </label>
+        <div style="font-size:0.72rem;color:var(--theme-text-muted);line-height:1.4;max-width:28rem">
+          Same LLM worker control as the full pipeline. Use <code>1</code> for stable prompt iteration, or raise it for faster multi-doc runs.
+        </div>
+      </div>
+
+      <!-- Run mode -->
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+        <label style="font-size:0.78rem;font-weight:600;white-space:nowrap">Run mode</label>
+        <select id="extract-mode" style="font-size:0.82rem;padding:0.2rem 0.4rem;border:1px solid var(--theme-border);border-radius:4px;background:var(--theme-bg-secondary);color:var(--theme-text-primary)" onchange="onExtractModeChange()">
+          <option value="resume">Resume — new docs only (skip already-extracted)</option>
+          <option value="backfill">Backfill — periods with no data only</option>
+          <option value="force">Force re-extract — re-run all, keep existing data</option>
+          <option value="reset">Full Reset — purge data + review queue, then re-extract</option>
+        </select>
+      </div>
+      <div id="extract-mode-hint" style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem;line-height:1.5">
+        Processes only reports not yet extracted. Analyst-approved rows are never overwritten.
+      </div>
+      <div id="extract-reset-warning" style="display:none;font-size:0.72rem;color:var(--theme-danger);margin-bottom:0.5rem;line-height:1.5;padding:0.35rem 0.5rem;border:1px solid var(--theme-danger);border-radius:4px">
+        Full Reset clears extraction outputs (data_points, review_queue, final_data_points) for the selected ticker(s), then re-extracts from all existing source documents. Source documents are never deleted. A ticker must be selected — global reset is blocked here.
+      </div>
+
+      <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.6rem;line-height:1.45">
+        LLM extraction requires active metric keywords. If <code>metric_schema.keywords</code> is empty or fully inactive, the run is blocked until keywords are added.
+      </div>
+
+      <!-- Model + run -->
+      <div class="acq-actions">
+        <input id="extract-force" type="hidden" value="0">
+        <select id="extract-model" style="max-width:260px" onchange="saveOllamaModel(this.value)" title="Active Ollama model">
+          <option value="">Loading models…</option>
+        </select>
+        <button id="extract-start-btn" class="btn btn-sm btn-primary" onclick="startExtractionRun()">Start Extraction (Stored Reports)</button>
+      </div>
+      <div id="extract-status" class="acq-status">Idle</div>
+      <div id="extract-log" class="acq-log" style="display:none"></div>
+    </div>
+
+    <!-- Re-extract gap months (3.1.2) -->
+    <div class="acq-section-label" style="margin-top:1.25rem"><span class="spec-id">2.4.1.2</span>Re-extract Gap Months</div>
+    <div class="acq-panel" data-ui-id="2.4.1.2" data-spec-id="2.4.1.2">
+      <p style="font-size:0.78rem;color:var(--theme-text-muted);margin:0 0 0.75rem;line-height:1.55">
+        Finds already-ingested documents that completed extraction but are missing data for the
+        selected metrics, then re-sends only those documents to the LLM.
+        Does not trigger a new scrape — source documents must already be present in the
+        <code>reports</code> table.
+        Analyst-protected rows (<code>analyst</code>, <code>review_approved</code>,
+        <code>review_edited</code>) are never overwritten.
+        Use <span class="spec-id-inline">2.4.1.1</span> when you want to re-run extraction over a
+        date window; use this panel when targeted metric-level gaps need backfilling.
+      </p>
+
+      <div style="display:flex;gap:0.75rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:0.6rem">
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.3rem">Tickers</label>
+          <div id="gap-ticker-bar" style="display:flex;gap:0.3rem;flex-wrap:wrap;max-width:520px"></div>
+          <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-top:0.25rem">Leave empty to run all active companies.</div>
+        </div>
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;display:block;margin-bottom:0.3rem">Metrics to backfill (select one or more):</label>
+          <select id="gap-metric-list" multiple size="5"
+            style="font-size:0.8rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);border-radius:4px;padding:2px 4px;min-width:14rem">
+          </select>
+        </div>
+      </div>
+
+      <div class="acq-actions">
+        <button id="gap-reextract-btn" class="btn btn-sm btn-secondary" onclick="runRequeueMissing()">Re-extract gaps</button>
+        <button class="btn btn-sm btn-secondary" onclick="runGapDiagnosis()" style="margin-left:0.5rem">Diagnose</button>
+      </div>
+      <div id="gap-reextract-status" class="acq-status">Idle</div>
+      <div id="gap-reextract-log" class="acq-log" style="display:none"></div>
+      <div id="gap-diagnosis-out" style="display:none;margin-top:0.75rem;font-size:0.78rem;background:var(--theme-surface-alt,rgba(0,0,0,0.15));padding:0.6rem 0.75rem;border-radius:4px;white-space:pre-wrap;font-family:ui-monospace,monospace;line-height:1.45"></div>
+    </div>
+  </div><!-- /spane-interpret-extract -->
+
+  <!-- Sub-pane: QC (3.2) -->
+  <div class="pipeline-sub-pane" id="spane-interpret-qc" data-ui-id="2.4.2" data-spec-id="2.4.2">
+    <div class="section-header-row">
+      <h3 style="font-size:0.9rem;margin:0"><span class="spec-id">2.4.2</span>QC Snapshots</h3>
+      <button class="btn btn-sm btn-secondary" onclick="captureQCSnapshot()">Capture Snapshot</button>
+      <span id="qc-msg" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.5rem">
+      Captures precision/recall metrics for the current extraction state.
+    </p>
+    <div id="qc-table-wrap" style="overflow-x:auto">
+      <table style="width:100%;font-size:0.8rem;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:1px solid var(--theme-border)">
+            <th style="text-align:left;padding:0.2rem 0.5rem">Date</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Auto-accepted</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Approved</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Rejected</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Edited</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Precision est.</th>
+            <th style="text-align:right;padding:0.2rem 0.5rem">Recall est.</th>
+          </tr>
+        </thead>
+        <tbody id="qc-table-body">
+          <tr><td colspan="7" style="padding:0.5rem;color:var(--theme-text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /spane-interpret-qc -->
+</div><!-- /pane-interpret -->

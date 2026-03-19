@@ -848,53 +848,6 @@ body.dev-no-tips .info-bubble { display: none !important; }
 }
 
 /* ── Projected (forward-filled) row styles ───────────────────────────────────── */
-tr.row-projected td {
-    opacity: 0.5;
-}
-tr.row-projected .td-projected {
-    font-style: italic;
-    color: var(--theme-text-muted);
-}
-.badge-method-proj {
-    background: rgba(148,163,184,0.2);
-    color: #94a3b8;
-}
-
-/* ── Projection config dropdown panel ───────────────────────────────────────── */
-.proj-config-panel {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 120;
-    background: var(--theme-bg-secondary);
-    border: 1px solid var(--theme-border);
-    border-radius: 6px;
-    padding: 0.75rem;
-    width: 280px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-}
-.proj-config-panel label {
-    display: block;
-    font-size: 0.8rem;
-    color: var(--theme-text-secondary);
-    margin-bottom: 0.15rem;
-}
-.proj-config-panel .proj-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-.proj-config-panel input[type=number] {
-    width: 60px;
-    background: var(--theme-bg-input);
-    border: 1px solid var(--theme-border);
-    border-radius: 4px;
-    color: var(--theme-text-primary);
-    padding: 0.2rem 0.35rem;
-    font-size: 0.8rem;
-}
-
 /* ── Sync button (edit-mode toolbar) ────────────────────────────────────────── */
 .btn-sync {
     background: #1a7f5a;

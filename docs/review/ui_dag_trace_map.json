@@ -1,0 +1,3872 @@
+{
+  "metadata": {
+    "generator_version": "2026-03-19.2",
+    "input_files": [
+      "static/data/ui_spec.json",
+      "docs/architecture/operations.json",
+      "docs/architecture/dag.json",
+      "cli.py"
+    ],
+    "input_hash": "408ec33de818cd43d6c19c170a8cfd23fa41e66fabadd7ae02e9cf0e783fc863"
+  },
+  "note": "Derived mapping from ui_spec.json -> operations.json -> dag.json. dag.json remains UI-agnostic.",
+  "components": [
+    {
+      "id": "1.0",
+      "name": "Landing Page",
+      "template": "landing.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "1.1",
+      "name": "Scorecard table",
+      "template": "landing.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/scorecard"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "2.0",
+      "name": "Operations Page",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.1",
+      "name": "Workflow tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [
+        {
+          "id": "ingest_edgar",
+          "name": "Ingest EDGAR filings",
+          "route_nodes": [
+            "routes.reports"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.reports",
+            "scrapers.edgar_connector"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.reports"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.reports",
+        "scrapers.edgar_connector"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2",
+      "name": "Track Config tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.1",
+      "name": "Track Config > Companies sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.1.1",
+      "name": "Add Company form + bulk paste",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/companies"
+      ],
+      "operations": [
+        {
+          "id": "list_companies",
+          "name": "List companies",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "create_company",
+          "name": "Create company",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.1.2",
+      "name": "Scraper governance probe",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.2",
+      "name": "Track Config > Companies Table sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [
+        {
+          "id": "restore_companies",
+          "name": "Restore companies from config",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.2.1",
+      "name": "Companies table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/companies"
+      ],
+      "operations": [
+        {
+          "id": "restore_companies",
+          "name": "Restore companies from config",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "detect_btc_anchor",
+          "name": "Detect BTC mining pivot date (EDGAR scan)",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies",
+            "scrapers.edgar_connector"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies",
+        "scrapers.edgar_connector"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.2.2",
+      "name": "Scrape Queue table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/scrape/queue"
+      ],
+      "operations": [
+        {
+          "id": "view_scrape_queue",
+          "name": "View scrape queue",
+          "route_nodes": [
+            "routes.scrape"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.scrape"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.scrape"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.scrape"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.2.3",
+      "name": "SCRAPE stage delete form",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/delete/scrape"
+      ],
+      "operations": [
+        {
+          "id": "purge_scrape_stage",
+          "name": "Purge scrape-stage data",
+          "route_nodes": [
+            "routes.data_points"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.data_points"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.data_points"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.data_points"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.3",
+      "name": "Track Config > Metrics & Keywords sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.3.1",
+      "name": "Metrics & Keywords table + add form",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/metric_schema",
+        "/api/metric_schema/<key>/keywords"
+      ],
+      "operations": [
+        {
+          "id": "list_metric_schema",
+          "name": "List metric schema",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "add_metric_schema",
+          "name": "Add metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "update_metric_schema",
+          "name": "Update metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "delete_metric_schema",
+          "name": "Delete metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.4",
+      "name": "Track Config > Settings sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.4.1",
+      "name": "Ollama Concurrency card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.4.2",
+      "name": "Rendered Prompt Preview card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.4.3",
+      "name": "Prompt Editor card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/llm_prompts",
+        "/api/llm_prompts/<metric>"
+      ],
+      "operations": [
+        {
+          "id": "list_llm_prompts",
+          "name": "List LLM prompts",
+          "route_nodes": [
+            "routes.llm_prompts"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.llm_prompts"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "get_llm_prompt",
+          "name": "Get LLM prompt detail",
+          "route_nodes": [
+            "routes.llm_prompts"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.llm_prompts"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "update_llm_prompt",
+          "name": "Update LLM prompt",
+          "route_nodes": [
+            "routes.llm_prompts"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.llm_prompts"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "reset_llm_prompt",
+          "name": "Reset LLM prompt override",
+          "route_nodes": [
+            "routes.llm_prompts"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.llm_prompts"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.llm_prompts"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.llm_prompts"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.4.4",
+      "name": "Metric Rules card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/metric_schema"
+      ],
+      "operations": [
+        {
+          "id": "list_metric_schema",
+          "name": "List metric schema",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "add_metric_schema",
+          "name": "Add metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "update_metric_schema",
+          "name": "Update metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "delete_metric_schema",
+          "name": "Delete metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.4.4.1",
+      "name": "Rules table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/metric_schema"
+      ],
+      "operations": [
+        {
+          "id": "list_metric_schema",
+          "name": "List metric schema",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "add_metric_schema",
+          "name": "Add metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "update_metric_schema",
+          "name": "Update metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "delete_metric_schema",
+          "name": "Delete metric schema row",
+          "route_nodes": [
+            "routes.companies"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.companies"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.companies"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.companies"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.4.5",
+      "name": "llama-server Config card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.5",
+      "name": "Track Config > Crawl Setup sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.5.1",
+      "name": "Crawl ticker bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.5.2",
+      "name": "Crawl provider/model selector",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.2.5.3",
+      "name": "Crawl prompt editor",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/crawl/prompt/<ticker>"
+      ],
+      "operations": [
+        {
+          "id": "view_crawl_prompt",
+          "name": "View crawl prompt",
+          "route_nodes": [
+            "routes.crawl"
+          ],
+          "direct_dag_nodes": [
+            "routes.crawl"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.crawl"
+      ],
+      "direct_dag_nodes": [
+        "routes.crawl"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.2.6",
+      "name": "Track Config > Purge Stages sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/delete/all",
+        "/api/delete/scrape",
+        "/api/delete/review",
+        "/api/delete/final"
+      ],
+      "operations": [
+        {
+          "id": "purge_reset",
+          "name": "Purge all data (reset mode)",
+          "route_nodes": [
+            "routes.data_points"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.data_points"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.data_points"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.data_points"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3",
+      "name": "Ingest tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.3.1",
+      "name": "Run full pipeline card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.3.2",
+      "name": "Shared ticker selector",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.3.3",
+      "name": "Ingest > SEC EDGAR filings card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/ingest/edgar",
+        "/api/ingest/<id>/progress"
+      ],
+      "operations": [
+        {
+          "id": "ingest_edgar",
+          "name": "Ingest EDGAR filings",
+          "route_nodes": [
+            "routes.reports"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.reports",
+            "scrapers.edgar_connector"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.reports"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.reports",
+        "scrapers.edgar_connector"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.4",
+      "name": "Ingest > IR press releases & archive card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/ingest/ir",
+        "/api/ingest/archive"
+      ],
+      "operations": [
+        {
+          "id": "ingest_ir",
+          "name": "Ingest IR press releases",
+          "route_nodes": [
+            "routes.reports"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.reports",
+            "scrapers.ir_scraper"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.reports"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.reports",
+        "scrapers.ir_scraper"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.4.1",
+      "name": "Acquisition action buttons",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/ingest/ir",
+        "/api/ingest/archive"
+      ],
+      "operations": [
+        {
+          "id": "ingest_archive",
+          "name": "Ingest archive documents",
+          "route_nodes": [
+            "routes.reports"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.reports",
+            "scrapers.archive_ingestor"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.reports"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.reports",
+        "scrapers.archive_ingestor"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.4.2",
+      "name": "Run All Sources button",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/ingest/all"
+      ],
+      "operations": [
+        {
+          "id": "ingest_all_sources",
+          "name": "Ingest all configured sources",
+          "route_nodes": [
+            "routes.reports"
+          ],
+          "direct_dag_nodes": [
+            "routes.reports",
+            "scrapers.edgar_connector",
+            "scrapers.ir_scraper"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.reports"
+      ],
+      "direct_dag_nodes": [
+        "routes.reports",
+        "scrapers.edgar_connector",
+        "scrapers.ir_scraper"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.5",
+      "name": "Ingest > LLM-Directed Crawl card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [
+        {
+          "id": "view_crawl_prompt",
+          "name": "View crawl prompt",
+          "route_nodes": [
+            "routes.crawl"
+          ],
+          "direct_dag_nodes": [
+            "routes.crawl"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "view_crawl_status",
+          "name": "View crawl status",
+          "route_nodes": [
+            "routes.crawl"
+          ],
+          "direct_dag_nodes": [
+            "routes.crawl",
+            "scrapers.llm_crawler"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.crawl"
+      ],
+      "direct_dag_nodes": [
+        "routes.crawl",
+        "scrapers.llm_crawler"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.5.1",
+      "name": "Research grid",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/crawl/status"
+      ],
+      "operations": [
+        {
+          "id": "view_crawl_status",
+          "name": "View crawl status",
+          "route_nodes": [
+            "routes.crawl"
+          ],
+          "direct_dag_nodes": [
+            "routes.crawl",
+            "scrapers.llm_crawler"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.crawl"
+      ],
+      "direct_dag_nodes": [
+        "routes.crawl",
+        "scrapers.llm_crawler"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.5.2",
+      "name": "Research log panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.3.6",
+      "name": "Ingest status card",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [
+        {
+          "id": "view_pipeline_observability",
+          "name": "View pipeline observability snapshot",
+          "route_nodes": [
+            "routes.operations"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.operations"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "routes.companies",
+            "routes.reports",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.operations"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.operations"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "routes.companies",
+        "routes.reports",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.3.6.1",
+      "name": "Pipeline observability summary",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.3.6.2",
+      "name": "Pipeline observability table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/operations/pipeline_observability"
+      ],
+      "operations": [
+        {
+          "id": "view_pipeline_observability",
+          "name": "View pipeline observability snapshot",
+          "route_nodes": [
+            "routes.operations"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.operations"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "routes.companies",
+            "routes.reports",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.operations"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.operations"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "routes.companies",
+        "routes.reports",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.4",
+      "name": "Interpret tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.4.1",
+      "name": "Interpret > Extract sub-pane",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.4.1.1",
+      "name": "LLM extraction panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/operations/interpret"
+      ],
+      "operations": [
+        {
+          "id": "run_extraction",
+          "name": "Run extraction pipeline",
+          "route_nodes": [
+            "routes.operations"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.operations"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "routes.companies",
+            "routes.reports",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.operations"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.operations"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "routes.companies",
+        "routes.reports",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.4.1.2",
+      "name": "Re-extract gap months panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.4.2",
+      "name": "Interpret > QC sub-pane",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/qc/snapshot",
+        "/api/qc/summary"
+      ],
+      "operations": [
+        {
+          "id": "view_qc_summary",
+          "name": "View QC snapshots and summary",
+          "route_nodes": [
+            "routes.qc"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.qc"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.qc"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.qc"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5",
+      "name": "Review tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.1",
+      "name": "Review > Queue sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review",
+        "/api/delete/review"
+      ],
+      "operations": [
+        {
+          "id": "view_review_queue",
+          "name": "View review queue",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.review"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.review"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5.1.1",
+      "name": "Review filter bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.1.2",
+      "name": "Load-for-review button",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.1.3",
+      "name": "Bulk actions row",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.1.4",
+      "name": "Review table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review"
+      ],
+      "operations": [
+        {
+          "id": "view_review_queue",
+          "name": "View review queue",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.review"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.review"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5.2",
+      "name": "Review > Miner Data sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.1",
+      "name": "Controls bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.1.1",
+      "name": "Ticker select",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.1.2",
+      "name": "Period / date range filters",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.1.3",
+      "name": "Coverage summary bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.1.4",
+      "name": "View toggle buttons (Monthly / SEC / Interpret)",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.2",
+      "name": "Monthly PRs/8-K table view",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.2.1",
+      "name": "Bulk CSV Paste",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/interpret/<ticker>/finalize"
+      ],
+      "operations": [
+        {
+          "id": "finalize_review_values",
+          "name": "Finalize staged review values",
+          "route_nodes": [
+            "routes.interpret"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.interpret"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.interpret"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.interpret"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5.2.3",
+      "name": "SEC Filings table view",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4",
+      "name": "Interpret view",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4.1",
+      "name": "Reconciliation Summary",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4.2",
+      "name": "Analyst Commentary",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4.3",
+      "name": "Pattern Suggestions",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4.4",
+      "name": "Staged for Finalization",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.4.5",
+      "name": "Finalized Values",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.5.2.5",
+      "name": "Custom prompt panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/operations/interpret",
+        "/api/interpret/<ticker>/generate_prompt"
+      ],
+      "operations": [
+        {
+          "id": "generate_extraction_prompt",
+          "name": "Generate extraction prompt",
+          "route_nodes": [
+            "routes.interpret"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.llm_interpreter",
+            "routes.interpret"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.interpret"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.llm_interpreter",
+        "routes.interpret"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5.2.6",
+      "name": "Document viewer panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/operations/manifest/<id>/preview"
+      ],
+      "operations": [
+        {
+          "id": "preview_manifest_document",
+          "name": "Preview manifest document",
+          "route_nodes": [
+            "routes.operations"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.operations"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_bridge",
+            "infra.db",
+            "infra.ollama_warmup",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.context_window",
+            "interpreters.interpret_pipeline",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "interpreters.outlier",
+            "interpreters.report_text",
+            "interpreters.result_router",
+            "miner_types",
+            "orchestration",
+            "parsers.annual_report_parser",
+            "parsers.press_release_parser",
+            "routes.companies",
+            "routes.reports",
+            "scrapers.archive_ingestor",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.html_downloader",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.operations"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.operations"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_bridge",
+        "infra.db",
+        "infra.ollama_warmup",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.context_window",
+        "interpreters.interpret_pipeline",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "interpreters.outlier",
+        "interpreters.report_text",
+        "interpreters.result_router",
+        "miner_types",
+        "orchestration",
+        "parsers.annual_report_parser",
+        "parsers.press_release_parser",
+        "routes.companies",
+        "routes.reports",
+        "scrapers.archive_ingestor",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.html_downloader",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.5.3",
+      "name": "Review > Highlight Dictionary sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.6",
+      "name": "Data tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.6.1",
+      "name": "Data > Explorer sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.6.1.1",
+      "name": "Explorer filter bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.6.1.2",
+      "name": "Explorer coverage heatmap",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/explorer/grid"
+      ],
+      "operations": [
+        {
+          "id": "mark_gap",
+          "name": "Mark cell as explicit gap",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "reextract_cell",
+          "name": "Re-extract selection (regex only)",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "interpreters.interpret_pipeline",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.1.3",
+      "name": "Cell detail panel",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/explorer/cell/<ticker>/<period>/<metric>"
+      ],
+      "operations": [
+        {
+          "id": "analyst_cell_save",
+          "name": "Analyst edit (cell save)",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.1.4",
+      "name": "Cell save action",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/explorer/cell/.../save"
+      ],
+      "operations": [
+        {
+          "id": "analyst_cell_save",
+          "name": "Analyst edit (cell save)",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.1.5",
+      "name": "Cell gap action",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/explorer/cell/.../gap"
+      ],
+      "operations": [
+        {
+          "id": "mark_gap",
+          "name": "Mark cell as explicit gap",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.1.6",
+      "name": "Re-extract action",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/explorer/reextract"
+      ],
+      "operations": [
+        {
+          "id": "reextract_cell",
+          "name": "Re-extract selection (regex only)",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "interpreters.interpret_pipeline",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "interpreters.interpret_pipeline",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.2",
+      "name": "Data > Registry sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [
+        {
+          "id": "browse_registry",
+          "name": "Browse document registry",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.3",
+      "name": "Data > Documents sub-tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data/documents",
+        "/api/data/document/<id>"
+      ],
+      "operations": [
+        {
+          "id": "list_documents",
+          "name": "List ingested documents",
+          "route_nodes": [
+            "routes.data_points"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.data_points"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "open_document",
+          "name": "Open ingested document",
+          "route_nodes": [
+            "routes.data_points"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.data_points"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.data_points"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.data_points"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.6.2.1",
+      "name": "Registry filter bar",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.6.2.2",
+      "name": "Registry table",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/registry"
+      ],
+      "operations": [
+        {
+          "id": "browse_registry",
+          "name": "Browse document registry",
+          "route_nodes": [
+            "routes.explorer"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.explorer"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "coverage_logic",
+            "infra.db",
+            "infra.text_utils",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.explorer"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.explorer"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "coverage_logic",
+        "infra.db",
+        "infra.text_utils",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "2.7",
+      "name": "Health tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "2.8",
+      "name": "Interrogate tab",
+      "template": "ops.html",
+      "status": "canonical",
+      "display_only": true,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "display_only"
+    },
+    {
+      "id": "3.0",
+      "name": "Data Explorer Page",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.1",
+      "name": "Mode toggle bar",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.2",
+      "name": "Mode A \u2014 filter form",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.3",
+      "name": "Mode A \u2014 results table",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.4",
+      "name": "Mode A \u2014 Export CSV button",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/export.csv"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.5",
+      "name": "Mode A \u2014 lineage panel",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data/lineage"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.6",
+      "name": "Mode B \u2014 document list",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data/documents"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "3.7",
+      "name": "Mode B \u2014 document viewer",
+      "template": "index.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data/document/<id>"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.0",
+      "name": "Diagnostics Page",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.1",
+      "name": "Diagnostic charts container",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/diagnostics"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.1.1",
+      "name": "Coverage heatmap",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/diagnostics"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.1.2",
+      "name": "Pattern usage chart",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/diagnostics"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.1.3",
+      "name": "Confidence distribution chart",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/diagnostics"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "4.1.4",
+      "name": "Keyword frequency chart",
+      "template": "diagnostics.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/diagnostics"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "5.0",
+      "name": "Dashboard Page",
+      "template": "dashboard.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "5.1",
+      "name": "Metric panels",
+      "template": "dashboard.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "5.1.1",
+      "name": "View toggle (Overview/Stacked Bar/Timeseries)",
+      "template": "dashboard.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "5.1.2",
+      "name": "Filter bar (companies, date range, theme)",
+      "template": "dashboard.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "6.0",
+      "name": "Company Detail Page",
+      "template": "company.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "6.1",
+      "name": "Company header",
+      "template": "company.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/companies/<ticker>"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "6.2",
+      "name": "Metric history charts",
+      "template": "company.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/data?ticker=X"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "6.3",
+      "name": "Reports panel (company context)",
+      "template": "company.html",
+      "status": "active",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.0",
+      "name": "Review Queue Page",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.1",
+      "name": "Page header + keyboard shortcuts",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.2",
+      "name": "Left panel \u2014 review items",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.2.1",
+      "name": "Filter bar: status/ticker/period/metric",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.2.2",
+      "name": "Load-for-review button",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.2.3",
+      "name": "Bulk actions row",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review/<id>/approve"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.2.4",
+      "name": "Review items table",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review"
+      ],
+      "operations": [
+        {
+          "id": "approve_review",
+          "name": "Approve review item",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        },
+        {
+          "id": "reject_review",
+          "name": "Reject review item",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.review"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.review"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "7.3",
+      "name": "Right panel \u2014 document viewer",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review/<id>/document"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.3.1",
+      "name": "Approve action",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review/<id>/approve"
+      ],
+      "operations": [
+        {
+          "id": "approve_review",
+          "name": "Approve review item",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.review"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.review"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "7.3.2",
+      "name": "Reject action",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review/<id>/reject"
+      ],
+      "operations": [
+        {
+          "id": "reject_review",
+          "name": "Reject review item",
+          "route_nodes": [
+            "routes.review"
+          ],
+          "direct_dag_nodes": [
+            "infra.db",
+            "routes.review"
+          ],
+          "reachable_dag_nodes": [
+            "app_globals",
+            "config",
+            "infra.db",
+            "infra.text_utils",
+            "interpreters.confidence",
+            "interpreters.llm_interpreter",
+            "interpreters.llm_prompt_builder",
+            "miner_types",
+            "scrapers.dedup",
+            "scrapers.edgar_connector",
+            "scrapers.fetch_policy",
+            "scrapers.ir_scraper",
+            "scrapers.scrape_worker"
+          ]
+        }
+      ],
+      "route_nodes": [
+        "routes.review"
+      ],
+      "direct_dag_nodes": [
+        "infra.db",
+        "routes.review"
+      ],
+      "reachable_dag_nodes": [
+        "app_globals",
+        "config",
+        "infra.db",
+        "infra.text_utils",
+        "interpreters.confidence",
+        "interpreters.llm_interpreter",
+        "interpreters.llm_prompt_builder",
+        "miner_types",
+        "scrapers.dedup",
+        "scrapers.edgar_connector",
+        "scrapers.fetch_policy",
+        "scrapers.ir_scraper",
+        "scrapers.scrape_worker"
+      ],
+      "coverage_status": "operation_traced"
+    },
+    {
+      "id": "7.3.3",
+      "name": "Re-extract action",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/review/<id>/reextract"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    },
+    {
+      "id": "7.4",
+      "name": "Purge Final Data section",
+      "template": "review.html",
+      "status": "active_standalone",
+      "display_only": false,
+      "api_endpoints": [
+        "/api/delete/final",
+        "/api/interpret/<ticker>/final"
+      ],
+      "operations": [],
+      "route_nodes": [],
+      "direct_dag_nodes": [],
+      "reachable_dag_nodes": [],
+      "coverage_status": "unmapped_noncanonical"
+    }
+  ],
+  "unresolved_operation_files": []
+}

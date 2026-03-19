@@ -11,6 +11,8 @@ build/
 *.db
 *.db-shm
 *.db-wal
+llm.log
+nohup.out
 # Raw archive data — regenerable, too large for git
 historic_parsing/
 # LibreOffice/OpenOffice lock files

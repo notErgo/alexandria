@@ -8,7 +8,8 @@ Machine-readable module dependency graph for `OffChain/miners`.
 |------|--------|---------|
 | `dag.json` | JSON | Module import graph — nodes with layer metadata, edges with optional notes |
 | `dag.dot` | Graphviz DOT | Visual render source for `dag.json` |
-| `operations.json` | JSON | Operation contracts — SSOT read priority, pipeline stage DAG, per-operation code paths (UI → route → DB). Read by `tests/test_ui_spec.py` validators. |
+| `operations.json` | JSON | Operation contracts — SSOT read priority, pipeline stage DAG, per-operation code paths (UI → route → DB). Validated by architecture contract tests. |
+| `../review/runtime_inventory.json` | JSON | Optional generated inventory for runtime topology review work |
 
 ## Conventions
 
@@ -31,20 +32,36 @@ Graphviz install: `brew install graphviz`
 
 ## Validation
 
-TODO: write `scripts/check_dag.py` to validate this DAG programmatically. It should:
-1. Load `dag.json`
-2. Run topological sort — fail if a cycle exists
-3. For each edge, assert `from.layer >= to.layer` — report violations
-4. Find unreachable nodes (no path from any L5 route) — report dead ends
-5. Find nodes with no outgoing edges other than L0 (leaf nodes) — informational
+```bash
+python3 scripts/check_dag.py
+python3 scripts/check_dag.py --strict
+pytest -q tests/test_architecture_contracts.py
+```
 
-## Known Issues (as of 2026-03-09)
+`scripts/check_dag.py` validates graph integrity, cycles, layer violations, stale references, and unreachable nodes.
+
+## Review Workflow
+
+For architecture and cleanup work, start here before opening large source files:
+
+1. Read `dag.json` for module/layer topology.
+2. Read `operations.json` for UI-to-route-to-DB behavior contracts.
+3. Run `python3 scripts/dag_context.py` for a compact summary suitable for review notes or LLM context.
+4. Run `python3 scripts/ui_dag_trace.py` to resolve `ui_spec` IDs into operation IDs, route nodes, and downstream DAG nodes.
+5. Run `python3 scripts/dag_ui_reverse_trace.py` to resolve DAG nodes and routes back to UI, CLI, worker, test, and docs consumers.
+6. Open source files only for the specific path or subsystem you are tracing.
+
+`dag.json` owns module dependency metadata only. UI component IDs live in `ui_spec.json`; operation/UI mappings live in `operations.json`.
+
+Checked-in review artifacts under `docs/review/` are governed snapshots. Their embedded input hash
+must match the current `ui_spec.json`, `operations.json`, `dag.json`, and `cli.py`.
+
+## Known Issues (as of 2026-03-19)
 
 | Module | Issue |
 |--------|-------|
 | `parsers.press_release_parser` | Imports `parsers.annual_report_parser` — shared helpers should move to `parsers.utils` |
-| `routes.miner` | Directly imports `interpreters.regex_interpreter` — bypasses `app_globals` boundary |
-| `routes.review` | Directly imports `interpreters.llm_interpreter` and `regex_interpreter` — bypasses `app_globals` boundary |
+| `routes.review` | Directly imports `interpreters.llm_interpreter` — bypasses `app_globals` boundary |
 | `routes.config` | Directly imports `interpreters.llm_interpreter` — bypasses `app_globals` boundary |
 | `routes.llm_prompts` | Directly imports `interpreters.llm_interpreter` — bypasses `app_globals` boundary |
 | `routes.operations` | Imports `routes.reports` and `routes.companies` — same-layer L5→L5 coupling |

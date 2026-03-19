@@ -1,0 +1,519 @@
+<!-- ── Review pane (4.0) ─────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-review" data-ui-id="2.5" data-spec-id="2.5">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab" data-spane="queue" onclick="activatePipelineSubTab('review','queue')" data-ui-id="2.5.1" data-spec-id="2.5.1">Review Queue <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab active" data-spane="miner" onclick="activatePipelineSubTab('review','miner')" data-ui-id="2.5.2" data-spec-id="2.5.2">Miner Timeline <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="highlight" onclick="activatePipelineSubTab('review','highlight')" data-ui-id="2.5.3" data-spec-id="2.5.3">Highlight <span class="wf-path-badge wf-optional">Optional</span></button>
+  </div>
+
+  <!-- Sub-pane: Review timeline (4.0) — inlined from miner_data.html -->
+  <div class="pipeline-sub-pane active" id="spane-review-miner" data-ui-id="2.5.2" data-spec-id="2.5.2">
+
+<!-- How this works — pipeline explanation -->
+<details style="margin-bottom:1rem;border:1px solid var(--theme-border);border-radius:4px;padding:0.5rem 0.75rem">
+  <summary style="font-weight:600;font-size:0.85rem;cursor:pointer;user-select:none">How this works — document to monthly slot pipeline</summary>
+  <div style="font-size:0.82rem;line-height:1.6;margin-top:0.75rem;color:var(--theme-text)">
+
+    <p><strong>Three views, two data tracks.</strong> The toggle at the top of this panel switches between three views. The first two correspond to distinct data tracks that are kept separate in the database:</p>
+    <ul>
+      <li><strong>Monthly PRs / 8-K</strong> — monthly-granularity records (period format: YYYY-MM). These come from IR press releases, archive PDFs/HTMLs, and monthly production 8-K filings. Each document covers one calendar month. This is the primary view for month-by-month analysis.</li>
+      <li><strong>SEC Filings (10-Q / 10-K)</strong> — quarterly/annual-granularity records (period format: YYYY-Qn or YYYY-FY). These come from 10-Q and 10-K filings. Each document covers an entire quarter or fiscal year. Values here are <em>not</em> visible in the Monthly view — they live in separate slots.</li>
+      <li><strong>Interpret</strong> — manual LLM reprompt and per-report extraction controls.</li>
+    </ul>
+
+    <p><strong>Sources.</strong> Each document stream feeds one of the two tracks:</p>
+    <ul>
+      <li><strong>Monthly press releases (PR/IR)</strong> — filed by the company on its investor-relations page, typically within a week of month-end. Each document covers one calendar month. Goes to the Monthly track.</li>
+      <li><strong>SEC 8-K filings (monthly production)</strong> — many miners also file monthly production results as an 8-K. The period is derived from the filing's <em>period_of_report</em> field (last day of production month), not the SEC submission date, so the data lands in the correct month. Goes to the Monthly track.</li>
+      <li><strong>SEC 10-Q / 10-K filings</strong> — quarterly and annual reports. The pipeline anchors on the MD&amp;A section (Item 2 for 10-Q, Item 7 for 10-K), skipping any Table-of-Contents entry with the same heading. Extracted values are stored against the quarter (e.g. "2024-Q3") or fiscal year (e.g. "2024-FY"). Goes to the SEC track only.</li>
+    </ul>
+
+    <p><strong>Stage 1 — Ingest (fetch and store).</strong> Documents are fetched and raw text is stored in the <em>reports</em> table. No extraction happens yet. The document is assigned a <em>source_type</em> (archive_html, archive_pdf, ir_press_release, edgar_8k, edgar_10q, edgar_10k).</p>
+    <p><strong>Stage 2 — Keyword gate.</strong> Before any LLM call, the pipeline checks whether the document contains at least one mining-related anchor phrase (e.g. "bitcoin produced", "hash rate", "BTC mined"). Documents with no matching phrases are skipped and marked <em>keyword_gated</em>.</p>
+    <p><strong>Stage 3 — LLM extraction.</strong> Documents that pass the gate are sent to the local Qwen LLM in a single batch call. The LLM returns a JSON object with one value per metric. A confidence score is computed per value. Values below the 0.75 threshold, or flagged as statistical outliers, are routed to the <strong>Review Queue</strong>. Values above the threshold are written directly to <strong>data_points</strong> as auto-accepted.</p>
+
+    <p><strong>How 10-Q/10-K quarterly totals reach monthly slots — gap-fill.</strong> Because 10-Q and 10-K values are stored at quarterly/annual granularity, they do not appear in the Monthly view automatically. To propagate them into monthly slots, run the <strong>gap-fill</strong> step (Operations &rarr; Interpret tab &rarr; Gap Fill, or <code>cli.py gap-fill --ticker TICKER</code>). Gap-fill uses the quarterly total as a constraint and infers individual monthly values using delta inference for flow metrics (production, sales) or endpoint propagation for snapshot metrics (holdings). Inferred monthly values are written to the Monthly track with method badge <strong>D</strong> (derived) and are always overridden by a directly extracted monthly value if one exists.</p>
+
+    <p><strong>Source priority within the Monthly track.</strong> When multiple documents contribute a value for the same month and metric, the highest-authority source wins:</p>
+    <ol>
+      <li><strong>Analyst / finalized</strong> — manually confirmed or edited. Never overwritten by the pipeline.</li>
+      <li><strong>EDGAR (8-K)</strong> — auto-accepted from a monthly production 8-K (source priority 1).</li>
+      <li><strong>IR press release</strong> — auto-accepted from the company's investor-relations page (source priority 2).</li>
+      <li><strong>Archive</strong> — auto-accepted from a locally stored historical PDF or HTML (source priority 3).</li>
+      <li><strong>Derived (gap-fill)</strong> — inferred from a quarterly total (source priority 4).</li>
+    </ol>
+    <p>If a value is in the Review Queue (not yet approved), the cell shows <span class="source-badge source-badge-review">R</span>. Approving it promotes it to data_points at the analyst tier.</p>
+    <p><strong>Method badges.</strong> <strong>L</strong> = LLM auto-accepted, <strong>R</strong> = regex pattern match, <strong>A</strong> = analyst entry, <strong>F</strong> = finalized, <strong>D</strong> = derived (gap-fill), <strong>S</strong> = SEC filing, <strong>P</strong> = press release.</p>
+    <p><strong>Coverage bar.</strong> Shows what fraction of expected monthly slots have at least one accepted value. Gaps are months where no document produced a confident value and no analyst has filled them in.</p>
+  </div>
+</details>
+
+<!-- Chart panel (collapsed by default; opens after finalize) -->
+<div id="chart-panel" style="display:none; margin-bottom:1rem">
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+    <span style="font-size:0.85rem;font-weight:600">Metric Chart</span>
+    <select id="chart-metric-select" multiple size="1"
+      style="min-width:180px" onchange="renderMinerChart()">
+    </select>
+    <label style="font-size:0.78rem;display:flex;align-items:center;gap:0.3rem">
+      <input type="checkbox" id="chart-finalized-only" checked onchange="renderMinerChart()">
+      Finalized only
+    </label>
+    <button class="btn btn-sm btn-secondary" onclick="hideChartView()">Hide chart</button>
+  </div>
+  <div id="miner-echarts" style="width:100%;height:320px"></div>
+</div>
+<div style="margin-bottom:0.5rem">
+  <button class="btn btn-sm btn-secondary" id="btn-show-chart" onclick="showChartView()">
+    Show chart
+  </button>
+</div>
+
+<div class="md-page">
+  <h1 class="page-title" style="margin:0" data-spec-id="2.5.2"><span class="spec-id">2.5.2</span>Miner Data</h1>
+
+  <!-- ── Company tabs ─────────────────────────────────────────────────── -->
+  <div class="md-review-controls" data-spec-id="2.5.2.1">
+  <div id="company-tabs" class="md-tabs" data-spec-id="2.5.2.1.1">
+    <span style="color:var(--theme-text-muted);font-size:0.82rem;align-self:center">
+      <span class="spin"></span> Loading companies…
+    </span>
+  </div>
+
+  <!-- ── Source toggle strip ─────────────────────────────────────────── -->
+  <div class="source-toggle" data-spec-id="2.5.2.1.4">
+    <button class="source-toggle-btn active" data-view="monthly" onclick="switchView('monthly')">Monthly PRs / 8-K</button>
+    <button class="source-toggle-btn" data-view="sec" onclick="switchView('sec')">SEC Filings (10-Q / 10-K)</button>
+    <button class="source-toggle-btn" data-view="interpret" onclick="switchView('interpret')">Interpret</button>
+  </div>
+  </div>
+
+  <!-- ── Monthly view ─────────────────────────────────────────────────── -->
+  <div id="view-monthly" data-spec-id="2.5.2.2">
+  <!-- ── Upper area ──────────────────────────────────────────────────── -->
+  <div class="md-upper">
+
+    <!-- Left: company info -->
+    <div class="md-info-card" id="company-info">
+      <div class="md-info-placeholder">Select a company above.</div>
+    </div>
+
+    <!-- Right: filters + table -->
+    <div class="md-table-panel" id="miner-review-table-panel" data-spec-id="2.5.2.2">
+      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+        <span class="spec-id">2.5.2.2</span>Reports Table <span class="source-badge source-badge-data">DATA</span>
+      </div>
+      <div class="md-table-filters" data-spec-id="2.5.2.1.2">
+        <div class="md-mode-toggle">
+          <button class="btn btn-secondary btn-sm active" id="table-mode-view-btn" onclick="setMinerTableMode('view')">View</button>
+          <button class="btn btn-secondary btn-sm" id="table-mode-edit-btn" onclick="setMinerTableMode('edit')">Edit</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="add-row-btn" onclick="toggleAddRowPanel()" style="display:none">Add Row</button>
+        <button class="btn btn-secondary btn-sm" id="csv-paste-btn" onclick="openCsvPasteModal()" style="display:none" data-ui-id="2.5.2.2.1" data-spec-id="2.5.2.2.1">Paste CSV</button>
+        <button id="sync-btn" class="btn-sync" onclick="syncEdits()" style="display:none">Sync</button>
+        <label>
+          <input type="checkbox" id="filter-gaps-only"> Gaps only
+        </label>
+        <label>
+          <input type="checkbox" id="filter-show-incomplete"> Incomplete only
+        </label>
+        <label>
+          From <input type="month" id="filter-from" style="margin-left:0.3rem">
+        </label>
+        <label>
+          To <input type="month" id="filter-to" style="margin-left:0.3rem">
+        </label>
+        <!-- Column visibility toggle -->
+        <div style="margin-left:auto;position:relative;" id="col-vis-wrap">
+          <button class="btn btn-secondary btn-sm" onclick="toggleColMenu()" id="col-vis-btn"
+            style="font-size:0.78rem;padding:0.2rem 0.55rem;">Columns &#9660;</button>
+          <div id="col-vis-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);
+            background:var(--theme-bg-secondary);border:1px solid var(--theme-border);
+            border-radius:6px;padding:0.5rem 0.75rem;z-index:50;min-width:180px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.4px;color:var(--theme-text-muted);margin-bottom:.4rem;">Show columns</div>
+            <!-- metric checkboxes injected by buildTableHeaders() -->
+            <div id="col-vis-metrics"></div>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-type" checked> Type</label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:0.8rem;cursor:pointer;padding:.15rem 0"><input type="checkbox" class="col-vis-cb" data-col="doc-date" checked> Date</label>
+          </div>
+        </div>
+        <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
+      </div>
+      <div id="add-row-panel" style="display:none;padding:0.5rem 0.75rem;border-bottom:1px solid var(--theme-border);background:var(--theme-bg-primary)">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <label style="font-size:0.78rem">Period <input type="month" id="add-row-period" style="margin-left:0.3rem"></label>
+          <button class="btn btn-primary btn-sm" onclick="addManualRow()">Create Empty Row</button>
+          <span id="add-row-status" style="font-size:0.76rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
+      <!-- Coverage summary bar — populated by loadCoverageSummary() -->
+      <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem" data-spec-id="2.5.2.1.3">
+        <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
+        <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
+          <span style="color:var(--theme-text-muted)">Loading…</span>
+        </div>
+      </details>
+      <details id="table-help" style="flex-shrink:0;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.78rem;color:var(--theme-text-muted)">
+        <summary style="cursor:pointer;user-select:none;color:var(--theme-accent)">How to use this table</summary>
+        <ul style="margin:0.4rem 0 0.3rem 1.1rem;padding:0;line-height:1.7;color:var(--theme-text-secondary)">
+          <li><strong>View/Edit toggle</strong> controls interaction. In View mode, left click does not mutate table state. In Edit mode, click a metric cell to edit it and use Add Row to create a manual month.</li>
+          <li><strong>Editing a cell</strong> — click any metric cell in Edit mode to open an inline number input. Type a value, then press <strong>Enter</strong> or click <strong>OK</strong> to save it immediately. Press <strong>Escape</strong> to discard the change and restore the original value.</li>
+          <li><strong>Switching to View mode with an open edit</strong> — clicking View (or any action that exits Edit mode) while a cell input is open automatically saves the typed value, equivalent to pressing OK. No data is lost.</li>
+          <li><strong>Sync button</strong> — appears in Edit mode. Clicking it saves any open cell input and confirms all edits have been written to the database. Use it for peace of mind before navigating away.</li>
+          <li><strong>Click a row in View mode</strong> — opens the document list directly below that row in the table.</li>
+          <li><strong>Click a document in that row list</strong> — opens the review panel below the table for that specific source document.</li>
+          <li><strong>Checkboxes only</strong> select rows for batch accept. <strong>Shift+click</strong> on checkboxes selects a range.</li>
+          <li><strong>Hover over a value cell</strong> — browser tooltip shows the raw source snippet that produced the value.</li>
+          <li><strong>Method badges</strong> next to values: R = regex, L = LLM, A = analyst, F = finalized, D = derived, S = SEC filing, P = pipeline.</li>
+          <li><strong>Columns button</strong> — toggle individual metric columns on/off.</li>
+        </ul>
+      </details>
+      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.75rem;border-bottom:1px solid var(--theme-border)">
+        <button id="batch-accept-btn" class="btn btn-primary btn-sm" disabled onclick="batchAcceptSelected()">Batch Accept</button>
+        <span class="md-edit-banner" id="table-mode-banner">View mode: checkbox-only selection, right-click rows for documents.</span>
+      </div>
+      <div class="md-table-scroll" id="miner-review-table-scroll">
+        <table id="timeline-table">
+          <thead>
+            <tr id="timeline-thead-row">
+              <th style="width:30px;min-width:28px"><input type="checkbox" id="select-all-rows-cb" title="Select / deselect all rows" onchange="toggleSelectAll(this.checked)"></th>
+              <th data-sort="period">Period</th>
+              <!-- metric columns injected by buildTableHeaders() -->
+              <th data-col="doc-type">Type</th>
+              <th data-col="doc-date">Date</th>
+              <th style="width:60px;min-width:60px"></th>
+            </tr>
+          </thead>
+          <tbody id="timeline-tbody">
+            <tr><td colspan="20" class="md-table-empty">Select a company to load data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="miner-review-doc-anchor"></div>
+    </div>
+
+  </div><!-- /.md-upper -->
+  </div><!-- /#view-monthly -->
+
+  <!-- ── SEC view ────────────────────────────────────────────────────── -->
+  <div id="view-sec" style="display:none" data-spec-id="2.5.2.3">
+    <div class="md-upper">
+      <div class="md-info-card" id="sec-info-card" style="font-size:0.82rem;color:var(--theme-text-secondary)">
+        <div class="md-info-placeholder">Select a company to load SEC data.</div>
+      </div>
+      <div class="md-table-panel">
+        <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600">
+          SEC Filings <span class="source-badge source-badge-data">10-Q / 10-K</span>
+        </div>
+        <div class="md-table-scroll">
+          <table id="sec-timeline-table">
+            <thead>
+              <tr id="sec-thead-row">
+                <th>Period</th>
+                <!-- columns injected by buildSecHeaders() -->
+                <th data-col="sec-doc-type">Type</th>
+                <th data-col="sec-doc-date">Date</th>
+              </tr>
+            </thead>
+            <tbody id="sec-timeline-tbody">
+              <tr><td colspan="10" class="md-table-empty">Select a company to load SEC data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div><!-- /#view-sec -->
+
+  <!-- ── Interpret view ──────────────────────────────────────────────── -->
+  <div id="view-interpret" style="display:none" data-spec-id="2.5.2.4">
+
+    <!-- Side-by-side reconciliation summary -->
+    <details open data-spec-id="2.5.2.4.1">
+      <summary class="interp-section-title" style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:0.4rem">
+        Reconciliation Summary
+      </summary>
+      <div id="interp-reconcile-wrap" style="overflow-x:auto;margin-top:0.4rem">
+        <table id="interp-reconcile-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Metric</th>
+              <th>Monthly Value</th><th>SEC Value</th><th>Finalized</th>
+            </tr>
+          </thead>
+          <tbody id="interp-reconcile-tbody">
+            <tr><td colspan="5" class="md-table-empty">Select a company and switch to this tab.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Analyst commentary -->
+    <div data-spec-id="2.5.2.4.2">
+      <div class="interp-section-title">Analyst Commentary</div>
+      <textarea id="interp-commentary" class="interp-commentary"
+        placeholder="Add context or reconciliation notes for the LLM prompt…"></textarea>
+    </div>
+
+    <!-- LLM extraction -->
+    <div>
+      <div style="margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem">
+        <label style="font-size:0.8rem;color:var(--theme-text-muted);white-space:nowrap">Source:</label>
+        <select id="extract-scope"
+          style="background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:2px 6px">
+          <option value="both">IR + SEC</option>
+          <option value="ir">IR / Archive only</option>
+          <option value="sec">SEC only</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="extract-btn" onclick="doExtract()">Start extraction</button>
+      <button class="btn btn-secondary btn-sm" id="custom-prompt-toggle" onclick="toggleCustomPrompt()" style="margin-left:0.5rem">Custom prompt</button>
+      <button class="btn btn-secondary btn-sm" id="suggestions-btn" onclick="loadExtractionSuggestions(_ticker, null)" style="margin-left:0.5rem">Suggestions</button>
+      <span id="miner-extract-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+    </div>
+
+    <!-- Pattern suggestions — shown after extraction completes -->
+    <div id="suggestion-panel" style="display:none;margin-top:0.75rem" data-spec-id="2.5.2.4.3">
+      <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.4rem;flex-wrap:wrap">
+        <span style="font-size:0.82rem;font-weight:600">Pattern Suggestions</span>
+        <span id="suggestion-count-badge" class="badge" style="margin-left:0.1rem"></span>
+        <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:0.2rem">
+          <strong>Found</strong> — text structures from successful extractions (data_points.source_snippet), clustered by normalized pattern and ranked by frequency.
+          <strong>Missed</strong> — context windows near metric keywords in reports where the LLM returned nothing (review_queue LLM_EMPTY items); indicates patterns the extractor may need to learn.
+          Up to 5 suggestions per metric. Apply to ticker hint or metric prompt to improve future extractions.
+        </span>
+        <button class="btn btn-xs btn-secondary" style="margin-left:auto"
+                onclick="closeSuggestionPanel()">Dismiss</button>
+      </div>
+      <div id="suggestion-list"></div>
+    </div>
+
+    <!-- Custom prompt panel (hidden by default) -->
+    <div id="custom-prompt-panel" style="display:none;margin-top:0.5rem" data-spec-id="2.5.2.5">
+      <textarea id="custom-prompt-input" rows="4"
+        placeholder="Paste or type a custom extraction prompt preamble…"
+        style="width:100%;box-sizing:border-box;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem;padding:0.3rem 0.5rem;resize:vertical"></textarea>
+    </div>
+
+    <!-- Staging list -->
+    <div id="staging-area" style="display:none" data-spec-id="2.5.2.4.4">
+      <div class="interp-section-title">Staged for Finalization</div>
+      <table id="staging-table">
+        <thead>
+          <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody id="staging-tbody"></tbody>
+      </table>
+      <div style="margin-top:0.5rem">
+        <button class="btn btn-primary btn-sm" onclick="finalizeSelected()">Finalize Selected</button>
+        <span id="finalize-status" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:0.5rem"></span>
+      </div>
+    </div>
+
+    <!-- Already-finalized values -->
+    <div data-spec-id="2.5.2.4.5">
+      <div class="interp-section-title">Finalized Values</div>
+      <div id="finalized-list-wrap" style="overflow-x:auto">
+        <table id="finalized-table">
+          <thead>
+            <tr><th>Period</th><th>Metric</th><th>Value</th><th>Unit</th><th>Note</th><th>Updated</th><th></th></tr>
+          </thead>
+          <tbody id="finalized-tbody">
+            <tr><td colspan="7" class="md-table-empty">No finalized values.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /#view-interpret -->
+
+
+</div><!-- /.md-page -->
+
+  <!-- Stage FINAL -->
+  <details style="margin-top:1.25rem">
+    <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+      Stage FINAL
+    </summary>
+    <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+
+      <!-- Per-ticker clear -->
+      <div style="margin-bottom:0.75rem">
+        <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for Ticker</div>
+        <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+          Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <select id="mn-pf-ticker" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+            onchange="mnPfOnTickerInput()">
+            <option value="">Select ticker…</option>
+          </select>
+          <input id="mn-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
+            style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+            oninput="mnPfOnTickerInput()">
+          <button class="btn btn-sm btn-danger" id="mn-pf-ticker-btn" onclick="mnPfClearTicker()" disabled>Delete FINAL</button>
+          <span id="mn-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
+
+      <!-- Global purge -->
+      <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
+        <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
+        <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+          Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <select id="mn-pf-mode" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+            <option value="clear">clear</option>
+            <option value="archive">archive</option>
+          </select>
+          <input id="mn-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
+            style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+            oninput="mnPfOnGlobalInput()">
+          <button class="btn btn-sm btn-danger" id="mn-pf-global-btn" onclick="mnPfPurgeAll()" disabled>Delete FINAL</button>
+          <span id="mn-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+        </div>
+      </div>
+
+    </div>
+  </details>
+
+  </div><!-- /spane-review-miner -->
+
+  <!-- Sub-pane: Review Queue (4.1) -->
+  <div class="pipeline-sub-pane" id="spane-review-queue" data-ui-id="2.5.1" data-spec-id="2.5.1">
+    <div class="section-header-row" style="margin-bottom:0.75rem">
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.5.1</span>Review Queue <span class="source-badge source-badge-review">REVIEW</span></h2>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.5.1.1" data-ui-id="2.5.1.1">
+      <input id="rv-ticker" type="text" maxlength="10" placeholder="Ticker" style="width:100px">
+      <select id="rv-status">
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="APPROVED">Approved</option>
+        <option value="REJECTED">Rejected</option>
+      </select>
+      <select id="rv-metric">
+        <option value="">All metrics</option>
+      </select>
+      <select id="rv-source-type">
+        <option value="">All sources</option>
+        <option value="edgar_8k">SEC 8-K</option>
+        <option value="edgar_10q">SEC 10-Q</option>
+        <option value="edgar_10k">SEC 10-K</option>
+        <option value="edgar_20f">SEC 20-F</option>
+        <option value="edgar_6k">SEC 6-K</option>
+        <option value="ir_press_release">IR Press Release</option>
+        <option value="archive_html">IR Archive (HTML)</option>
+        <option value="archive_pdf">IR Archive (PDF)</option>
+        <option value="prnewswire_press_release">PRNewswire</option>
+        <option value="wire_press_release">Wire</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="loadReview()" data-spec-id="2.5.1.2" data-ui-id="2.5.1.2">Refresh</button>
+      <span id="rv-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+    </div>
+
+    <!-- Bulk controls -->
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem" data-spec-id="2.5.1.3" data-ui-id="2.5.1.3">
+      <button id="rv-bulk-finalize" class="btn btn-sm btn-primary" disabled onclick="bulkFinalize()">Finalize Selected</button>
+      <button id="rv-promote-btn" class="btn btn-sm btn-outline-secondary" onclick="promoteDataPointsToReview()" title="Copy accepted data_points into review queue for inspection">Load extracted for review</button>
+      <span id="rv-promote-status" style="font-size:0.75rem;color:var(--theme-text-muted)"></span>
+      <span style="font-size:0.75rem;color:var(--theme-text-muted);margin-left:auto">J/K navigate &bull; A approve &bull; R reject &bull; Gen generates regex from snippet</span>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table class="review-table" id="review-table" data-ui-id="2.5.1.4" data-spec-id="2.5.1.4">
+        <thead>
+          <tr>
+            <th>Docs</th>
+            <th><input type="checkbox" id="rv-select-all" onclick="toggleSelectAll()"></th>
+            <th>Ticker</th>
+            <th>Period</th>
+            <th>Metric</th>
+            <th>Source</th>
+            <th style="text-align:right">Candidate</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="review-tbody">
+          <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted)">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Stage FINAL -->
+    <details style="margin-top:1.25rem">
+      <summary style="cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--theme-text-muted);user-select:none;padding:0.35rem 0">
+        Stage FINAL
+      </summary>
+      <div style="margin-top:0.75rem;background:var(--theme-bg-secondary);border:1px solid var(--theme-border);border-radius:8px;padding:1rem 1.25rem;font-size:0.82rem">
+
+        <!-- Per-ticker clear -->
+        <div style="margin-bottom:0.75rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for Ticker</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Deletes all <code>final_data_points</code> rows for one ticker. Type <code>CLEAR_FINAL_&lt;TICKER&gt;</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="rv-pf-ticker" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem"
+              onchange="rvPfOnTickerInput()">
+              <option value="">Select ticker…</option>
+            </select>
+            <input id="rv-pf-ticker-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_MARA"
+              style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+              oninput="rvPfOnTickerInput()">
+            <button class="btn btn-sm btn-danger" id="rv-pf-ticker-btn" onclick="rvPfClearTicker()" disabled>Delete FINAL</button>
+            <span id="rv-pf-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+
+        <!-- Global purge -->
+        <div style="border-top:1px solid var(--theme-border);padding-top:0.75rem">
+          <div style="font-weight:600;margin-bottom:0.25rem">Delete FINAL for All Tickers</div>
+          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
+            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <select id="rv-pf-mode" style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem">
+              <option value="clear">clear</option>
+              <option value="archive">archive</option>
+            </select>
+            <input id="rv-pf-global-confirm" type="text" maxlength="20" placeholder="CLEAR_FINAL_ALL"
+              style="background:var(--theme-bg-input);border:1px solid var(--theme-border);color:var(--theme-text-primary);padding:0.25rem 0.5rem;border-radius:4px;font-size:0.82rem;width:180px"
+              oninput="rvPfOnGlobalInput()">
+            <button class="btn btn-sm btn-danger" id="rv-pf-global-btn" onclick="rvPfPurgeAll()" disabled>Delete FINAL</button>
+            <span id="rv-pf-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+          </div>
+        </div>
+
+      </div>
+    </details>
+
+  </div><!-- /spane-review-queue -->
+
+  <!-- Sub-pane: Highlight Dictionary (4.3) -->
+  <div class="pipeline-sub-pane" id="spane-review-highlight" data-ui-id="2.5.3" data-spec-id="2.5.3">
+    <div class="section-header-row" style="margin-bottom:0.5rem">
+      <h2 style="margin:0;font-size:1rem"><span class="spec-id">2.5.3</span>Highlight Dictionary <span class="source-badge source-badge-config">CONFIG</span></h2>
+    </div>
+    <p style="font-size:0.8rem;color:var(--theme-text-muted);margin:0 0 0.75rem">
+      Terms highlighted in source document viewers (Explorer and Review). No effect on extraction — for readability only.
+    </p>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+      <label style="font-size:0.78rem;color:var(--theme-text-muted)">Pack</label>
+      <select id="kw-pack-select" style="min-width:170px"></select>
+      <button class="btn btn-sm btn-secondary" onclick="addKeywordPack()">+ Add Pack</button>
+      <button class="btn btn-sm btn-secondary" onclick="deleteKeywordPack()">Delete Pack</button>
+      <span id="kw-dict-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+    </div>
+    <textarea id="kw-pack-terms" rows="4" style="width:100%;font-family:ui-monospace,monospace;font-size:0.75rem" placeholder="one term per line"></textarea>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+      <button class="btn btn-sm btn-primary" onclick="saveKeywordDictionary()">Save</button>
+      <button class="btn btn-sm btn-secondary" onclick="loadKeywordDictionaryOptions()">Reload</button>
+    </div>
+  </div><!-- /spane-review-highlight -->
+</div>

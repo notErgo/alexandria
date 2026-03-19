@@ -1,0 +1,176 @@
+<!-- ── Data pane ───────────────────────────────────────────────────────── -->
+<div class="ops-pane" id="pane-data" data-ui-id="2.6" data-spec-id="2.6">
+  <div class="pipeline-sub-tabs">
+    <button class="pipeline-sub-tab active" data-spane="explorer" onclick="activatePipelineSubTab('data','explorer')" data-ui-id="2.6.1" data-spec-id="2.6.1">Explorer <span class="wf-path-badge wf-critical">Critical</span></button>
+    <button class="pipeline-sub-tab" data-spane="registry" onclick="activatePipelineSubTab('data','registry')" data-ui-id="2.6.2" data-spec-id="2.6.2">Registry <span class="wf-path-badge wf-optional">Optional</span></button>
+    <button class="pipeline-sub-tab" data-spane="documents" onclick="activatePipelineSubTab('data','documents');loadDocuments()" data-ui-id="2.6.3" data-spec-id="2.6.3">Documents <span class="wf-path-badge wf-optional">Optional</span></button>
+  </div>
+
+  <!-- Sub-pane: Explorer (5.1) -->
+  <div class="pipeline-sub-pane active" id="spane-data-explorer" data-ui-id="2.6.1" data-spec-id="2.6.1">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem" data-spec-id="2.6.1.1">
+    <input id="ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <select id="ex-state">
+      <option value="">All states</option>
+      <option value="data">data</option>
+      <option value="review_pending">review pending</option>
+      <option value="parse_failed">parse failed</option>
+      <option value="extract_failed">extract failed</option>
+      <option value="no_document">no document</option>
+      <option value="scraper_error">scraper error</option>
+      <option value="analyst_gap">analyst gap</option>
+    </select>
+    <select id="ex-metric">
+      <option value="">All metrics</option>
+    </select>
+    <select id="ex-months">
+      <option value="12">12 months</option>
+      <option value="24">24 months</option>
+      <option value="36" selected>36 months</option>
+      <option value="60">60 months</option>
+    </select>
+    <select id="ex-keyword-pack" title="Global keyword highlight pack">
+      <option value="">keywords: default</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadExplorer()">Search</button>
+    <span id="ex-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:0.75rem;font-size:0.72rem">
+    <span><span class="legend-dot" style="background:#22c55e"></span>data</span>
+    <span><span class="legend-dot" style="background:#f97316"></span>review pending</span>
+    <span><span class="legend-dot" style="background:#a855f7"></span>parse failed</span>
+    <span><span class="legend-dot" style="background:#ef4444"></span>extract failed</span>
+    <span><span class="legend-dot" style="background:#1e1e1e;border:1px solid #555"></span>no document</span>
+    <span><span class="legend-dot" style="background:#f43f5e"></span>scraper error</span>
+    <span><span class="legend-dot" style="background:#6b7280"></span>analyst gap</span>
+  </div>
+  <div class="explorer-wrap">
+    <div class="explorer-grid-scroll">
+      <div id="explorer-grid" data-ui-id="2.6.1.2" data-spec-id="2.6.1.2">
+        <div style="font-size:0.86rem;font-weight:600;margin-bottom:0.4rem">
+          <span class="spec-id">2.6.1.2</span>Coverage Heatmap <span class="source-badge source-badge-data">DATA</span>
+        </div>
+        <p style="color:var(--theme-text-muted);font-size:0.85rem">Run a search to load the grid.</p>
+      </div>
+    </div>
+    <div class="cell-detail" id="cell-detail-panel" style="display:none" data-ui-id="2.6.1.3" data-spec-id="2.6.1.3">
+      <div class="cell-detail-header" id="cell-detail-header"><span class="spec-id">2.6.1.3</span>Cell Detail Panel — <span id="cell-detail-header-text"></span> <span class="source-badge source-badge-data">DATA</span></div>
+      <div id="cell-detail-rows"></div>
+      <div class="cell-actions" id="cell-actions" data-spec-id="2.6.1.5"></div>
+      <div id="cell-save-form" style="display:none;margin-top:0.75rem" data-ui-id="2.6.1.4" data-spec-id="2.6.1.4">
+        <div style="font-size:0.78rem;margin-bottom:0.3rem;color:var(--theme-text-muted)">Edit value</div>
+        <div style="display:flex;gap:0.4rem;align-items:center">
+          <input id="cell-save-value" type="number" step="any" style="width:110px" placeholder="0.0">
+          <input id="cell-save-note" type="text" maxlength="500" style="flex:1" placeholder="Note (optional)">
+          <button class="btn btn-sm btn-primary" onclick="submitSaveCell()">Save</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-save-form').style.display='none'">&#215;</button>
+        </div>
+        <div id="cell-save-error" style="color:var(--theme-danger);font-size:0.75rem;margin-top:0.3rem"></div>
+      </div>
+      <div id="cell-reextract-panel" style="display:none" data-ui-id="2.6.1.6" data-spec-id="2.6.1.6">
+        <div style="font-size:0.78rem;color:var(--theme-text-muted);margin-bottom:0.4rem">Re-extract from selection</div>
+        <textarea id="cell-reextract-text" rows="4" style="width:100%;font-size:0.72rem;font-family:ui-monospace,monospace;resize:vertical" placeholder="Paste document text to extract from…"></textarea>
+        <div style="margin-top:0.3rem;display:flex;gap:0.4rem">
+          <button class="btn btn-sm btn-primary" onclick="submitReextract()">Extract</button>
+          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('cell-reextract-panel').style.display='none'">Cancel</button>
+        </div>
+        <div id="reextract-results" style="margin-top:0.5rem"></div>
+      </div>
+      <div id="cell-snippet" class="snippet-box" style="display:none"></div>
+    </div>
+  </div>
+  </div><!-- /spane-data-explorer -->
+
+  <!-- Sub-pane: Registry (5.2) -->
+  <div class="pipeline-sub-pane" id="spane-data-registry" data-ui-id="2.6.2" data-spec-id="2.6.2">
+  <div class="registry-filters" data-ui-id="2.6.2.1" data-spec-id="2.6.2.1">
+    <input id="reg-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <input id="reg-period" type="month" placeholder="Period">
+    <select id="reg-doc-type">
+      <option value="">All doc types</option>
+      <option value="ir_press_release">IR Press Release</option>
+      <option value="archive_html">IR Press Release (archive)</option>
+      <option value="archive_pdf">IR Press Release (archive PDF)</option>
+      <option value="edgar_8k">SEC 8-K</option>
+      <option value="edgar_10k">SEC 10-K</option>
+      <option value="edgar_10q">SEC 10-Q</option>
+      <option value="edgar_20f">SEC 20-F</option>
+      <option value="edgar_6k">SEC 6-K</option>
+    </select>
+    <select id="reg-extraction-status">
+      <option value="">All extraction</option>
+      <option value="not_extracted">not extracted</option>
+      <option value="extracted">extracted</option>
+      <option value="parse_failed">parse failed</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadRegistry()">Search</button>
+    <span id="reg-count" style="font-size:0.78rem;color:var(--theme-text-muted);margin-left:auto"></span>
+  </div>
+  <table id="registry-table" data-ui-id="2.6.2.2" data-spec-id="2.6.2.2">
+    <caption style="caption-side:top;text-align:left;margin-bottom:0.4rem;font-weight:600;color:var(--theme-text-primary)">
+      <span class="spec-id">2.6.2.2</span>Registry Table <span class="source-badge source-badge-data">DATA</span>
+    </caption>
+    <thead>
+      <tr>
+        <th data-sort="ticker">Ticker</th>
+        <th data-sort="period">Period</th>
+        <th>Doc Type</th>
+        <th>Ingest State</th>
+        <th data-sort="parse_quality">Parse</th>
+        <th>Extraction</th>
+        <th data-sort="char_count" data-sort-type="num">Chars</th>
+        <th data-sort="metrics_found" data-sort-type="num">Metrics</th>
+        <th>Extracted</th>
+        <th>File</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="registry-tbody">
+      <tr><td colspan="11" style="text-align:center;color:var(--theme-text-muted)">Run a search to load data.</td></tr>
+    </tbody>
+  </table>
+  <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-sm btn-secondary" onclick="backfillRawHtml()" title="Populate raw_html for archive_html reports ingested before schema v24 (raw_html column). Reads original files from source_url on disk. Idempotent.">Backfill raw HTML (pre-v24 archives)</button>
+    <span id="backfill-msg" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
+  </div>
+  </div><!-- /spane-data-registry -->
+
+  <!-- Sub-pane: Documents -->
+  <div class="pipeline-sub-pane" id="spane-data-documents" data-ui-id="2.6.3" data-spec-id="2.6.3">
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem">
+    <input id="doc-ex-ticker" type="text" maxlength="10" placeholder="Ticker (blank=all)" style="width:120px">
+    <select id="doc-ex-source">
+      <option value="">All sources</option>
+      <option value="ir_press_release">IR Press Release</option>
+      <option value="archive_html">Archive HTML</option>
+      <option value="archive_pdf">Archive PDF</option>
+      <option value="edgar_8k">EDGAR 8-K</option>
+      <option value="edgar_10q">EDGAR 10-Q</option>
+      <option value="edgar_10k">EDGAR 10-K</option>
+    </select>
+    <select id="doc-ex-extracted">
+      <option value="">All</option>
+      <option value="yes">Extracted only</option>
+      <option value="no">Not extracted</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="loadDocuments()">Search</button>
+    <span id="doc-ex-count" style="font-size:0.8rem;color:var(--theme-text-muted)"></span>
+  </div>
+  <div id="doc-ex-table-wrap" style="overflow-x:auto">
+    <table id="doc-ex-table" style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead>
+        <tr id="doc-ex-thead-row">
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Ticker</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Source</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Filing Date</th>
+          <th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--theme-border);white-space:nowrap">Period</th>
+          <!-- metric columns injected by JS -->
+        </tr>
+      </thead>
+      <tbody id="doc-ex-tbody">
+        <tr><td colspan="10" style="text-align:center;color:var(--theme-text-muted);padding:1rem">Run a search to load documents.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  </div><!-- /spane-data-documents -->
+</div><!-- /pane-data -->

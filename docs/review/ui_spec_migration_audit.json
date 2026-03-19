@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "generator_version": "2026-03-19.2",
+    "input_files": [
+      "static/data/ui_spec.json",
+      "docs/architecture/operations.json",
+      "docs/architecture/dag.json",
+      "cli.py"
+    ],
+    "input_hash": "408ec33de818cd43d6c19c170a8cfd23fa41e66fabadd7ae02e9cf0e783fc863"
+  },
+  "summary": {
+    "display_only": 46,
+    "operation_traced": 38,
+    "unmapped_canonical": 0,
+    "unmapped_noncanonical": 33
+  },
+  "unmapped_canonical": {
+    "with_endpoints": [],
+    "without_endpoints": []
+  }
+}

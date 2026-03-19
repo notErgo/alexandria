@@ -817,7 +817,7 @@ tr.is-reviewed td { opacity: 0.65; }
   <h1 class="page-title" style="margin:0" data-spec-id="2.5.2" data-ui-id="2.5.2"><span class="spec-id">2.5.2</span>Miner Data</h1>
 
   <!-- ── Company tabs ─────────────────────────────────────────────────── -->
-  <div id="company-tabs" class="md-tabs">
+  <div id="company-tabs" class="md-tabs" data-spec-id="2.5.2.1" data-ui-id="2.5.2.1">
     <span style="color:var(--theme-text-muted);font-size:0.82rem;align-self:center">
       <span class="spin"></span> Loading companies…
     </span>
@@ -842,7 +842,7 @@ tr.is-reviewed td { opacity: 0.65; }
 
     <!-- Right: filters + table -->
     <div class="md-table-panel" data-spec-id="2.5.2.2" data-ui-id="2.5.2.2">
-      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+      <div style="padding:0.6rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.9rem;font-weight:600;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap" data-spec-id="2.5.2.1.1" data-ui-id="2.5.2.1.1">
         <span><span class="spec-id">2.5.2.2</span>Reports Table <span class="source-badge source-badge-data">DATA</span></span>
         <button id="md-promote-btn" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem" onclick="mdPromoteToReview()" title="Queue all accepted data points for this ticker into the review table">Queue for review</button>
         <span id="md-promote-status" style="font-size:0.75rem;color:var(--theme-text-muted);font-weight:400"></span>
@@ -853,7 +853,7 @@ tr.is-reviewed td { opacity: 0.65; }
         </div>
       </div>
       <div id="table-mode-banner" style="padding:0.3rem 0.75rem;font-size:0.75rem;color:var(--theme-text-muted);background:var(--theme-bg-secondary);border-bottom:1px solid var(--theme-border)">View mode: click a row to open its document.</div>
-      <div class="md-table-filters">
+      <div class="md-table-filters" data-spec-id="2.5.2.1.2" data-ui-id="2.5.2.1.2">
         <label>
           <input type="checkbox" id="filter-gaps-only"> Gaps only
         </label>
@@ -884,7 +884,7 @@ tr.is-reviewed td { opacity: 0.65; }
         <span id="table-row-count" style="color:var(--theme-text-muted);font-size:0.78rem"></span>
       </div>
       <!-- Coverage summary bar — populated by loadCoverageSummary() -->
-      <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem">
+      <details id="coverage-summary-details" style="flex-shrink:0;padding:0.4rem 0.75rem;border-bottom:1px solid var(--theme-border);font-size:0.8rem" data-spec-id="2.5.2.1.3" data-ui-id="2.5.2.1.3">
         <summary style="cursor:pointer;color:var(--theme-text-muted);user-select:none">Coverage Summary</summary>
         <div id="coverage-summary-bar" style="margin-top:0.4rem;overflow-x:auto">
           <span style="color:var(--theme-text-muted)">Loading…</span>
@@ -1085,70 +1085,6 @@ tr.is-reviewed td { opacity: 0.65; }
       <div id="suggestion-list" style="display:flex;flex-direction:column;gap:0.5rem"></div>
     </div>
 
-    <!-- Projection & Export config -->
-    <div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid var(--theme-border)">
-      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
-        <!-- Projection config dropdown -->
-        <div style="position:relative">
-          <button id="proj-config-btn" class="btn btn-secondary btn-sm"
-            onclick="toggleProjPanel()"
-            title="Configure forward-fill projection and export">Projection &amp; Export</button>
-          <div id="proj-config-panel" class="proj-config-panel" style="display:none">
-            <div style="font-size:0.82rem;font-weight:600;color:var(--theme-text-primary);margin-bottom:0.5rem">Projection &amp; Export</div>
-
-            <!-- Forward-fill toggle -->
-            <div class="proj-row">
-              <input type="checkbox" id="proj-enabled-cb" onchange="onProjToggle(this.checked)">
-              <label for="proj-enabled-cb" style="margin:0;cursor:pointer">Enable forward-fill projection</label>
-            </div>
-
-            <!-- MA window -->
-            <div class="proj-row">
-              <label for="proj-window-input" style="margin:0;white-space:nowrap">MA window:</label>
-              <input type="number" id="proj-window-input" min="1" max="60" value="6"
-                style="width:60px"
-                onchange="onProjWindowChange(this.value)">
-              <span style="font-size:0.78rem;color:var(--theme-text-muted)">months</span>
-            </div>
-
-            <div style="font-size:0.72rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
-              Projects each metric forward from its last confirmed value using a moving average.
-              Projected cells appear faded (~) in the timeline.
-            </div>
-
-            <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
-              <div style="font-size:0.78rem;font-weight:600;color:var(--theme-text-secondary);margin-bottom:0.35rem">Export</div>
-
-              <!-- Ticker selection for export -->
-              <div style="margin-bottom:0.4rem">
-                <label style="font-size:0.78rem;color:var(--theme-text-muted);display:block;margin-bottom:0.2rem">Tickers to export:</label>
-                <div id="proj-export-ticker-list" style="max-height:120px;overflow-y:auto;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;padding:0.25rem 0.4rem;font-size:0.78rem">
-                  <label style="display:flex;align-items:center;gap:0.35rem;margin-bottom:0.2rem;cursor:pointer">
-                    <input type="checkbox" id="proj-export-all-cb" checked onchange="onProjExportAllToggle(this.checked)">
-                    <span>All tickers</span>
-                  </label>
-                  <div id="proj-export-ticker-cbs" style="margin-left:1rem"></div>
-                </div>
-              </div>
-
-              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-                <button class="btn btn-primary btn-sm" onclick="exportLongCsv()">Export Long CSV</button>
-                <button class="btn btn-secondary btn-sm" onclick="exportFinalCsv()">Export (legacy)</button>
-              </div>
-              <div style="font-size:0.68rem;color:var(--theme-text-muted);margin-top:0.2rem">
-                Long CSV: long format, TICKER_metric names, includes projections (marked *).
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- LLM CSV export (unreviewed direct output) -->
-        <div data-spec-id="2.5.2.4.6.1" data-ui-id="2.5.2.4.6.1">
-          <button class="btn btn-secondary btn-sm" onclick="exportLLMCsv()">LLM CSV (unreviewed)</button>
-        </div>
-      </div>
-    </div>
-
     <!-- Staging list -->
     <div id="staging-area" data-spec-id="2.5.2.4.4" data-ui-id="2.5.2.4.4" style="display:none">
       <div class="interp-section-title">Staged for Finalization</div>
@@ -1178,101 +1114,6 @@ tr.is-reviewed td { opacity: 0.65; }
         </table>
       </div>
     </div>
-
-    <!-- Auto-calculate sales BTC -->
-    <div data-spec-id="2.5.2.4.6" data-ui-id="2.5.2.4.6" style="margin-top:1rem">
-      <div class="interp-section-title">Auto-Calculate Sales BTC</div>
-      <div style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
-        Derives <strong>sales_btc</strong> from finalized values using:
-        prev_holdings + production &minus; curr_holdings.
-        Requires both <code>holdings_btc</code> and <code>production_btc</code> to be finalized
-        for the period, and <code>holdings_btc</code> finalized for the prior month.
-        Skips periods where the result would be negative.
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="previewSalesBtcDerive()">Preview</button>
-        <button class="btn btn-primary btn-sm" id="apply-sales-derive-btn"
-                style="display:none" onclick="applySalesBtcDerive()">Apply</button>
-        <span id="sales-derive-status"
-              style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-      <div id="sales-derive-preview" style="display:none;margin-top:0.5rem;overflow-x:auto">
-        <table id="sales-derive-table">
-          <thead>
-            <tr>
-              <th>Period</th><th>Prev Holdings</th><th>+ Production</th>
-              <th>- Curr Holdings</th><th>= Sales BTC</th><th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="sales-derive-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Auto-calculate net BTC balance change -->
-    <div data-spec-id="2.5.2.4.7" data-ui-id="2.5.2.4.7" style="margin-top:1rem">
-      <div class="interp-section-title">Derive Balance Change</div>
-      <div style="font-size:0.8rem;color:var(--theme-text-muted);margin-bottom:0.5rem">
-        Derives <strong>net_btc_balance_change</strong> from finalized holdings_btc using:
-        curr_holdings &minus; prev_holdings.
-        Requires <code>holdings_btc</code> finalized for two consecutive months.
-        Skips non-consecutive gaps.
-      </div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="previewBalanceChangeDerive()">Preview</button>
-        <button class="btn btn-primary btn-sm" id="apply-balance-derive-btn"
-                style="display:none" onclick="applyBalanceChangeDerive()">Apply</button>
-        <span id="balance-derive-status"
-              style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-      </div>
-      <div id="balance-derive-preview" style="display:none;margin-top:0.5rem;overflow-x:auto">
-        <table id="balance-derive-table">
-          <thead>
-            <tr>
-              <th>Period</th><th>Prev Period</th><th>Prev Holdings</th>
-              <th>Curr Holdings</th><th>= Balance Change</th><th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="balance-derive-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Danger zone -->
-    <details class="danger-zone" data-spec-id="2.5.2.4.8" data-ui-id="2.5.2.4.8">
-      <summary>Danger Zone</summary>
-      <div class="dz-body">
-        <div>
-          <div style="font-weight:600;margin-bottom:0.25rem">Clear Finalized for <span id="dz-ticker-label">—</span></div>
-          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
-            Removes all finalized values for this ticker. Raw pipeline data is untouched.
-            Type <code id="dz-confirm-word">CLEAR_FINAL_TICKER</code> to confirm.
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <input type="text" class="dz-confirm-input" id="dz-ticker-confirm-input"
-              placeholder="Type confirmation word">
-            <button class="btn btn-danger btn-sm" onclick="clearFinalTicker()">Clear Ticker Final</button>
-            <span id="dz-ticker-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-          </div>
-        </div>
-        <div style="border-top:1px solid var(--theme-border);padding-top:0.5rem;margin-top:0.25rem">
-          <div style="font-weight:600;margin-bottom:0.25rem">Purge All Final Data</div>
-          <div style="color:var(--theme-text-muted);margin-bottom:0.4rem;font-size:0.78rem">
-            Clears all finalized values across all tickers. Type <code>CLEAR_FINAL_ALL</code> to confirm.
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-            <select id="dz-purge-mode" style="padding:0.2rem 0.3rem;background:var(--theme-bg-input);border:1px solid var(--theme-border);border-radius:4px;color:var(--theme-text-primary);font-size:0.8rem">
-              <option value="clear">clear</option>
-              <option value="archive">archive</option>
-            </select>
-            <input type="text" class="dz-confirm-input" id="dz-global-confirm-input"
-              placeholder="CLEAR_FINAL_ALL">
-            <button class="btn btn-danger btn-sm" onclick="purgeAllFinal()">Purge All</button>
-            <span id="dz-global-status" style="font-size:0.78rem;color:var(--theme-text-muted)"></span>
-          </div>
-        </div>
-      </div>
-    </details>
 
   </div><!-- /#view-interpret -->
 
@@ -2269,12 +2110,6 @@ async function loadInterpretData(ticker) {
       }
     }
   } catch(e) {}
-  // Update danger zone confirmation word
-  const word = `CLEAR_FINAL_${ticker}`;
-  const label = document.getElementById('dz-ticker-label');
-  const confWord = document.getElementById('dz-confirm-word');
-  if (label) label.textContent = ticker;
-  if (confWord) confWord.textContent = word;
   // Restore commentary from localStorage
   const key = `interp-commentary-${ticker}`;
   const saved = localStorage.getItem(key);
@@ -2469,88 +2304,6 @@ async function doGeneratePrompt() {
   }
 }
 
-function exportFinalCsv() {
-  if (!_ticker) { showToast('Select a company first', true); return; }
-  window.location = `/api/export/final.csv?ticker=${encodeURIComponent(_ticker)}`;
-}
-
-function exportLLMCsv() {
-  if (!_ticker) { showToast('Select a company first', true); return; }
-  window.location = `/api/export_llm_csv?ticker=${encodeURIComponent(_ticker)}`;
-}
-
-// ── Projection & Export panel ──────────────────────────────────────────────
-
-function toggleProjPanel() {
-  const panel = document.getElementById('proj-config-panel');
-  _projPanelOpen = !_projPanelOpen;
-  panel.style.display = _projPanelOpen ? '' : 'none';
-  if (_projPanelOpen) _populateProjTickerList();
-}
-
-function _populateProjTickerList() {
-  const container = document.getElementById('proj-export-ticker-cbs');
-  if (!container || container.dataset.populated) return;
-  const tickers = Array.from(document.querySelectorAll('.md-tab[data-ticker]'))
-    .map(function(btn) { return btn.getAttribute('data-ticker'); });
-  container.innerHTML = tickers.map(function(t) {
-    return `<label style="display:flex;align-items:center;gap:0.3rem;margin-bottom:0.15rem;cursor:pointer">
-      <input type="checkbox" class="proj-ticker-cb" value="${t}" checked>
-      <span>${t}</span>
-    </label>`;
-  }).join('');
-  container.dataset.populated = '1';
-}
-
-function onProjExportAllToggle(checked) {
-  document.querySelectorAll('.proj-ticker-cb').forEach(function(cb) {
-    cb.checked = checked;
-    cb.disabled = checked;
-  });
-}
-
-function onProjToggle(enabled) {
-  _projEnabled = enabled;
-  renderTable(_rows);
-}
-
-function onProjWindowChange(val) {
-  const n = parseInt(val, 10);
-  if (n >= 1) {
-    _projWindow = n;
-    if (_projEnabled) renderTable(_rows);
-  }
-}
-
-function exportLongCsv() {
-  const ffWindow = _projEnabled ? _projWindow : 0;
-  const allCb = document.getElementById('proj-export-all-cb');
-  let tickers = [];
-  if (!allCb || allCb.checked) {
-    tickers = [];  // server default = all
-  } else {
-    tickers = Array.from(document.querySelectorAll('.proj-ticker-cb:checked'))
-      .map(function(cb) { return cb.value; });
-    if (!tickers.length) { showToast('Select at least one ticker', true); return; }
-  }
-  const params = new URLSearchParams();
-  tickers.forEach(function(t) { params.append('ticker', t); });
-  if (ffWindow >= 1) params.set('forward_fill', ffWindow);
-  window.location = '/api/export/final_long.csv?' + params.toString();
-}
-
-// Close projection panel when clicking outside
-document.addEventListener('click', function(e) {
-  if (!_projPanelOpen) return;
-  const btn = document.getElementById('proj-config-btn');
-  const panel = document.getElementById('proj-config-panel');
-  if (!btn || !panel) return;
-  if (!btn.contains(e.target) && !panel.contains(e.target)) {
-    _projPanelOpen = false;
-    panel.style.display = 'none';
-  }
-});
-
 function renderStagingTable() {
   const tbody = document.getElementById('staging-tbody');
   if (_stagedValues.length === 0) {
@@ -2625,73 +2378,6 @@ function unfinalize(idx) {
   });
   renderStagingTable();
   document.getElementById('staging-area').style.display = '';
-}
-
-async function clearFinalTicker() {
-  if (!_ticker) return;
-  const expectedWord = `CLEAR_FINAL_${_ticker}`;
-  const input = document.getElementById('dz-ticker-confirm-input').value.trim();
-  const statusEl = document.getElementById('dz-ticker-status');
-  if (input !== expectedWord) {
-    statusEl.textContent = `Type "${expectedWord}" to confirm`;
-    statusEl.style.color = 'var(--theme-danger)';
-    return;
-  }
-  statusEl.textContent = 'Clearing…';
-  statusEl.style.color = '';
-  try {
-    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/final`, {
-      method: 'DELETE',
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const n = body.data.deleted;
-    statusEl.textContent = `Cleared ${n} rows`;
-    statusEl.style.color = 'var(--theme-success)';
-    document.getElementById('dz-ticker-confirm-input').value = '';
-    _finalizedValues = [];
-    renderFinalizedTable();
-    renderReconcileTable();
-    showToast(`Cleared ${n} finalized values for ${_ticker}`);
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-    statusEl.style.color = 'var(--theme-danger)';
-  }
-}
-
-async function purgeAllFinal() {
-  const input = document.getElementById('dz-global-confirm-input').value.trim();
-  const statusEl = document.getElementById('dz-global-status');
-  if (input !== 'CLEAR_FINAL_ALL') {
-    statusEl.textContent = 'Type CLEAR_FINAL_ALL to confirm';
-    statusEl.style.color = 'var(--theme-danger)';
-    return;
-  }
-  const mode = document.getElementById('dz-purge-mode').value;
-  statusEl.textContent = 'Purging…';
-  statusEl.style.color = '';
-  try {
-    const resp = await fetch('/api/delete/final', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirm: true, mode}),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const n = body.data.deleted;
-    statusEl.textContent = `Purged ${n} rows`;
-    statusEl.style.color = 'var(--theme-success)';
-    document.getElementById('dz-global-confirm-input').value = '';
-    _finalizedValues = [];
-    renderFinalizedTable();
-    renderReconcileTable();
-    showToast(`Purged ${n} finalized values`);
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-    statusEl.style.color = 'var(--theme-danger)';
-  }
 }
 
 // ── Pipeline trace — shown when an empty or no-document cell is clicked ────

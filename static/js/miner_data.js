@@ -12,11 +12,6 @@ let _tableMode = 'view';
 let _expandedDocsPeriod = null;
 let _selectedReportIds = {};
 
-// ── Projection / forward-fill state ───────────────────────────────────────
-let _projEnabled = false;         // whether forward-fill projection is on
-let _projWindow  = 6;             // moving-average window in months
-let _projPanelOpen = false;       // dropdown panel visibility
-
 // Metric highlight colours — 5 known colours; extras assigned from a palette.
 const _METRIC_COLORS_KNOWN = {
   production_btc:   '#3b82f6',
@@ -906,174 +901,8 @@ function fmtValue(m) {
   return v.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1});
 }
 
-// ── Forward-fill period helpers ────────────────────────────────────────────
-
-function _ffAddMonths(yyyymm, n) {
-  let year = parseInt(yyyymm.slice(0, 4), 10);
-  let month = parseInt(yyyymm.slice(5, 7), 10);
-  month += n;
-  while (month > 12) { month -= 12; year++; }
-  while (month < 1)  { month += 12; year--; }
-  return `${year}-${String(month).padStart(2, '0')}`;
-}
-
-function _ffPeriodToNorm(period) {
-  // 'YYYY-MM-01' or 'YYYY-MM' → 'YYYY-MM'
-  if (!period) return null;
-  const m = period.match(/^(\d{4})-(\d{2})/);
-  return m ? `${m[1]}-${m[2]}` : null;
-}
-
-function _ffQuarterToMonths(period) {
-  // 'YYYY-Qn' → ['YYYY-MM', 'YYYY-MM', 'YYYY-MM']
-  const m = period.match(/^(\d{4})-Q([1-4])$/);
-  if (!m) return [];
-  const year = parseInt(m[1], 10);
-  const start = (parseInt(m[2], 10) - 1) * 3 + 1;
-  return [0, 1, 2].map(function(i) {
-    return `${year}-${String(start + i).padStart(2, '0')}`;
-  });
-}
-
-function _ffCurrentMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-// Returns a map:  period (YYYY-MM) → { metricKey → projectedValue }
-// Only covers periods not already present in confirmedRows.
-function _computeProjections(confirmedRows) {
-  if (!_projEnabled || _projWindow < 1) return {};
-
-  const currentMonth = _ffCurrentMonth();
-
-  // Per-metric: collect (period, value) from confirmed rows
-  const metricSeries = {};  // metricKey → [ {period:'YYYY-MM', value:float} ]
-
-  for (const row of confirmedRows) {
-    if (row.is_projected) continue;
-    const rowPeriod = row.period;
-    for (const metric of Object.keys(row.metrics || {})) {
-      const m = row.metrics[metric];
-      if (!m || m.value == null) continue;
-      const v = parseFloat(m.value);
-      if (isNaN(v)) continue;
-
-      if (!metricSeries[metric]) metricSeries[metric] = {};
-
-      // Handle quarterly period rows in the timeline
-      const qMatch = rowPeriod && rowPeriod.match(/^(\d{4})-Q([1-4])$/);
-      if (qMatch) {
-        for (const mp of _ffQuarterToMonths(rowPeriod)) {
-          if (!metricSeries[metric][mp]) metricSeries[metric][mp] = v;
-        }
-      } else {
-        const mp = _ffPeriodToNorm(rowPeriod);
-        if (mp && !metricSeries[metric][mp]) metricSeries[metric][mp] = v;
-      }
-    }
-  }
-
-  // Build set of confirmed periods (normalised) so we don't project over real data
-  const confirmedPeriodSet = new Set(
-    confirmedRows
-      .filter(function(r) { return !r.is_projected; })
-      .map(function(r) { return _ffPeriodToNorm(r.period); })
-      .filter(Boolean)
-  );
-
-  // For each metric, compute MA and generate projected values
-  const projMap = {};  // period → { metricKey → value }
-
-  for (const metric of Object.keys(metricSeries)) {
-    const sorted = Object.keys(metricSeries[metric]).sort();
-    if (!sorted.length) continue;
-    const lastPeriod = sorted[sorted.length - 1];
-    if (lastPeriod >= currentMonth) continue;
-
-    // MA base: last _projWindow confirmed values
-    const base = sorted.slice(-_projWindow);
-    const maVal = base.reduce(function(acc, p) {
-      return acc + metricSeries[metric][p];
-    }, 0) / base.length;
-
-    let fp = _ffAddMonths(lastPeriod, 1);
-    while (fp <= currentMonth) {
-      if (!confirmedPeriodSet.has(fp)) {
-        if (!projMap[fp]) projMap[fp] = {};
-        projMap[fp][metric] = maVal;
-      }
-      fp = _ffAddMonths(fp, 1);
-    }
-  }
-
-  return projMap;
-}
-
-// Build synthetic row objects for projected periods not in confirmedRows,
-// and augment existing confirmed rows with projected values for missing metrics.
-function _mergeProjections(confirmedRows, projMap) {
-  if (!Object.keys(projMap).length) return confirmedRows;
-
-  const confirmedByPeriod = {};
-  for (const row of confirmedRows) {
-    const np = _ffPeriodToNorm(row.period);
-    if (np) confirmedByPeriod[np] = row;
-  }
-
-  // Augment confirmed rows that are missing some metrics
-  for (const [period, metricVals] of Object.entries(projMap)) {
-    if (confirmedByPeriod[period]) {
-      const row = confirmedByPeriod[period];
-      for (const [metric, val] of Object.entries(metricVals)) {
-        if (!row.metrics[metric] || row.metrics[metric].value == null) {
-          if (!row._projectedMetrics) row._projectedMetrics = {};
-          row._projectedMetrics[metric] = val;
-        }
-      }
-    }
-  }
-
-  // Create new synthetic rows for periods with no confirmed data
-  const syntheticRows = [];
-  for (const [period, metricVals] of Object.entries(projMap)) {
-    if (confirmedByPeriod[period]) continue;
-    const metrics = {};
-    for (const metric of Object.keys(metricVals)) {
-      metrics[metric] = {
-        value: metricVals[metric],
-        unit: '',
-        is_projected: true,
-        extraction_method: 'projected',
-      };
-    }
-    syntheticRows.push({
-      period:        period + '-01',
-      period_label:  period,
-      is_gap:        false,
-      is_reviewed:   false,
-      is_projected:  true,
-      has_report:    false,
-      source_type:   null,
-      report_date:   null,
-      report_id:     null,
-      doc_priority:  null,
-      alt_docs:      [],
-      metrics:       metrics,
-    });
-  }
-
-  const merged = confirmedRows.concat(syntheticRows);
-  merged.sort(function(a, b) {
-    return (a.period || '').localeCompare(b.period || '');
-  });
-  return merged;
-}
-
 function renderTable(allRows) {
-  // Inject forward-fill projections before filtering so projected rows are visible
-  const baseRows = _projEnabled ? _mergeProjections(allRows, _computeProjections(allRows)) : allRows;
-  const rows = applyFilters(baseRows);
+  const rows = applyFilters(allRows);
   const tbody = document.getElementById('timeline-tbody');
 
   document.getElementById('table-row-count').textContent =
@@ -1088,48 +917,19 @@ function renderTable(allRows) {
   const parts = [];
   for (const row of rows) {
     const isGap = row.is_gap;
-    const isProjRow = !!row.is_projected;
-    const rowClass = isGap ? 'row-gap' : (isProjRow ? 'row-projected' : '');
+    const rowClass = isGap ? 'row-gap' : '';
     const isSelected = row.period === _selectedPeriod;
     const selClass = isSelected ? ' selected' : '';
 
     // Build metric cells
     const metricCells = METRICS_ORDER.map(function(metric) {
-      // Check if this specific metric is a projection (either full projected row
-      // or a projected metric injected into a confirmed row via _projectedMetrics).
-      const isProjMetric = isProjRow ||
-        (row._projectedMetrics && row._projectedMetrics[metric] != null);
-      const metricColor = _assignMetricColor(metric);
-
       let m = row.metrics[metric];
-
-      // Overlay projected value for confirmed rows that have a projected metric
-      if (!isProjRow && row._projectedMetrics && row._projectedMetrics[metric] != null
-          && (!m || m.value == null)) {
-        m = {
-          value: row._projectedMetrics[metric],
-          unit: '',
-          extraction_method: 'projected',
-          is_projected: true,
-        };
-      }
 
       if (isGap) {
         return `<td class="td-gap-label" data-metric="${escapeHtml(metric)}" onclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}')}" ondblclick="if(_tableMode==='edit'){event.stopPropagation();cancelInlineEdit();_beginInlineEdit(this,'${escapeHtml(row.period)}','${escapeHtml(metric)}');}">—</td>`;
       }
       if (m && m.value != null) {
         const formatted = escapeHtml(fmtValue(m) || '');
-
-        // Projected cell: faded tint of series color, ~ prefix, no interaction
-        if (m.extraction_method === 'projected' || m.is_projected) {
-          const r = parseInt(metricColor.slice(1, 3), 16);
-          const g = parseInt(metricColor.slice(3, 5), 16);
-          const b = parseInt(metricColor.slice(5, 7), 16);
-          const projBg = `rgba(${r},${g},${b},0.12)`;
-          return `<td class="td-projected" data-metric="${escapeHtml(metric)}"
-            style="background:${projBg};font-style:italic;opacity:0.6"
-            title="Forward-fill projection (${_projWindow}-month MA)">~${formatted}<span class="badge-method badge-method-proj" style="font-size:0.6rem;margin-left:2px">~</span></td>`;
-        }
 
         if (m.is_pending) {
           return `<td class="td-pending">${formatted}<span class="badge-pending">P</span></td>`;
@@ -1915,12 +1715,6 @@ async function loadInterpretData(ticker) {
       }
     }
   } catch(e) {}
-  // Update danger zone confirmation word
-  const word = `CLEAR_FINAL_${ticker}`;
-  const label = document.getElementById('dz-ticker-label');
-  const confWord = document.getElementById('dz-confirm-word');
-  if (label) label.textContent = ticker;
-  if (confWord) confWord.textContent = word;
   // Restore commentary from localStorage
   const key = `interp-commentary-${ticker}`;
   const saved = localStorage.getItem(key);
@@ -2304,196 +2098,6 @@ function unfinalize(idx) {
   });
   renderStagingTable();
   document.getElementById('staging-area').style.display = '';
-}
-
-async function clearFinalTicker() {
-  if (!_ticker) return;
-  const expectedWord = `CLEAR_FINAL_${_ticker}`;
-  const input = document.getElementById('dz-ticker-confirm-input').value.trim();
-  const statusEl = document.getElementById('dz-ticker-status');
-  if (input !== expectedWord) {
-    statusEl.textContent = `Type "${expectedWord}" to confirm`;
-    statusEl.style.color = 'var(--theme-danger)';
-    return;
-  }
-  statusEl.textContent = 'Clearing…';
-  statusEl.style.color = '';
-  try {
-    const resp = await fetch(`/api/interpret/${encodeURIComponent(_ticker)}/final`, {
-      method: 'DELETE',
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const n = body.data.deleted;
-    statusEl.textContent = `Cleared ${n} rows`;
-    statusEl.style.color = 'var(--theme-success)';
-    document.getElementById('dz-ticker-confirm-input').value = '';
-    _finalizedValues = [];
-    renderFinalizedTable();
-    renderReconcileTable();
-    showToast(`Cleared ${n} finalized values for ${_ticker}`);
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-    statusEl.style.color = 'var(--theme-danger)';
-  }
-}
-
-async function purgeAllFinal() {
-  const input = document.getElementById('dz-global-confirm-input').value.trim();
-  const statusEl = document.getElementById('dz-global-status');
-  if (input !== 'CLEAR_FINAL_ALL') {
-    statusEl.textContent = 'Type CLEAR_FINAL_ALL to confirm';
-    statusEl.style.color = 'var(--theme-danger)';
-    return;
-  }
-  const mode = document.getElementById('dz-purge-mode').value;
-  statusEl.textContent = 'Purging…';
-  statusEl.style.color = '';
-  try {
-    const resp = await fetch('/api/interpret/final/purge', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirm: true, mode}),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error?.message || 'Failed');
-    const n = body.data.deleted;
-    statusEl.textContent = `Purged ${n} rows`;
-    statusEl.style.color = 'var(--theme-success)';
-    document.getElementById('dz-global-confirm-input').value = '';
-    _finalizedValues = [];
-    renderFinalizedTable();
-    renderReconcileTable();
-    showToast(`Purged ${n} finalized values`);
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
-    statusEl.style.color = 'var(--theme-danger)';
-  }
-}
-
-async function previewSalesBtcDerive() {
-  const statusEl = document.getElementById('sales-derive-status');
-  const previewEl = document.getElementById('sales-derive-preview');
-  const applyBtn = document.getElementById('apply-sales-derive-btn');
-  statusEl.textContent = 'Loading preview...';
-  previewEl.style.display = 'none';
-  applyBtn.style.display = 'none';
-
-  try {
-    const res = await fetch('/api/operations/derive-sales-btc', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ticker: _ticker, dry_run: true}),
-    });
-    const data = await res.json();
-    const tbody = document.getElementById('sales-derive-tbody');
-    tbody.innerHTML = '';
-    data.rows.forEach(r => {
-      const tr = document.createElement('tr');
-      const isDerived = r.status === 'would_derive';
-      tr.innerHTML = `
-        <td>${r.period || ''}</td>
-        <td>${r.prev_holdings != null ? r.prev_holdings.toFixed(4) : '&mdash;'}</td>
-        <td>${r.production != null ? r.production.toFixed(4) : '&mdash;'}</td>
-        <td>${r.curr_holdings != null ? r.curr_holdings.toFixed(4) : '&mdash;'}</td>
-        <td>${isDerived ? r.value.toFixed(4) : '&mdash;'}</td>
-        <td>${r.status}${r.reason ? ` (${r.reason})` : ''}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    const wouldDerive = data.rows.filter(r => r.status === 'would_derive').length;
-    statusEl.textContent = `${wouldDerive} period(s) would be derived, ${data.skipped} skipped.`;
-    previewEl.style.display = wouldDerive > 0 ? '' : 'none';
-    applyBtn.style.display = wouldDerive > 0 ? '' : 'none';
-  } catch (e) {
-    statusEl.textContent = 'Preview failed.';
-  }
-}
-
-async function applySalesBtcDerive() {
-  const statusEl = document.getElementById('sales-derive-status');
-  const applyBtn = document.getElementById('apply-sales-derive-btn');
-  statusEl.textContent = 'Applying...';
-  applyBtn.disabled = true;
-
-  try {
-    const res = await fetch('/api/operations/derive-sales-btc', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ticker: _ticker, dry_run: false}),
-    });
-    const data = await res.json();
-    statusEl.textContent = `Done: ${data.derived} derived, ${data.skipped} skipped.`;
-    applyBtn.style.display = 'none';
-    document.getElementById('sales-derive-preview').style.display = 'none';
-    loadInterpretData(_ticker);
-  } catch (e) {
-    statusEl.textContent = 'Apply failed.';
-    applyBtn.disabled = false;
-  }
-}
-
-async function previewBalanceChangeDerive() {
-  const statusEl = document.getElementById('balance-derive-status');
-  const previewEl = document.getElementById('balance-derive-preview');
-  const applyBtn = document.getElementById('apply-balance-derive-btn');
-  statusEl.textContent = 'Loading preview...';
-  previewEl.style.display = 'none';
-  applyBtn.style.display = 'none';
-
-  try {
-    const res = await fetch('/api/operations/derive-balance-change', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ticker: _ticker, dry_run: true}),
-    });
-    const data = await res.json();
-    const tbody = document.getElementById('balance-derive-tbody');
-    tbody.innerHTML = '';
-    data.rows.forEach(function(r) {
-      const tr = document.createElement('tr');
-      const isDerived = r.status === 'would_derive';
-      tr.innerHTML =
-        '<td>' + (r.period || '') + '</td>' +
-        '<td>' + (r.prev_period || '&mdash;') + '</td>' +
-        '<td>' + (r.prev_holdings != null ? r.prev_holdings.toFixed(4) : '&mdash;') + '</td>' +
-        '<td>' + (r.curr_holdings != null ? r.curr_holdings.toFixed(4) : '&mdash;') + '</td>' +
-        '<td>' + (isDerived ? r.value.toFixed(4) : '&mdash;') + '</td>' +
-        '<td>' + r.status + (r.reason ? ' (' + r.reason + ')' : '') + '</td>';
-      tbody.appendChild(tr);
-    });
-    const wouldDerive = data.rows.filter(function(r) { return r.status === 'would_derive'; }).length;
-    statusEl.textContent = wouldDerive + ' period(s) would be derived, ' + data.skipped + ' skipped.';
-    previewEl.style.display = wouldDerive > 0 ? '' : 'none';
-    applyBtn.style.display = wouldDerive > 0 ? '' : 'none';
-  } catch (e) {
-    statusEl.textContent = 'Preview failed.';
-  }
-}
-
-async function applyBalanceChangeDerive() {
-  const statusEl = document.getElementById('balance-derive-status');
-  const applyBtn = document.getElementById('apply-balance-derive-btn');
-  statusEl.textContent = 'Applying...';
-  applyBtn.disabled = true;
-
-  try {
-    const res = await fetch('/api/operations/derive-balance-change', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ticker: _ticker, dry_run: false}),
-    });
-    const data = await res.json();
-    statusEl.textContent = 'Done: ' + data.derived + ' derived, ' + data.skipped + ' skipped.';
-    applyBtn.style.display = 'none';
-    document.getElementById('balance-derive-preview').style.display = 'none';
-    loadInterpretData(_ticker);
-  } catch (e) {
-    statusEl.textContent = 'Apply failed.';
-    applyBtn.disabled = false;
-  }
 }
 
 async function applyPatternToArchive() {
