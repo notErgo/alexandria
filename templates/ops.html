@@ -3174,6 +3174,19 @@ tr.is-reviewed td { opacity: 0.65; }
 
 </div>
 
+<!-- Delete Company Modal -->
+<div id="del-company-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+  <div class="card" style="width:480px;max-width:92vw;padding:1.5rem;">
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:0.75rem;">Delete Company</h3>
+    <div id="del-company-body"></div>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+      <button id="del-cascade-btn" class="btn btn-danger" style="display:none;" onclick="doDeleteCompany(true)">Delete + all data</button>
+      <button id="del-btn" class="btn btn-danger" onclick="doDeleteCompany(false)">Delete</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -4556,6 +4569,7 @@ function renderCompanies() {
           + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), false)">Probe</button>'
           + '<button class="btn btn-sm btn-secondary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="runTickerBootstrapProbe(this.getAttribute(\'data-ticker\'), true)">Probe+Apply</button>'
           + (mode !== 'skip' ? '<button class="btn btn-sm btn-primary" data-ticker="' + escapeAttr(c.ticker) + '" onclick="triggerScrape(this.getAttribute(\'data-ticker\'))">Scrape</button>' : '')
+          + '<button class="btn btn-sm btn-danger" style="font-size:0.7rem;padding:1px 6px" data-ticker="' + escapeAttr(c.ticker) + '" data-name="' + escapeAttr(c.name) + '" onclick="confirmDeleteCompany(this.getAttribute(\'data-ticker\'), this.getAttribute(\'data-name\'))">Delete</button>'
         + '</td>'
       + '</tr>'
     );
@@ -9187,6 +9201,72 @@ function resetOrphanedReports(ticker) {
       if (msg) msg.textContent = ticker + ': reset ' + (body.data ? body.data.reset_count : 0) + ' orphaned report(s)';
     })
     .catch(function() {});
+}
+
+var _delTicker = null;
+
+function confirmDeleteCompany(ticker, name) {
+  _delTicker = ticker;
+  var body = document.getElementById('del-company-body');
+  var modal = document.getElementById('del-company-modal');
+  body.innerHTML = '<p>Checking data for <strong>' + escapeHtml(ticker) + '</strong>...</p>';
+  document.getElementById('del-cascade-btn').style.display = 'none';
+  document.getElementById('del-btn').style.display = 'none';
+  modal.style.display = 'flex';
+
+  fetch('/api/companies/' + encodeURIComponent(ticker), {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cascade: false})
+  }).then(function(r) {
+    return r.json().then(function(j) { return {status: r.status, body: j}; });
+  }).then(function(res) {
+    if (res.status === 409) {
+      var counts = res.body.counts || {};
+      var rows = Object.entries(counts).map(function(e) {
+        return '<tr><td style="padding:1px 8px 1px 0">' + escapeHtml(e[0]) + '</td><td>' + e[1] + ' rows</td></tr>';
+      }).join('');
+      body.innerHTML =
+        '<p>Company <strong>' + escapeHtml(ticker) + '</strong> has linked data:</p>'
+        + '<table style="font-size:0.82rem;width:100%;margin-bottom:0.75rem">' + rows + '</table>'
+        + '<p style="color:var(--theme-text-muted);font-size:0.82rem">Cascade delete will permanently remove all associated reports, data points, and extractions.</p>';
+      document.getElementById('del-cascade-btn').style.display = '';
+      document.getElementById('del-btn').style.display = 'none';
+    } else if (res.status === 200) {
+      body.innerHTML =
+        '<p>Delete <strong>' + escapeHtml(ticker) + ' &mdash; ' + escapeHtml(name) + '</strong>?</p>'
+        + '<p style="color:var(--theme-text-muted);font-size:0.82rem">This company has no linked data and can be safely removed.</p>';
+      document.getElementById('del-cascade-btn').style.display = 'none';
+      document.getElementById('del-btn').style.display = '';
+    } else {
+      body.innerHTML = '<p style="color:var(--theme-danger)">Unexpected response: ' + escapeHtml(String(res.status)) + '</p>';
+    }
+  }).catch(function(e) {
+    body.innerHTML = '<p style="color:var(--theme-danger)">Error: ' + escapeHtml(e.message) + '</p>';
+  });
+}
+
+function doDeleteCompany(cascade) {
+  if (!_delTicker) return;
+  fetch('/api/companies/' + encodeURIComponent(_delTicker), {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({cascade: cascade})
+  }).then(function(r) { return r.json(); })
+  .then(function(j) {
+    closeDeleteModal();
+    if (j.success) {
+      showToast(_delTicker + ' deleted');
+      loadCompanies();
+    } else {
+      showToast('Delete failed: ' + ((j.error && j.error.message) ? j.error.message : 'unknown'), true);
+    }
+  }).catch(function(e) { showToast('Delete failed: ' + e.message, true); });
+}
+
+function closeDeleteModal() {
+  document.getElementById('del-company-modal').style.display = 'none';
+  _delTicker = null;
 }
 </script>
 {% endblock %}

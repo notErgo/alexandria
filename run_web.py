@@ -180,8 +180,10 @@ def create_app() -> Flask:
 
     @app.route('/dashboard')
     def dashboard_page():
-        from config import get_all_tickers
-        return render_template('dashboard.html', all_tickers=get_all_tickers())
+        from app_globals import get_db
+        db = get_db()
+        tickers = sorted(c['ticker'] for c in db.get_companies(active_only=False))
+        return render_template('dashboard.html', all_tickers=tickers)
 
     @app.route('/review')
     def review_page():

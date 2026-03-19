@@ -40,6 +40,18 @@ def _write_active_to_companies_json(ticker: str, active: bool) -> None:
     path.write_text(json.dumps(companies, indent=2))
 
 
+def _remove_from_companies_json(ticker: str) -> None:
+    """Remove a ticker entry from companies.json.
+
+    Called after a successful DB delete so the company does not repopulate
+    on the next server restart via sync_companies_from_config().
+    """
+    path = _companies_json_path()
+    companies = json.loads(path.read_text())
+    filtered = [c for c in companies if c.get('ticker', '').upper() != ticker.upper()]
+    path.write_text(json.dumps(filtered, indent=2))
+
+
 def _normalize_optional_text(body: dict, key: str) -> str | None:
     val = body.get(key)
     if val is None:
@@ -496,6 +508,40 @@ def update_company(ticker):
             # Non-fatal: DB is updated; JSON write failure is logged only.
 
     return jsonify({'success': True, 'data': company})
+
+
+@bp.route('/api/companies/<ticker>', methods=['DELETE'])
+def delete_company(ticker):
+    from app_globals import get_db
+    db = get_db()
+    ticker = ticker.upper()
+    body = request.get_json(silent=True) or {}
+    cascade = bool(body.get('cascade', False))
+
+    try:
+        result = db.delete_company(ticker, cascade=cascade)
+    except Exception:
+        log.error("Failed to delete company %s", ticker, exc_info=True)
+        return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
+
+    if result.get('error') == 'not_found':
+        return jsonify({'success': False, 'error': {'message': f'Company {ticker!r} not found'}}), 404
+
+    if result.get('error') == 'has_children':
+        return jsonify({
+            'success': False,
+            'error': {'message': 'Company has linked data. Pass cascade=true to delete all.'},
+            'counts': result['counts'],
+        }), 409
+
+    # Remove from companies.json so startup sync does not repopulate the row.
+    try:
+        _remove_from_companies_json(ticker)
+    except Exception:
+        log.error("Failed to remove %s from companies.json", ticker, exc_info=True)
+        # Non-fatal: DB delete succeeded; JSON write failure is logged only.
+
+    return jsonify({'success': True, 'data': result}), 200
 
 
 # ── Metric schema routes ──────────────────────────────────────────────────────

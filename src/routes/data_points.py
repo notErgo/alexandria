@@ -366,31 +366,79 @@ def document_keywords(report_id: int):
         return jsonify({'success': False, 'error': {'message': 'Internal server error'}}), 500
 
 
+_MONTHLY_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
 @bp.route('/api/export.csv')
 def export_csv():
+    """Export the same data shown in the timeseries dashboard as a wide CSV.
+
+    Reads from final_data_points (analyst-accepted values only), restricts
+    to monthly periods, and pivots to: period, MARA, RIOT, ...
+
+    Query params (all optional):
+        ticker        — repeated; omit for all tickers
+        metric        — metric key filter
+        from_period   — YYYY-MM lower bound
+        to_period     — YYYY-MM upper bound
+    """
     from app_globals import get_db
     params, err = _validate_filters(request.args)
     if err:
         return err
     db = get_db()
-    rows = db.query_data_points_for_export(**params)
+
+    tickers_filter = params.get('tickers')   # list[str] or None
+    metric_filter  = params.get('metric')
+    from_period    = params.get('from_period')
+    to_period      = params.get('to_period')
+
+    # Fetch from final_data_points — same source as /api/timeseries
+    if tickers_filter:
+        rows = []
+        for t in tickers_filter:
+            rows.extend(db.query_final_data_points(
+                ticker=t, metric=metric_filter,
+                from_period=from_period, to_period=to_period,
+            ))
+    else:
+        rows = db.query_final_data_points(
+            metric=metric_filter, from_period=from_period, to_period=to_period,
+        )
+
+    # Monthly periods only — drop quarterly (YYYY-Qn) and annual (YYYY-FY) rows
+    rows = [r for r in rows if _MONTHLY_RE.match(r.get('period', ''))]
+
+    # Pivot: YYYY-MM rows × ticker columns
+    # final_data_points has a UNIQUE(ticker, period, metric) constraint so no
+    # conflict resolution is needed — there is at most one value per cell.
+    pivot: dict = {}
+    tickers_seen: set = set()
+    for row in rows:
+        ym = row['period'][:7]   # YYYY-MM-DD → YYYY-MM
+        ticker = row['ticker']
+        tickers_seen.add(ticker)
+        pivot.setdefault(ym, {})[ticker] = row['value']
+
+    sorted_tickers = sorted(tickers_seen)
+    sorted_periods = sorted(pivot.keys())    # YYYY-MM strings sort correctly
+
+    metric_slug = (metric_filter or 'all').replace('/', '_')
+    fname = f"miners_{metric_slug}.csv"
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=[
-        'ticker', 'period', 'metric', 'value', 'unit',
-        'confidence', 'extraction_method', 'source_url',
-        'source_snippet', 'created_at',
-        'llm_value', 'regex_value', 'agreement_status',
-    ], extrasaction='ignore')
-    writer.writeheader()
-    for row in rows:
-        # Emit empty string for None values so CSV is clean
-        cleaned = {k: ('' if v is None else v) for k, v in row.items()}
-        writer.writerow(cleaned)
+    writer = csv.writer(output)
+    writer.writerow(['period'] + sorted_tickers)
+    for ym in sorted_periods:
+        cell = pivot[ym]
+        writer.writerow([ym] + [
+            '' if cell.get(t) is None else cell.get(t, '')
+            for t in sorted_tickers
+        ])
 
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
-    response.headers['Content-Disposition'] = 'attachment; filename=miners_export.csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={fname}'
     return response
 
 

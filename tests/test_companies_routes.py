@@ -157,3 +157,68 @@ def test_get_metric_schema_response_includes_prompt_fields(client):
     row = data['data'][0]
     assert 'prompt_instructions' in row
     assert 'quarterly_prompt' in row
+
+
+# ── DELETE /api/companies/<ticker> ────────────────────────────────────────────
+
+def test_delete_company_not_found(client):
+    r = client.delete('/api/companies/FAKE', json={})
+    assert r.status_code == 404
+    body = r.get_json()
+    assert body['success'] is False
+
+
+def test_delete_company_no_children(client):
+    import app_globals
+    db = app_globals.get_db()
+    db.add_company('TST', 'Test Co')
+    r = client.delete('/api/companies/TST', json={'cascade': False})
+    assert r.status_code == 200
+    assert r.get_json()['success'] is True
+    assert db.get_company('TST') is None
+
+
+def test_delete_company_blocks_on_children(client):
+    import app_globals
+    db = app_globals.get_db()
+    db.add_company('BLKC', 'Block Child')
+    db.insert_report({
+        'ticker': 'BLKC', 'source_url': 'http://x.com/blkc',
+        'source_type': 'ir_press_release', 'report_date': '2024-01-01',
+        'published_date': None, 'parsed_at': None, 'raw_text': 'sample text', 'raw_html': None,
+    })
+    r = client.delete('/api/companies/BLKC', json={'cascade': False})
+    assert r.status_code == 409
+    body = r.get_json()
+    assert body['success'] is False
+    assert 'counts' in body
+    assert 'reports' in body['counts']
+    assert db.get_company('BLKC') is not None
+
+
+def test_delete_company_cascade(client):
+    import app_globals
+    db = app_globals.get_db()
+    db.add_company('CASC', 'Cascade Co')
+    db.insert_report({
+        'ticker': 'CASC', 'source_url': 'http://y.com/casc',
+        'source_type': 'ir_press_release', 'report_date': '2024-01-01',
+        'published_date': None, 'parsed_at': None, 'raw_text': 'sample text', 'raw_html': None,
+    })
+    r = client.delete('/api/companies/CASC', json={'cascade': True})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert db.get_company('CASC') is None
+    with db._get_connection() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM reports WHERE ticker='CASC'").fetchone()[0]
+    assert n == 0
+
+
+def test_delete_company_ticker_uppercased(client):
+    import app_globals
+    db = app_globals.get_db()
+    db.add_company('UPPR', 'Upper Co')
+    r = client.delete('/api/companies/uppr', json={})
+    assert r.status_code == 200
+    assert db.get_company('UPPR') is None

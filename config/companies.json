@@ -98,34 +98,6 @@
     "sandbox_note": "Hut 8 Corp is the US-incorporated entity formed from the November 2023 merger of Hut 8 Mining Corp (Canada) and US Bitcoin Corp (USBTC). Ticker changed from HUT8 to HUT at that time. CIK 0001964789 verified against EDGAR (Hut 8 Corp., ticker HUT, DE incorporated). Old entity Hut 8 Mining Corp is CIK 0001731805 (Canadian, deregistered Dec 2023, no ticker). Monthly production PRs available via PRNewswire (https://www.prnewswire.com/news/hut-8-corp./) but no RSS feed confirmed."
   },
   {
-    "ticker": "SDIG",
-    "name": "Stronghold Digital Mining, Inc.",
-    "tier": 2,
-    "ir_url": "https://investors.strongholddigitalmining.com/news-events/press-releases",
-    "pr_base_url": "https://investors.strongholddigitalmining.com",
-    "cik": "0001856028",
-    "active": true,
-    "reporting_cadence": "quarterly",
-    "pr_start_date": null,
-    "filing_regime": "domestic",
-    "fiscal_year_end_month": 12,
-    "sandbox_note": "Quarterly reporter. Reports mining metrics in quarterly earnings rather than monthly production updates. CIK 0001856028 verified against EDGAR (Stronghold Digital Mining, Inc.). Old CIK 0001845610 was Empire State Greenhouses LLC (wrong)."
-  },
-  {
-    "ticker": "APLD",
-    "name": "Applied Digital Corporation",
-    "tier": 2,
-    "ir_url": "https://ir.applieddigital.com/news-events/press-releases",
-    "pr_base_url": "https://ir.applieddigital.com",
-    "cik": "0001144879",
-    "active": true,
-    "reporting_cadence": "quarterly",
-    "pr_start_date": null,
-    "filing_regime": "domestic",
-    "fiscal_year_end_month": 5,
-    "sandbox_note": "Quarterly reporter. HPC data center business alongside mining; fiscal year ends May 31. Formerly Catapult Solutions Group (APLD ticker adopted post-rebrand). Applied Digital entered BTC mining via hosting/HPC services; direct BTC mining metrics may be limited."
-  },
-  {
     "ticker": "ABTC",
     "name": "American Bitcoin Corp.",
     "tier": 2,
@@ -180,20 +152,6 @@
     "filing_regime": "foreign",
     "fiscal_year_end_month": 12,
     "sandbox_note": "Drupal year-filter widget at ir.bitdeer.com. Site is Cloudflare-protected: plain requests timeout, Playwright returns HTTP/2 protocol error. curl-cffi with impersonate=chrome124 works (HTTP 200). Both ir.bitdeer.com and fallback domain bitdeer.gcs-web.com are in _CURL_CFFI_DOMAINS. Article detail URLs migrated to /news-releases/news-release-details/{slug} (confirmed 2026-03-16; old pattern /news-events/news-releases/detail/{id}/{slug} is stale). Confirmed production PRs 2023-2026. GlobeNewswire org search: https://www.globenewswire.com/search/organization/Bitdeer%20Technologies%20Group"
-  },
-  {
-    "ticker": "ARBK",
-    "name": "Argo Blockchain plc",
-    "tier": 2,
-    "ir_url": "https://www.argoblockchain.com/news-events/press-releases",
-    "pr_base_url": "https://www.argoblockchain.com",
-    "cik": "0001841675",
-    "active": true,
-    "reporting_cadence": "monthly",
-    "pr_start_date": null,
-    "filing_regime": "foreign",
-    "fiscal_year_end_month": 12,
-    "sandbox_note": "CIK 0001841675 verified against EDGAR (Argo Blockchain Plc, tickers ARBK/ARBKF). UK-incorporated company listed on Nasdaq and London Stock Exchange. Files 20-F (annual) and 6-K (monthly production reports) with SEC. Sold Helios Texas facility to Galaxy Digital in 2023; now operates primarily in Quebec. IR page has returned 502 intermittently (2026-03)."
   },
   {
     "ticker": "FUFU",

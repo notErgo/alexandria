@@ -75,6 +75,7 @@
   color: var(--theme-warning);
 }
 .chart-container { width: 100%; height: 338px; }
+.panel-header select { height: 24px; line-height: 1; }
 
 /* Loading / error states */
 #dashboard-content { min-height: 200px; }
@@ -90,58 +91,8 @@
 {% block content %}
 <div class="page-title" data-spec-id="5.0" data-ui-id="5.0"><span class="spec-id">5.0</span>Dashboard</div>
 
-<!-- View toggle -->
-<div data-spec-id="5.1.1" data-ui-id="5.1.1" style="display:flex;gap:0.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap;">
-  <button id="btn-overview" class="btn btn-primary btn-sm" onclick="setView('overview')">Overview</button>
-  <button id="btn-stacked" class="btn btn-secondary btn-sm" onclick="setView('stacked')">Stacked Bar</button>
-  <button id="btn-timeseries" class="btn btn-secondary btn-sm" onclick="setView('timeseries')">Timeseries</button>
-  <div id="overview-months-wrap" style="display:flex;align-items:center;gap:0.4rem;margin-left:0.5rem;">
-    <label style="font-size:0.75rem;color:var(--theme-text-muted);">Months</label>
-    <select id="ov-months" onchange="loadOverview()" style="font-size:0.8rem;">
-      <option value="12">12</option>
-      <option value="24" selected>24</option>
-      <option value="36">36</option>
-      <option value="48">48</option>
-    </select>
-  </div>
-</div>
-
-<!-- ── Overview panel — one card per active metric (SSOT-driven, built by JS) ── -->
-<div id="overview-panel">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" id="overview-grid">
-    <!-- Populated dynamically by loadOverview() from /api/metric_schema -->
-  </div>
-</div>
-
-<!-- ── Stacked bar panel ─────────────────────────────────── -->
-<div id="stacked-panel" style="display:none;">
-  <div class="card filter-bar" style="margin-bottom:1rem;">
-    <div class="filter-section">
-      <label>Metric</label>
-      <select id="sb-metric" onchange="loadStackedBar()" style="min-width:180px;">
-        <!-- populated by initMetricDropdown() from /api/metric_schema?active=true -->
-      </select>
-    </div>
-    <div class="filter-section">
-      <label>Months</label>
-      <select id="sb-months" onchange="loadStackedBar()">
-        <option value="12">12 months</option>
-        <option value="24" selected>24 months</option>
-        <option value="36">36 months</option>
-        <option value="48">48 months</option>
-      </select>
-    </div>
-  </div>
-  <div class="card" style="padding:1rem;" data-spec-id="5.1" data-ui-id="5.1">
-    <div style="font-size:0.9rem;font-weight:600;margin-bottom:0.5rem">
-      <span class="spec-id">5.1</span>Metric Panels <span class="source-badge source-badge-data">DATA</span>
-    </div>
-    <div id="stacked-chart" style="width:100%;height:546px;"></div>
-  </div>
-</div>
-
-<!-- ── Timeseries panel (existing) ─────────────────────── -->
-<div id="timeseries-panel" style="display:none;">
+<!-- ── Timeseries panel ───────────────────────────────────── -->
+<div id="timeseries-panel">
   <!-- Filter bar -->
   <div class="card filter-bar" id="filter-bar" data-spec-id="5.1.2" data-ui-id="5.1.2">
     <div class="filter-section">
@@ -215,6 +166,9 @@ const DEFAULT_CHECKED = new Set(['MARA', 'RIOT']);
 
 // Track ECharts instances for cleanup
 let _charts = [];
+const _chartsByMetric = {};  // metric → ECharts instance (for per-panel redraw)
+const _metricData     = {};  // metric → {metricObj, timeSpine, allTickers}
+const _panelSort      = {};  // metric → sort mode
 
 // Chart theme state
 let _activeTheme   = '';           // name passed to echarts.init()
@@ -290,6 +244,144 @@ function getSelectedTickers() {
   ).map(function(cb) { return cb.value; });
 }
 
+// ── Sort helpers ──────────────────────────────────────────────────────────
+function _lastNonNull(values) {
+  for (var i = values.length - 1; i >= 0; i--) {
+    if (values[i] !== null) return values[i];
+  }
+  return null;
+}
+
+function _sortedSeries(series, mode) {
+  var copy = series.slice();
+  if (!mode || mode === 'default') return copy;
+  if (mode === 'last_desc' || mode === 'last_asc') {
+    // ECharts stacks series[0] at bottom, series[last] at top.
+    // last_desc = highest on top  → sort ascending so highest ends up last (top).
+    // last_asc  = lowest on top   → sort descending so lowest ends up last (top).
+    var asc = mode === 'last_desc';
+    copy.sort(function(a, b) {
+      var av = _lastNonNull(a.values);
+      var bv = _lastNonNull(b.values);
+      if (av === null && bv === null) return 0;
+      if (av === null) return asc ? -1 : 1;
+      if (bv === null) return asc ? 1 : -1;
+      return asc ? av - bv : bv - av;
+    });
+  } else if (mode === 'name_asc') {
+    copy.sort(function(a, b) { return a.ticker.localeCompare(b.ticker); });
+  }
+  return copy;
+}
+
+// Builds the ECharts series array (stacked bars + Total line on yAxisIndex 1)
+function _buildEchartsSeries(sortedSeries, allTickers, timeSpine) {
+  var totalValues = timeSpine.map(function(_, i) {
+    var hasAny = sortedSeries.some(function(s) { return s.values[i] !== null; });
+    if (!hasAny) return null;
+    return sortedSeries.reduce(function(sum, s) { return sum + (s.values[i] || 0); }, 0);
+  });
+
+  var out = sortedSeries.map(function(s) {
+    return {
+      name: s.ticker,
+      type: 'bar',
+      stack: 'total',
+      data: s.values.map(function(v) { return v === null ? 0 : v; }),
+      barCategoryGap: '-1%',
+      barGap: '0%',
+      itemStyle: { color: tickerColor(s.ticker, allTickers), borderRadius: 0 },
+      yAxisIndex: 0,
+    };
+  });
+
+  out.push({
+    name: 'Total',
+    type: 'line',
+    data: totalValues,
+    symbol: 'none',
+    lineStyle: { width: 2, color: '#e2e8f0' },
+    itemStyle: { color: '#e2e8f0' },
+    yAxisIndex: 1,
+    z: 10,
+  });
+
+  return out;
+}
+
+// Builds the full ECharts option for a panel (shared by initial render and re-sort)
+function _buildChartOption(sorted, timeSpine, allTickers, unit) {
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: 60, right: 72, top: 28, bottom: 36 },
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        var html = '<div style="font-size:0.8rem"><b>' + escapeHtml(params[0].axisValue) + '</b><br>';
+        var totalParam = null;
+        params.forEach(function(p) {
+          if (p.seriesName === 'Total') { totalParam = p; return; }
+          if (p.value != null && p.value !== 0) {
+            html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;' +
+              'background:' + p.color + ';margin-right:4px;vertical-align:middle;"></span>' +
+              escapeHtml(p.seriesName) + ': ' + fmtValue(p.value, unit) + '<br>';
+          }
+        });
+        if (totalParam && totalParam.value != null) {
+          html += '<hr style="border:none;border-top:1px solid #444;margin:3px 0;">' +
+            '<b>Total: ' + fmtValue(totalParam.value, unit) + '</b>';
+        }
+        html += '</div>';
+        return html;
+      },
+    },
+    legend: {
+      top: 4,
+      right: 80,
+      textStyle: { fontSize: 11 },
+      data: sorted.map(function(s) { return s.ticker; }).concat(['Total']),
+    },
+    xAxis: {
+      type: 'category',
+      data: timeSpine,
+      axisLabel: {
+        fontSize: 10,
+        rotate: 30,
+        interval: function(idx, val) {
+          return val.endsWith('-01') || val.endsWith('-06') || idx === 0;
+        },
+      },
+    },
+    yAxis: [
+      {
+        type: 'value',
+        splitLine: {
+          show: true,
+          lineStyle: { color: 'rgba(200,200,200,0.09)', type: 'solid' },
+        },
+      },
+      {
+        type: 'value',
+        position: 'right',
+        axisLabel: { fontSize: 10 },
+        splitLine: { show: false },
+      },
+    ],
+    series: _buildEchartsSeries(sorted, allTickers, timeSpine),
+  };
+}
+
+// Re-sort an already-rendered panel without a network round-trip
+function onSortChange(metric, mode) {
+  _panelSort[metric] = mode;
+  var chart = _chartsByMetric[metric];
+  var info  = _metricData[metric];
+  if (!chart || !info) return;
+  var sorted = _sortedSeries(info.metricObj.series, mode);
+  chart.clear();
+  chart.setOption(_buildChartOption(sorted, info.timeSpine, info.allTickers, info.metricObj.unit));
+}
+
 // ── Format helpers ────────────────────────────────────────────────────────
 function fmtValue(val, unit) {
   if (val == null) return 'missing';
@@ -305,8 +397,12 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
   const unit   = metricObj.unit;
   const series = metricObj.series;
 
+  // Cache for re-sort without network round-trip
+  _metricData[metric] = { metricObj: metricObj, timeSpine: timeSpine, allTickers: allTickers };
+
   const panel = document.createElement('div');
   panel.className = 'card metric-panel';
+  panel.id = 'panel-' + metric;
   panel.setAttribute('data-spec-id', '5.1');
   panel.setAttribute('data-ui-id', '5.1');
 
@@ -328,6 +424,43 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
     badgesEl.appendChild(badge);
   });
   header.appendChild(badgesEl);
+
+  // Sort select
+  var sortSel = document.createElement('select');
+  sortSel.className = 'form-control';
+  sortSel.style.cssText = 'font-size:0.72rem;padding:1px 6px;width:auto;min-width:140px;';
+  sortSel.title = 'Sort order';
+  [
+    ['default',   'Sort: default'],
+    ['last_desc', 'Sort: highest on top'],
+    ['last_asc',  'Sort: lowest on top'],
+    ['name_asc',  'Sort: A to Z'],
+  ].forEach(function(opt) {
+    var o = document.createElement('option');
+    o.value = opt[0];
+    o.textContent = opt[1];
+    if ((_panelSort[metric] || 'default') === opt[0]) o.selected = true;
+    sortSel.appendChild(o);
+  });
+  sortSel.onchange = function() { onSortChange(metric, this.value); };
+  header.appendChild(sortSel);
+
+  var dlBtn = document.createElement('button');
+  dlBtn.className = 'btn btn-secondary btn-sm';
+  dlBtn.style.cssText = 'font-size:0.72rem;padding:2px 8px;margin-left:auto;';
+  dlBtn.textContent = 'CSV';
+  dlBtn.onclick = function() {
+    var p = new URLSearchParams();
+    p.set('metric', metric);
+    getSelectedTickers().forEach(function(t) { p.append('ticker', t); });
+    var from = document.getElementById('f-from').value;
+    var to   = document.getElementById('f-to').value;
+    if (from) p.set('from_period', from);
+    if (to)   p.set('to_period', to);
+    window.location.href = '/api/export.csv?' + p.toString();
+  };
+  header.appendChild(dlBtn);
+
   panel.appendChild(header);
 
   // ECharts container
@@ -339,72 +472,22 @@ function renderMetricPanel(parentEl, metricObj, timeSpine, allTickers) {
 
   parentEl.appendChild(panel);
 
-  // Init ECharts — pass active theme (null = ECharts default)
+  // Init ECharts
   const chart = echarts.init(chartEl, _activeTheme || null, { renderer: 'canvas' });
   _charts.push(chart);
+  _chartsByMetric[metric] = chart;
 
-  const echartsX = timeSpine.map(function(ym) {
-    // ECharts wants the data as category strings
-    return ym;
-  });
+  const sortMode = _panelSort[metric] || 'default';
+  const sorted = _sortedSeries(series, sortMode);
+  chart.setOption(_buildChartOption(sorted, timeSpine, allTickers, unit));
 
-  const echartsSeries = series.map(function(s) {
-    const color = tickerColor(s.ticker, allTickers);
-    return {
-      name: s.ticker,
-      type: 'bar',
-      stack: 'total',
-      data: s.values.map(function(v) { return v === null ? 0 : v; }),
-      barCategoryGap: '-1%',
-      barGap: '0%',
-      itemStyle: { color: color, borderRadius: 0 },
-    };
-  });
-
-  chart.setOption({
-    backgroundColor: 'transparent',
-    grid: { left: 60, right: 16, top: 28, bottom: 36 },
-    tooltip: {
-      trigger: 'axis',
-      formatter: function(params) {
-        let html = '<div style="font-size:0.8rem"><b>' + escapeHtml(params[0].axisValue) + '</b><br>';
-        params.forEach(function(p) {
-          if (p.value != null) {
-            html += escapeHtml(p.seriesName) + ': ' + fmtValue(p.value, unit) + '<br>';
-          }
-        });
-        html += '</div>';
-        return html;
-      },
-    },
-    legend: {
-      top: 4,
-      right: 16,
-      textStyle: { fontSize: 11 },
-    },
-    xAxis: {
-      type: 'category',
-      data: echartsX,
-      // Show every 6-month label to avoid crowding
-      axisLabel: {
-        fontSize: 10,
-        rotate: 30,
-        interval: function(idx, val) {
-          return val.endsWith('-01') || val.endsWith('-06') || idx === 0;
-        },
-      },
-    },
-    yAxis: {
-      type: 'value',
-    },
-    series: echartsSeries,
-  });
-
-  // ECharts click → data lineage modal
+  // ECharts click → data lineage modal (Total is computed, skip it)
   chart.on('click', function(params) {
-    if (params.componentType !== 'series' || params.value == null || params.value === 0) return;
-    const period = timeSpine[params.dataIndex];   // YYYY-MM from time spine
-    const ticker = params.seriesName;             // ticker is the series name
+    if (params.componentType !== 'series') return;
+    if (params.seriesName === 'Total') return;
+    if (params.value == null || params.value === 0) return;
+    const period = timeSpine[params.dataIndex];
+    const ticker = params.seriesName;
     openLineageModal(ticker, metric, period, params.value, unit);
   });
 
@@ -420,6 +503,8 @@ async function loadDashboard() {
   _charts.forEach(function(c) { try { c.dispose(); } catch(e) {} });
   _charts = [];
   Object.keys(_colorCache).forEach(function(k) { delete _colorCache[k]; });
+  Object.keys(_chartsByMetric).forEach(function(k) { delete _chartsByMetric[k]; });
+  Object.keys(_metricData).forEach(function(k) { delete _metricData[k]; });
 
   const content = document.getElementById('dashboard-content');
   content.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -561,297 +646,8 @@ document.getElementById('suggest-overlay').addEventListener('click', function(e)
   if (e.target === this) closeSuggestModal();
 });
 
-// ── View toggle (Overview / Stacked Bar / Timeseries) ────────────────────
-let _stackedChart = null;
-const _overviewCharts = {};  // metric → ECharts instance
-
-function setView(view) {
-  document.getElementById('overview-panel').style.display   = view === 'overview'    ? '' : 'none';
-  document.getElementById('stacked-panel').style.display    = view === 'stacked'     ? '' : 'none';
-  document.getElementById('timeseries-panel').style.display = view === 'timeseries'  ? '' : 'none';
-  document.getElementById('overview-months-wrap').style.display = view === 'overview' ? '' : 'none';
-  document.getElementById('btn-overview').className    = view === 'overview'   ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-  document.getElementById('btn-stacked').className     = view === 'stacked'    ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-  document.getElementById('btn-timeseries').className  = view === 'timeseries' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-  localStorage.setItem('miners-dashboard-view', view);
-  if (view === 'overview')   loadOverview();
-  else if (view === 'stacked')     loadStackedBar();
-  else                             loadDashboard();
-}
-
-// ── Overview: one chart per active metric (SSOT from metric_schema) ──────
-async function loadOverview() {
-  const months = document.getElementById('ov-months').value;
-  const grid   = document.getElementById('overview-grid');
-
-  // Dispose existing overview charts
-  Object.keys(_overviewCharts).forEach(function(k) {
-    try { _overviewCharts[k].dispose(); } catch(e) {}
-    delete _overviewCharts[k];
-  });
-
-  // Fetch active metrics from SSOT
-  let metrics = [];
-  try {
-    const resp = await fetch('/api/metric_schema?active=true&sector=BTC-miners');
-    if (resp.ok) {
-      const body = await resp.json();
-      metrics = body.data || [];
-    }
-  } catch(e) { /* leave empty */ }
-
-  if (!metrics.length) {
-    grid.innerHTML = '<div class="empty-state">No metrics configured.</div>';
-    return;
-  }
-
-  // Build one card per metric (containers must exist in DOM before ECharts init)
-  grid.innerHTML = metrics.map(function(m) {
-    const title = escapeHtml(m.label) + (m.unit ? ' (' + escapeHtml(m.unit) + ')' : '');
-    return '<div class="card" style="padding:0.75rem;">' +
-      '<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;color:var(--theme-text-secondary);">' +
-      title + '</div>' +
-      '<div id="ov-chart-' + escapeHtml(m.key) + '" style="width:100%;height:220px;"></div>' +
-      '</div>';
-  }).join('');
-
-  // Load all panels in parallel
-  await Promise.all(metrics.map(function(m) {
-    return loadOverviewPanel(m.key, m.label, m.unit || '', false, months);
-  }));
-}
-
-async function loadOverviewPanel(metric, label, unit, cumulative, months) {
-  const container = document.getElementById('ov-chart-' + metric);
-  if (!container) return;
-
-  // Dispose existing
-  if (_overviewCharts[metric]) {
-    try { _overviewCharts[metric].dispose(); } catch(e) {}
-    delete _overviewCharts[metric];
-  }
-  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--theme-text-muted);font-size:0.8rem;">Loading…</div>';
-
-  let data;
-  try {
-    const resp = await fetch('/api/dashboard/stacked?metric=' + encodeURIComponent(metric) + '&months=' + months);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error && body.error.message ? body.error.message : 'API error');
-    data = body.data;
-  } catch (err) {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--theme-text-muted);font-size:0.78rem;">No data</div>';
-    return;
-  }
-
-  if (!data.time_spine || data.time_spine.length === 0 || !data.series || data.series.length === 0) {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--theme-text-muted);font-size:0.78rem;">No data</div>';
-    return;
-  }
-
-  container.innerHTML = '';
-  const chart = echarts.init(container, _activeTheme || undefined);
-  _overviewCharts[metric] = chart;
-  _charts.push(chart);
-
-  const allTickers = data.series.map(function(s) { return s.ticker; });
-  const barSeries = data.series.map(function(s) {
-    return {
-      name: s.ticker,
-      type: 'bar',
-      stack: 'total',
-      data: s.values,
-      barCategoryGap: '-1%',
-      barGap: '0%',
-      itemStyle: { color: tickerColor(s.ticker, allTickers), borderRadius: 0 },
-    };
-  });
-
-  const series = barSeries.slice();
-
-  if (cumulative) {
-    // Compute network-wide cumulative running sum across all tickers
-    const spine = data.time_spine;
-    const netByMonth = spine.map(function(_, i) {
-      return data.series.reduce(function(sum, s) {
-        return sum + (s.values[i] || 0);
-      }, 0);
-    });
-    let running = 0;
-    const cumulativeVals = netByMonth.map(function(v) {
-      running += v;
-      return running;
-    });
-    series.push({
-      name: 'Cumulative (network)',
-      type: 'line',
-      yAxisIndex: 1,
-      data: cumulativeVals,
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { width: 2, color: '#f59e0b' },
-      itemStyle: { color: '#f59e0b' },
-      z: 10,
-    });
-  }
-
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: function(params) {
-        let html = '<strong>' + escapeHtml(params[0].name) + '</strong><br>';
-        params.forEach(function(p) {
-          if (p.value != null && p.value !== 0) {
-            html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
-              p.color + ';margin-right:4px;"></span>' +
-              escapeHtml(p.seriesName) + ': ' + p.value.toLocaleString(undefined, {maximumFractionDigits:1}) +
-              ' ' + escapeHtml(unit) + '<br>';
-          }
-        });
-        return html;
-      }
-    },
-    legend: { top: 0, right: 0, type: 'scroll', textStyle: { fontSize: 10 } },
-    grid: { left: 48, right: cumulative ? 52 : 12, top: 28, bottom: 36 },
-    xAxis: {
-      type: 'category',
-      data: data.time_spine,
-      axisLabel: {
-        fontSize: 9, rotate: 30,
-        interval: function(idx, val) {
-          return val.endsWith('-01') || val.endsWith('-07') || idx === 0;
-        },
-      },
-    },
-    yAxis: cumulative
-      ? [
-          { type: 'value', name: unit, nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9 } },
-          { type: 'value', name: 'Cumul.', nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9 }, splitLine: { show: false } },
-        ]
-      : [{ type: 'value', name: unit, nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9 } }],
-    series: series,
-  };
-
-  chart.setOption(option);
-
-  chart.on('click', function(params) {
-    if (params.componentType !== 'series' || params.seriesType !== 'bar') return;
-    if (params.value == null || params.value === 0) return;
-    openLineageModal(params.seriesName, metric, data.time_spine[params.dataIndex], params.value, unit);
-  });
-}
-
-async function loadStackedBar() {
-  const metric = document.getElementById('sb-metric').value;
-  const months = document.getElementById('sb-months').value;
-  const container = document.getElementById('stacked-chart');
-
-  if (_stackedChart) { try { _stackedChart.dispose(); } catch(e) {} _stackedChart = null; }
-  container.innerHTML = '<div class="empty-state">Loading…</div>';
-
-  let data;
-  try {
-    const resp = await fetch('/api/dashboard/stacked?metric=' + encodeURIComponent(metric) + '&months=' + months);
-    if (!resp.ok) {
-      const err = await resp.json().catch(function() { return {}; });
-      throw new Error(err.error && err.error.message ? err.error.message : 'HTTP ' + resp.status);
-    }
-    const body = await resp.json();
-    if (!body.success) throw new Error(body.error && body.error.message ? body.error.message : 'API error');
-    data = body.data;
-  } catch (err) {
-    container.innerHTML = '<div class="error-banner">Failed to load: ' + escapeHtml(err.message) + '</div>';
-    return;
-  }
-
-  if (!data.time_spine || data.time_spine.length === 0) {
-    container.innerHTML = '<div class="empty-state">No data for this metric.</div>';
-    return;
-  }
-
-  container.innerHTML = '';
-  _stackedChart = echarts.init(container, _activeTheme || undefined);
-
-  const allTickers = data.series.map(function(s) { return s.ticker; });
-  const echartsSeries = data.series.map(function(s) {
-    return {
-      name: s.ticker,
-      type: 'bar',
-      stack: 'total',
-      emphasis: { focus: 'series' },
-      data: s.values,
-      barCategoryGap: '-1%',
-      barGap: '0%',
-      itemStyle: { color: tickerColor(s.ticker, allTickers), borderRadius: 0 },
-    };
-  });
-
-  _stackedChart.setOption({
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: function(params) {
-        let html = '<strong>' + escapeHtml(params[0].name) + '</strong><br>';
-        let total = 0;
-        params.forEach(function(p) {
-          if (p.value != null && p.value !== 0) {
-            html += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' +
-              p.color + ';margin-right:4px;"></span>' +
-              escapeHtml(p.seriesName) + ': ' + (p.value != null ? p.value.toLocaleString() : '–') +
-              ' ' + escapeHtml(data.unit) + '<br>';
-            total += p.value || 0;
-          }
-        });
-        html += '<strong>Total: ' + total.toLocaleString() + ' ' + escapeHtml(data.unit) + '</strong>';
-        return html;
-      }
-    },
-    legend: { top: 0, type: 'scroll' },
-    grid: { left: 60, right: 20, top: 40, bottom: 52 },
-    xAxis: {
-      type: 'category',
-      data: data.time_spine,
-      axisLabel: { rotate: 45, fontSize: 11 }
-    },
-    yAxis: {
-      type: 'value',
-      name: data.unit,
-      nameTextStyle: { color: 'var(--theme-text-muted)', fontSize: 11 }
-    },
-    series: echartsSeries,
-  });
-}
-
-// ── Metric dropdown — built from active metric_schema (SSOT) ─────────────
-async function initMetricDropdown() {
-  const sel = document.getElementById('sb-metric');
-  let rows = [];
-  try {
-    const resp = await fetch('/api/metric_schema?active=true&sector=BTC-miners');
-    if (resp.ok) {
-      const body = await resp.json();
-      rows = (body.data || []);
-    }
-  } catch (e) { /* leave empty */ }
-
-  sel.innerHTML = '';
-  rows.forEach(function(r) {
-    const opt = document.createElement('option');
-    opt.value = r.key;
-    opt.textContent = r.label + (r.unit ? ' (' + r.unit + ')' : '');
-    sel.appendChild(opt);
-  });
-}
-
 // ── On page load ─────────────────────────────────────────────────────────
 initFilterBar();
-initThemePicker().then(async function() {
-  await initMetricDropdown();
-  const savedView = localStorage.getItem('miners-dashboard-view') || 'overview';
-  setView(savedView);
-});
+initThemePicker().then(function() { loadDashboard(); });
 </script>
 {% endblock %}

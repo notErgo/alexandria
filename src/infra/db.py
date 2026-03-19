@@ -6913,6 +6913,54 @@ class MinerDB:
                 )
         return self.get_company(ticker)
 
+    def delete_company(self, ticker: str, cascade: bool = False) -> dict:
+        """Delete a company row.
+
+        Returns {'deleted': True, 'cascade_tables': [...]} on success.
+        Returns {'error': 'not_found'} if ticker does not exist.
+        Returns {'error': 'has_children', 'counts': {...}} when child rows exist
+        and cascade=False.
+
+        When cascade=True, calls purge_all(ticker, hard_delete) first to remove
+        all child data, then deletes the company row itself.
+        """
+        row = self.get_company(ticker)
+        if not row:
+            return {'error': 'not_found'}
+
+        counts: dict = {}
+        with self._get_connection() as conn:
+            for table in (
+                'reports', 'data_points', 'asset_manifest',
+                'review_queue', 'scrape_queue', 'regime_config',
+                'source_audit', 'btc_loans', 'facilities',
+                'reviewed_periods', 'final_data_points',
+                'scraper_discovery_candidates',
+            ):
+                try:
+                    n = conn.execute(
+                        f'SELECT COUNT(*) FROM {table} WHERE ticker=?', (ticker,)
+                    ).fetchone()[0]
+                    if n:
+                        counts[table] = n
+                except Exception:
+                    pass  # table may not exist in older schemas
+
+        if counts and not cascade:
+            return {'error': 'has_children', 'counts': counts}
+
+        if cascade and counts:
+            self.purge_all(
+                ticker=ticker,
+                purge_mode='hard_delete',
+                reason=f'delete_company cascade {ticker}',
+            )
+
+        with self._get_connection() as conn:
+            conn.execute('DELETE FROM companies WHERE ticker=?', (ticker,))
+        log.info('event=delete_company ticker=%s cascade=%s', ticker, cascade)
+        return {'deleted': True, 'cascade_tables': list(counts.keys())}
+
     def get_scraper_governance_snapshot(self, stale_days: int = 30) -> dict:
         """Return scraper governance status by ticker.
 
